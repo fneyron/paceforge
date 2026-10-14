@@ -31,7 +31,8 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
   that same answer's auto laps (time, average HR) are kept as Strava's laps
   (Santé's Entraînement dial weighs them).
   60 days the first time, then the last 7 days, at most every 2 hours (Celery
-  beat, app.tasks.coros_sync), right after connecting and on demand (Réglages);
+  beat, app.tasks.coros_sync), right after connecting and on demand (Réglages),
+  always in the Celery worker (a web request only queues it: queue_sync);
   the 60 days once more when the stored nights predate a format change. The
   nightly rows of the days a sync's parsers read that it no longer yields are
   deleted (covered_days: what was read, never what was asked for; a few at
@@ -54,6 +55,7 @@ from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
+from cryptography.fernet import InvalidToken
 from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -97,7 +99,10 @@ SLEEP_CHUNK_DAYS = 31
 SYNC_EVERY = timedelta(hours=2)  # last night shows up the same morning
 CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
 # read after « Dernière synchro échouée : »; also how the next sync knows the history is owed
-PARTIAL = "COROS a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
+PARTIAL = ("COROS a cessé de répondre en cours de route, le reste de ton historique arrive avec la synchro complète "
+           "de demain.")
+# its wording until 2026-10-14 (the history then came at the next sync), still in some links' last_error
+_LEGACY_PARTIAL = "COROS a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
 HRV_PARTIAL = "La lecture de la VFC est incomplète. Les autres données reçues sont conservées ; réessaie la synchro."
 HRV_UNREADABLE = "Le format de la VFC renvoyé par COROS n’a pas pu être lu. Les autres données reçues sont conservées."
 SLEEP_PARTIAL = "La lecture du sommeil est incomplète ; elle est nécessaire au calcul de la VFC. Les données déjà reçues sont conservées."
@@ -146,6 +151,11 @@ class McpUnauthorized(CorosError):
 
 class McpUnavailable(CorosError):
     """A 5xx: COROS is down or overloaded for that request."""
+
+
+class CorosKeyError(CorosError):
+    """A stored token no configured key decrypts (app.crypto: a key missing from ENCRYPTION_KEYS). Nothing is
+    written about it: the link is only skipped, so putting the key back recovers it with no reconnecting."""
 
 
 # ── OAuth: discovery, client registration, PKCE ─────────────────────────────
@@ -367,29 +377,58 @@ async def _mark_reauth(db: AsyncSession, conn: CorosConnection, message: str) ->
     return CorosAuthError(message)
 
 
+EXPIRED = "La connexion à COROS a expiré : reconnecte-toi."
+
+
+async def _stored(db: AsyncSession, conn: CorosConnection, encrypted: bytes) -> str:
+    """A stored token; one no configured key decrypts raises CorosKeyError, and nothing is written about it."""
+    try:
+        return decrypt_secret(encrypted)
+    except InvalidToken:
+        raise CorosKeyError(EXPIRED) from None
+
+
+def tokens_readable(conn: CorosConnection) -> bool:
+    """Whether the configured keys decrypt this link's tokens. Not, its link is paused, untouched: it shows
+    « reconnecte-toi » (coros_status, computed when read) until the key is back, and is never synced meanwhile."""
+    for encrypted in (conn.access_token_encrypted, conn.refresh_token_encrypted):
+        if encrypted:
+            try:
+                decrypt_secret(encrypted)
+            except InvalidToken:
+                return False
+    return True
+
+
+def _key_missing(conn: CorosConnection) -> None:
+    logger.error("COROS tokens of user %d: no configured key decrypts them; the link is skipped, nothing is "
+                 "changed. Put back the key that encrypted them in ENCRYPTION_KEYS.", conn.user_id)
+
+
 async def access_token(db: AsyncSession, conn: CorosConnection, client: httpx.AsyncClient,
                        rejected: str | None = None) -> str:
     """A usable access token, refreshed when it expires within a day or when
     the server just `rejected` it. Commits: a rotated refresh token must never
     be lost to a later rollback."""
     if rejected is None and _fresh(conn):
-        return decrypt_secret(conn.access_token_encrypted)
+        return await _stored(db, conn, conn.access_token_encrypted)
     async with _lock_for(conn.user_id):
         # another worker may have rotated the pair meanwhile: re-read it, locked
         await db.refresh(conn, with_for_update=True)
-        current = decrypt_secret(conn.access_token_encrypted)
         if conn.needs_reauth:
             await db.commit()
             raise CorosAuthError(conn.last_error or "Reconnecte COROS.")
+        current = await _stored(db, conn, conn.access_token_encrypted)
         if (rejected is None and _fresh(conn)) or (rejected is not None and current != rejected):
             await db.commit()  # releases the row lock
             return current
         if not conn.refresh_token_encrypted:
-            raise await _mark_reauth(db, conn, "La connexion à COROS a expiré : reconnecte-toi.")
+            raise await _mark_reauth(db, conn, EXPIRED)
+        refresh = await _stored(db, conn, conn.refresh_token_encrypted)
         try:
             tokens = await _token_request(client, conn.token_endpoint, {
                 "grant_type": "refresh_token",
-                "refresh_token": decrypt_secret(conn.refresh_token_encrypted),
+                "refresh_token": refresh,
                 "client_id": conn.client_id,
                 "resource": conn.resource_url,
             })
@@ -1610,17 +1649,22 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     # a link made before the daily values were read gets them too), and once
     # more when the nights are still in their pre-2026-10 format, or were
     # written before their stage minutes were read (2026-10-08), or before the
-    # naps that are a night's start were folded into it (2026-10-09)
+    # naps that are a night's start were folded into it (2026-10-09); while it
+    # is owed, it is read whole at most once a (UTC) day, the first sync of the
+    # day: a history COROS keeps cutting short (or never sends) is not 45 calls
+    # every 2 hours; the syncs in between read the last week
     have = (await db.execute(
         select(func.count(HealthMetric.id)).where(
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
             HealthMetric.metric.in_(("hr_day", "steps", "sleep")))
     )).scalar()
-    owed = (conn.last_sync_at is None or not have or conn.last_error in (PARTIAL, HRV_UNREADABLE)
+    owed = (conn.last_sync_at is None or not have or _said(conn.last_error) in (PARTIAL, HRV_UNREADABLE)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=NAPS_FOLDED))
-    days = BACKFILL_DAYS if owed else RECENT_DAYS
+    full = owed and (conn.last_sync_at is None
+                     or _as_utc(conn.last_sync_at).date() < datetime.now(timezone.utc).date())
+    days = BACKFILL_DAYS if full else RECENT_DAYS
     # the sessions' history comes once too: until every piece of it was read, and once more when it was read
     # before their start coordinates were (Santé v4.4)
     activity_days = (ACTIVITY_BACKFILL_DAYS if conn.sessions_synced_at is None
@@ -1676,11 +1720,19 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     result["hrv_unreadable"] = bool(data.get("hrv_unreadable_days"))
     result["sleep_incomplete"] = bool(data.get("overview_failed_days"))
     result["phases_incomplete"] = bool(data.get("daily_incomplete"))
-    result["backfill_partial"] = (bool(data.get("health_stopped")) or result["hrv_incomplete"]
-                                   or result["sleep_incomplete"] or result["phases_incomplete"]) and days == BACKFILL_DAYS
+    # a history cut short (or not understood) earlier, left for the day's whole read: still owed, still said
+    deferred = owed and not full and _said(conn.last_error) in (PARTIAL, HRV_UNREADABLE)
+    result["backfill_partial"] = ((bool(data.get("health_stopped")) or result["hrv_incomplete"]
+                                   or result["sleep_incomplete"] or result["phases_incomplete"])
+                                  and days == BACKFILL_DAYS) or deferred
     logger.info("COROS sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s",
                 conn.user_id, days, calls, failed, ", stopped" if stopped else "", result["by_metric"], sessions)
     return result
+
+
+def _said(error: str | None) -> str | None:
+    """A link's last error as said today (the former wording of PARTIAL read as PARTIAL)."""
+    return PARTIAL if error == _LEGACY_PARTIAL else error
 
 
 async def claim(db: AsyncSession, conn: CorosConnection) -> bool:
@@ -1703,8 +1755,14 @@ async def claim(db: AsyncSession, conn: CorosConnection) -> bool:
 
 
 async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str | None = None) -> dict | None:
-    """Claim, sync, record how it went. None when a sync is already running."""
+    """Claim, sync, record how it went. None when a sync is already running, or when the link is paused (to
+    reconnect, or its tokens unreadable until a key is put back: nothing written then)."""
     if conn.needs_reauth:
+        return None
+    if not tokens_readable(conn):
+        _key_missing(conn)
+        if claimed_at is not None:  # a job queued before: its reservation goes, nothing else
+            await release_reservation(db, conn.id, claimed_at)
         return None
     if claimed_at is None:
         if not await claim(db, conn):
@@ -1732,6 +1790,10 @@ async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str |
         outcome = {"ok": True, "result": result}
     except CorosAuthError as e:
         outcome = {"ok": False, "error": str(e)}
+    except CorosKeyError as e:  # unreadable mid-way: nothing about it is written (no error stored either)
+        _key_missing(conn)
+        await db.rollback()  # lets go of the row lock taken to refresh
+        outcome = {"ok": False, "error": str(e)}
     except (CorosError, httpx.HTTPError) as e:
         logger.warning("COROS sync failed for user %d: %r", conn.user_id, e)
         conn.last_error = str(e) if isinstance(e, CorosError) else "COROS ne répond pas pour l'instant."
@@ -1749,6 +1811,16 @@ async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str |
     return outcome
 
 
+async def release_reservation(db: AsyncSession, conn_id: int, claimed_at: str) -> bool:
+    """Let go of a queued reservation its job never took (the job died before run_sync could consume it). Only
+    that reservation: once taken (its stamp replaced), released, or replaced by a newer one, nothing changes."""
+    res = await db.execute(update(CorosConnection).where(
+        CorosConnection.id == conn_id, CorosConnection.sync_claimed_at == datetime.fromisoformat(claimed_at),
+    ).values(sync_claimed_at=None).execution_options(synchronize_session=False))
+    await db.commit()
+    return res.rowcount == 1
+
+
 async def _release(db: AsyncSession, conn, user_id: int) -> None:
     """Best effort, shielded from the cancellation that called it."""
     try:
@@ -1762,33 +1834,39 @@ async def _release(db: AsyncSession, conn, user_id: int) -> None:
 _pending: set[asyncio.Task] = set()
 
 
-async def _sync_in_background(user_id: int, claimed_at: str | None = None) -> None:
+async def _sync_in_background(user_id: int) -> None:
     from app.database import async_session_factory
 
     async with async_session_factory() as db:
         conn = await connection_for(db, user_id)
         if conn:
-            await run_sync(db, conn, **({"claimed_at": claimed_at} if claimed_at else {}))
+            await queue_sync(db, conn)
 
 
 async def queue_sync(db: AsyncSession, conn: CorosConnection) -> bool:
-    """Reserve before acknowledging a manual refresh, so polling sees this attempt."""
-    if conn.needs_reauth or not await claim(db, conn):
+    """Reserve, then hand the sync to the worker (app.tasks.coros_sync) with the
+    reservation: a web request never runs it (a minute of calls and parsing on
+    the web workers' loop, lost at a deploy). Reserving first lets polling see
+    this attempt. False when it is not reserved (another sync holds it, or the
+    link must be reconnected) or could not be queued (reservation released)."""
+    from app.tasks.coros_sync import sync_coros_user
+
+    if conn.needs_reauth or not tokens_readable(conn) or not await claim(db, conn):
         return False
-    stamp = conn.sync_claimed_at.isoformat()
+    stamp = _as_utc(conn.sync_claimed_at).isoformat()
     try:
-        task = asyncio.get_running_loop().create_task(_sync_in_background(conn.user_id, stamp))
-        _pending.add(task)
-        task.add_done_callback(_pending.discard)
-    except RuntimeError:
-        await _release(db, conn, conn.user_id)
+        await asyncio.to_thread(sync_coros_user.apply_async, args=[conn.id, stamp], retry=False)
+    except Exception:
+        logger.exception("COROS sync could not be queued for user %d", conn.user_id)
+        conn.sync_claimed_at = None
+        await db.commit()
         return False
     return True
 
 
 def schedule_sync(user_id: int) -> bool:
-    """Start a sync in this process without waiting for it (after connecting,
-    on opening Santé). False when syncs are off here."""
+    """Queue a sync without waiting for it (after connecting, on opening
+    Santé). False when syncs are off here."""
     if not settings.COROS_SYNC:
         return False
     try:
@@ -1819,7 +1897,7 @@ async def disconnect(db: AsyncSession, conn: CorosConnection) -> None:
                             "token": decrypt_secret(enc), "token_type_hint": hint, "client_id": conn.client_id})
                         if r.status_code != 200:
                             logger.info("COROS revocation answered %s", r.status_code)
-        except (httpx.HTTPError, ValueError) as e:
+        except (httpx.HTTPError, ValueError, InvalidToken) as e:  # unreadable tokens: nothing to revoke with
             logger.info("COROS revocation failed: %r", e)
     await db.delete(conn)
     await db.flush()
@@ -1834,19 +1912,21 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
         return {"connected": False}
     counts, latest = await _synced_measurements(db, user_id, SOURCE)
     sleep, hrv = latest.get("sleep"), latest.get("hrv")
+    readable = tokens_readable(conn)  # unreadable: « reconnecte-toi », computed here, never stored
+    error = _said(conn.last_error) if readable else EXPIRED
     hrv_note = f"Dernière VFC reçue : {hrv.strftime('%d/%m/%Y')}." if hrv else None
     if sleep and (hrv is None or hrv < sleep):
         hrv_note = f"VFC de la nuit du {sleep.strftime('%d/%m')} pas encore reçue." + (f" {hrv_note}" if hrv_note else "")
     return {
         "connected": True,
-        "needs_reauth": conn.needs_reauth,
+        "needs_reauth": conn.needs_reauth or not readable,
         "last_sync_at": conn.last_sync_at,
         "last_sync_ago": _ago(conn.last_sync_at),
         "syncing": bool((claimed := _as_utc(conn.sync_claimed_at))
                         and datetime.now(timezone.utc) - claimed < CLAIM_TTL),
-        "last_error": conn.last_error,
-        "retryable_partial": conn.last_error in (PARTIAL, HRV_PARTIAL, SLEEP_PARTIAL, PHASES_PARTIAL) and conn.last_sync_at is not None,
-        "partial": conn.last_error in (PARTIAL, HRV_PARTIAL, HRV_UNREADABLE, SLEEP_PARTIAL, PHASES_PARTIAL),
+        "last_error": error,
+        "retryable_partial": error in (PARTIAL, HRV_PARTIAL, SLEEP_PARTIAL, PHASES_PARTIAL) and conn.last_sync_at is not None,
+        "partial": error in (PARTIAL, HRV_PARTIAL, HRV_UNREADABLE, SLEEP_PARTIAL, PHASES_PARTIAL),
         "hrv_note": hrv_note,
         "per_metric": counts,
     }

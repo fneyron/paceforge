@@ -185,8 +185,9 @@ changement de compte et déconnexion. Les API natives y sont simulées : vérifi
   premier plan, au plus toutes les 15 min. Lecture des 7 derniers jours avec
   recouvrement ; historique complet toutes les 6 h. Une tentative partielle
   redevient éligible après 5 min, au prochain retour/ouverture. Un historique
-  incomplet est relu entièrement à la reprise. **Pas de tâche lorsque
-  l’application est fermée**, ni de minuteur de synchronisation en arrière-plan.
+  incomplet est relu entièrement à la reprise. Avec cette option, la
+  synchronisation continue aussi en arrière-plan (section suivante) ; une
+  tentative restée en attente est reprise dès l’ouverture, sans délai de 15 min.
 - Mesures quotidiennes envoyées avant la lecture du sommeil. Les lectures
   natives ont un délai maximal ; un échec n’efface pas les imports confirmés.
   Sur iOS, les cinq catégories d’un jour sont lues en parallèle, puis le jour
@@ -203,15 +204,117 @@ changement de compte et déconnexion. Les API natives y sont simulées : vérifi
   à EXZACT/Senssun n'est supposé. Senssun → Health Connect sur Android reste à
   vérifier sur le téléphone concerné.
 
+## Synchronisation en arrière-plan
+
+Exigence du propriétaire : les pesées de la balance (Senssun Health → Apple Santé)
+et les nuits arrivent dans PaceForge sans ouvrir l’application. Elle suit
+l’interrupteur « Actualisation automatique », une fois le téléphone associé ;
+elle est désactivée avec lui, à la dissociation, si la session du site montre un
+autre compte, à la déconnexion du site et sur un jeton refusé (401, avec la
+demande de reconnexion dans Réglages).
+
+- **iPhone.** Après l’autorisation Apple Santé, l’application enregistre la
+  livraison immédiate en arrière-plan du poids, de la masse grasse et du sommeil
+  (`configureBackgroundTypes`, entitlement
+  `com.apple.developer.healthkit.background-delivery`). iOS réveille alors
+  l’application après une nouvelle pesée ou une nuit enregistrée par une montre ;
+  les observateurs sont réenregistrés nativement à chaque lancement, avant le
+  JavaScript. Il n’y a pas de JavaScript sans écran sur iOS : un réveil lance
+  l’application entière, mais la WebView ne se charge qu’au premier passage au
+  premier plan. HealthKit garde l’application éveillée environ 25 s à partir de
+  son signal, démarrage à froid compris : une fois les réveils regroupés (1,5 s),
+  chaque réveil lit 3 jours et 3 nuits (8 s et 10 s de lecture, 3 s par requête,
+  8 s par envoi) et se termine dans les 14 s qui suivent son arrivée dans le
+  JavaScript. Une synchronisation à la fois : un réveil qui trouve une
+  synchronisation en cours à l’écran l’attend dans ce délai, sinon il est repris
+  dès qu’elle se termine. Une tâche `expo-background-task` (BGProcessingTask,
+  réseau requis, au plus toutes les 60 min) est aussi programmée, mais iOS la lance
+  surtout quand l’iPhone est inactif, le plus souvent verrouillé : elle ne peut
+  alors rien lire et ne garantit aucun rattrapage.
+- **Android.** WorkManager (`expo-background-task`, environ toutes les 60 min)
+  exécute la lecture sans écran, avec la permission
+  `READ_HEALTH_DATA_IN_BACKGROUND`, demandée en activant l’interrupteur.
+  Un jeton de changements Health Connect par catégorie indique ce qui a changé :
+  seules ces catégories sont relues sur 3 jours ; un jeton expiré relit 7 jours ;
+  un refus de quota arrête la lecture jusqu’à l’heure suivante.
+- **Envois.** Un condensat des valeurs déjà envoyées évite les renvois identiques
+  (oublié chaque jour) ; le serveur ignore aussi un renvoi identique, sans
+  changer la version des données de Santé. L’expiration du jeton avance à chaque
+  utilisation, y compris en arrière-plan. Le serveur limite chaque téléphone à
+  200 requêtes par 10 min (429, réessai plus tard) et la taille des envois.
+- **Trousseau.** L’association, son reçu et l’index des plans hors connexion
+  sont lisibles après le premier déverrouillage suivant un redémarrage
+  (`AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`, migration unique des anciens éléments).
+  Un trousseau verrouillé n’est jamais lu comme « non associé », et les plans
+  hors connexion ne sont plus remplacés par une bibliothèque vide.
+
+Limites, sans contournement possible :
+
+- **iPhone verrouillé** : les données Santé sont chiffrées, aucune lecture n’est
+  possible. Le reçu passe « en attente » ; la mesure part au réveil suivant si
+  l’iPhone est alors déverrouillé (nouvelle pesée ou nouvelle nuit), sinon à
+  l’ouverture de l’application.
+- **Application fermée de force** (balayée dans le sélecteur) : iOS ne la réveille
+  plus jusqu’à sa prochaine ouverture.
+- **Mode économie d’énergie, « Actualisation en arrière-plan » désactivée** :
+  iOS peut retarder ou supprimer les réveils, et la tâche périodique peut ne pas
+  s’exécuter.
+- **Avant le premier déverrouillage après un redémarrage** : ni Santé ni le
+  trousseau ne sont lisibles.
+- **Sans réseau** : la lecture a lieu, l’envoi échoue ; HealthKit ne renvoie pas
+  lui-même la notification et rien n’est mis de côté. La mesure part au réveil
+  suivant (iPhone déverrouillé) ou à l’ouverture, pas au retour du réseau.
+- **Android** : économies de batterie du fabricant, Doze et quotas Health Connect
+  en arrière-plan peuvent espacer les lectures.
+
+Après `expo prebuild`, `python3 scripts/check-background-sync.py` vérifie
+l’entitlement, le mode « processing », `BGTaskSchedulerPermittedIdentifiers` et
+la permission Android (la CI le fait). Le profil de provisionnement doit contenir
+l’entitlement de livraison en arrière-plan : le workflow TestFlight fige les
+accès (`--freeze-credentials`), il faut donc régénérer le profil une fois
+(voir `docs/testflight-without-expo-build-quota.md`). La vérification de l’IPA
+s’arrête sinon.
+
+`tests/browser/native/background.cjs` simule un lancement sans écran, des
+réveils groupés, un trousseau verrouillé, un jeton refusé et la déconnexion du
+site (API natives simulées). À vérifier sur appareil, avec la nouvelle build :
+
+1. Pesée Senssun, iPhone déverrouillé, application en arrière-plan : la pesée
+   arrive dans PaceForge (Santé sur le site) sans ouvrir l’application ; noter
+   le délai.
+2. Même pesée, iPhone verrouillé : rien n’est lu ; après déverrouillage, au réveil
+   suivant ou à l’ouverture, la pesée arrive ; Réglages n’affiche jamais
+   « Non connecté ».
+3. Nuit enregistrée par une montre, application non ouverte : la nuit arrive le
+   matin, après la synchronisation de la montre.
+4. Après une fermeture forcée : aucun envoi jusqu’à l’ouverture (limite iOS),
+   puis reprise normale.
+5. En mode économie d’énergie, puis avec l’actualisation en arrière-plan coupée.
+6. En mode avion : pesée lue, envoi en échec ; une fois le réseau revenu, elle
+   part au réveil suivant ou à l’ouverture (aucun envoi au seul retour du réseau).
+7. Après un redémarrage, avant puis après le premier déverrouillage.
+8. Plans hors connexion toujours présents après ces lancements en arrière-plan.
+9. Android : activer l’interrupteur (permission en arrière-plan de Health Connect),
+   pesée Senssun/balance dans Health Connect, application fermée : envoi à la
+   tâche suivante (jusqu’à environ une heure) ; refus de la permission : seule
+   l’actualisation à l’ouverture reste ; mode avion et redémarrage comme sur iPhone.
+
 ## Association au compte
 
 L'utilisateur se connecte au site dans l'application puis confirme le compte.
 Code aléatoire valable 2 minutes, échange unique avec preuve SHA-256 d'un secret
-conservé côté natif (PKCE), jeton limité aux imports et à sa révocation, valable
-180 jours. Seuls les condensats sont conservés en base ; le jeton natif est dans
-SecureStore. Avant chaque lecture/envoi, une page du compte signe implicitement
-son identité via la session HTTPS ; le pont vérifie URL exacte et nonce et refuse
-un compte différent. Aucune donnée ni aucun jeton n'est placé dans une URL.
+conservé côté natif (PKCE), jeton limité aux imports, à sa révocation et à son
+renouvellement, valable 180 jours après sa dernière utilisation. Au premier plan,
+l’application le renouvelle tous les 30 jours ; l’ancien reste valable tant qu’il
+sert encore (7 jours après sa dernière utilisation), jusqu’à la première
+utilisation du nouveau. Seuls les condensats sont conservés
+en base ; le jeton natif est dans SecureStore. Avant chaque lecture/envoi au
+premier plan, une page du compte signe implicitement son identité via la session
+HTTPS ; le pont vérifie URL exacte et nonce et refuse un compte différent. En
+arrière-plan, sans page affichée, seul le jeton du téléphone sert : un autre
+compte constaté au premier plan, une déconnexion du site ou un jeton refusé
+arrêtent la synchronisation en arrière-plan. Aucune donnée ni aucun jeton n'est
+placé dans une URL.
 
 ## Développement et installation
 
@@ -343,6 +446,7 @@ la vérification statique. Ils ne remplacent pas les essais sur appareils réels
 5. Pas provenant de montre + téléphone ; comparer au total de santé du système.
 6. Coupure réseau, révocation depuis le site, retour au premier plan, reprise.
 7. Écran de confidentialité ouvert depuis les permissions Health Connect.
+8. Synchronisation en arrière-plan : liste de la section dédiée.
 
 Le workflow mobile peut être lancé manuellement avec `platform=all`, `android`
 ou `ios`. Il compile un APK Android avec SDK/NDK et/ou une application iOS native

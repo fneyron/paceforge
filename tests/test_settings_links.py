@@ -367,3 +367,29 @@ async def test_the_weight_has_no_helper_and_no_caffeine_line(as_user: AsyncClien
     profile = page.split('<h2 class="pf-h2">Profil</h2>')[1].split("</form>")[0]
     assert 'name="weight_kg"' in profile and "Sert à ta" not in profile and "nutrition" not in page.lower()
     assert "caféine" not in page and "400 mg" not in page and "Plafond de caféine" not in page
+
+
+async def test_a_typed_weight_is_dated_so_it_competes_with_weigh_ins(as_user: AsyncClient, db_session: AsyncSession,
+                                                                    test_user: User):
+    from datetime import timedelta
+
+    from app.models.mobile import MobileDaily
+    from app.services.athlete_weight import athlete_weight
+
+    now = datetime.now(timezone.utc)
+    db_session.add(MobileDaily(user_id=test_user.id, platform="ios", date=now.date(), metric="weight", value=74.0,
+                               sources=["Balance"], measured_at=now - timedelta(days=1)))
+    test_user.weight_kg, test_user.weight_set_at = 72.0, None
+    await db_session.flush()
+    assert (await athlete_weight(db_session, test_user)).kg == 74.0  # an undated typed value loses
+    assert (await as_user.post("/settings", data={"weight_kg": "70,5"})).status_code == 200
+    assert test_user.weight_kg == 70.5 and now - timedelta(minutes=1) < test_user.weight_set_at.replace(
+        tzinfo=timezone.utc) <= datetime.now(timezone.utc)
+    assert (await athlete_weight(db_session, test_user)).kg == 70.5  # typed after the weigh-in: it wins
+    typed_at = test_user.weight_set_at
+    await as_user.post("/settings", data={"weight_kg": "70.5", "health_source": "auto"})  # another field saved
+    assert test_user.weight_set_at == typed_at  # same weight: not typed again
+    assert (await as_user.post("/settings", data={"weight_kg": "250"})).status_code == 422  # the 30–200 kg check
+    assert test_user.weight_kg == 70.5 and test_user.weight_set_at == typed_at
+    await as_user.post("/settings", data={"weight_kg": ""})
+    assert test_user.weight_kg is None and test_user.weight_set_at is None

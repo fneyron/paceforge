@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import math
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -98,7 +100,9 @@ async def save_settings(
     if weight_kg.strip() and (weight is None or not math.isfinite(weight) or not 30 <= weight <= 200):
         ctx = await _settings_context(request, user, db, weight_bad=True)
         return templates.TemplateResponse(request, "settings.html", context=ctx, status_code=422)
-    user.weight_kg = weight
+    if weight != user.weight_kg:  # typed now: dated, so the most recent of it and the weigh-ins wins (athlete_weight)
+        user.weight_kg = weight
+        user.weight_set_at = datetime.now(timezone.utc) if weight is not None else None
     if health_source is not None:
         user.health_source = None if health_source == "auto" else health_source
     ftp_bad = False
@@ -114,8 +118,15 @@ async def save_settings(
     return templates.TemplateResponse(request, "settings.html", context=ctx)
 
 
-# « Synchroniser maintenant », per linked watch (Santé shows no sync status: owner, 2026-10-08)
+# « Synchroniser maintenant », per linked watch (Santé shows no sync status: owner, 2026-10-08). The request only
+# queues the sync for the Celery worker; the state then refreshes itself while it runs (watch_sync_state.html).
 _WATCHES = {"coros": (coros_service, coros_status), "garmin": (garmin_service, garmin_status)}
+_RUNNING = "Synchronisation en cours…"
+
+
+def _coros_msg(w: dict) -> str | None:
+    """While a COROS sync runs, under « Dernière synchro … » (a first sync says it on that line already)."""
+    return _RUNNING if w.get("syncing") and w.get("last_sync_at") else None
 
 
 @router.post("/settings/{watch}/sync", response_class=HTMLResponse)
@@ -125,43 +136,38 @@ async def watch_sync(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Sync one linked watch now; the answer is the new content of its
-    #{watch}-sync-state (partials/watch_sync_state.html): the last sync and how
-    it went. A link that is gone or must be reconnected reloads the page (its
-    block then shows how to reconnect)."""
+    """Queue a sync of one linked watch now; the answer is the new content of
+    its #{watch}-sync-state (partials/watch_sync_state.html): the last sync, how
+    it went, and while the worker runs it, a state polling itself (GET below).
+    A link that is gone or must be reconnected reloads the page (its block then
+    shows how to reconnect)."""
     if watch not in _WATCHES:
         return HTMLResponse("", status_code=404)
     service, status_of = _WATCHES[watch]
     conn = await service.connection_for(db, user.id)
-    if conn is None or conn.needs_reauth:
+    if conn is None or conn.needs_reauth or (watch == "coros" and not coros_service.tokens_readable(conn)):
         return HTMLResponse("", headers={"HX-Refresh": "true"})
-    if watch == "garmin":
-        await garmin_service.queue_sync(db, conn)
-        return templates.TemplateResponse(request, "partials/watch_sync_state.html", context={
-            "request": request, "w": await garmin_status(db, user.id), "key": watch})
-    outcome = await service.run_sync(db, conn)
-    if conn.needs_reauth:  # refused while syncing: reconnect
-        return HTMLResponse("", headers={"HX-Refresh": "true"})
-    if outcome is None:
-        msg = "Une synchro est déjà en cours : réessaie dans une minute."
-    elif outcome.get("ok"):
-        res = outcome.get("result") or {}
-        msg = ("Synchro faite : tes nouvelles données sont dans Santé." if res.get("inserted") or res.get("updated")
-               else "Synchro faite : rien de nouveau.")
-    else:
-        msg = None  # « Dernière synchro échouée : … » says it
+    queued = await service.queue_sync(db, conn)
+    w = await status_of(db, user.id)
+    msg = None
+    if watch == "coros":
+        msg = (_coros_msg(w) if queued else "Une synchro est déjà en cours : réessaie dans une minute."
+               if w["syncing"] else "La synchro n'a pas pu démarrer. Réessaie dans un instant.")
     return templates.TemplateResponse(request, "partials/watch_sync_state.html", context={
-        "request": request, "w": await status_of(db, user.id), "key": watch, "msg": msg})
+        "request": request, "w": w, "key": watch, "msg": msg})
 
 
-@router.get("/settings/garmin/sync", response_class=HTMLResponse)
-async def garmin_sync_state(request: Request, user: User = Depends(get_current_user),
-                            db: AsyncSession = Depends(get_db)):
-    status = await garmin_status(db, user.id)
+@router.get("/settings/{watch}/sync", response_class=HTMLResponse)
+async def watch_sync_state(watch: str, request: Request, user: User = Depends(get_current_user),
+                           db: AsyncSession = Depends(get_db)):
+    """The state a queued sync's block polls (every 3 s) until the worker is done."""
+    if watch not in _WATCHES:
+        return HTMLResponse("", status_code=404)
+    status = await _WATCHES[watch][1](db, user.id)
     if not status["connected"] or status["needs_reauth"]:
         return HTMLResponse("", headers={"HX-Refresh": "true"})
     return templates.TemplateResponse(request, "partials/watch_sync_state.html", context={
-        "request": request, "w": status, "key": "garmin"})
+        "request": request, "w": status, "key": watch, "msg": _coros_msg(status) if watch == "coros" else None})
 
 
 def _to_float(raw: str) -> float | None:
@@ -188,6 +194,37 @@ async def strava_disconnect(
     return RedirectResponse(url="/connections/strava" if next == "devices" else "/settings#strava", status_code=303)
 
 
+REVOKE_TIMEOUT_S = 8  # per provider: a deletion never waits long on one that does not answer
+
+
+async def _revoke_links(db: AsyncSession, user: User) -> None:
+    """Before an account's rows go, best effort and time-bounded: PaceForge's
+    access revoked at Strava (deauthorize, and the athlete's own app's webhook
+    deleted) and at COROS, the Garmin link forgotten (Garmin has no
+    revocation). A provider that fails or does not answer in time never stops
+    the deletion: the session is then rolled back to a clean state (nothing is
+    deleted yet), the explicit deletions follow."""
+    user_id = user.id
+    steps = []
+    if user.has_strava_linked or user.strava_webhook_subscription_id:
+        steps.append(("Strava", lambda: strava_disconnect_link(db, user)))
+    coros_conn = await coros_service.connection_for(db, user_id)
+    if coros_conn is not None:
+        steps.append(("COROS", lambda: coros_service.disconnect(db, coros_conn)))
+    garmin_conn = await garmin_service.connection_for(db, user_id)
+    if garmin_conn is not None:
+        steps.append(("Garmin", lambda: garmin_service.disconnect(db, garmin_conn)))
+    clean = True
+    for name, step in steps:
+        try:
+            await asyncio.wait_for(step(), REVOKE_TIMEOUT_S)
+        except Exception:  # a timeout included
+            clean = False
+            logger.warning("Account deletion of user %d: %s link not revoked", user_id, name, exc_info=True)
+    if not clean:
+        await db.rollback()
+
+
 @router.post("/settings/delete-account")
 async def delete_account(
     request: Request,
@@ -203,18 +240,21 @@ async def delete_account(
         return templates.TemplateResponse(request, "settings.html", context=ctx)
 
     user_id = user.id
-    logger.warning("User %d (%s) requested account deletion", user_id, user.email)
+    logger.warning("User %d requested account deletion", user_id)
+    await _revoke_links(db, user)
 
-    # Delete all user data (cascades handle most, but be explicit)
+    # Delete all user data, explicitly: the database's cascades are not relied on (SQLite has none by default)
     from app.models.analysis import Analysis
     from app.models.chat_message import ChatMessage
     from app.models.coros import CorosConnection
     from app.models.garmin import GarminConnection
     from app.models.generated_plan import GeneratedPlan
     from app.models.health import HealthMetric, HealthSample
+    from app.models.lactate import LactateTest
+    from app.models.mobile import MobileDaily, MobileDevice
     from app.models.nutrition import NutritionProduct
     from app.models.oauth_attempt import OAuthAttempt
-    from app.models.route import Route
+    from app.models.route import Route, RouteCheckpoint, Simulation
     from app.models.weekly_digest import WeeklyDigest
 
     # Delete in order (foreign key constraints)
@@ -226,6 +266,9 @@ async def delete_account(
     await db.execute(delete(Activity).where(Activity.user_id == user_id))
     await db.execute(delete(ChatMessage).where(ChatMessage.user_id == user_id))
     await db.execute(delete(GeneratedPlan).where(GeneratedPlan.user_id == user_id))
+    routes = select(Route.id).where(Route.user_id == user_id)
+    await db.execute(delete(RouteCheckpoint).where(RouteCheckpoint.route_id.in_(routes)))
+    await db.execute(delete(Simulation).where((Simulation.user_id == user_id) | Simulation.route_id.in_(routes)))
     await db.execute(delete(Route).where(Route.user_id == user_id))
     await db.execute(delete(WeeklyDigest).where(WeeklyDigest.user_id == user_id))
     await db.execute(delete(HealthSample).where(HealthSample.user_id == user_id))
@@ -234,6 +277,9 @@ async def delete_account(
     await db.execute(delete(GarminConnection).where(GarminConnection.user_id == user_id))
     await db.execute(delete(NutritionProduct).where(NutritionProduct.user_id == user_id))
     await db.execute(delete(OAuthAttempt).where(OAuthAttempt.user_id == user_id))
+    await db.execute(delete(MobileDaily).where(MobileDaily.user_id == user_id))
+    await db.execute(delete(MobileDevice).where(MobileDevice.user_id == user_id))
+    await db.execute(delete(LactateTest).where(LactateTest.user_id == user_id))
     await db.execute(delete(User).where(User.id == user_id))
     await db.flush()
 

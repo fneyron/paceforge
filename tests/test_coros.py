@@ -9,8 +9,10 @@ import importlib.util
 import json
 import pathlib
 import re
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -487,6 +489,27 @@ async def as_user(client: AsyncClient, test_user: User, no_commit):
         yield c
 
 
+@pytest.fixture
+def queued(monkeypatch) -> list:
+    """The syncs queued for the worker (app.tasks.coros_sync), instead of a broker."""
+    from app.tasks.coros_sync import sync_coros_user
+
+    jobs: list = []
+    monkeypatch.setattr(sync_coros_user, "apply_async", lambda *, args, retry: jobs.append(args))
+    return jobs
+
+
+async def _work(db: AsyncSession, job: list):
+    """What the worker does with a queued job, on the test's session."""
+    from app.tasks import coros_sync
+
+    @asynccontextmanager
+    async def session():
+        yield db
+    with patch("app.database.get_task_session", session):
+        return await coros_sync._run_one(*job)
+
+
 async def _link(db: AsyncSession, user: User, access="at-1", refresh="rt-1", expires_in=timedelta(days=30),
                 **extra) -> CorosConnection:
     conn = CorosConnection(
@@ -664,6 +687,7 @@ async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, tes
     fake.tool_calls.clear()
     fake.max_days.clear()  # finish the historical daily details before moving to the recent week
     fake.sse = True  # same answers as server-sent events
+    conn.last_sync_at -= timedelta(days=1)  # the next day: the history owed is read whole again
     outcome = await coros.run_sync(db_session, conn)
     assert outcome["ok"] and outcome["result"]["inserted"] == 0 and outcome["result"]["updated"] == 0
     assert [a for nm, a in fake.tool_calls if nm == "queryAvgHeartRate"] == [{"days": 60}]
@@ -841,6 +865,7 @@ async def test_coros_going_down_mid_sync_keeps_the_nights(db_session: AsyncSessi
 
     fake.timeouts, fake.tool_status = set(), {}
     before = len(fake.tool_calls)
+    conn.last_sync_at -= timedelta(days=1)  # the next day: the history owed is read whole again
     assert (await coros.run_sync(db_session, conn))["ok"]
     again = fake.tool_calls[before:]
     assert {"days": 60} in [a for n, a in again if n == "queryAvgHeartRate"]  # the whole history
@@ -916,6 +941,7 @@ async def test_persistent_sleep_failure_preserves_values_and_is_retryable_partia
     before = await _values(db_session, test_user)
     if backfill:
         conn.last_error = coros.PARTIAL  # an unfinished historical import is still owed
+        conn.last_sync_at -= timedelta(days=1)  # the next day: the history owed is read whole again
     fake.tool_status["querySleepOverview"] = 503
     fake.tool_calls.clear()
     result = await coros.run_sync(db_session, conn)
@@ -929,6 +955,9 @@ async def test_persistent_sleep_failure_preserves_values_and_is_retryable_partia
     status = await coros.coros_status(db_session, test_user.id)
     assert status["partial"] and status["retryable_partial"] and status["last_sync_at"] is not None
     fake.tool_status.clear()
+    if backfill:  # the history still owed comes with the next day's whole read, never a week's read
+        assert (await coros.run_sync(db_session, conn))["ok"] and conn.last_error == coros.PARTIAL
+        conn.last_sync_at -= timedelta(days=1)
     assert (await coros.run_sync(db_session, conn))["ok"]
     assert conn.last_error is None  # a later successful read clears the partial failure
 
@@ -1079,7 +1108,7 @@ async def test_routes_require_login(client: AsyncClient):
 
 
 async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, db_session: AsyncSession,
-                                                         test_user: User, fake):
+                                                         test_user: User, fake, queued):
     page = (await as_user.get("/settings")).text
     assert "Tes nuits et tes activités arrivent automatiquement depuis ta montre COROS." in page
     assert 'href="/sante"' in page
@@ -1098,11 +1127,17 @@ async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, d
             'hx-swap="innerHTML"') in block and "hx-indicator" not in block and "hx-disabled-elt" not in block
     assert block.index("coros-sync-state") < block.index("coros-sync-btn") and "Synchroniser maintenant" in block
     r = await as_user.post("/settings/coros/sync")
-    assert r.status_code == 200 and "HX-Refresh" not in r.headers
-    assert "Dernière synchro <b class=\"text-gray-700\">à l&#39;instant</b>" in r.text
-    assert "Synchro faite : tes nouvelles données sont dans Santé." in r.text and "<button" not in r.text
+    assert r.status_code == 200 and "HX-Refresh" not in r.headers and "<button" not in r.text
+    # the request only queues it (the worker syncs) and the state follows it until it is done
+    assert len(queued) == 1 and not fake.tool_calls
+    assert 'hx-get="/settings/coros/sync" hx-trigger="every 3s"' in r.text and "Première synchro en cours…" in r.text
+    assert (await _work(db_session, queued.pop()))["ok"]
+    r = await as_user.get("/settings/coros/sync")
+    assert "Dernière synchro <b class=\"text-gray-700\">à l&#39;instant</b>" in r.text and "every 3s" not in r.text
     r = await as_user.post("/settings/coros/sync")
-    assert "Synchro faite : rien de nouveau." in r.text
+    assert "Synchronisation en cours…" in r.text and 'hx-trigger="every 3s"' in r.text
+    assert (await _work(db_session, queued.pop()))["ok"]
+    assert "Synchronisation en cours…" not in (await as_user.get("/settings/coros/sync")).text
     settings_page = (await as_user.get("/settings")).text
     assert "Dernière synchro" in settings_page and settings_page.count("Synchroniser maintenant") == 1
     # a Santé page left open since v4 still posts /sante/sync: harmless, it reloads (without the button)
@@ -1125,7 +1160,7 @@ async def test_link_made_before_the_daily_values_backfills_them(db_session: Asyn
                                                                 fake, no_commit):
     """A link that already has its nights (synced before the daily values were
     read) gets the 60 days of load, steps… once."""
-    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=7))
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(days=1))
     db_session.add(HealthSample(user_id=test_user.id, metric="hrv", kind="", source="COROS", value=80,
                                 start_at=datetime.now() - timedelta(days=3), end_at=datetime.now() - timedelta(days=3)))
     await db_session.flush()
@@ -1176,7 +1211,7 @@ def test_migration_is_the_head_and_round_trips():
 
 async def test_sync_backfills_again_while_no_daily_value_arrived(db_session: AsyncSession, test_user: User, fake, no_commit):
     conn = await _link(db_session, test_user)
-    conn.last_sync_at = datetime.now(timezone.utc) - timedelta(hours=7)  # synced once, but read nothing
+    conn.last_sync_at = datetime.now(timezone.utc) - timedelta(days=1)  # synced once, but read nothing
     await db_session.flush()
     outcome = await coros.run_sync(db_session, conn)
     assert outcome["ok"], outcome
@@ -1317,6 +1352,7 @@ async def test_daily_backfill_fallback_keeps_old_phases_but_history_stays_owed(d
     row = await _latest_sleep(db_session, test_user, old_day)
     original = dict(row.details)
     conn.last_error = coros.PARTIAL
+    conn.last_sync_at -= timedelta(days=1)  # the next day: the history owed is read whole again
     fake.max_days["queryDailyHealthData"] = 7
     raw_call = coros.McpSession.call_tool
 
@@ -1331,6 +1367,7 @@ async def test_daily_backfill_fallback_keeps_old_phases_but_history_stays_owed(d
     assert row.details == original and conn.last_error == coros.PARTIAL
     assert [a["days"] for n, a in fake.tool_calls if n == "queryDailyHealthData"] == [60, 7]
     fake.max_days.clear(); fake.tool_calls.clear()
+    conn.last_sync_at -= timedelta(days=1)  # the next day: the history owed is read whole again
     assert (await coros.run_sync(db_session, conn))["ok"]
     assert [a["days"] for n, a in fake.tool_calls if n == "queryDailyHealthData"] == [60]
     assert conn.last_error is None
@@ -1365,7 +1402,7 @@ async def test_nights_written_before_the_stages_are_read_again_once(db_session: 
     more, then a week again: the owner's nights get their stages."""
     from app.services.health import STAGES_READ, nights_upgraded
 
-    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=3))
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(days=1))
     today = datetime.now(timezone.utc).date()
     for k in (1, 2):
         d = today - timedelta(days=k)
@@ -1385,17 +1422,19 @@ async def test_nights_written_before_the_stages_are_read_again_once(db_session: 
 
 
 async def test_reglages_sync_says_what_went_wrong(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
-                                                  fake):
+                                                  fake, queued):
     conn = await _link(db_session, test_user)
     fake.mcp_status = 503
     r = await as_user.post("/settings/coros/sync")
     assert "HX-Refresh" not in r.headers
+    assert (await _work(db_session, queued.pop()))["ok"] is False
+    r = await as_user.get("/settings/coros/sync")
     assert "Dernière synchro échouée : COROS ne répond pas pour l&#39;instant (erreur 503)." in r.text
     fake.mcp_status = None
     conn.sync_claimed_at = datetime.now(timezone.utc)  # another worker is on it
     await db_session.flush()
     r = await as_user.post("/settings/coros/sync")
-    assert "Une synchro est déjà en cours : réessaie dans une minute." in r.text
+    assert "Une synchro est déjà en cours : réessaie dans une minute." in r.text and not queued
     conn.sync_claimed_at = None
     conn.needs_reauth = True  # to reconnect: the whole block changes (its reconnect button), the page reloads
     await db_session.flush()
@@ -1403,3 +1442,234 @@ async def test_reglages_sync_says_what_went_wrong(as_user: AsyncClient, db_sessi
     assert r.headers.get("HX-Refresh") == "true"
     page = (await as_user.get("/settings")).text
     assert "À reconnecter" in page and "coros-sync-btn" not in page
+
+
+# ── real commits (savepoint-bound session: no commit swapped for flush) ─────
+
+async def test_a_rotated_refresh_token_survives_a_later_rollback(committing_session: AsyncSession, fake):
+    """COROS rotates the refresh token on each use (the old one is then dead): the new pair is committed at
+    once, so a sync that fails afterwards and rolls back never loses it."""
+    db = committing_session
+    user = User(email="rotate@x.fr")
+    db.add(user)
+    await db.commit()
+    conn = await _link(db, user, expires_in=timedelta(hours=2))  # < 1 day left: refreshed
+    await db.commit()
+    async with coros.http_client() as client:
+        assert await coros.access_token(db, conn, client) == "at-2"
+    conn.last_error = "écrit puis annulé"
+    await db.rollback()  # what a crashed sync does next
+    await db.refresh(conn)
+    assert conn.last_error is None
+    assert decrypt_secret(conn.refresh_token_encrypted) == "rt-2" and decrypt_secret(conn.access_token_encrypted) == "at-2"
+
+
+async def test_a_missing_key_pauses_the_link_without_damage_and_putting_it_back_recovers_it(
+        as_user: AsyncClient, db_session: AsyncSession, test_user: User, fake, monkeypatch, queued, caplog):
+    """Tokens no configured key decrypts (a key dropped from ENCRYPTION_KEYS): nothing is written about it (no
+    « to reconnect » flag, no error stored, tokens kept); the link is skipped with an ERROR in the logs and shows
+    « reconnecte-toi » meanwhile, computed when read. The key back, it syncs at once: no reconnecting."""
+    import logging
+
+    from cryptography.fernet import Fernet
+
+    from app.config import settings
+
+    key = Fernet.generate_key().decode()
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", key)
+    conn = await _link(db_session, test_user)  # tokens written under that key
+    stored = (conn.access_token_encrypted, conn.refresh_token_encrypted)
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", "")  # a deploy without it
+    caplog.set_level(logging.ERROR)
+    assert await coros.run_sync(db_session, conn) is None  # the hourly round: skipped
+    assert "no configured key decrypts" in caplog.text and not fake.tool_calls and not fake.token_calls
+    assert not await coros.queue_sync(db_session, conn) and not queued  # never queued meanwhile
+    await db_session.refresh(conn)
+    assert (conn.needs_reauth, conn.last_error, conn.sync_claimed_at) == (False, None, None)  # nothing persisted
+    assert (conn.access_token_encrypted, conn.refresh_token_encrypted) == stored
+    status = await coros.coros_status(db_session, test_user.id)
+    assert status["needs_reauth"] and status["last_error"] == coros.EXPIRED  # computed when read
+    page = (await as_user.get("/settings")).text
+    assert "À reconnecter" in page and "Reconnecter" in page and "coros-sync-btn" not in page
+    assert (await as_user.post("/settings/coros/sync")).headers.get("HX-Refresh") == "true"
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", key)  # the key back
+    assert not (await coros.coros_status(db_session, test_user.id))["needs_reauth"]
+    assert (await coros.run_sync(db_session, conn))["ok"] and fake.tool_calls
+    assert conn.last_sync_at is not None and not conn.needs_reauth
+
+
+async def test_a_link_no_key_reads_can_still_be_disconnected(as_user: AsyncClient, db_session: AsyncSession,
+                                                             test_user: User, fake):
+    from cryptography.fernet import Fernet
+
+    conn = await _link(db_session, test_user)
+    other = Fernet(Fernet.generate_key())
+    conn.access_token_encrypted, conn.refresh_token_encrypted = other.encrypt(b"at-1"), other.encrypt(b"rt-1")
+    await db_session.flush()
+    r = await as_user.post("/settings/coros/disconnect")
+    assert r.status_code == 303 and not fake.revoked  # nothing to revoke with: just forgotten
+    assert (await db_session.get(CorosConnection, conn.id)) is None
+
+
+# ── syncs run by the worker, never by a web request ─────────────────────────
+
+async def test_a_queued_sync_runs_once_in_the_worker(db_session: AsyncSession, test_user: User, fake, no_commit,
+                                                     queued):
+    conn = await _link(db_session, test_user)
+    assert await coros.queue_sync(db_session, conn)
+    assert len(queued) == 1 and queued[0][0] == conn.id and not fake.tool_calls
+    assert (await coros.coros_status(db_session, test_user.id))["syncing"]  # polling sees this attempt at once
+    assert not await coros.queue_sync(db_session, conn) and len(queued) == 1  # reserved: not queued twice
+    job = queued.pop()
+    assert (await _work(db_session, job))["ok"] and fake.tool_calls
+    assert conn.sync_claimed_at is None and conn.last_sync_at is not None
+    calls = len(fake.tool_calls)
+    assert await _work(db_session, job) is None and len(fake.tool_calls) == calls  # a redelivery does nothing
+
+
+async def test_a_sync_that_cannot_be_queued_lets_go_and_says_so(as_user: AsyncClient, db_session: AsyncSession,
+                                                                test_user: User, fake, monkeypatch):
+    from app.tasks.coros_sync import sync_coros_user
+
+    def unavailable(**kwargs):
+        raise ConnectionError("broker unavailable")
+    monkeypatch.setattr(sync_coros_user, "apply_async", unavailable)
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc), last_error=coros.PARTIAL)
+    r = await as_user.post("/settings/coros/sync")
+    assert "La synchro n&#39;a pas pu démarrer. Réessaie dans un instant." in r.text and "every 3s" not in r.text
+    assert conn.sync_claimed_at is None and conn.last_error == coros.PARTIAL and not fake.tool_calls
+
+
+async def test_connecting_or_opening_sante_queues_the_sync_for_the_worker(db_session: AsyncSession, test_user: User,
+                                                                         fake, no_commit, queued, monkeypatch):
+    import asyncio
+
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "COROS_SYNC", True)
+    conn = await _link(db_session, test_user)
+
+    @asynccontextmanager
+    async def session():
+        yield db_session
+    monkeypatch.setattr("app.database.async_session_factory", session)
+    assert coros.schedule_sync(test_user.id)
+    await asyncio.gather(*list(coros._pending))
+    assert len(queued) == 1 and conn.sync_claimed_at is not None and not fake.tool_calls
+
+
+# ── a history that keeps failing: read whole at most once a day ─────────────
+
+def _asked(fake: FakeCoros, tool: str) -> list:
+    return [a for n, a in fake.tool_calls if n == tool]
+
+
+async def test_a_history_cut_short_is_read_whole_once_a_day_and_stays_owed(db_session: AsyncSession, test_user: User,
+                                                                           fake, no_commit):
+    """COROS cutting every 60-day read short (its daily answer refused beyond a week) used to make every sync,
+    every 2 hours, a 60-day read (45 calls). Now: the 60 days once a day, the last week in between, and the
+    history stays owed until it has arrived."""
+    fake.max_days = {"queryDailyHealthData": 7}
+    conn = await _link(db_session, test_user)
+    assert (await coros.run_sync(db_session, conn))["ok"]  # the first sync: the 60 days, cut short
+    assert len(_asked(fake, "querySleepHrv")) == 9 and conn.last_error == coros.PARTIAL
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"]  # 2 hours later, the same day: the last week only
+    assert len(_asked(fake, "querySleepHrv")) == 1 and _asked(fake, "queryAvgHeartRate") == [{"days": 7}]
+    assert conn.last_error == coros.PARTIAL  # still owed, still said
+    fake.tool_calls.clear()
+    conn.last_sync_at -= timedelta(days=1)  # the next day: the 60 days again, still cut short
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert len(_asked(fake, "querySleepHrv")) == 9 and conn.last_error == coros.PARTIAL
+    fake.max_days.clear()
+    fake.tool_calls.clear()
+    conn.last_sync_at -= timedelta(days=1)  # COROS answers again: the history arrives, nothing is owed
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert len(_asked(fake, "querySleepHrv")) == 9 and conn.last_error is None
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert len(_asked(fake, "querySleepHrv")) == 1 and conn.last_error is None
+
+
+async def test_an_hrv_format_not_understood_is_not_a_60_day_read_every_sync(db_session: AsyncSession,
+                                                                             test_user: User, fake, no_commit):
+    conn = await _link(db_session, test_user)
+    fake.texts["querySleepHrv"] = fake.texts["querySleepHrv"].replace("Sleep HRV Time Series", "Sleep HRV Readings")
+    assert (await coros.run_sync(db_session, conn))["ok"] and conn.last_error == coros.HRV_UNREADABLE
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"]  # the same day
+    assert [a["days"] for a in _asked(fake, "querySleepHrv")] == [7, 2] and conn.last_error == coros.HRV_UNREADABLE
+
+
+async def test_the_pkce_verifier_is_not_readable_in_the_session_cookie(as_user: AsyncClient, fake):
+    """The session cookie is signed, not encrypted: the code verifier (the proof that this browser started the
+    link) is kept in it encrypted, for 10 minutes."""
+    r = await as_user.get("/coros/connect")
+    challenge = parse_qs(urlsplit(r.headers["location"]).query)["code_challenge"][0]
+    cookie = as_user.cookies.get("paceforge_session")
+    pending = json.loads(base64.b64decode(cookie.split(".")[0]))["coros_oauth"]
+    stored = pending["verifier"]
+    assert base64.urlsafe_b64encode(hashlib.sha256(stored.encode()).digest()).rstrip(b"=").decode() != challenge
+    assert decrypt_secret(stored.encode()) and len(stored) > 100
+
+
+async def test_a_connect_left_for_more_than_10_minutes_starts_again(as_user: AsyncClient, db_session: AsyncSession,
+                                                                    fake, monkeypatch):
+    from app.routers import coros as coros_router
+
+    state = await _authorize(as_user, fake)
+    monkeypatch.setattr(coros_router, "_PENDING_TTL_S", -1)  # its encrypted verifier is now too old
+    r = await as_user.get(f"/coros/callback?code=the-code&state={state}")
+    assert r.status_code == 303 and not fake.token_calls
+    assert "La connexion à COROS a expiré. Réessaie." in (await as_user.get("/settings")).text
+    assert (await db_session.execute(select(CorosConnection))).scalar_one_or_none() is None
+
+
+async def test_a_job_that_dies_before_its_sync_lets_go_of_the_reservation(db_session: AsyncSession, test_user: User,
+                                                                          fake, no_commit, queued):
+    """No database for the job's own session (or any crash before run_sync takes the reservation): the link is not
+    left « en cours » for the claim's 15 minutes. Only that job's reservation goes, never a newer one."""
+    from sqlalchemy.exc import OperationalError
+
+    from app.tasks import coros_sync
+
+    conn = await _link(db_session, test_user)
+    assert await coros.queue_sync(db_session, conn)
+    job = queued.pop()
+    sessions = []
+
+    @asynccontextmanager
+    async def first_one_fails():
+        sessions.append(1)
+        if len(sessions) == 1:
+            raise OperationalError("connect", None, ConnectionRefusedError())
+        yield db_session
+    with patch("app.database.get_task_session", first_one_fails), pytest.raises(OperationalError):
+        await coros_sync._run_one(*job)
+
+    async def claimed():
+        return (await db_session.execute(select(CorosConnection.sync_claimed_at)
+                                         .where(CorosConnection.id == conn.id))).scalar_one()
+    assert await claimed() is None and not fake.tool_calls
+    await db_session.refresh(conn)
+    assert await coros.queue_sync(db_session, conn)  # pressed again: a new reservation
+    newer = queued.pop()
+    sessions.clear()
+    with patch("app.database.get_task_session", first_one_fails), pytest.raises(OperationalError):
+        await coros_sync._run_one(*job)  # the old job, delivered again, dies again
+    assert await claimed() is not None  # the newer reservation is kept
+    assert (await _work(db_session, newer))["ok"]
+
+
+async def test_a_link_still_holding_the_former_partial_wording_stays_owed(db_session: AsyncSession, test_user: User,
+                                                                          fake, no_commit):
+    """« …arrive à la prochaine synchro » is no longer true (the whole history comes with the next day's first
+    sync): said anew, and the rows written with the former wording are still read as an owed history."""
+    former = "COROS a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc), last_error=former)
+    status = await coros.coros_status(db_session, test_user.id)
+    assert status["last_error"] == coros.PARTIAL and status["partial"] and status["retryable_partial"]
+    assert coros.PARTIAL.endswith("le reste de ton historique arrive avec la synchro complète de demain.")
+    assert (await coros.run_sync(db_session, conn))["ok"]  # the same day: the last week only, still owed
+    assert [a for n, a in fake.tool_calls if n == "queryAvgHeartRate"] == [{"days": 7}]
+    assert conn.last_error == coros.PARTIAL

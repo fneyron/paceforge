@@ -251,6 +251,7 @@ node tests/browser/refresh.cjs
 node tests/browser/native/build.cjs
 node tests/browser/native/check.cjs
 node tests/browser/native/offline.cjs
+node tests/browser/native/background.cjs
 ```
 
 `PF_PREVIEW_URL`, `PF_PREVIEW_OUTPUT`, `NATIVE_PREVIEW_BUNDLE` permettent de changer

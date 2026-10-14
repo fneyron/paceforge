@@ -21,7 +21,8 @@
         "android.permission.health.READ_BODY_FAT",
         "android.permission.health.READ_STEPS",
         "android.permission.health.READ_HEART_RATE",
-        "android.permission.health.READ_RESPIRATORY_RATE"
+        "android.permission.health.READ_RESPIRATORY_RATE",
+        "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -51,11 +52,12 @@
         {
           "NSHealthShareUsageDescription": "PaceForge lit les données que tu autorises : sommeil, variabilité et fréquence cardiaques, respiration, poids, masse grasse et pas, pour afficher tes tendances de santé et estimer ta récupération dans ton compte.",
           "NSHealthUpdateUsageDescription": "PaceForge utilise Apple Santé pour ton suivi du sommeil, de la récupération et des mesures quotidiennes. Cette version consulte tes données sans en ajouter ni les modifier.",
-          "background": false
+          "background": true
         }
       ],
       "react-native-health-connect",
-      "./plugins/with-health-connect"
+      "./plugins/with-health-connect",
+      "expo-background-task"
     ],
     "extra": {
       "eas": {

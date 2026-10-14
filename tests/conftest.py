@@ -191,3 +191,76 @@ def same_today(monkeypatch):
         return day
     monkeypatch.setattr(sante_training, "athlete_today", today)
     return day
+
+
+# ── a session whose commit and rollback really run ──────────────────────────
+# The fixtures above swap `commit` for `flush` in many tests, so code that must
+# really commit (a rotated token kept through a later rollback, an account
+# deletion) is tested with these: every commit releases a SAVEPOINT inside one
+# outer transaction, which is rolled back when the test ends. Foreign keys are
+# enforced, as on PostgreSQL (the shared test.db leaves them off).
+
+@pytest.fixture(scope="session")
+async def savepoint_engine():
+    from sqlalchemy import event
+    from sqlalchemy.pool import StaticPool
+
+    eng = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
+
+    @event.listens_for(eng.sync_engine, "connect")
+    def _connect(dbapi_connection, _record):
+        # SQLAlchemy emits BEGIN and SAVEPOINT itself (the driver's own transaction handling breaks savepoints)
+        dbapi_connection.isolation_level = None
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    @event.listens_for(eng.sync_engine, "begin")
+    def _begin(conn):
+        conn.exec_driver_sql("BEGIN")
+
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield eng
+    await eng.dispose()
+
+
+@pytest.fixture
+async def committing_session(savepoint_engine) -> AsyncGenerator[AsyncSession, None]:
+    """A session bound to one outer transaction: its commit and rollback work for real (savepoints), and
+    nothing outlives the test."""
+    async with savepoint_engine.connect() as conn:
+        outer = await conn.begin()
+        session = AsyncSession(bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint")
+        try:
+            yield session
+        finally:
+            await session.close()
+            await outer.rollback()
+
+
+@pytest.fixture
+async def committing_client(committing_session: AsyncSession):
+    """The app on `committing_session`, committed at the end of each request as get_db does."""
+    app = create_app()
+
+    async def override_get_db():
+        try:
+            yield committing_session
+            await committing_session.commit()
+        except Exception:
+            await committing_session.rollback()
+            raise
+
+    app.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as c:
+        yield c
+
+
+@pytest.fixture(autouse=True)
+def _rate_limits_in_memory(monkeypatch):
+    """The login, sign-up and reset counters in this process, fresh for each test (production keeps them in
+    Redis, shared by the web workers)."""
+    from app.services import auth
+
+    monkeypatch.setattr(auth, "_counter", auth.MemoryCounter())
