@@ -85,9 +85,12 @@ def test_sdnn_progress_matches_its_fourteen_night_reference(count, in_baseline, 
                    for i in range(first, first + 20)})
     day = sante._assess(nights, [], [], D)
     card = sante._night_card(nights, "hrv", D, day)
+    # 14 nights up to this morning: the card draws a dashed band from them while the lagged reference builds
+    # (nights.drawn_band, 2026-10-14), its detail says so
+    detail = "Référence provisoire : 14 nuits mesurées." if count >= 14 and remaining else None
     assert card["reference"] == {"n": in_baseline, "required": 14, "remaining": remaining,
                                  "provisional": False, "ready": remaining == 0,
-                                 "source": "Apple Santé · SDNN", "detail": None,
+                                 "source": "Apple Santé · SDNN", "detail": detail,
                                  "label": f"Référence · {in_baseline} nuits" if remaining == 0
                                  else f"Référence · {in_baseline}/14 nuits"}
     assert card["measurement"]["source"] == "Apple Santé · SDNN"

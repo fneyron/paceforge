@@ -549,7 +549,9 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     nights with a few dots against the right edge. Each day's band is the
     usual values its 7-night mean is read against (nights.normal: the nights
     from that day − 67 to − 8, on the series the mean reads: one baseline for
-    the card, its status line and the state, drawn ± T·σ̂: _drawn), its status
+    the card, its status line and the state, drawn ± T·σ̂: _drawn; a series
+    younger than that window draws its provisional band from the 60 nights
+    before the day, dashed, never read: nights.drawn_band), its status
     line opens the card (card_status). Every measured
     night is a filled dot (each one counts: owner, 2026-10-08), a night
     without a measure draws nothing; the provisional band is dashed; the
@@ -565,7 +567,7 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     averages = [nt.mean7(nights, metric, d) or {} for d in days]
     bands, prov = [], []
     for d in days:
-        b = nt.normal(nights, metric, d)
+        b = nt.drawn_band(nights, metric, d)  # the lagged baseline, else a young series' provisional one
         bands.append(_drawn(b, metric, (nt.trend(nights, metric, d) or {}).get("T")))
         prov.append(bool(b and b["provisional"]))
     means = [m.get("value") for m in averages]
@@ -597,6 +599,9 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     count = nt.baseline_count(nights, metric, today, source)
     label = f"Référence · {count} nuits" if reference else f"Référence · {count}/{required} nuits"
     reference_detail = f"Référence provisoire : {count} nuits mesurées." if provisional else None
+    if reference is None and (drawn := nt.drawn_band(nights, metric, today)) is not None:
+        # a young series: the dashed band comes from the nights before today, the lagged count waits
+        reference_detail = f"Référence provisoire : {drawn['n']} nuits mesurées."
     c["reference"] = {"n": count, "required": required, "provisional": provisional, "ready": bool(reference),
                       "label": label, "detail": reference_detail, "source": viz.source_label(source),
                       "remaining": 0 if reference else nights_to_normal(nights, metric, today)}
