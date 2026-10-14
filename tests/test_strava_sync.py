@@ -359,7 +359,7 @@ async def test_the_details_a_list_lacks_are_fetched_later_a_few_per_poll(db_sess
     """Review D7: the first import stops asking for details at the app's 80 % (or a 429), and nothing asked later:
     an athlete who connected then kept a history without splits, laps, best efforts. Each poll now completes a few
     activities saved from the list (the newest races and long runs first), within the quota."""
-    from app.services.strava_activities import DETAIL_BACKLOG, NO_DETAIL
+    from app.services.strava_activities import DETAIL_ASKED, DETAIL_BACKLOG
     from app.tasks.initial_sync import _run_initial_sync
     from app.tasks.poll_activities import _poll_user
 
@@ -389,9 +389,11 @@ async def test_the_details_a_list_lacks_are_fetched_later_a_few_per_poll(db_sess
     for _ in range(3):
         await _poll_user(test_user.id)
     assert sorted(asked) == sorted(d["id"] for d in listed)  # each asked once
+    await _poll_user(test_user.id)
+    assert len(asked) == len(listed)  # never again
     rows = (await db_session.execute(select(Activity).where(Activity.user_id == test_user.id))).scalars().all()
     assert all(r.splits_metric and r.laps for r in rows if r.strava_activity_id != 960_011)
-    assert (await _row(db_session, 960_011)).raw_data[NO_DETAIL]
+    assert (await _row(db_session, 960_011)).raw_data[DETAIL_ASKED]
 
 
 async def test_the_athletes_zone_follows_a_clear_majority_of_their_activities(db_session, test_user):

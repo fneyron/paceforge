@@ -19,7 +19,7 @@ DETAIL_FIELDS = ("splits_metric", "best_efforts", "laps", "max_watts", "weighted
                  "calories")
 PER_PAGE = 30
 DETAIL_BACKLOG = 5  # a poll completes this many activities saved from the list only with their detail
-NO_DETAIL = "paceforge_no_detail"  # in raw_data: Strava shows no detail for it (deleted, private): not asked again
+DETAIL_ASKED = "paceforge_detail_asked"  # in raw_data: its detail was asked once (got, or none shown): not again
 # the athlete's zone: held by at least ZONE_MAJORITY of their last ZONE_SAMPLE activities that carry one
 ZONE_SAMPLE, ZONE_MAJORITY = 30, 20
 
@@ -94,8 +94,8 @@ async def import_recent(db: AsyncSession, user: User, strava, max_pages: int, pr
 async def complete_details(db: AsyncSession, user: User, strava, limit: int = DETAIL_BACKLOG) -> int:
     """Activities saved from Strava's list only (a first import cut short by the app's quota, the poll,
     « Synchroniser »): `limit` of them get their detail (splits, laps, best efforts, power, calories), the newest
-    races and long runs first, as the races' D+ backfill. Stops at the app's quota backoff, a 429 or a Strava
-    hiccup (the next poll carries on). Returns how many were completed."""
+    races and long runs first, as the races' D+ backfill; each asked once. Stops at the app's quota backoff, a 429
+    or a Strava hiccup (the next poll carries on). Returns how many were completed."""
     from app.exceptions import StravaAPIError, StravaRateLimitError, StravaTokenError
     from app.services.race_calibration import LONG_EFFORT_KM
 
@@ -103,7 +103,7 @@ async def complete_details(db: AsyncSession, user: User, strava, limit: int = DE
     rows = (await db.execute(
         select(Activity).where(Activity.user_id == user.id, Activity.strava_activity_id.is_not(None),
                                Activity.raw_data["resource_state"].as_integer() == 2,  # a list summary
-                               Activity.raw_data[NO_DETAIL].as_string().is_(None))
+                               Activity.raw_data[DETAIL_ASKED].as_string().is_(None))
         .order_by(case((race, 0), (Activity.distance >= LONG_EFFORT_KM * 1000, 1), else_=2),
                   Activity.start_date.desc())
         .limit(limit))).scalars().all()
@@ -120,9 +120,10 @@ async def complete_details(db: AsyncSession, user: User, strava, limit: int = DE
         except StravaAPIError as exc:
             if exc.status_code not in (403, 404):
                 break
-            activity.raw_data = {**(activity.raw_data or {}), NO_DETAIL: True}
+            activity.raw_data = {**(activity.raw_data or {}), DETAIL_ASKED: True}  # deleted, private: none shown
             continue
         apply_detail(activity, detail)
+        activity.raw_data = {**activity.raw_data, DETAIL_ASKED: True}
         done += 1
     if rows:
         await db.flush()
