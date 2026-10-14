@@ -255,3 +255,12 @@ async def committing_client(committing_session: AsyncSession):
     app.dependency_overrides[get_db] = override_get_db
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def _rate_limits_in_memory(monkeypatch):
+    """The login, sign-up and reset counters in this process, fresh for each test (production keeps them in
+    Redis, shared by the web workers)."""
+    from app.services import auth
+
+    monkeypatch.setattr(auth, "_counter", auth.MemoryCounter())

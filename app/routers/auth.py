@@ -7,19 +7,26 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.services.auth import (
+    DUMMY_HASH,
     PASSWORD_PREFIX,
+    TOO_MANY,
+    count_attempt,
+    forget_attempts,
     generate_token,
-    hash_password,
+    hash_password_async,
+    rate_limited,
     valid_email,
     valid_verification_token,
     verification_token,
-    verify_password,
+    verify_password_async,
 )
 from app.services.email import send_password_reset_email, send_verification_email
 from app.services.oauth_attempts import begin_strava, consume_strava
@@ -30,6 +37,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 HOME = "/sante"  # Santé is the main dashboard
+
+
+def _client_ip(request: Request) -> str:
+    """The client's address (behind the proxy, uvicorn's --proxy-headers sets it from X-Forwarded-For)."""
+    return request.client.host if request.client else ""
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +78,12 @@ async def register(
             context={"error": "Le mot de passe doit contenir entre 8 et 1 024 caractères.", "email": email, "firstname": firstname, "lastname": lastname},
         )
 
+    if await count_attempt("register", _client_ip(request), email):
+        return templates.TemplateResponse(
+            request, "auth/register.html", status_code=429,
+            context={"error": TOO_MANY, "email": email, "firstname": firstname, "lastname": lastname},
+        )
+
     # Check if email already exists
     result = await db.execute(select(User).where(User.email == email))
     if result.scalar_one_or_none():
@@ -77,7 +95,7 @@ async def register(
     verify_token = verification_token()
     user = User(
         email=email,
-        password_hash=hash_password(password),
+        password_hash=await hash_password_async(password),
         firstname=firstname or None,
         lastname=lastname or None,
         email_verify_token=verify_token,
@@ -86,8 +104,8 @@ async def register(
     await db.flush()
     await db.refresh(user)
 
-    # Send verification email
-    sent = send_verification_email(email, verify_token)
+    # Send verification email (SMTP blocks: off the event loop)
+    sent = await run_in_threadpool(send_verification_email, email, verify_token)
     request.session.clear()
     request.session["pending_user_id"] = user.id
     request.session["verification_failed"] = not sent
@@ -112,7 +130,7 @@ async def resend_verification(request: Request, db: AsyncSession = Depends(get_d
     if user and user.email and not user.email_verified and not recent:
         user.email_verify_token = verification_token()
         await db.flush()
-        sent = send_verification_email(user.email, user.email_verify_token)
+        sent = await run_in_threadpool(send_verification_email, user.email, user.email_verify_token)
         request.session["verification_failed"] = not sent
     return RedirectResponse("/auth/check-email", status_code=303)
 
@@ -164,18 +182,28 @@ async def login(
 ):
     email = email.strip().lower()
     next = next if next in ("coros", "garmin", "strava") else ""
+    ip = _client_ip(request)
+    if await rate_limited("login", ip, email):  # refused before any password check
+        return templates.TemplateResponse(
+            request, "auth/login.html", status_code=429,
+            context={"error": TOO_MANY, "email": email, "next": next},
+        )
 
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
-    if not user or not user.password_hash or not verify_password(password, user.password_hash):
+    # an unknown email is checked too, against a hash of nothing: the answer takes as long either way
+    known = bool(user and user.password_hash)
+    if not (await verify_password_async(password, user.password_hash if known else DUMMY_HASH) and known):
+        await count_attempt("login", ip, email)
         return templates.TemplateResponse(
             request, "auth/login.html",
             context={"error": "Email ou mot de passe incorrect.", "email": email, "next": next},
         )
+    await forget_attempts("login", ip, email)
 
     if not user.password_hash.startswith(PASSWORD_PREFIX):
-        user.password_hash = hash_password(password)
+        user.password_hash = await hash_password_async(password)
         await db.flush()
     request.session.clear()
     if not user.email_verified:
@@ -209,21 +237,26 @@ async def forgot_password(
     email: str = Form(...),
 ):
     email = email.strip().lower()
+    if await count_attempt("forgot", _client_ip(request), email):  # no more emails for now; nothing revealed
+        return templates.TemplateResponse(request, "auth/forgot_password.html", context={"sent": True},
+                                          status_code=429)
 
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
+    email_task = None
     if user and user.password_hash:
         token = generate_token()
         user.password_reset_token = token
         user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         await db.flush()
-        send_password_reset_email(email, token)
+        # sent once the answer is out: how long it takes never tells whether the email has an account
+        email_task = BackgroundTask(send_password_reset_email, email, token)
 
     # Always show success (don't reveal if email exists)
     return templates.TemplateResponse(
         request, "auth/forgot_password.html",
-        context={"sent": True},
+        context={"sent": True}, background=email_task,
     )
 
 
@@ -260,7 +293,7 @@ async def reset_password(
             context={"token": token, "error": "Lien expiré. Redemande un nouveau lien."},
         )
 
-    user.password_hash = hash_password(password)
+    user.password_hash = await hash_password_async(password)
     user.password_reset_token = None
     user.password_reset_expires_at = None
     await db.flush()
