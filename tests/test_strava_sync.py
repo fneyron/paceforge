@@ -331,6 +331,46 @@ def _run(user, sid, start, name="Footing") -> Activity:
                     distance=8000, moving_time=2400, elapsed_time=2500, total_elevation_gain=50, raw_data={})
 
 
+async def test_the_details_a_list_lacks_are_fetched_later_a_few_per_poll(db_session, test_user, task_session,
+                                                                         monkeypatch):
+    """Review D7: the first import stops asking for details at the app's 80 % (or a 429), and nothing asked later:
+    an athlete who connected then kept a history without splits, laps, best efforts. Each poll now completes a few
+    activities saved from the list (the newest races and long runs first), within the quota."""
+    from app.services.strava_activities import DETAIL_BACKLOG, NO_DETAIL
+    from app.tasks.initial_sync import _run_initial_sync
+    from app.tasks.poll_activities import _poll_user
+
+    await _own_app(db_session, test_user, done=False)
+    now = datetime.now(timezone.utc)
+    listed = [_data(960_000 + i, now - timedelta(days=i + 1), resource_state=2) for i in range(12)]
+    listed[9]["workout_type"] = 1  # a race, older
+    listed[10]["distance"] = 45_000.0  # a long run, older still
+    monkeypatch.setattr(StravaService, "get_all_activities_since", AsyncMock(return_value=listed))
+    asked = []
+
+    async def detail(self, user, sid):
+        asked.append(sid)
+        if sid == 960_011:
+            raise _api_error(404)  # gone meanwhile
+        return {**next(d for d in listed if d["id"] == sid), "resource_state": 3, "splits_metric": [{"split": 1}],
+                "laps": [{"lap_index": 1}]}
+    monkeypatch.setattr(StravaService, "get_activity", detail)
+    strava_state.back_off("4242", time.time() + 3600)  # the app's day is past 80 % (other athletes)
+    result = await _run_initial_sync(test_user.id)
+    assert result["synced"] == 12 and result["enriched"] == 0 and asked == []
+    monkeypatch.setattr(StravaService, "get_recent_activities", AsyncMock(return_value=listed[:5]))
+    assert (await _poll_user(test_user.id))["status"] == "backoff" and asked == []
+    strava_state.release("backoff:4242")  # the next day
+    await _poll_user(test_user.id)
+    assert len(asked) == DETAIL_BACKLOG and asked[:2] == [960_009, 960_010]  # the race, the long run, the newest
+    for _ in range(3):
+        await _poll_user(test_user.id)
+    assert sorted(asked) == sorted(d["id"] for d in listed)  # each asked once
+    rows = (await db_session.execute(select(Activity).where(Activity.user_id == test_user.id))).scalars().all()
+    assert all(r.splits_metric and r.laps for r in rows if r.strava_activity_id != 960_011)
+    assert (await _row(db_session, 960_011)).raw_data[NO_DETAIL]
+
+
 async def test_the_athletes_zone_follows_a_clear_majority_of_their_activities(db_session, test_user):
     """users.timezone from the activities' Strava zone (« (GMT+01:00) Europe/Paris »), read again at each sync but
     switched only by a clear majority: 20 of the last 30 activities with a zone. Review D3: a zone learnt during a
@@ -833,12 +873,14 @@ async def test_an_edit_on_strava_renames_the_activity(db_session, test_user, tas
     db_session.add(Activity(user_id=test_user.id, strava_activity_id=730_001, sport_type="Run", name="Morning Run",
                             start_date=now, distance=10_000, moving_time=3600, elapsed_time=3700, raw_data={}))
     await db_session.flush()
-    fetch = AsyncMock(return_value=_data(730_001, now, name="Tour du Lac", sport_type="TrailRun"))
+    fetch = AsyncMock(return_value=_data(730_001, now, name="Tour du Lac", sport_type="TrailRun",
+                                         splits_metric=[{"split": 1}]))
     monkeypatch.setattr(StravaService, "get_activity", fetch)
     # what the event says is not trusted: the name and sport are Strava's own, read with the athlete's token
     result = await _run_webhook_sync(730_001, test_user.strava_athlete_id, "update")
     row = await _row(db_session, 730_001)
     assert result == {"status": "updated", "name": "Tour du Lac"} and row.sport_type == "TrailRun"
+    assert row.splits_metric == [{"split": 1}]  # the detail read anyway is kept (review D7)
     # an edit of an activity never received brings it
     fetch.return_value = _data(730_002, now, name="Rattrapée")
     assert (await _run_webhook_sync(730_002, test_user.strava_athlete_id, "update"))["status"] == "saved"

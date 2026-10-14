@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
@@ -18,6 +18,8 @@ from app.services.timezones import zone_from_strava
 DETAIL_FIELDS = ("splits_metric", "best_efforts", "laps", "max_watts", "weighted_average_watts", "suffer_score",
                  "calories")
 PER_PAGE = 30
+DETAIL_BACKLOG = 5  # a poll completes this many activities saved from the list only with their detail
+NO_DETAIL = "paceforge_no_detail"  # in raw_data: Strava shows no detail for it (deleted, private): not asked again
 # the athlete's zone: held by at least ZONE_MAJORITY of their last ZONE_SAMPLE activities that carry one
 ZONE_SAMPLE, ZONE_MAJORITY = 30, 20
 
@@ -86,6 +88,44 @@ async def import_recent(db: AsyncSession, user: User, strava, max_pages: int) ->
         if not new or len(batch) < PER_PAGE:
             break
     return saved
+
+
+async def complete_details(db: AsyncSession, user: User, strava, limit: int = DETAIL_BACKLOG) -> int:
+    """Activities saved from Strava's list only (a first import cut short by the app's quota, the poll,
+    « Synchroniser »): `limit` of them get their detail (splits, laps, best efforts, power, calories), the newest
+    races and long runs first, as the races' D+ backfill. Stops at the app's quota backoff, a 429 or a Strava
+    hiccup (the next poll carries on). Returns how many were completed."""
+    from app.exceptions import StravaAPIError, StravaRateLimitError, StravaTokenError
+    from app.services.race_calibration import LONG_EFFORT_KM
+
+    race = Activity.raw_data["workout_type"].as_integer() == 1
+    rows = (await db.execute(
+        select(Activity).where(Activity.user_id == user.id, Activity.strava_activity_id.is_not(None),
+                               Activity.raw_data["resource_state"].as_integer() == 2,  # a list summary
+                               Activity.raw_data[NO_DETAIL].as_string().is_(None))
+        .order_by(case((race, 0), (Activity.distance >= LONG_EFFORT_KM * 1000, 1), else_=2),
+                  Activity.start_date.desc())
+        .limit(limit))).scalars().all()
+    done = 0
+    for activity in rows:
+        if strava.backing_off():
+            break
+        try:
+            detail = await strava.get_activity(user, activity.strava_activity_id)
+        except StravaTokenError:
+            raise  # the poll's to handle (a refusal, or Strava's token endpoint failing)
+        except StravaRateLimitError:
+            break
+        except StravaAPIError as exc:
+            if exc.status_code not in (403, 404):
+                break
+            activity.raw_data = {**(activity.raw_data or {}), NO_DETAIL: True}
+            continue
+        apply_detail(activity, detail)
+        done += 1
+    if rows:
+        await db.flush()
+    return done
 
 
 async def adopt_zone(db: AsyncSession, user: User) -> None:

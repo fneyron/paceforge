@@ -99,7 +99,7 @@ async def _poll_user(user_id: int) -> dict:
     from app.services.activity_env import enrich
     from app.services.race_calibration import backfill_race_dplus
     from app.services.strava import StravaService, link_intact
-    from app.services.strava_activities import adopt_zone, import_recent
+    from app.services.strava_activities import adopt_zone, complete_details, import_recent
 
     async with get_task_session() as db:
         user = await db.get(User, user_id)
@@ -120,6 +120,10 @@ async def _poll_user(user_id: int) -> dict:
                     raise
                 except Exception:
                     logger.warning("Race D+ backfill failed for user %d", user.id, exc_info=True)
+            if not strava.backing_off():
+                # the details a list never carries (splits, laps…), a few per poll: what a first import cut short
+                # by the quota left, what the poll and « Synchroniser » saved from the list
+                await complete_details(db, user, strava)
             # each new outdoor activity's altitude and weather (Open-Meteo), the backlog a few at a time
             await db.flush()
             await enrich(db, user.id)
