@@ -172,8 +172,25 @@ def reduce_night(packet: AppleNight):
     return rows
 
 
-async def ingest(db, user_id, packet):
-    rows = reduce_night(packet)
+def athlete_zone_name(name: str) -> str | None:
+    """The packet's zone if it is a real place (« Europe/Paris »), never a fixed offset."""
+    from app.services.timezones import zone_of
+    if "/" not in name or name.startswith("Etc/") or zone_of(name).key != name:
+        return None
+    return name
+
+
+async def ingest(db, user_id, packet, rows=None):
+    import asyncio
+    # Overlap checks are quadratic in the intervals: keep them off the event loop
+    # (the phone endpoint reduces the night after the token check, with no connection held).
+    if rows is None:
+        rows = await asyncio.to_thread(reduce_night, packet)
+    from app.models.user import User
+    user = await db.get(User, user_id)
+    if user is not None and not user.timezone and (zone := athlete_zone_name(packet.timezone)):
+        # Until another service sets it, the phone's night zone defines the athlete's local day.
+        user.timezone = zone
     source = PREFIX + packet.source_id
     # Existing summaries survive empty/denied reads. A corrected sleep window
     # invalidates old heart summaries at read time through window_id matching.

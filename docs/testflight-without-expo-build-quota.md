@@ -35,6 +35,35 @@ Un envoi terminé doit encore être traité par Apple. Vérifier la nouvelle ver
 [TestFlight](https://appstoreconnect.apple.com/apps/6821579538/testflight/ios) avant
 d'annoncer qu'elle est installable. Cet envoi ne publie pas l'app sur l'App Store public.
 
+## Synchronisation en arrière-plan : régénérer le profil une fois
+
+Depuis la synchronisation en arrière-plan, l'application signe avec
+l'entitlement `com.apple.developer.healthkit.background-delivery` (plugin
+HealthKit `"background": true`). Le profil de provisionnement `production`
+doit le contenir. Le workflow fige les accès (`--freeze-credentials`) : il ne
+modifie jamais ce profil. Si le profil actuel ne le contient pas, la compilation
+signée échoue, ou la vérification de l'IPA s'arrête avec « The provisioning
+profile lacks com.apple.developer.healthkit.background-delivery ».
+
+Dans ce cas, une seule fois, depuis un ordinateur personnel connecté au compte
+Apple propriétaire, dans `mobile/` :
+
+1. Dans [Apple Developer](https://developer.apple.com/account/resources/identifiers/list),
+   ouvrir l'identifiant `Fr.paceforge.mobile` : la capacité HealthKit doit être
+   active (cocher l'option de livraison en arrière-plan si le portail la propose),
+   puis enregistrer.
+2. `npx eas-cli@24.12.1 credentials --platform ios`, profil `production`, puis
+   « Build Credentials: Manage everything needed to build your project » et
+   « Provisioning Profile: Delete one from your project ».
+3. Dans le même menu, « All: Set up all the required credentials to build your
+   project » : EAS synchronise les capacités de l'identifiant avec les
+   entitlements du projet et crée un nouveau profil. Cette étape ne compile rien
+   et ne demande pas de Mac ; sur un Mac, une compilation `--local` sans
+   `--freeze-credentials` (section suivante) fait de même.
+4. Relancer le workflow **Publish iPhone to TestFlight** depuis `main` (secret
+   `EXPO_TOKEN` présent) : la vérification de l'IPA contrôle désormais
+   l'entitlement dans `embedded.mobileprovision`.
+
 ## Depuis un Mac personnel
 
 Installer une version de Xcode compatible avec le projet (26.6 utilisée en CI), Node 22,

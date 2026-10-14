@@ -70,7 +70,7 @@ async def test_watch_refresh_does_not_include_other_users_or_reauthorize_silentl
 
 async def test_strava_refresh_does_not_report_success_after_transport_failure(client, db_session, test_user, monkeypatch):
     login(client, test_user)
-    test_user.strava_client_id = 123
+    test_user.strava_client_id = '123'  # a VARCHAR column: PostgreSQL refuses an int
     test_user.strava_client_secret_encrypted = b'test'
     test_user.strava_credentials_valid = True
     await db_session.flush()
@@ -95,22 +95,16 @@ async def test_retry_reserves_coros_before_polling_previous_error(client, db_ses
     conn.last_error = 'Previous network failure'
     await db_session.flush()
     monkeypatch.setattr(settings, 'COROS_SYNC', True)
-    # Hold upstream work while the real reservation is committed.
-    import asyncio
-    release = asyncio.Event()
-    async def background(*args):
-        await release.wait()
-    monkeypatch.setattr(coros, '_sync_in_background', background)
-    try:
-        result = (await client.post('/sante/sync', headers=HEADERS)).json()
-        assert result['watches'] == ['COROS'] and not result['errors']
-        assert conn.sync_claimed_at is not None
-        result = (await client.get('/sante/sync-status', headers=HEADERS,
-            params={'watches': 'COROS', 'since': result['since']})).json()
-        assert result == {'pending': ['COROS'], 'errors': []}
-    finally:
-        release.set()
-        await asyncio.gather(*list(coros._pending))
+    # The real reservation is committed; the worker has not started the queued job yet.
+    from app.tasks.coros_sync import sync_coros_user
+    jobs = []
+    monkeypatch.setattr(sync_coros_user, 'apply_async', lambda *, args, retry: jobs.append(args))
+    result = (await client.post('/sante/sync', headers=HEADERS)).json()
+    assert result['watches'] == ['COROS'] and not result['errors'] and len(jobs) == 1
+    assert conn.sync_claimed_at is not None
+    result = (await client.get('/sante/sync-status', headers=HEADERS,
+        params={'watches': 'COROS', 'since': result['since']})).json()
+    assert result == {'pending': ['COROS'], 'errors': []}
 
 
 async def test_reserved_coros_job_is_consumed_once(db_session, test_user, monkeypatch):

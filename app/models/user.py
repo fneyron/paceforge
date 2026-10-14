@@ -1,8 +1,9 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, LargeBinary, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.crypto import EncryptedString, SealedBytes
 from app.database import Base
 from app.models.activity import JSONType
 
@@ -30,14 +31,15 @@ class User(Base):
     strava_athlete_id: Mapped[int | None] = mapped_column(
         BigInteger, unique=True, index=True, nullable=True
     )
-    strava_access_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    strava_refresh_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Fernet-encrypted (a token stored in clear before is read as is, encrypted at its next refresh)
+    strava_access_token: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
+    strava_refresh_token: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
     strava_token_expires_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Per-user Strava API app credentials
     strava_client_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
     strava_client_secret_encrypted: Mapped[bytes | None] = mapped_column(
-        LargeBinary, nullable=True
+        SealedBytes, nullable=True
     )
     strava_webhook_subscription_id: Mapped[int | None] = mapped_column(
         Integer, nullable=True
@@ -67,7 +69,13 @@ class User(Base):
 
     # Physical
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # when the athlete typed weight_kg (the latest of this and a dated weigh-in wins: services/athlete_weight)
+    weight_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     health_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # IANA zone of the athlete (« Europe/Paris »): every local day is read in it (services/timezones)
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # bumped on password change / reset: sessions carrying an older value are refused
+    session_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     # FTP typed by the athlete (W); overrides the Strava-based estimate when set
     ftp_watts: Mapped[float | None] = mapped_column(Float, nullable=True)
 

@@ -3,12 +3,13 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from celery import Task
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.celery_app import celery_app
-from app.models.activity import Activity
+from app.exceptions import StravaRateLimitError, StravaTokenError
 from app.models.user import User
-from app.services.activity_sources import adopt_watch_twin
+from app.services import strava_state as state
+from app.services.strava_activities import adopt_zone, apply_detail, save_new
 
 logger = logging.getLogger(__name__)
 
@@ -23,70 +24,50 @@ SYNC_MONTHS = 24
     name="paceforge.initial_sync",
 )
 def initial_sync(self: Task, user_id: int) -> dict:
-    """Fetch all activities from the last 6 months for a user."""
+    """The athlete's first import (the last 24 months), one at a time per athlete. When it fails (Strava's quota,
+    an error after its retries), the failure is kept for Réglages' status (strava_status) and the hourly round
+    queues it again after 1 h, 2 h, 4 h… (24 h at most)."""
+    if not state.claim(state.initial_lock(user_id), state.INITIAL_RUN_S):
+        logger.info("Initial sync for user %d already running", user_id)
+        return {"user_id": user_id, "status": "already_running", "synced": 0}
     logger.info(
         "Starting initial sync for user %d (attempt %d/%d)",
         user_id,
         self.request.retries + 1,
         self.max_retries + 1,
     )
-
     try:
         result = asyncio.run(_run_initial_sync(user_id))
-        logger.info(
-            "Initial sync complete for user %d: %d activities synced, %d enriched",
-            user_id,
-            result["synced"],
-            result.get("enriched", 0),
-        )
-        return result
+    except StravaRateLimitError:
+        failed = state.initial_failed(user_id, "rate_limited")
+        logger.warning("Initial sync for user %d: Strava quota, queued again by the round (failure %d)",
+                       user_id, failed["failures"])
+        return {"user_id": user_id, "error": "rate_limited", "synced": 0}
     except Exception as exc:
-        logger.exception(
-            "Initial sync failed for user %d (attempt %d)",
-            user_id,
-            self.request.retries + 1,
-        )
-        raise self.retry(exc=exc, countdown=120 * (2 ** self.request.retries))
-
-
-def _parse_strava_date(date_str):
-    if isinstance(date_str, str):
-        return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-    return date_str
-
-
-def _build_activity_from_data(data: dict, user_id: int) -> Activity:
-    """Build an Activity model from Strava API data (list or detail)."""
-    return Activity(
-        strava_activity_id=data["id"],
-        user_id=user_id,
-        sport_type=data.get("sport_type", data.get("type", "Unknown")),
-        name=data.get("name", "Untitled"),
-        start_date=_parse_strava_date(data.get("start_date")),
-        distance=data.get("distance", 0),
-        moving_time=data.get("moving_time", 0),
-        elapsed_time=data.get("elapsed_time", 0),
-        total_elevation_gain=data.get("total_elevation_gain", 0),
-        average_speed=data.get("average_speed"),
-        max_speed=data.get("max_speed"),
-        average_heartrate=data.get("average_heartrate"),
-        max_heartrate=data.get("max_heartrate"),
-        average_cadence=data.get("average_cadence"),
-        average_watts=data.get("average_watts"),
-        max_watts=data.get("max_watts"),
-        weighted_average_watts=data.get("weighted_average_watts"),
-        suffer_score=data.get("suffer_score"),
-        calories=data.get("calories"),
-        laps=data.get("laps"),
-        splits_metric=data.get("splits_metric"),
-        best_efforts=data.get("best_efforts"),
-        raw_data=data,
+        if self.request.retries < self.max_retries:
+            logger.exception("Initial sync failed for user %d (attempt %d)", user_id, self.request.retries + 1)
+            raise self.retry(exc=exc, countdown=120 * (2 ** self.request.retries))
+        failed = state.initial_failed(user_id, "failed")
+        logger.exception("Initial sync failed for user %d, queued again by the round (failure %d)",
+                         user_id, failed["failures"])
+        return {"user_id": user_id, "error": "failed", "synced": 0}
+    finally:
+        state.release(state.initial_lock(user_id))
+    if not result.get("error"):
+        state.initial_clear(user_id)
+        state.polled(user_id)
+    logger.info(
+        "Initial sync complete for user %d: %d activities synced, %d enriched",
+        user_id,
+        result["synced"],
+        result.get("enriched", 0),
     )
+    return result
 
 
 async def _run_initial_sync(user_id: int) -> dict:
     from app.database import get_task_session
-    from app.services.strava import StravaService
+    from app.services.strava import StravaService, link_intact
 
     async with get_task_session() as db:
         try:
@@ -94,12 +75,13 @@ async def _run_initial_sync(user_id: int) -> dict:
             user = result.scalar_one_or_none()
             if not user:
                 return {"error": "user_not_found", "synced": 0}
+            if user.initial_sync_done:  # a copy the round queued meanwhile
+                return {"user_id": user_id, "status": "already_done", "synced": 0}
 
             if not user.has_strava_linked or not user.has_strava_app or not user.strava_credentials_valid:
                 return {"error": "strava_reconnect_required", "synced": 0}
             strava = StravaService.for_user(db, user)
 
-            # 6 months ago
             after = datetime.now(timezone.utc) - timedelta(days=SYNC_MONTHS * 30)
             after_epoch = int(after.timestamp())
 
@@ -111,84 +93,68 @@ async def _run_initial_sync(user_id: int) -> dict:
             )
 
             # Phase 1: Insert activities from list endpoint
-            synced = 0
-            new_strava_ids = []
+            new_rows = {}
             for data in activities_data:
-                strava_id = data.get("id")
-                if not strava_id:
-                    continue
-
-                exists = await db.execute(
-                    select(func.count(Activity.id)).where(
-                        Activity.strava_activity_id == strava_id
-                    )
-                )
-                if exists.scalar() > 0:
-                    continue
-
-                activity = await adopt_watch_twin(db, _build_activity_from_data(data, user.id))
-                new_strava_ids.append(strava_id)
-                synced += 1
+                activity = await save_new(db, user, data)
+                if activity is not None:
+                    new_rows[data["id"]] = activity
+            synced = len(new_rows)
 
             await db.flush()
             logger.info("Inserted %d new activities for user %d", synced, user_id)
 
-            # Phase 2: Enrich with detailed data (splits, laps, best_efforts)
+            # Phase 2: Enrich with detailed data (splits, laps, best_efforts), a request each; stops when the
+            # app's quota nears its limit (those rows keep the list's data)
             enriched = 0
-            for strava_id in new_strava_ids:
+            for strava_id, activity in new_rows.items():
+                if strava.backing_off():
+                    logger.info("Initial sync for user %d: Strava quota, %d of %d enriched",
+                                user_id, enriched, synced)
+                    break
                 try:
                     detail = await strava.get_activity(user, strava_id)
-
-                    act_result = await db.execute(
-                        select(Activity).where(
-                            Activity.strava_activity_id == strava_id
-                        )
-                    )
-                    activity = act_result.scalar_one_or_none()
-                    if not activity:
-                        continue
-
-                    # Update with detailed fields
-                    activity.splits_metric = detail.get("splits_metric")
-                    activity.best_efforts = detail.get("best_efforts")
-                    activity.laps = detail.get("laps")
-                    activity.max_watts = detail.get("max_watts")
-                    activity.weighted_average_watts = detail.get("weighted_average_watts")
-                    activity.suffer_score = detail.get("suffer_score")
-                    activity.calories = detail.get("calories")
-                    activity.raw_data = detail
-                    enriched += 1
-
-                    # Commit every 10 to avoid losing progress
-                    if enriched % 10 == 0:
-                        await db.flush()
-                        logger.info(
-                            "Enriched %d/%d activities for user %d",
-                            enriched, len(new_strava_ids), user_id,
-                        )
+                except StravaTokenError:
+                    raise
+                except StravaRateLimitError:
+                    break
                 except Exception:
                     logger.warning(
                         "Failed to enrich activity %d for user %d",
                         strava_id, user_id,
                     )
+                    continue
+                apply_detail(activity, detail)
+                enriched += 1
+
+                # Commit every 10 to avoid losing progress
+                if enriched % 10 == 0:
+                    await db.flush()
+                    logger.info(
+                        "Enriched %d/%d activities for user %d",
+                        enriched, synced, user_id,
+                    )
 
             # Phase 3: the races' D+ from their altitude stream (one request
             # per race; what a rate limit leaves is picked up by the poll)
-            try:
-                from app.services.race_calibration import backfill_race_dplus
+            await db.flush()
+            if not strava.backing_off():
+                try:
+                    from app.services.race_calibration import backfill_race_dplus
 
-                await backfill_race_dplus(db, user, strava, limit=40)
-            except Exception:
-                logger.warning("Race D+ backfill failed for user %d", user_id, exc_info=True)
+                    await backfill_race_dplus(db, user, strava, limit=40)
+                except Exception:
+                    logger.warning("Race D+ backfill failed for user %d", user_id, exc_info=True)
 
             # Phase 4: the activities' altitude and weather (Open-Meteo), the first ones; the poll does the rest
             from app.services.activity_env import enrich
 
             await db.flush()
             await enrich(db, user.id)
+            await adopt_zone(db, user)
 
             # Mark initial sync as done
             user.initial_sync_done = True
+            user.last_activity_poll_at = datetime.now(timezone.utc)  # Réglages' « Dernière synchro »
             await db.commit()
 
             return {
@@ -197,6 +163,14 @@ async def _run_initial_sync(user_id: int) -> dict:
                 "enriched": enriched,
                 "total_fetched": len(activities_data),
             }
+        except StravaTokenError:
+            if link_intact(user):  # Strava's token endpoint failed, nothing refused: tried again
+                await db.rollback()
+                raise
+            # what the refresh found is kept (the link revoked: forgotten; the app's keys refused: flagged), with
+            # what was imported: Réglages asks to reconnect, the rounds leave the athlete alone meanwhile
+            await db.commit()
+            return {"error": "strava_reconnect_required", "synced": 0}
         except Exception:
             await db.rollback()
             raise

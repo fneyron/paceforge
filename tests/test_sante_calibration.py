@@ -1,4 +1,5 @@
-"""Regression contracts for estimated sleep, progressive precautions and honest curves."""
+"""Regression contracts for the sleep owed, the effort windows and honest curves (owner, 2026-10-14: scientific
+basis — the learnt sleep base, its debt in the need and the continuous sleep cap are gone)."""
 import json
 from dataclasses import replace
 from datetime import date, datetime, time, timedelta
@@ -22,71 +23,76 @@ def history(count=40, minutes=540, source="Garmin"):
     return out
 
 
-def test_sleep_base_waits_for_enough_comparable_nights_and_calendar_span():
-    assert not sl.sleep_baseline(history(13), D)["adapted"]
-    assert not sl.sleep_baseline(history(20), D)["adapted"]
-    nights = history(21)
-    for k in range(2, 9):
-        nights.pop(D-timedelta(days=k))
-    b = sl.sleep_baseline(nights, D)
-    assert (b["n"], b["span"], b["adapted"]) == (14, 21, True)
-    assert 480 < b["value"] < 540  # evidence is shrunk towards the starting base
-    assert "personnelle estimée" in sl.baseline_note(b)["label"]
-    assert "apprentissage" in sl.baseline_note(sl.sleep_baseline(history(8), D))["label"]
+def test_the_need_never_learns_from_the_athletes_nights():
+    """The need is 8 h for everyone: the upper quartile of the athlete's own nights made a base a sleeper as long
+    as usual could never reach (sim: a stable 8-h sleeper's dial at 89 %); now a 9-h sleeper owes nothing and a
+    7-h one owes an hour a night, said apart."""
+    assert sl.deficit(history(40, 540), D)["minutes"] == 0
+    assert sl.deficit(history(40, 480), D)["minutes"] == 0
+    assert sl.deficit(history(40, 420), D)["minutes"] == 7 * 60
+    assert not hasattr(sl, "sleep_baseline") and not hasattr(sl, "baseline_note") and not hasattr(sl, "BASE_DAYS")
 
 
-def test_sleep_base_cannot_learn_chronic_short_sleep_or_disrupted_nights():
-    short = sl.sleep_baseline(history(60, 360), D)
-    assert (short["value"], short["n"], short["adapted"]) == (480, 0, False)
+def test_the_deficit_waits_for_4_of_the_7_nights():
+    """Was: the learnt base waited for 14 comparable nights over 21 days. The sleep owed waits for 4 of the 7
+    nights measured (a sparse week says too little: Walsh 2021), scaled to 7 (a night not measured is never 0 h)."""
+    nights = history(40, 420)
+    for k in range(4, 8):  # 3 of the 7 left: D−1, D−2, D−3
+        nights.pop(D - timedelta(days=k))
+    thin = sl.deficit(nights, D)
+    assert (thin["minutes"], thin["n"], thin["days"], thin["text"]) == (None, 3, 7, "manque non estimable (3/7 nuits)")
+    nights[D - timedelta(days=4)] = replace(nights[D - timedelta(days=1)], day=D - timedelta(days=4))
+    assert sl.deficit(nights, D)["minutes"] == 7 * 60  # 7/4 × 4 × 1 h
+
+
+def test_chronic_short_sleep_is_owed_never_learnt():
+    """6 h every night (none yet this morning): 2 h owed each night, 14 h over the 7 (it never lowered a learnt
+    base either); a night's
+    context (an effort, a time zone, « malade ») changes nothing: each measured night counts."""
+    owed = sl.deficit(history(60, 360), D)  # 7/6 × 6 × 2 h, far over its noise floor (56 min)
+    assert (owed["minutes"], owed["n"], owed["days"], owed["text"]) == (840, 6, 7, "manque estimé sur 7 jours\u00a0: 14h00")
+    assert owed["raw"] > owed["floor"]
     for tag in (*nt.CONTEXT, "ill"):
-        nights = {d: replace(n, tags={tag}) for d, n in history().items()}
-        assert sl.sleep_baseline(nights, D)["n"] == 0, tag
-    nights = history()
-    assert sl.sleep_baseline(nights, D, frozenset(nights))["n"] == 0
-    for minutes in (420, 480, 600):
-        assert 420 <= sl.sleep_baseline(history(60, minutes), D)["value"] <= 540
-    assert sl.sleep_baseline(history(60, 601), D)["n"] == 0
+        nights = {d: replace(n, tags={tag}) for d, n in history(60, 360).items()}
+        assert sl.deficit(nights, D)["minutes"] == 840, tag
 
 
-def test_baseline_is_source_specific_and_never_reads_the_current_or_future_duration():
-    nights = history()
-    original = sl.sleep_baseline(nights, D)
-    today = replace(nights[D-timedelta(days=1)], day=D, asleep=300)
-    # The current night selects the source, but cannot lower its own target.
-    nights[D] = today
-    nights[D+timedelta(days=1)] = replace(today, source="COROS", asleep=600)
-    assert sl.sleep_baseline(nights, D) == original
-    nights[D] = replace(today, source="COROS")
-    b = sl.sleep_baseline(nights, D)
-    assert (b["value"], b["n"], b["source"], b["adapted"]) == (480, 0, "COROS", False)
-
-
-def test_retrospective_alert_annotations_do_not_rewrite_the_sleep_reference():
-    nights = history()
-    before = sl.sleep_baseline(nights, D)
-    # The episode annotation is recomputed for the page, while score history
-    # rebuilds its own tags. It cannot decide baseline membership; raw signals do.
+def test_retrospective_alert_annotations_do_not_rewrite_the_sleep_owed():
+    """The illness episode's annotation is recomputed for the page; it never changes what the nights owe."""
+    nights = history(60, 360)
+    before = sl.deficit(nights, D)
     annotated = {d: replace(n, tags={"alert"}) for d, n in nights.items()}
-    assert sl.sleep_baseline(annotated, D) == before
+    assert sl.deficit(annotated, D) == before
+
+
+def test_the_deficit_never_reads_a_later_night():
+    """Past days are recomputed without later data: tomorrow's night never changes today's sleep owed; this
+    morning's own night is one of its 7."""
+    nights = history(40, 480)
+    first = sl.deficit(nights, D)
+    nights[D + timedelta(days=1)] = replace(nights[D - timedelta(days=1)], day=D + timedelta(days=1), asleep=300)
+    assert sl.deficit(nights, D) == first
+    nights[D] = replace(nights[D - timedelta(days=1)], day=D, asleep=300)
+    assert sl.deficit(nights, D)["minutes"] == 180  # 3 h short this morning (D−6 → D)
 
 
 @pytest.mark.parametrize("metric,value", [("hr", 65), ("hrv", 20), ("resp", 24)])
-def test_learning_rejects_abnormal_nights_against_prior_same_source_reference(metric, value):
-    nights = {d: replace(n, resp=14, resp_source="Garmin") for d, n in history().items()}
-    original = sl.sleep_baseline(nights, D)["n"]
-    recent = D-timedelta(days=1)
+def test_an_abnormal_heart_night_still_counts_its_sleep(metric, value):
+    """The sleep owed reads the 24 h only: a night with an unusual HR, HRV or breathing rate counts its sleep like
+    any other (the learnt base used to leave it out of its sample)."""
+    nights = {d: replace(n, resp=14, resp_source="Garmin") for d, n in history(40, 420).items()}
+    recent = D - timedelta(days=1)
     nights[recent] = replace(nights[recent], **{metric: value})
-    assert sl.sleep_baseline(nights, D)["n"] == original - 1
+    assert sl.deficit(nights, D)["minutes"] == 420
 
 
 def test_need_has_no_future_leak_and_naps_repay_debt_once():
     nights = history(40, 540)
-    first = sl.sleep_need(nights, D)
+    first = sl.deficit(nights, D)
     tomorrow = D+timedelta(days=1)
     nights[tomorrow] = replace(nights[D-timedelta(days=1)], day=tomorrow, asleep=300, source="COROS")
-    assert sl.sleep_need(nights, D) == first
-    assert first["total"] == sum(first[k] for k in ("base", "effort", "debt"))
-    # Nap allocation is shared by the baseline and debt calculation.
+    assert sl.deficit(nights, D) == first
+    # Nap allocation is shared by the 24 h and the sleep owed: each nap counted once.
     short = history(8, 360)
     yesterday = D-timedelta(days=1)
     start = datetime.combine(yesterday, time(14))
@@ -96,31 +102,28 @@ def test_need_has_no_future_leak_and_naps_repay_debt_once():
                        end=datetime.combine(D, time(7)))
     assert nt.slept_before_wake(short, yesterday) == 360
     assert nt.slept_before_wake(short, D) == 480
-    assert sl.sleep_need(short, D)["base"] == 480  # insufficient comparable history
+    assert sl.deficit(short, D)["minutes"] == 6 * 120  # 6 nights of 6 h, this morning's 8 h with the nap
 
 
-@pytest.mark.parametrize("base", [420, 480, 540])
-def test_sleep_guard_is_monotone_continuous_and_relative_to_the_base(base):
-    limits = [sc.sleep_limit(m, base) for m in range(0, 601)]
-    effective = [100 if v is None else v for v in limits]
-    assert effective == sorted(effective)
-    assert max(b-a for a, b in zip(effective, effective[1:])) < 1
-    assert sc.sleep_limit(base*3/4, base) == 65
-    assert sc.sleep_limit(None, base) is None
-    assert sc.sleep_limit(480, base) is None
-    assert effective[359] < effective[360] < effective[361]
+@pytest.mark.parametrize("need", [420, 480, 540])
+def test_the_sleep_dial_is_monotone_and_short_sleep_is_a_reason_under_6_h(need):
+    """The dial rises with the 24 h, never by a step (min(100 %, 24 h ÷ the need)); « court » and the short-sleep
+    reason from under 6 h (Craven 2022; the continuous cap relative to a learnt base is gone)."""
+    values = [int(sante.sleep_dial(m, need, None)["value"]) for m in range(0, 601)]
+    assert values == sorted(values) and max(b - a for a, b in zip(values, values[1:])) <= 1
+    assert sante.sleep_dial(359, need, None)["sub"] == "court" and sante.sleep_dial(360, need, None)["sub"] != "court"
+    assert not hasattr(sc, "sleep_limit") and not hasattr(sc, "CAP_SHORT")
 
 
-def test_all_effort_windows_relax_daily_and_overlapping_efforts_use_current_precaution():
-    for kind, rules in st.EFFORT_RULES.items():
-        e = st.Effort(1, kind, 700, datetime.combine(D, time(18)), D, caps=rules)
-        caps = [st.effort_window([e], D+timedelta(days=k))["cap"] for k in range(1, rules[-1][0]+1)]
-        assert caps[0] == rules[0][1]
-        assert all(a < b < 100 for a, b in zip(caps, caps[1:]))
-        assert st.effort_window([e], D+timedelta(days=rules[-1][0]+1)) is None
-    old = st.Effort(1, "ultra", 700, datetime.combine(D, time(18)), D-timedelta(days=8), caps=st.EFFORT_RULES["ultra"])
-    recent = replace(old, session_id=2, kind="long", day=D-timedelta(days=1), caps=st.EFFORT_RULES["long"])
-    assert st.effort_window([old, recent], D)["effort"].session_id == 2
+def test_all_effort_windows_end_on_their_last_day_and_overlapping_efforts_use_the_strongest():
+    for kind, last in st.EFFORT_WINDOWS.items():
+        e = st.Effort(1, kind, 700, datetime.combine(D, time(18)), D, last=last)
+        tones = [st.effort_window([e], D+timedelta(days=k))["tone"] for k in range(0, last+1)]
+        assert tones == ["danger" if kind == "ultra" and k <= 1 else "warn" for k in range(0, last + 1)]
+        assert st.effort_window([e], D+timedelta(days=last+1)) is None
+    old = st.Effort(1, "ultra", 700, datetime.combine(D, time(18)), D-timedelta(days=8), last=st.EFFORT_WINDOWS["ultra"])
+    recent = replace(old, session_id=2, kind="long", day=D-timedelta(days=1), last=st.EFFORT_WINDOWS["long"])
+    assert st.effort_window([old, recent], D)["effort"].session_id == 2  # the ultra's window is over
 
 
 def test_valid_mean_survives_missing_raw_night_but_does_not_create_a_score():
@@ -145,7 +148,10 @@ def test_long_sleep_mean_uses_one_watch_and_can_cross_a_missing_bar():
     assert str(data["x"][-1]) in chart["trend"]
     nights[D] = replace(nights[D-timedelta(days=1)], day=D, source="COROS")
     changed = sl.bars(nights, D, "90")
-    assert "moyenne 7 jours" not in json.loads(changed["data"])["r"][-1][2]
+    # one COROS night among 24 Garmin ones: the series stays the most worn watch's (owner, 2026-10-14: scientific
+    # basis — it switched to COROS at once, and the line broke), the COROS night never in its mean
+    read = json.loads(changed["data"])["r"][-1][2]
+    assert "moyenne 7 jours" in read and "6 nuits" in read and "Garmin" in read
 
 
 def test_daily_reference_uses_elapsed_days_same_source_and_preserves_zero():

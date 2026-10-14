@@ -1,6 +1,8 @@
 import logging
+import os
 import secrets
 import time
+from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,12 +10,91 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.exceptions import StravaAPIError, StravaRateLimitError, StravaTokenError
 from app.models.user import User
+from app.services import strava_state
 
 logger = logging.getLogger(__name__)
 
 STRAVA_BASE_URL = "https://www.strava.com"
 STRAVA_API_URL = f"{STRAVA_BASE_URL}/api/v3"
 STRAVA_OAUTH_URL = f"{STRAVA_BASE_URL}/oauth"
+QUOTA_SHARE = 0.8  # of a Strava rate-limit window, the background syncs' share
+SHARED_SUB_REFRESH_S = 12 * 3600  # the shared app's subscription id is read again this often (kept meanwhile)
+SHARED_SUB_RETRY_S = 5 * 60  # a failed lookup is not tried again before this
+SHARED_SUB_RECHECK_S = 10 * 60  # an event of another subscription asks Strava again at most this often
+
+
+def backing_off(client_id: str | None) -> bool:
+    """The background syncs of this app wait for its quota window to turn (strava_state)."""
+    until = strava_state.backoff_until(client_id)
+    return until is not None and until > time.time()
+
+
+# ── the shared app's webhook subscription ───────────────────────────────────
+
+def configured_shared_subscription() -> int | None:
+    """STRAVA_SUBSCRIPTION_ID when set: the shared app's subscription, Strava not asked (optional)."""
+    raw = str(getattr(settings, "STRAVA_SUBSCRIPTION_ID", None) or os.getenv("STRAVA_SUBSCRIPTION_ID", "")).strip()
+    return int(raw) if raw.isdigit() else None
+
+
+def shared_subscription_check(subscription_id: int) -> bool | None:
+    """Whether an event's subscription is the shared app's, without asking Strava (the webhook answers within 2 s):
+    True, False, or None when Strava is to be asked — not known yet, or another id while the last lookup is over
+    SHARED_SUB_RECHECK_S old (the subscription may have been made again)."""
+    configured = configured_shared_subscription()
+    if configured is not None:
+        return subscription_id == configured
+    known, cached = strava_state.shared_subscription()
+    if known and cached == subscription_id:
+        return True
+    if known and strava_state.read("shared_sub:recheck") is not None:
+        return False
+    return None
+
+
+async def lookup_shared_subscription() -> tuple[bool, int | None]:
+    """The shared app's push subscription (one per app), from Strava's GET /push_subscriptions with the app's keys:
+    kept for good, read again after SHARED_SUB_REFRESH_S; a failure keeps what was known and is not tried again
+    for SHARED_SUB_RETRY_S. Returns (known, id), id None when the app has none. An app-level request: no
+    athlete's token, no athlete's quota."""
+    if not settings.strava_shared_ready:
+        return False, None
+    if strava_state.read("shared_sub:failed") is not None:
+        return strava_state.shared_subscription()
+    strava_state.mark("shared_sub:recheck", SHARED_SUB_RECHECK_S)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:  # the keys in the query: httpx logs no URL (WARNING)
+            response = await client.get(f"{STRAVA_API_URL}/push_subscriptions", params={
+                "client_id": settings.STRAVA_CLIENT_ID, "client_secret": settings.STRAVA_CLIENT_SECRET})
+        if response.status_code != 200:
+            raise StravaAPIError(f"push_subscriptions: {response.status_code}", status_code=response.status_code)
+        sub_id = next((s["id"] for s in response.json() if isinstance(s, dict) and isinstance(s.get("id"), int)),
+                      None)
+    except Exception:
+        logger.warning("Strava: the shared app's webhook subscription could not be read", exc_info=True)
+        strava_state.mark("shared_sub:failed", SHARED_SUB_RETRY_S)
+        return strava_state.shared_subscription()
+    strava_state.remember_shared_subscription(sub_id, SHARED_SUB_REFRESH_S)
+    logger.info("Strava: the shared app's webhook subscription is %s", sub_id)
+    return True, sub_id
+
+
+async def shared_subscription_matches(subscription_id: int) -> bool | None:
+    """shared_subscription_check, asking Strava when it cannot tell (an event's task: never the webhook's answer).
+    None: Strava could not say."""
+    check = shared_subscription_check(subscription_id)
+    if check is not None:
+        return check
+    known, cached = await lookup_shared_subscription()
+    return cached == subscription_id if known else None
+
+
+async def refresh_shared_subscription() -> None:
+    """The hourly round keeps the shared app's subscription id at hand: read again from Strava every
+    SHARED_SUB_REFRESH_S (never forgotten meanwhile, nor when Strava cannot answer)."""
+    if (settings.strava_shared_ready and configured_shared_subscription() is None
+            and not strava_state.shared_subscription_fresh()):
+        await lookup_shared_subscription()
 
 
 class StravaService:
@@ -134,7 +215,10 @@ class StravaService:
             user.strava_access_token = data["access_token"]
             user.strava_refresh_token = data["refresh_token"]
             user.strava_token_expires_at = data["expires_at"]
-            await self.db.flush()
+            # committed at once (which also ends the row lock): Strava has already invalidated the refresh token
+            # sent, so the new pair must outlive whatever the caller does next — a rollback after a failed sync,
+            # an early return without a commit; lost, the next refresh would be refused and the link forgotten
+            await self.db.commit()
             logger.info("Token refreshed for user %d", user.id)
             return user
 
@@ -154,16 +238,7 @@ class StravaService:
                 **kwargs,
             )
 
-        # Check rate limits
-        rate_limit_usage = response.headers.get("X-RateLimit-Usage", "")
-        if rate_limit_usage:
-            short, daily = rate_limit_usage.split(",")
-            if int(short) > 90 or int(daily) > 950:
-                logger.warning(
-                    "Strava rate limit warning: %s/100 (15min), %s/1000 (daily)",
-                    short,
-                    daily,
-                )
+        self._note_quota(response)
 
         if response.status_code == 429:
             raise StravaRateLimitError()
@@ -175,6 +250,38 @@ class StravaService:
             )
 
         return response
+
+    def _note_quota(self, response: httpx.Response) -> None:
+        """The app's quota is shared by its athletes: past QUOTA_SHARE of a Strava window, or on a 429, the
+        background syncs (round, first import's details, races' D+) wait until that window turns — the next quarter
+        hour, or midnight UTC for the day's — leaving the rest to the webhooks and the athletes' own clicks."""
+        windows = []
+        for prefix in ("X-RateLimit", "X-ReadRateLimit"):  # all requests, and the reads (Strava counts both)
+            try:
+                used = [int(v) for v in response.headers[f"{prefix}-Usage"].split(",")]
+                limit = [int(v) for v in response.headers[f"{prefix}-Limit"].split(",")]
+            except (KeyError, ValueError):
+                continue
+            windows += [(u, n, i == 1) for i, (u, n) in enumerate(zip(used, limit)) if n > 0]
+        full = [daily for used, limit, daily in windows if used >= QUOTA_SHARE * limit]
+        if response.status_code == 429 and not full:
+            full = [False]  # no usable header: the quarter hour
+        if not full:
+            return
+        now = time.time()
+        step = 86400 if any(full) else 900
+        until = (now // step + 1) * step
+        strava_state.back_off(self.client_id, until)
+        logger.warning("Strava quota of app %s (%s): background syncs wait %d min", self.client_id,
+                       response.headers.get("X-RateLimit-Usage") or response.status_code, (until - now) // 60)
+
+    def backing_off(self) -> bool:
+        """This app's background syncs wait for its quota window to turn."""
+        return backing_off(self.client_id)
+
+    async def get_athlete(self, user: User) -> dict:
+        response = await self._make_request(user, "GET", "/athlete")
+        return response.json()
 
     async def get_activity(self, user: User, strava_activity_id: int) -> dict:
         response = await self._make_request(
@@ -337,6 +444,13 @@ class StravaService:
             logger.exception("Failed to deauthorize Strava for user %d", user.id)
 
 
+def link_intact(user: User) -> bool:
+    """After a StravaTokenError: whether the link survived it. Strava refused nothing (its token endpoint failed:
+    a 5xx, an odd answer), so the work is to be tried again. A refusal forgets the link (400) or flags the app's
+    keys (401): nothing to try until the athlete reconnects."""
+    return bool(user.strava_refresh_token and user.strava_credentials_valid)
+
+
 def _forget_link(user: User) -> None:
     """The tokens go (the athlete and the app keys stay, so reconnecting is
     one click); reconnecting fetches what was recorded meanwhile."""
@@ -355,13 +469,26 @@ def strava_status(user: User) -> dict:
         # stored keys Strava refused: say so and offer the wizard
         return {"connected": False, "bad_keys": user.has_own_strava_app and not user.strava_credentials_valid,
                 "own_app": user.has_own_strava_app, "shared_ready": settings.strava_shared_ready}
+    # a first import that failed (Strava's quota, an error), tried again by the round at `sync_retry_at`: as the
+    # watches' last_error, read by /connections/strava (« La synchronisation est à vérifier… ») and the app's list
+    failed = None
+    if not user.initial_sync_done:
+        failed = strava_state.initial_failure(user.id)
     return {
         "connected": True,
         "needs_reauth": not (user.strava_credentials_valid and user.has_strava_app),
         "own_app": user.has_own_strava_app, "shared_ready": settings.strava_shared_ready,
         "last_sync_at": user.last_activity_poll_at,
         "last_sync_ago": _ago(user.last_activity_poll_at),
+        "last_error": FIRST_IMPORT_ERRORS.get(failed.get("error"), FIRST_IMPORT_ERRORS["failed"]) if failed else None,
+        "sync_retry_at": datetime.fromtimestamp(failed.get("next_at", 0), timezone.utc) if failed else None,
     }
+
+
+FIRST_IMPORT_ERRORS = {  # strava_status' last_error (no template prints it yet: the interface pass decides)
+    "rate_limited": "Strava a limité la première synchro ; nouvel essai automatique.",
+    "failed": "La première synchro a échoué ; nouvel essai automatique.",
+}
 
 
 async def disconnect(db: AsyncSession, user: User) -> None:

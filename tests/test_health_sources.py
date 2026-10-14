@@ -7,7 +7,7 @@ import sqlalchemy as sa
 
 from app.models.health import HealthMetric, HealthSample
 from app.services import nights, sante
-from app.services.health import HRV_METHOD, Daily, reaggregate, store_daily
+from app.services.health import HRV_METHOD, Daily, Sample, store_daily, store_samples
 from app.services.health_sources import select_metrics
 from app.services.sante_daily import daily_context
 from tests import test_coros
@@ -46,12 +46,15 @@ def test_a_measured_zero_sleep_is_distinct_from_no_night():
 
 
 def test_a_new_watch_without_a_baseline_cannot_recycle_old_other_signals():
+    """One COROS night after 60 Garmin ones: never read against Garmin's baseline; the series stays the watch worn
+    most (owner, 2026-10-14: scientific basis — it switched at once and had no baseline), and as last night is not
+    on it, no state."""
     rows = night_rows(range(1, 61), asleep=480)
     _, details, _ = rows["hrv"][D - timedelta(days=1)]
     rows["hrv"][D] = (80, details, "COROS")
     day = _day(rows, base=None)
     assert day["stats"]["hr"]["value"] is not None  # old FC trend remains readable
-    assert day["stats"]["hrv"]["normal"] is None  # the new watch has only one reading
+    assert day["trends"]["hrv"]["source"] == "Garmin" and not day["trends"]["hrv"]["last"]
     assert day["score"]["value"] is None
 
 
@@ -104,6 +107,22 @@ def test_sleep_chooses_one_watch_and_does_not_add_the_others_naps():
     assert select_metrics(reversed(rows)) == chosen
 
 
+def test_two_apple_writers_rank_by_the_nights_they_hold_not_by_their_name():
+    """Two Apple devices writing the same nights (owner, 2026-10-14: scientific basis — they were ranked by their
+    hash, so a device's name decided the night and the series): the one with the most nights of the 28 days up to
+    each day, never a later day's; the name only breaks a tie."""
+    def row(source, day, value):
+        return HealthMetric(date=day, metric="sleep", value=value, source=source)
+
+    worn = [row("Apple Santé:zzz", D - timedelta(days=k), 420) for k in range(20)]
+    other = [row("Apple Santé:aaa", D - timedelta(days=k), 430) for k in (0, 5)]
+    chosen = select_metrics(worn + other)
+    assert chosen[D, "sleep"].source == "Apple Santé:zzz"  # by name, aaa would win
+    first = D - timedelta(days=19)  # zzz's first night: the 28 days before it hold none of aaa's either
+    tie = select_metrics([row("Apple Santé:zzz", first, 420), row("Apple Santé:aaa", first, 430)])
+    assert tie[first, "sleep"].source == "Apple Santé:aaa"  # one night each: the name
+
+
 @pytest.mark.asyncio
 async def test_legacy_hrv_cannot_hide_a_usable_other_watch(db_session, test_user):
     await store_daily(db_session, test_user.id, [Daily("hrv", D, 90)], "COROS")
@@ -116,43 +135,34 @@ async def test_legacy_hrv_cannot_hide_a_usable_other_watch(db_session, test_user
 
 @pytest.mark.asyncio
 async def test_reaggregating_raw_samples_preserves_direct_watch(db_session, test_user):
+    """Raw samples from other writers never touch a direct watch's nightly row, and never make one of their own
+    (2026-10-14: no daily value is made from samples any more; it re-aggregated them per source)."""
     await store_daily(
         db_session, test_user.id, [Daily("hrv", D, 65, {"method": HRV_METHOD})], "Garmin"
     )
-    for source, value in (("Apple Watch", 30), ("Other watch", 40)):
-        db_session.add(
-            HealthSample(
-                user_id=test_user.id,
-                metric="hrv",
-                kind="",
-                source=source,
-                value=value,
-                start_at=datetime.combine(D, datetime.min.time()),
-                end_at=datetime.combine(D, datetime.min.time()),
-            )
-        )
-    await db_session.flush()
+    at = datetime.combine(D, datetime.min.time())
+    samples = [Sample("hrv", "", at, at, value, source) for source, value in (("Apple Watch", 30), ("Other watch", 40))]
     for _ in range(2):
-        await reaggregate(db_session, test_user.id, {"hrv": {D}})
+        result = await store_samples(db_session, test_user.id, samples)
+        assert result["days"] == {}
     rows = (
         await db_session.scalars(
             sa.select(HealthMetric).where(HealthMetric.user_id == test_user.id)
         )
     ).all()
-    assert {(r.source, r.value) for r in rows} == {
-        ("Garmin", 65),
-        ("Apple Watch", 30),
-        ("Other watch", 40),
-    }
+    assert {(r.source, r.value) for r in rows} == {("Garmin", 65)}
+    assert (await db_session.scalar(sa.select(sa.func.count(HealthSample.id)).where(
+        HealthSample.user_id == test_user.id))) == 2
 
 
 @pytest.mark.asyncio
-async def test_coros_stress_is_an_archive_even_when_recent(db_session, test_user, as_user, monkeypatch):
+async def test_coros_stress_is_never_shown_even_when_recent(db_session, test_user, as_user, monkeypatch):
+    """COROS's stress is an archive its connection no longer sends: never a card (owner, 2026-10-14 — its « Stress
+    COROS · archive » card was built on every load, its rows all read, then left out by the template)."""
     await store_daily(db_session, test_user.id, [Daily("stress", D, 13)], "COROS")
     await store_daily(db_session, test_user.id, [Daily("stress", D, 25)], "Garmin")
     cards = {c["key"]: c for c in await daily_context(db_session, test_user.id, D)}
-    assert cards["stress"]["source"] == "Garmin"
-    assert cards["stress_archive"]["archived"] and cards["stress_archive"]["trend"] is None
+    assert cards["stress"]["source"] == "Garmin" and "stress_archive" not in cards
     from unittest.mock import AsyncMock
     monkeypatch.setattr(sante, "athlete_today", AsyncMock(return_value=D))
     html = (await as_user.get("/sante")).text

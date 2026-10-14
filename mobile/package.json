@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
-    "@kingstinct/react-native-healthkit": "^16.1.0",
+    "@kingstinct/react-native-healthkit": "^16.2.0",
     "expo": "~57.0.27",
+    "expo-background-task": "~57.0.21",
     "expo-build-properties": "~57.0.22",
     "expo-crypto": "~57.0.3",
     "expo-dev-client": "~57.0.19",
@@ -12,6 +13,7 @@
     "expo-secure-store": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
+    "expo-task-manager": "~57.0.21",
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-health-connect": "^4.1.3",

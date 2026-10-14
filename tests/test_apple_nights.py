@@ -132,7 +132,8 @@ def test_sdnn_reference_uses_own_variance_and_never_rmssd_score():
         day=d-timedelta(days=29-i)
         ns[day]=nights.Night(day,hrv=40+i%5,hrv_source=source)
     band=nights.normal(ns,'hrv',d)
-    assert band['sd']==pytest.approx(statistics.stdev(math.log(n.hrv) for n in ns.values()))
+    # owner, 2026-10-14: scientific basis — the baseline is days -67 to -8 (it held the week its trend judges)
+    assert band['sd']==pytest.approx(statistics.stdev(math.log(n.hrv) for x,n in ns.items() if x<=d-timedelta(days=8)))
     assert nights.normal(dict(list(ns.items())[-13:]),'hrv',d) is None
     score=sante._assess(ns,[],[],d)['score']
     assert score['value'] is None and 'hrv' not in [p['key'] for p in score['parts']]

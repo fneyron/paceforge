@@ -29,12 +29,37 @@ avec des identifiants arbitraires : leur utilisateur doit reconnecter Strava.
 L’import initial, la synchronisation manuelle et le polling fonctionnent avec
 l’app commune. Les quotas de requêtes sont partagés entre ses athlètes ; surveiller
 les réponses 429 et dimensionner la capacité Strava avant d’ouvrir davantage
-d’inscriptions. Le code conserve le mécanisme existant de reprise des imports.
+d’inscriptions. Un import initial coûte une requête par activité des 24 derniers
+mois (son détail) : avec le quota par défaut (1 000 lectures par jour), un nouvel
+athlète peut en consommer l’essentiel.
 
-Un webhook de l’app commune est optionnel : le polling existant assure la reprise.
-Configurer une seule souscription pour cette app vers
+Le webhook est la voie principale : chaque activité arrive à son envoi. Le polling
+n’en est que le secours, par une tournée horaire : chaque athlète relié est relu au
+moins une fois par jour (un événement peut se perdre), et toutes les heures
+seulement quand ni lui ni son app n’ont reçu d’événement depuis 24 h ; les athlètes
+restés le plus longtemps sans nouvelles passent d’abord. Chaque relecture complète
+aussi quelques activités importées sans leur détail (courses et sorties longues
+d’abord). À 80 % d’une fenêtre de quota Strava (15 min ou jour), ou sur une réponse
+429, les synchronisations de fond (tournée, détails, D+ des courses) attendent la
+fenêtre suivante ; le webhook et le bouton « Synchroniser » (une fois par minute au
+plus) gardent le reste. Un import initial en échec est relancé par la tournée après
+1 h, 2 h, 4 h… (24 h au plus). Ces états vivent dans Redis (aucune colonne).
+
+Configurer une seule souscription pour l’app commune vers
 `https://paceforge.fr/webhook/strava`, avec `STRAVA_WEBHOOK_VERIFY_TOKEN` défini
-comme secret aléatoire côté serveur. La connexion et la déconnexion d’un athlète
+comme secret aléatoire côté serveur. Un événement n’est traité que s’il vient
+d’une souscription connue pour l’app de l’athlète (la sienne pour une app
+personnelle, celle de l’app commune sinon), et chaque événement est vérifié auprès
+de Strava avant toute modification (création, modification, suppression,
+révocation). L’identifiant de la souscription de l’app commune est lu chez Strava
+(`GET /push_subscriptions` avec les clés de l’app, gardé 12 h, relu par la tournée
+horaire ; un échec n’est pas retenté avant 5 min) ; un événement arrivé avant
+qu’il soit connu est mis en file et sa tâche le vérifie d’abord, sans jamais
+utiliser les accès de l’athlète pour un identifiant inconnu (relu au plus toutes
+les 10 min). `STRAVA_SUBSCRIPTION_ID` est facultatif : renseigné, il remplace
+cette lecture. Une révocation sur Strava oublie le lien (jetons, identifiant
+athlète) ; les activités déjà reçues restent, comme pour une déconnexion depuis
+Réglages. La connexion et la déconnexion d’un athlète
 ne doivent pas créer ou supprimer ce webhook partagé. Les apps personnelles
 continuent de gérer leur propre souscription. Les autorisations OAuth demandées
 restent celles du service existant, y compris `activity:write` pour la fonction

@@ -24,9 +24,52 @@ jobs:
       - name: Run tests
         run: pytest tests/ -q
 
+  # The same tests on PostgreSQL with the schema the migrations build, as in production: SQLite accepts what
+  # PostgreSQL refuses (json has no equality, integers are 32-bit, foreign keys are enforced).
+  test-postgres:
+    name: Run tests on PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: paceforge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install .[dev]
+
+      - name: Build the schema with the migrations
+        run: alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/paceforge_test
+          SECRET_KEY: ci-only-not-a-secret
+          DEBUG: "true"
+
+      - name: Run tests
+        run: pytest tests/ -q
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/paceforge_test
+
   deploy:
     name: Deploy to Coolify
-    needs: test
+    needs: [test, test-postgres]
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Coolify deployment

@@ -1,7 +1,7 @@
 import logging
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.templating import Jinja2Templates
 
 logger = logging.getLogger(__name__)
@@ -64,9 +64,16 @@ class UserNotFoundError(PaceForgeError):
         super().__init__(f"User {identifier} not found")
 
 
+def _api_call(request: Request) -> bool:
+    """A JSON API caller (the phone app, a script): /api/*, unless a browser opened it as a page."""
+    return request.url.path.startswith("/api/") and "text/html" not in request.headers.get("accept", "")
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(404)
-    async def not_found_handler(request: Request, _exc: Exception) -> HTMLResponse:
+    async def not_found_handler(request: Request, exc: Exception) -> HTMLResponse | JSONResponse:
+        if _api_call(request):
+            return JSONResponse({"detail": getattr(exc, "detail", None) or "Not Found"}, status_code=404)
         return templates.TemplateResponse(
             request, "404.html", status_code=404
         )

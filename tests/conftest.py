@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.database import Base
 from app.dependencies import get_db
@@ -25,7 +26,9 @@ from app.models.activity import Activity
 from app.models.analysis import Analysis
 from app.models.user import User
 
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+# PostgreSQL, as in production, when TEST_DATABASE_URL names one: build its schema with `alembic upgrade head`
+# first (the models say JSONB where the migrated columns are json). Test values stay within int32 for it.
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 
 
 @pytest.fixture(scope="session")
@@ -37,7 +40,9 @@ def event_loop():
 
 @pytest.fixture(scope="session")
 async def engine():
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    # asyncpg connections belong to the loop that opened them: none kept between tests on PostgreSQL
+    pool = {"poolclass": NullPool} if TEST_DATABASE_URL.startswith("postgresql") else {}
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False, **pool)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine
@@ -76,7 +81,7 @@ async def test_user(db_session: AsyncSession) -> User:
         strava_athlete_id=12345678,
         strava_access_token="test_access_token",
         strava_refresh_token="test_refresh_token",
-        strava_token_expires_at=9999999999,
+        strava_token_expires_at=2147483000,
         firstname="Test",
         lastname="Runner",
         profile_picture_url="https://example.com/avatar.jpg",
@@ -191,3 +196,76 @@ def same_today(monkeypatch):
         return day
     monkeypatch.setattr(sante_training, "athlete_today", today)
     return day
+
+
+# ── a session whose commit and rollback really run ──────────────────────────
+# The fixtures above swap `commit` for `flush` in many tests, so code that must
+# really commit (a rotated token kept through a later rollback, an account
+# deletion) is tested with these: every commit releases a SAVEPOINT inside one
+# outer transaction, which is rolled back when the test ends. Foreign keys are
+# enforced, as on PostgreSQL (the shared test.db leaves them off).
+
+@pytest.fixture(scope="session")
+async def savepoint_engine():
+    from sqlalchemy import event
+    from sqlalchemy.pool import StaticPool
+
+    eng = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
+
+    @event.listens_for(eng.sync_engine, "connect")
+    def _connect(dbapi_connection, _record):
+        # SQLAlchemy emits BEGIN and SAVEPOINT itself (the driver's own transaction handling breaks savepoints)
+        dbapi_connection.isolation_level = None
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    @event.listens_for(eng.sync_engine, "begin")
+    def _begin(conn):
+        conn.exec_driver_sql("BEGIN")
+
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield eng
+    await eng.dispose()
+
+
+@pytest.fixture
+async def committing_session(savepoint_engine) -> AsyncGenerator[AsyncSession, None]:
+    """A session bound to one outer transaction: its commit and rollback work for real (savepoints), and
+    nothing outlives the test."""
+    async with savepoint_engine.connect() as conn:
+        outer = await conn.begin()
+        session = AsyncSession(bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint")
+        try:
+            yield session
+        finally:
+            await session.close()
+            await outer.rollback()
+
+
+@pytest.fixture
+async def committing_client(committing_session: AsyncSession):
+    """The app on `committing_session`, committed at the end of each request as get_db does."""
+    app = create_app()
+
+    async def override_get_db():
+        try:
+            yield committing_session
+            await committing_session.commit()
+        except Exception:
+            await committing_session.rollback()
+            raise
+
+    app.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as c:
+        yield c
+
+
+@pytest.fixture(autouse=True)
+def _rate_limits_in_memory(monkeypatch):
+    """The login, sign-up and reset counters in this process, fresh for each test (production keeps them in
+    Redis, shared by the web workers)."""
+    from app.services import auth
+
+    monkeypatch.setattr(auth, "_counter", auth.MemoryCounter())
