@@ -3,7 +3,7 @@ import math
 import statistics
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health import HealthMetric
@@ -95,21 +95,65 @@ def daily_card(metric: str, rows: list[HealthMetric], today: date) -> dict | Non
     return out
 
 
-async def daily_context(db: AsyncSession, user_id: int, today: date) -> list[dict]:
-    rows = (await db.execute(select(HealthMetric).where(
-        HealthMetric.user_id == user_id, HealthMetric.metric.in_(SIGNALS), HealthMetric.date <= today,
-    ).order_by(HealthMetric.date))).scalars().all()
+WINDOW_DAYS = 30  # the cards' charts; each metric's latest row before them still says how old it is
+DETAIL_KEYS = ("origins", "measured_at", "method", "scope")  # what a card reads of a row's details (never the
+# raw readings a Garmin day row carries: ≈ 22 KiB each, once read on every load)
+
+
+def _light(date_, metric, value, source, details) -> HealthMetric:
+    return HealthMetric(date=date_, metric=metric, value=value, source=source,
+                        details={k: v for k, v in zip(DETAIL_KEYS, details, strict=True) if v is not None})
+
+
+async def _metric_rows(db: AsyncSession, user_id: int, today: date) -> list[HealthMetric]:
+    """The daily rows of the 30 days up to `today`, plus, for a metric without one, its latest day before them
+    (every source of that day), each with the details keys a card reads (DETAIL_KEYS) only; COROS's stress is an
+    archive the page never shows (its connection no longer sends it)."""
+    lo = today - timedelta(days=WINDOW_DAYS - 1)
+    cols = (HealthMetric.date, HealthMetric.metric, HealthMetric.value, HealthMetric.source,
+            HealthMetric.details["origins"], *(HealthMetric.details[k].as_string() for k in DETAIL_KEYS[1:]))
+    shown = and_(HealthMetric.user_id == user_id, HealthMetric.metric.in_(SIGNALS),
+                 or_(HealthMetric.metric != "stress", HealthMetric.source != "COROS"))
+    rows = (await db.execute(select(*cols).where(shown, HealthMetric.date >= lo, HealthMetric.date <= today))).all()
+    have = {r[1] for r in rows}
+    older = (await db.execute(select(HealthMetric.metric, func.max(HealthMetric.date)).where(
+        shown, HealthMetric.date < lo, HealthMetric.metric.not_in(have) if have else true())
+        .group_by(HealthMetric.metric))).all()
+    if older:
+        rows += (await db.execute(select(*cols).where(shown, or_(*(and_(HealthMetric.metric == m, HealthMetric.date == d)
+                                                                  for m, d in older))))).all()
+    return [_light(d, m, v, src, det) for d, m, v, src, *det in rows]
+
+
+async def _phone_rows(db: AsyncSession, user_id: int, today: date) -> list[MobileDaily]:
+    """The phone's rows of the 30 days, plus each metric's latest day before them when it has none in them."""
+    lo = today - timedelta(days=WINDOW_DAYS - 1)
+    order = (MobileDaily.measured_at.asc().nullsfirst(), MobileDaily.updated_at, MobileDaily.id)
+    rows = list((await db.scalars(select(MobileDaily).where(
+        MobileDaily.user_id == user_id, MobileDaily.date >= lo, MobileDaily.date <= today).order_by(*order))).all())
+    have = {r.metric for r in rows}
+    older = (await db.execute(select(MobileDaily.metric, func.max(MobileDaily.date)).where(
+        MobileDaily.user_id == user_id, MobileDaily.date < lo, MobileDaily.metric.not_in(have) if have else true())
+        .group_by(MobileDaily.metric))).all()
+    if older:
+        rows = list((await db.scalars(select(MobileDaily).where(
+            MobileDaily.user_id == user_id, or_(*(and_(MobileDaily.metric == m, MobileDaily.date == d)
+                                                  for m, d in older))).order_by(*order))).all()) + rows
+    return rows
+
+
+async def daily_context(db: AsyncSession, user_id: int, today: date, now: datetime | None = None) -> list[dict]:
+    """The « Au quotidien » cards: the 30 days up to `today` (each metric's latest older value still dated), one
+    value per day and metric; the weight is the one weight rule's (athlete_weight: the most recent dated value of
+    the weigh-ins and the value typed in Réglages, stale after 30 days), the chart its weigh-ins of the 30 days."""
+    rows = await _metric_rows(db, user_id, today)
     # Select exactly one value per day. Prefer a direct watch to its phone copy
     # for aggregates; a weigh-in instead follows its actual measurement time.
     # Between phone platforms, choose the most recent measured weigh-in, otherwise
     # the most recently refreshed daily aggregate; never sum the two totals.
-    by_day = select_metrics([r for r in rows if _valid(r) and not (r.metric == "stress" and r.source == "COROS")],
-                            await preference(db, user_id))
-    phone_rows = (await db.scalars(select(MobileDaily).where(
-        MobileDaily.user_id == user_id, MobileDaily.date <= today,
-    ).order_by(MobileDaily.measured_at.asc().nullsfirst(), MobileDaily.updated_at, MobileDaily.id))).all()
+    by_day = select_metrics([r for r in rows if _valid(r)], await preference(db, user_id))
     chosen = {}
-    for r in phone_rows:
+    for r in await _phone_rows(db, user_id, today):
         chosen[(r.date, r.metric)] = r
     for key, r in chosen.items():
         previous = by_day.get(key)
@@ -130,21 +174,32 @@ async def daily_context(db: AsyncSession, user_id: int, today: date) -> list[dic
                                        details={"origins": sorted(r.sources),
                                                 "measured_at": r.measured_at.isoformat() if r.measured_at else None})
     rows = list(by_day.values())
-    cards = [c for metric in SIGNALS if (c := daily_card(metric, [r for r in rows if r.metric == metric], today))]
-    archives = (await db.scalars(select(HealthMetric).where(
-        HealthMetric.user_id == user_id, HealthMetric.metric == "stress", HealthMetric.source == "COROS",
-        HealthMetric.date <= today))).all()
-    if archive := daily_card("stress", archives, today):
-        archive.update(key="stress_archive", title="Stress COROS · archive", archived=True, trend=None,
-                       meaning="Anciennes données conservées. La connexion COROS actuelle ne transmet pas le stress.")
-        if archive["chart"]:
-            archive["chart"]["key"] = "daily-stress-archive"
-        cards.append(archive)
-    if not any(c["key"] == "weight" for c in cards):
-        user = await db.get(User, user_id)
-        if user and user.weight_kg is not None:
-            cards.append({"key": "weight", "title": "Poids du profil", "value": viz.num(user.weight_kg, 1, "kg"),
-                          "source": "Saisie manuelle", "latest": None, "stale": False,
-                          "chart": None, "trend": None,
-                          "meaning": "Poids renseigné dans Réglages, sans date de pesée ni historique."})
+    cards = [c for metric in SIGNALS if metric != "weight"
+             and (c := daily_card(metric, [r for r in rows if r.metric == metric], today))]
+    if (weight := await _weight_card(db, user_id, [r for r in rows if r.metric == "weight"], today, now)):
+        cards.insert(list(SIGNALS).index("weight"), weight)
     return cards
+
+
+async def _weight_card(db: AsyncSession, user_id: int, rows: list, today: date, now: datetime | None) -> dict | None:
+    """The single weight Santé prints (owner, 2026-10-14: scientific basis — it showed the latest phone weigh-in
+    even when stale, and hid a more recent value typed in Réglages): athlete_weight's value, source and date, « Donnée
+    ancienne » after 30 days; the 30 days' weigh-ins drawn when that weight is the latest of them."""
+    from app.services import timezones
+    from app.services.athlete_weight import athlete_weight
+
+    user = await db.get(User, user_id)
+    card = daily_card("weight", rows, today)
+    reading = await athlete_weight(db, user, now) if user else None
+    if reading is None:
+        return card
+    typed = reading.source == "Saisie manuelle"
+    latest = timezones.local_date(reading.at, timezones.athlete_zone(user)).strftime("%d/%m/%Y") if reading.at \
+        else None
+    out = {"key": "weight", "title": "Poids du profil" if typed else "Poids", "value": viz.num(reading.kg, 1, "kg"),
+           "source": reading.source, "latest": latest, "stale": reading.stale, "chart": None, "trend": None,
+           "meaning": "Poids renseigné dans Réglages, sans date de pesée ni historique." if typed
+           else SIGNALS["weight"][4]}
+    if card and not typed and card["chart"]:
+        out.update(chart=card["chart"], trend=card["trend"], source=card["source"])
+    return out

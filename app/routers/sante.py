@@ -62,8 +62,7 @@ async def sante_page(
 
 
 async def _health_context(db: AsyncSession, user: User, r: str | None = None) -> dict:
-    status = await coros.coros_status(db, user.id)
-    garmin_link = await garmin.garmin_status(db, user.id)
+    status, garmin_link = await link_state(db, user.id)
     try:
         page = await health_page(db, user.id, r=r)
     except Exception:  # shown as an error, never as "connect your watch"
@@ -78,6 +77,27 @@ async def _health_context(db: AsyncSession, user: User, r: str | None = None) ->
                             STALE_NIGHT if night_missing else STALE_AFTER)
     return {"user": user, "coros": status, "garmin": garmin_link, "page": page, "auto_sync": auto_sync,
             "sync_v": await data_version(db, user.id) if auto_sync else None, "sync_n": 0}
+
+
+def _link(conn, service, retryable=()) -> dict:
+    """What Santé reads of a watch link (the page's sync issue line, the opening sync): connected, needs_reauth,
+    last_sync_at, syncing (claimed within the service's CLAIM_TTL), last_error, retryable_partial (a transient
+    partial import with a recorded sync: retried on opening, as coros_status says)."""
+    if conn is None:
+        return {"connected": False}
+    claimed = conn.sync_claimed_at
+    return {"connected": True, "needs_reauth": conn.needs_reauth, "last_sync_at": conn.last_sync_at,
+            "syncing": bool(claimed and datetime.now(timezone.utc) - _utc(claimed) < service.CLAIM_TTL),
+            "last_error": conn.last_error,
+            "retryable_partial": conn.last_error in retryable and conn.last_sync_at is not None}
+
+
+async def link_state(db: AsyncSession, user_id: int) -> tuple[dict, dict]:
+    """(COROS's, Garmin's) link state from the link rows alone (the full coros_status / garmin_status count every
+    stored measurement: Réglages', never needed here, on every load and every 3-s poll)."""
+    retryable = (coros.PARTIAL, coros.HRV_PARTIAL, coros.SLEEP_PARTIAL, coros.PHASES_PARTIAL)
+    return (_link(await coros.connection_for(db, user_id), coros, retryable),
+            _link(await garmin.connection_for(db, user_id), garmin))
 
 
 @router.get("/accueil")
@@ -111,36 +131,40 @@ async def sante_sleep_range(request: Request, r: str | None = None, user: User =
     return _away(request, _landing("sommeil", r))
 
 
-async def data_version(db: AsyncSession, user_id: int, home: bool = False) -> str:
-    """Version of Santé, including activity-only syncs. `home` accepts legacy callers."""
+async def data_version(db: AsyncSession, user_id: int) -> str:
+    """Version of Santé: its rows, the phone's, the activities (activity-only syncs too; integer sums, so the hash
+    is stable on PostgreSQL, whose float sums may differ in their last digits from one run to the next) and each
+    watch link's state (needs_reauth, an error or not: a sync that only failed reloads the page, which then says
+    so; never its last sync time: a sync that brought nothing changes nothing)."""
     from hashlib import sha256
 
-    from sqlalchemy import func
+    from sqlalchemy import Integer, cast, func
 
+    from app.models.activity import Activity
+    from app.models.coros import CorosConnection
+    from app.models.garmin import GarminConnection
     from app.models.health import HealthMetric
+    from app.models.mobile import MobileDaily
+
+    def whole(column, scale=1):
+        return func.sum(cast(func.round(func.coalesce(column, 0) * scale), Integer))
 
     n, last = (await db.execute(select(func.count(HealthMetric.id), func.max(HealthMetric.updated_at)).where(
         HealthMetric.user_id == user_id))).one()
     version = f"{n}-{last.isoformat() if last else ''}"
-    from app.models.mobile import MobileDaily
     count, updated = (await db.execute(select(func.count(MobileDaily.id), func.max(MobileDaily.updated_at)).where(
         MobileDaily.user_id == user_id))).one()
     version += f"-{count}-{updated.isoformat() if updated else ''}"
-    from app.models.activity import Activity
-    from app.models.coros import CorosConnection
-    from app.models.garmin import GarminConnection
     # Activity-only watch syncs must also refresh Santé; totals catch rewrites.
-    counts = (await db.execute(select(func.count(Activity.id), func.max(Activity.id),
-                func.sum(Activity.moving_time), func.sum(Activity.distance),
-                func.sum(Activity.average_heartrate), func.sum(Activity.max_heartrate),
-                func.sum(Activity.total_elevation_gain), func.sum(Activity.elapsed_time)).where(Activity.user_id == user_id))).one()
-    version += "-" + "-".join(str(v or 0) for v in counts)
-    if home:  # legacy home pollers also watched connection metadata
-        # A successful sync with no new measurements still updates the source status.
-        for model in (CorosConnection, GarminConnection):
-            status = (await db.execute(select(model.last_sync_at, model.needs_reauth, model.last_error,
-                                               model.sync_claimed_at).where(model.user_id == user_id))).one_or_none()
-            version += str(status)
+    counts = (await db.execute(select(func.count(Activity.id), func.max(Activity.id), whole(Activity.moving_time),
+                                      whole(Activity.distance), whole(Activity.average_heartrate, 10),
+                                      whole(Activity.max_heartrate), whole(Activity.total_elevation_gain),
+                                      whole(Activity.elapsed_time)).where(Activity.user_id == user_id))).one()
+    version += "-" + "-".join(str(int(v or 0)) for v in counts)
+    for model in (CorosConnection, GarminConnection):
+        link = (await db.execute(select(model.needs_reauth, model.last_error.is_not(None)).where(
+            model.user_id == user_id))).one_or_none()
+        version += "-" + ("none" if link is None else f"{int(bool(link[0]))}{int(bool(link[1]))}")
     return sha256(version.encode()).hexdigest()
 
 
@@ -155,7 +179,9 @@ async def sante_feel(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """The morning check-in of v3, kept harmlessly: the page no longer asks it
+    """DEPRECATED (2026-10-14): kept for a grace period, to be removed once no client posts here any more.
+
+    The morning check-in of v3, kept harmlessly: the page no longer asks it
     (owner, 2026-10-08) and Santé never reads it, but an old form or a client
     still posting gets its answer stored, as before, and the page back. `feel`
     1 mieux · 2 comme d'habitude · 3 moins bien; with « moins bien », `why`
@@ -245,7 +271,6 @@ async def sante_sync_status(
     request: Request,
     v: str = "",
     n: int = 0,
-    home: bool = False,
     since: datetime | None = None,
     watches: str = "",
     user: User = Depends(get_current_user),
@@ -271,11 +296,11 @@ async def sante_sync_status(
                 pending.append(name)  # queued but not yet claimed/completed
         return JSONResponse({"pending": pending, "errors": errors}, headers={"Cache-Control": "no-store"})
     try:
-        links = [await coros.coros_status(db, user.id), await garmin.garmin_status(db, user.id)]
+        links = await link_state(db, user.id)
         if any(link.get("syncing") for link in links) and n < MAX_POLLS:
             return templates.TemplateResponse(request, "partials/sante_sync.html", context={
-                "request": request, "auto_sync": True, "sync_v": v, "sync_n": n + 1, "sync_home": home})
-        if v and await data_version(db, user.id, home=home) != v:
+                "request": request, "auto_sync": True, "sync_v": v, "sync_n": n + 1})
+        if v and await data_version(db, user.id) != v:
             return HTMLResponse("", headers={"HX-Refresh": "true"})
     except Exception:  # never leave the page waiting on an error
         logger.exception("Santé sync status failed for user %d", user.id)
@@ -288,9 +313,10 @@ async def sante_sync(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """The sync button of a Santé page left open since v4 (Santé has none any
-    more: « Synchroniser maintenant » is in Réglages, per watch): every linked
-    watch synced, then the page reloads (the new page, without the button)."""
+    """The phone app's refresh (JSON: each linked watch queued, its progress polled on /sante/sync-status), and the
+    sync button of a Santé page left open since v4 (Santé has none any more: « Synchroniser maintenant » is in
+    Réglages, per watch): that page just reloads — opening Santé syncs a stale watch in the background (the
+    durable worker), never inline in this request (it ran Garmin's whole sync in it)."""
     if request.headers.get("accept") == "application/json":
         if request.headers.get("x-paceforge-refresh") != "1":
             raise HTTPException(403)
@@ -313,8 +339,4 @@ async def sante_sync(
                 else:
                     errors.append(f"{name} : synchronisation indisponible. Réessaie depuis Réglages.")
         return JSONResponse({"watches": started, "since": since, "errors": errors}, headers={"Cache-Control": "no-store"})
-    for _, service in _WATCHES:
-        conn = await service.connection_for(db, user.id)
-        if conn and not conn.needs_reauth:
-            await service.run_sync(db, conn)
     return HTMLResponse("", headers={"HX-Refresh": "true"})
