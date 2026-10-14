@@ -174,3 +174,58 @@ async def test_the_background_syncs_back_off_near_the_apps_quota(db_session, tes
     assert strava.backing_off() and redis_until("4242") - time.time() <= 900
     get.return_value = _response(200, usage="garbage")
     await strava.get_recent_activities(test_user)  # a malformed header never fails the request
+
+
+# ── the first import, one builder, the athlete's zone ────────────────────────
+
+async def test_the_first_imports_details_stop_at_the_quota(db_session, test_user, task_session, monkeypatch):
+    """One request per activity for its detail: past the app's 80 %, the rest keep the list's data (the base code
+    asked on, each answer a 429)."""
+    from app.tasks.initial_sync import _run_initial_sync
+
+    await _own_app(db_session, test_user, done=False)
+    now = datetime.now(timezone.utc)
+    listed = [_data(760_000 + i, now - timedelta(days=i)) for i in range(5)]
+    monkeypatch.setattr(StravaService, "get_all_activities_since", AsyncMock(return_value=listed))
+    calls = []
+
+    async def detail(self, user, sid):
+        calls.append(sid)
+        if len(calls) == 2:
+            strava_state.back_off("4242", time.time() + 600)
+        return {**_data(sid, now), "laps": [{"lap_index": 1}], "calories": 500.0}
+    monkeypatch.setattr(StravaService, "get_activity", detail)
+    result = await _run_initial_sync(test_user.id)
+    assert result["synced"] == 5 and result["enriched"] == 2 and len(calls) == 2
+    assert (await _row(db_session, 760_000)).laps == [{"lap_index": 1}]
+    assert (await _row(db_session, 760_004)).laps is None and test_user.initial_sync_done
+
+
+def _run(user, sid, start, name="Footing") -> Activity:
+    return Activity(user_id=user.id, strava_activity_id=sid, sport_type="Run", name=name, start_date=start,
+                    distance=8000, moving_time=2400, elapsed_time=2500, total_elevation_gain=50, raw_data={})
+
+
+async def test_the_athletes_zone_comes_from_their_strava_activities(db_session, test_user):
+    """users.timezone, while none was chosen (empty, or still the default): the most frequent zone of the last
+    activities (« (GMT-05:00) America/New_York »), a trip abroad not moving it; a zone set otherwise is kept."""
+    from app.services.strava_activities import adopt_zone
+
+    start = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
+
+    def act(sid, label, days):
+        a = _run(test_user, sid, start + timedelta(days=days))
+        a.raw_data = {"timezone": label}
+        return a
+    db_session.add_all([act(790_000 + d, "(GMT-05:00) America/New_York", d) for d in range(6)]
+                       + [act(790_100 + d, "(GMT+09:00) Asia/Seoul", 10 + d) for d in range(3)])  # the newest
+    await db_session.flush()
+    assert test_user.timezone is None
+    await adopt_zone(db_session, test_user)
+    assert test_user.timezone == "America/New_York"
+    test_user.timezone = "Europe/Paris"  # still the default: learnt again
+    await adopt_zone(db_session, test_user)
+    assert test_user.timezone == "America/New_York"
+    test_user.timezone = "Asia/Tokyo"  # chosen otherwise: kept
+    await adopt_zone(db_session, test_user)
+    assert test_user.timezone == "Asia/Tokyo"
