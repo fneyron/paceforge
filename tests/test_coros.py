@@ -1632,3 +1632,17 @@ async def test_a_job_that_dies_before_its_sync_lets_go_of_the_reservation(db_ses
         await coros_sync._run_one(*job)  # the old job, delivered again, dies again
     assert await claimed() is not None  # the newer reservation is kept
     assert (await _work(db_session, newer))["ok"]
+
+
+async def test_a_link_still_holding_the_former_partial_wording_stays_owed(db_session: AsyncSession, test_user: User,
+                                                                          fake, no_commit):
+    """« …arrive à la prochaine synchro » is no longer true (the whole history comes with the next day's first
+    sync): said anew, and the rows written with the former wording are still read as an owed history."""
+    former = "COROS a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc), last_error=former)
+    status = await coros.coros_status(db_session, test_user.id)
+    assert status["last_error"] == coros.PARTIAL and status["partial"] and status["retryable_partial"]
+    assert coros.PARTIAL.endswith("le reste de ton historique arrive avec la synchro complète de demain.")
+    assert (await coros.run_sync(db_session, conn))["ok"]  # the same day: the last week only, still owed
+    assert [a for n, a in fake.tool_calls if n == "queryAvgHeartRate"] == [{"days": 7}]
+    assert conn.last_error == coros.PARTIAL

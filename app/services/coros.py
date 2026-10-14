@@ -99,7 +99,10 @@ SLEEP_CHUNK_DAYS = 31
 SYNC_EVERY = timedelta(hours=2)  # last night shows up the same morning
 CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
 # read after « Dernière synchro échouée : »; also how the next sync knows the history is owed
-PARTIAL = "COROS a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
+PARTIAL = ("COROS a cessé de répondre en cours de route, le reste de ton historique arrive avec la synchro complète "
+           "de demain.")
+# its wording until 2026-10-14 (the history then came at the next sync), still in some links' last_error
+_LEGACY_PARTIAL = "COROS a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
 HRV_PARTIAL = "La lecture de la VFC est incomplète. Les autres données reçues sont conservées ; réessaie la synchro."
 HRV_UNREADABLE = "Le format de la VFC renvoyé par COROS n’a pas pu être lu. Les autres données reçues sont conservées."
 SLEEP_PARTIAL = "La lecture du sommeil est incomplète ; elle est nécessaire au calcul de la VFC. Les données déjà reçues sont conservées."
@@ -1633,7 +1636,7 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
             HealthMetric.metric.in_(("hr_day", "steps", "sleep")))
     )).scalar()
-    owed = (conn.last_sync_at is None or not have or conn.last_error in (PARTIAL, HRV_UNREADABLE)
+    owed = (conn.last_sync_at is None or not have or _said(conn.last_error) in (PARTIAL, HRV_UNREADABLE)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=NAPS_FOLDED))
@@ -1696,13 +1699,18 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     result["sleep_incomplete"] = bool(data.get("overview_failed_days"))
     result["phases_incomplete"] = bool(data.get("daily_incomplete"))
     # a history cut short (or not understood) earlier, left for the day's whole read: still owed, still said
-    deferred = owed and not full and conn.last_error in (PARTIAL, HRV_UNREADABLE)
+    deferred = owed and not full and _said(conn.last_error) in (PARTIAL, HRV_UNREADABLE)
     result["backfill_partial"] = ((bool(data.get("health_stopped")) or result["hrv_incomplete"]
                                    or result["sleep_incomplete"] or result["phases_incomplete"])
                                   and days == BACKFILL_DAYS) or deferred
     logger.info("COROS sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s",
                 conn.user_id, days, calls, failed, ", stopped" if stopped else "", result["by_metric"], sessions)
     return result
+
+
+def _said(error: str | None) -> str | None:
+    """A link's last error as said today (the former wording of PARTIAL read as PARTIAL)."""
+    return PARTIAL if error == _LEGACY_PARTIAL else error
 
 
 async def claim(db: AsyncSession, conn: CorosConnection) -> bool:
@@ -1872,6 +1880,7 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
         return {"connected": False}
     counts, latest = await _synced_measurements(db, user_id, SOURCE)
     sleep, hrv = latest.get("sleep"), latest.get("hrv")
+    error = _said(conn.last_error)
     hrv_note = f"Dernière VFC reçue : {hrv.strftime('%d/%m/%Y')}." if hrv else None
     if sleep and (hrv is None or hrv < sleep):
         hrv_note = f"VFC de la nuit du {sleep.strftime('%d/%m')} pas encore reçue." + (f" {hrv_note}" if hrv_note else "")
@@ -1882,9 +1891,9 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
         "last_sync_ago": _ago(conn.last_sync_at),
         "syncing": bool((claimed := _as_utc(conn.sync_claimed_at))
                         and datetime.now(timezone.utc) - claimed < CLAIM_TTL),
-        "last_error": conn.last_error,
-        "retryable_partial": conn.last_error in (PARTIAL, HRV_PARTIAL, SLEEP_PARTIAL, PHASES_PARTIAL) and conn.last_sync_at is not None,
-        "partial": conn.last_error in (PARTIAL, HRV_PARTIAL, HRV_UNREADABLE, SLEEP_PARTIAL, PHASES_PARTIAL),
+        "last_error": error,
+        "retryable_partial": error in (PARTIAL, HRV_PARTIAL, SLEEP_PARTIAL, PHASES_PARTIAL) and conn.last_sync_at is not None,
+        "partial": error in (PARTIAL, HRV_PARTIAL, HRV_UNREADABLE, SLEEP_PARTIAL, PHASES_PARTIAL),
         "hrv_note": hrv_note,
         "per_metric": counts,
     }

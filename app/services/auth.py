@@ -79,7 +79,7 @@ LIMITS = {  # action: (per address and email, per address, window in seconds)
     "register": (5, 20, 60 * 60),
     "forgot": (5, 20, 60 * 60),  # reset emails asked for
 }
-TOO_MANY = "Trop de tentatives. Réessaie dans quelques minutes."
+TOO_MANY = "Trop de tentatives. Réessaie plus tard."  # windows of 15 minutes to an hour
 
 
 class MemoryCounter:
