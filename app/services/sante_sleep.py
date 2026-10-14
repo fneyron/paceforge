@@ -75,9 +75,13 @@ NEED_DEFAULT = 8 * 60  # (H) the middle of 7–9 h
 # raced night never scaled up; Van Dongen 2003: the deficit of a week of short nights adds up; Kitamura 2016: it takes
 # days to repay), only from 4 measured nights (a sparse week says too little: Walsh 2021)
 DEFICIT_DAYS, DEFICIT_MIN_NIGHTS = 7, 4  # (H)
-# owner, 2026-10-14: scientific basis — a deficit under its own noise is « none »: D7 must exceed 1.28 standard errors of
-# a 7-night estimate from n measured nights (σ_T·7/√n), σ_T shrunk towards 45 min (H, a night-to-night SD of the 24 h)
+# owner, 2026-10-14: scientific basis — a deficit is said only over what its own estimate cannot tell: 1.28 standard
+# errors of the nights it stands in for (the u = 7 − r − n nights not measured, each a night-to-night SD σ_T of the
+# 24 h, shrunk towards 45 min: H), and 1 h at least (H); with every night measured the week's debt is known, so the
+# floor is that hour (the second statistics review, 2026-10-14: 1.28·σ_T·7/√n tested the athlete's mean against 8 h,
+# not the week's debt, and left the raced nights out)
 DEFICIT_Z, TST_SD_PRIOR = 1.28, 45.0  # (H)
+DEFICIT_MIN = 60  # (H) minutes: a smaller deficit over 7 nights is « pas de manque notable »
 
 # the nights' table's words for its marks (« À noter »): no outing named (v4.3), plain words (v4.4); the others are
 # nights.TAG_WORDS'
@@ -243,10 +247,12 @@ def deficit(nights: dict, d: date, raced=frozenset()) -> dict:
     D7 = max(0, Σ_raced (8 h − naps) + (7 − r)/n_m · Σ_measured (8 h − 24 h)): a night spent racing (`raced`: an
     effort through 01:00 → 05:00, sante_training.raced_nights; Kishi 2024) counts its own sleep, never scaled up;
     the n_m measured nights stand for the 7 − r others (a night not measured is never 0 h); only from 4 measured
-    nights (H). Under 1.28 · σ_T · 7/√n_m it is « none » (H: about 2h30 for σ_T 45 min and 7 nights): a sleeper who
-    meets 8 h on average would show a positive D7 on half the mornings; σ_T is the athlete's SD of the 24 h over
-    the baseline days (−67 → −8), shrunk towards 45 min as the bands are (nights.shrunk_sd).
-    {minutes (to 10 min; None: not estimable), n (measured), raced, days, raw (D7 before the noise floor, min),
+    nights (H). It is said over its floor only, max(1 h, 1.28 · σ_T · √(u · (7 − r)/n_m)) with u = 7 − r − n_m the
+    nights not measured (H): the standard error of standing n_m nights in for 7 − r, so 1 h when every night not
+    raced through is measured (the week's debt is then known; 1.28 · σ_T · 7/√n_m, before, tested the athlete's mean
+    against 8 h: a 45-min debt read « pas de manque »); σ_T is the athlete's SD of the 24 h over the baseline days
+    (−67 → −8), shrunk towards 45 min as the bands are (nights.shrunk_sd). Under it: « pas de manque notable ».
+    {minutes (to 10 min; None: not estimable), n (measured), raced, days, raw (D7 before the floor, min),
     floor (min), text}."""
     raced_gap, gaps = 0.0, []
     r = 0
@@ -266,11 +272,12 @@ def deficit(nights: dict, d: date, raced=frozenset()) -> dict:
         return {**out, "minutes": None, "raw": None, "floor": None,
                 "text": f"manque non estimable ({n}/{DEFICIT_DAYS} nuits)"}
     raw = max(0.0, raced_gap + (DEFICIT_DAYS - r) / n * sum(gaps))
-    floor = DEFICIT_Z * tst_spread(nights, d) * DEFICIT_DAYS / math.sqrt(n)
+    unmeasured = DEFICIT_DAYS - r - n
+    floor = max(DEFICIT_MIN, DEFICIT_Z * tst_spread(nights, d) * math.sqrt(unmeasured * (DEFICIT_DAYS - r) / n))
     minutes = int(10 * math.floor(raw / 10 + 0.5)) if raw > floor else 0
     return {**out, "minutes": minutes, "raw": raw, "floor": floor,
             "text": f"manque estimé sur 7 jours{viz.NBSP}: {viz.hm(minutes)}" if minutes else
-            "pas de manque sur 7 jours"}
+            "pas de manque notable sur 7 jours"}
 
 
 def tst_spread(nights: dict, d: date) -> float:

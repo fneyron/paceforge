@@ -106,8 +106,11 @@ HEURISTICS = [
     ("app/services/sante_sleep.py", "NEED_DEFAULT", 480),
     ("app/services/sante_sleep.py", "DEFICIT_DAYS", 7),
     ("app/services/sante_sleep.py", "DEFICIT_MIN_NIGHTS", 4),
-    ("app/services/sante_sleep.py", "DEFICIT_Z", 1.28),  # the sleep owed over its own noise only
+    # the sleep owed over what its estimate cannot tell only: 1.28 standard errors of the nights it stands in for,
+    # 1 h at least (the second statistics review, 2026-10-14)
+    ("app/services/sante_sleep.py", "DEFICIT_Z", 1.28),
     ("app/services/sante_sleep.py", "TST_SD_PRIOR", 45.0),
+    ("app/services/sante_sleep.py", "DEFICIT_MIN", 60),
     # 2026-10-08 (« Fais comme WHOOP »): the Entraînement dial's usual week (one load pipeline since 2026-10-14:
     # sante_load), « comme d'habitude » from the lightest to the heaviest of its active weeks (the statistics
     # review, 2026-10-14; USUAL_SPREAD's ± 20 %, then the 25th–75th percentiles, are gone)

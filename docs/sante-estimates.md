@@ -86,11 +86,14 @@ Code : `app/services/nights.py` (C2–C4), `sante_sleep.py` (C5), `sante_trainin
   Les r nuits passées à courir comptent leur propre sommeil (leurs siestes), sans extrapolation :
   trois nuits de 8 h et une nuit courue donnaient « 14h00 » pour un manque réel d'environ 8 h.
   D7 n'est calculé qu'avec au moins 4 nuits mesurées **(H)** (Walsh 2021).
-- **Plancher de bruit.** Un manque n'est dit que s'il dépasse 1,28 · σ_T · 7/√n_m **(H)** :
-  sinon « pas de manque sur 7 jours ». σ_T est l'écart-type des 24 h de l'athlète sur les jours
-  J−67 à J−8, tiré vers 45 min comme les autres dispersions ; le plancher vaut environ 2 h 30 pour
-  σ_T = 45 min et 7 nuits. Sans lui, un dormeur qui atteint 8 h en moyenne voyait un manque positif
-  un matin sur deux (45 % des matins simulés) ; avec lui, 8 %.
+- **Plancher.** Un manque n'est dit que s'il dépasse max(1 h ; 1,28 · σ_T · √(u · (7 − r)/n_m))
+  **(H)**, u = 7 − r − n_m étant les nuits non mesurées : c'est l'erreur de l'extrapolation seule.
+  Quand toutes les nuits non courues sont mesurées, le manque de la semaine est connu et le plancher
+  vaut 1 h. Sinon « pas de manque notable sur 7 jours ». σ_T est l'écart-type des 24 h de l'athlète
+  sur les jours J−67 à J−8, tiré vers 45 min comme les autres dispersions. Le plancher précédent,
+  1,28 · σ_T · 7/√n_m (environ 2 h 30 pour σ_T = 45 min et 7 nuits), testait si la moyenne de
+  l'athlète était sous 8 h, et non le manque de la semaine, et ignorait les nuits courues :
+  « pas de manque » y était faux pour une dette de 45 min.
 - Arrondi à 10 min, D7 s'affiche à part et ne s'ajoute jamais à N. Van Dongen 2003 montre que la
   dette d'une semaine de nuits courtes s'accumule ; Kitamura 2016, qu'il faut plusieurs jours pour
   la rembourser.
@@ -203,8 +206,14 @@ Scripts hors dépôt, mêmes générateurs avant et après ; « avant » désign
   8 h 50 avec la dette). Manque sur 7 jours médian 8 h 30 pour un manque réel de 8 h 33 en port
   complet, 8 h 10 avec 50 % de port au hasard, 6 h 40 si les nuits courtes sont moins portées
   (biais inévitable). Avant, la dette plafonnait à 60 min.
-- **Dormeur de 8 h en moyenne.** Cadran médian 100 % ; un manque est dit 8 % des matins (9 %
-  avec un port d'une nuit sur deux), contre 45 % sans plancher de bruit.
+- **Dormeur de 8 h en moyenne** (écart-type 45 min par nuit). Cadran médian 100 %. Un manque est
+  dit 28 % des matins en port complet : ceux où la semaine a vraiment dépassé 1 h de dette (médiane
+  dite 1 h 40 pour une dette réelle de 1 h 43). Avec un port d'une nuit sur deux, 17 % (médiane dite
+  2 h 30 pour 1 h 28 réelles : l'erreur d'extrapolation que le plancher borne).
+- **Dormeur de 7 h 30 en moyenne** (3 h 30 dues par semaine). Un manque est dit 88 % des matins en
+  port complet (médiane 3 h 40 pour 3 h 36 réelles), 69 % en port de 50 %. Sept nuits de 7 h 40 :
+  « manque estimé sur 7 jours : 2h20 » (l'ancien plancher, 2 h 32 pour σ_T = 73 min, disait « pas
+  de manque »). Trois nuits de 8 h et une nuit courue : « manque non estimable (3/7 nuits) ».
 - **Charge.** Voir [recovery-cumulative.md](recovery-cumulative.md).
 
 ## Sources
