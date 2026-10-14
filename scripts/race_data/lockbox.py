@@ -3,14 +3,16 @@
 The six test events of fit_model.py are not pristine any more (several of the
 app's constants were chosen looking at them, see fit_model.py SPLIT). The
 events not in lockbox_baseline.json are kept out of every fit and every
-selection; this scores the app as it ships on them, once per version of the
-model code (race_simulator.py + race_calibration.py), and appends the result
-to lockbox_ledger.json. A second run on the same code is refused (``--force``
+selection (the finish-time benchmark too); this scores the app as it ships on
+them, once per version of the model code (race_simulator.py +
+race_calibration.py): the shape (the primary metric, as fit_model.py) and the
+level (level_benchmark.lockbox_level: finish MAE %, coverage of Optimiste -
+Sécurité), and appends the result to lockbox_ledger.json. A second run on the same code is refused (``--force``
 runs it and records that it was forced): a lockbox scored at every attempt is
 a test set like the others.
 
 Run (records built by fit_data.py with the release's code):
-  .venv/bin/python scripts/race_data/lockbox.py --data FITDATA.pkl [--livetrail LT.pkl] [--force]
+  .venv/bin/python scripts/race_data/lockbox.py --data FITDATA.pkl [--livetrail LT.pkl] [--root data/races] [--force]
 """
 from __future__ import annotations
 
@@ -24,7 +26,9 @@ from datetime import datetime, timezone
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import dataset  # noqa: E402
 import fit_model as fm  # noqa: E402
+import level_benchmark  # noqa: E402
 
 LEDGER = HERE / "lockbox_ledger.json"
 
@@ -54,6 +58,7 @@ def main():
     ap.add_argument("--data", required=True)
     ap.add_argument("--livetrail")
     ap.add_argument("--ledger", default=str(LEDGER))
+    ap.add_argument("--root", default=str(dataset.ROOT), help="the race corpus (the level is read on it)")
     ap.add_argument("--force", action="store_true")
     a = ap.parse_args()
     ledger_path = pathlib.Path(a.ledger)
@@ -68,7 +73,7 @@ def main():
         with open(a.livetrail, "rb") as f:
             lt = fm.lockbox(pickle.load(f))
     entry = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "model_sha256": sha, "forced": bool(a.force),
-             "utmb": score(utmb), "livetrail": score(lt)}
+             "utmb": score(utmb), "livetrail": score(lt), "level": level_benchmark.lockbox_level(pathlib.Path(a.root))}
     ledger["entries"].append(entry)
     ledger_path.write_text(json.dumps(ledger, indent=1) + "\n")
     print(json.dumps(entry, indent=1))

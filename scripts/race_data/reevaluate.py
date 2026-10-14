@@ -8,7 +8,8 @@ Scored as review_model.py decides: the primary metric (mean |ln(predicted /
 actual)| at the checkpoints) with its event-bootstrap 95 % CI and per band;
 minutes, per-race results, the Transjeju guards, LiveTrail and the finish-time
 benchmark (level_benchmark.py) are diagnostics. The lockbox (events first
-collected after 2026-10-05) is never read here: lockbox.py, once per release.
+collected after 2026-10-05) is never read here, by the refit, its scores or the
+finish-time benchmark: lockbox.py scores it once per release (shape and level).
 """
 
 from __future__ import annotations

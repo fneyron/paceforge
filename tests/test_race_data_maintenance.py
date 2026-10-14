@@ -340,8 +340,14 @@ def test_the_level_benchmark_checks_strong_runners_apart(tmp_path):
             doc = {"summary": {"name": name}, "info": {"elevationGain": dp},
                    "points": [{"distance": 0}, {"distance": km * 1000}], "runners": runners}
             (folder / f"{name.lower()}.json.gz").write_bytes(gzip.compress(json.dumps(doc).encode()))
-    out = lb.benchmark(tmp_path)
+    baseline = tmp_path / "baseline.json"  # event5 first collected after the baseline: the lockbox
+    baseline.write_text(json.dumps({"events": {"utmb": [f"event{e}" for e in range(5)]}}))
+    out = lb.benchmark(tmp_path, baseline=baseline)
+    assert out["events"] == 5 and out["finishers"] == 5 * 3 * 60  # the lockbox's event never read
     assert set(out["by_level"]) == {"index 0-550", "index 550-650", "index 650-750", "index 750+"}
     assert set(out["k_by_level"]) == set(out["by_level"])
     for row in out["k_by_level"].values():  # the exponent the data were made with, in every band
         assert row["ci95"][0] <= row["k"] <= row["ci95"][1] and abs(row["k"] - 1.25) < 0.05
+    box = lb.lockbox_level(tmp_path, baseline=baseline)  # scored apart, once per release by lockbox.py
+    assert box["events"] == ["event5"] and box["finishers"] == 3 * 60 and box["mae_pct"] < 10
+    assert 0 <= box["coverage_pct"] <= 100

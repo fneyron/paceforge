@@ -50,12 +50,15 @@ dans `fit_model.py` ; elle n’est pas sélectionnée sur les résultats de vali
 Les événements de validation restent séparés de ceux de l’ajustement, toutes
 éditions et distances d’un même événement du même côté. Les événements apparus
 après le 5 octobre 2026 (absents de `lockbox_baseline.json`) ne servent ni à
-l’ajustement ni à la validation : ils forment une réserve (**lockbox**), notée
-une seule fois par version du modèle avec `lockbox.py` (résultat consigné dans
-`lockbox_ledger.json`), jamais par la tâche mensuelle. Les six événements de
+l’ajustement, ni à la validation, ni au contrôle du temps final : ils forment
+une réserve (**lockbox**), notée une seule fois par version du modèle avec
+`lockbox.py`, sur la répartition des temps (mesure principale) et sur le temps
+final (erreur moyenne, part entre Optimiste et Sécurité), résultat consigné
+dans `lockbox_ledger.json`, jamais par la tâche mensuelle. Les six événements de
 validation fixes ont en effet servi à choisir certaines constantes (la valeur à
 −20 %, l’ancrage de la fatigue, le coefficient des sentiers, le contrôle
-Transjeju) : ils ne sont plus « jamais vus ».
+Transjeju, la règle de nuit, le seuil des heures fixées, la bascule à 5 % et le
+choix de l’arrêt médian) : ils ne sont plus « jamais vus ».
 
 La mesure principale est l’erreur **relative** aux points de passage, la
 moyenne de |ln(prévu / réel)|, chaque arrivant planifié sur son propre temps

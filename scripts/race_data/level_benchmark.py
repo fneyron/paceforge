@@ -16,7 +16,9 @@ distance band and by level (UTMB index band: does the law fit strong runners as
 well as the others?); the exponent fitted freely, leave-one-event-out, and per
 index band with its 95 % CI (leave-one-event-out jackknife): k drifting away
 from the app's, overall or for one level, is a reason to look again.
-Diagnostics only: nothing here changes the app.
+Diagnostics only: nothing here changes the app. The lockbox's events (first
+collected after 2026-10-05, lockbox_baseline.json) are never read here:
+lockbox.py scores them once per release (lockbox_level).
 
 Run: .venv/bin/python scripts/race_data/level_benchmark.py [--root data/races] [--out level.json]
 """
@@ -38,12 +40,15 @@ import dataset  # noqa: E402
 BANDS = ((15, 60), (60, 100), (100, 140), (140, 200))
 LEVELS = ((0, 550), (550, 650), (650, 750), (750, None))  # UTMB index bands
 ALPHA = 0.4  # central 60 % interval: P20-P80
+BASELINE = HERE / "lockbox_baseline.json"
 INDEX_RACES = 3  # the UTMB index averages several results: read as 3 past races
 
 
-def finishers(root: pathlib.Path) -> list[tuple]:
+def finishers(root: pathlib.Path, lockbox: bool = False, baseline: pathlib.Path = BASELINE) -> list[tuple]:
     """(event, ln E, ln(index / 600), ln T hours, km, index) of every indexed finisher of a solo running race
-    of 15 km or more with 25 indexed finishers or more."""
+    of 15 km or more with 25 indexed finishers or more: of the development events, or (``lockbox``) of the
+    lockbox's only."""
+    known = dataset.known_events(baseline)
     out = []
     for path in sorted((root / "utmb").glob("*/*.json.gz")):
         d = json.loads(gzip.decompress(path.read_bytes()))
@@ -59,6 +64,8 @@ def finishers(root: pathlib.Path) -> list[tuple]:
         if km < 15 or not dp or len(run) < 25:
             continue
         ev = path.parent.name.rsplit("_", 1)[0]
+        if dataset.in_lockbox({"event": ev, "source": "utmb"}, known) != lockbox:
+            continue
         for i, t in run:
             out.append((ev, math.log(km + dp / 100), math.log(i / 600), math.log(t / 3600), km, i))
     return out
@@ -80,12 +87,47 @@ def k_band(design, y, ev, sel) -> dict:
     return {"finishers": int(sel.sum()), "k": round(k, 3), "ci95": [round(k - 1.96 * se, 3), round(k + 1.96 * se, 3)]}
 
 
-def benchmark(root: pathlib.Path) -> dict | None:
+def _stats(y, pred, sel) -> dict:
+    """Finish MAE %, median actual / predicted, inside the app's band (the index read as INDEX_RACES races)."""
+    import numpy as np
+
+    from app.services.race_calibration import scenario_pcts
+
+    fast, safe = scenario_pcts({"n": INDEX_RACES, "n_eff": INDEX_RACES}, None)
+    lo, hi = pred[sel] + math.log(1 - fast / 100), pred[sel] + math.log(1 + safe / 100)
+    yy = y[sel]
+    err = yy - pred[sel]  # ln(actual / predicted)
+    isc = (hi - lo) + (2 / ALPHA) * np.maximum(0, lo - yy) + (2 / ALPHA) * np.maximum(0, yy - hi)
+    return {"finishers": int(sel.sum()),
+            "mae_pct": round(float(np.mean(np.abs(np.exp(-err) - 1)) * 100), 1),
+            "median_actual_vs_pred_pct": round(float((np.exp(np.median(err)) - 1) * 100), 1),
+            "coverage_pct": round(float(((yy >= lo) & (yy <= hi)).mean() * 100), 1),
+            "interval_score": round(float(isc.mean() * 100), 1)}
+
+
+def lockbox_level(root: pathlib.Path, baseline: pathlib.Path = BASELINE) -> dict | None:
+    """The finish time of the lockbox's indexed finishers, from the law (the app's k; c and beta fitted on every
+    development event): finish MAE %, median actual / predicted, coverage of the band. None without one."""
+    import numpy as np
+
+    from app.services.race_calibration import K_PRIOR
+
+    dev, box = finishers(root, baseline=baseline), finishers(root, lockbox=True, baseline=baseline)
+    if not dev or not box:
+        return None
+    d = np.array([[1.0, r[1], r[2], r[3]] for r in dev])
+    c, *_ = np.linalg.lstsq(d[:, [0, 2]], d[:, 3] - K_PRIOR * d[:, 1], rcond=None)
+    b = np.array([[r[1], r[2], r[3]] for r in box])
+    pred = c[0] + K_PRIOR * b[:, 0] + c[1] * b[:, 1]
+    return {"events": sorted({r[0] for r in box}), **_stats(b[:, 2], pred, np.ones(len(b), dtype=bool))}
+
+
+def benchmark(root: pathlib.Path, baseline: pathlib.Path = BASELINE) -> dict | None:
     import numpy as np
 
     from app.services.race_calibration import K_PRIOR, scenario_pcts
 
-    rows = finishers(root)
+    rows = finishers(root, baseline=baseline)
     if len({r[0] for r in rows}) < 5:
         return None
     ev = np.array([r[0] for r in rows])
@@ -101,17 +143,9 @@ def benchmark(root: pathlib.Path) -> dict | None:
         free, *_ = np.linalg.lstsq(design[tr], y[tr], rcond=None)
         ks.append(float(free[1]))
     fast, safe = scenario_pcts({"n": INDEX_RACES, "n_eff": INDEX_RACES}, None)
-    lo, hi = pred + math.log(1 - fast / 100), pred + math.log(1 + safe / 100)
-    inside = (y >= lo) & (y <= hi)
-    isc = (hi - lo) + (2 / ALPHA) * np.maximum(0, lo - y) + (2 / ALPHA) * np.maximum(0, y - hi)
-    err = y - pred  # ln(actual / predicted)
 
     def stats(sel):
-        return {"finishers": int(sel.sum()),
-                "mae_pct": round(float(np.mean(np.abs(np.exp(-err[sel]) - 1)) * 100), 1),
-                "median_actual_vs_pred_pct": round(float((np.exp(np.median(err[sel])) - 1) * 100), 1),
-                "coverage_pct": round(float(inside[sel].mean() * 100), 1),
-                "interval_score": round(float(isc[sel].mean() * 100), 1)}
+        return _stats(y, pred, sel)
 
     out = {"k_app": K_PRIOR, "k_free_loeo": [round(min(ks), 3), round(max(ks), 3)], "events": len(events),
            "band_pct": [-fast, safe], **stats(np.ones(len(y), dtype=bool))}
