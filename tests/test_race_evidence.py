@@ -98,6 +98,13 @@ def test_a_hot_race_is_read_without_its_heat():
     assert hot["races"][0]["hours"] == 11.0  # what the athlete sees is his real time
 
 
+def test_a_cool_damp_hour_is_not_heat():
+    from app.services.weather import compute_heat_factor
+
+    assert compute_heat_factor(10.0, 90.0) == 1.0 and compute_heat_factor(14.9, 100.0) == 1.0  # was 1.025, 1.035
+    assert compute_heat_factor(15.0, 85.0) == pytest.approx(1.02) and compute_heat_factor(30.0, 90.0) == pytest.approx(1.145)
+
+
 def test_mean_heat_over_the_race_hours():
     from app.services.weather import compute_heat_factor
 

@@ -51,15 +51,15 @@ def _by(secs, name):
 
 HOURLY = {"temps": [12 + (h % 24) * 0.5 for h in range(48)], "humidity": [70] * 48, "codes": [3] * 48, "wind": [10] * 48}
 # sha256 of {sections, replan at Col +2h, scenarios} without pins, computed before pins existed; re-taken on
-# 2026-10-14 for three formula changes only (every other byte identical): the safety switch at 5 % of the plan's
+# 2026-10-14 for four formula changes only (every other byte identical): the safety switch at 5 % of the plan's
 # elapsed time at the switch point (switch_late_s 900 → 540 / 660 s, switch_late_pct added), Optimiste / Sécurité
 # scaling the elapsed time, stops included (target_stops_night), and, with an hourly forecast, the objective plan
-# weighted by each section's heat (target_hourly).
+# weighted by each section's heat and humidity counted in the heat from 15 °C only (target_hourly).
 LEGACY = {
     "no_target": (dict(target=None, sh=6, stops=None, hourly=None), "6fe0b2dd1ba80cf8595745a3e3a2142128a7741989514fb82a98e9ff6956c851"),
     "target": (dict(target=5 * 3600, sh=6, stops=None, hourly=None), "11eed93b9c769356005409659bcca443b2f183a7fb51f8741f9f9b596fd4fe4a"),
     "target_stops_night": (dict(target=5 * 3600 + 600, sh=21, stops=STOPS, hourly=None), "3bccdb316f94a8791a20aab92d46766221e45caa5e41b665e84eba57129b4122"),
-    "target_hourly": (dict(target=4 * 3600, sh=9, stops={10.0: 300}, hourly=HOURLY), "f63f4987ef19081e998b146572480dc1f08202bd08746323dc28496e7a7a50b5"),
+    "target_hourly": (dict(target=4 * 3600, sh=9, stops={10.0: 300}, hourly=HOURLY), "b840cf173f6aaa108362b035afcd159f0207fce50874efe93058709518d95a09"),
 }
 
 

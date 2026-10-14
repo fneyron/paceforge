@@ -414,7 +414,9 @@ WMO_LABELS = {
 
 
 def compute_heat_factor(temp_c: float, humidity_pct: float) -> float:
-    """Pace penalty factor based on temperature and humidity. >= 1.0."""
+    """Pace penalty factor based on temperature and humidity. >= 1.0. Humidity
+    adds to the heat only from 15 °C, where the curve starts: a cool, damp
+    hour is not a hot one (it counted up to +3.5 % below 15 °C)."""
     if temp_c < 15:
         factor = 1.0
     elif temp_c < 20:
@@ -428,7 +430,7 @@ def compute_heat_factor(temp_c: float, humidity_pct: float) -> float:
     else:
         factor = 1.20 + (temp_c - 35) * 0.02
 
-    if humidity_pct > 65:
+    if temp_c >= 15 and humidity_pct > 65:
         factor += (humidity_pct - 65) * 0.001
 
     return min(factor, 1.5)
