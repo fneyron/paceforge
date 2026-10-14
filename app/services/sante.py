@@ -58,13 +58,14 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
 
     now = now or datetime.now(timezone.utc)
     latest = (await db.execute(select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
+    zone = await st.athlete_clock(db, user_id, now)
     clock = None  # the athlete's wall clock, only for the day the page finds itself (a given day stays as given)
     if today is None:
-        today = await athlete_today(db, user_id, now, latest)
-        clock = await local_clock(db, user_id, now)
+        today = await athlete_today(db, user_id, now, latest, zone=zone)
+        clock = await local_clock(db, user_id, now, zone=zone)
     user = await db.get(User, user_id)
     sex = getattr(user, "sex", None)  # no such field yet: Banister's men's constants (sante_training.LOAD_WOMEN)
-    sessions = await st.load_sessions(db, user_id, today)
+    sessions = await st.load_sessions(db, user_id, today, zone=zone)
     peak = st.hr_max(sessions, today)
     # the laps (else km splits) of the sessions with HR: their loads and their steady splits (Forme)
     await st.load_hr_segments(db, user_id, sessions, today - timedelta(days=st.RATE_DAYS))
@@ -78,7 +79,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     # the night awaited is the calendar day's (how soon the page syncs again); the page reads the cycle's day
     night_state = await _night_state(db, user_id, today, sources & set(WATCH_SOURCES))
     until, today = today, cycle_day(nights, today, clock)
-    daily = await daily_context(db, user_id, until, now=now)
+    daily = await daily_context(db, user_id, until, now=now, zone=zone)
     out = {
         "has_data": bool(sources) or bool(sessions) or bool(daily),
         "daily": daily,
@@ -144,14 +145,16 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
 CYCLE_NOON = 12  # (H) from noon, a day whose night never came is that day anyway (the watch was not worn)
 
 
-async def local_clock(db: AsyncSession, user_id: int, now: datetime) -> datetime | None:
-    """The athlete's wall-clock time (naive) in their own zone (users.timezone, else Europe/Paris; owner,
-    2026-10-14: scientific basis — it was their latest activity's fixed UTC offset); a seam the tests move."""
-    from app.models.user import User
-    from app.services import timezones
-
+async def local_clock(db: AsyncSession, user_id: int, now: datetime, zone=st.UNREAD) -> datetime | None:
+    """The athlete's wall-clock time (naive) on sante_training.athlete_clock (their zone once users.timezone is
+    set, else their latest known UTC offset); None without either (a day as the calendar's); a seam the tests
+    move. `zone`: athlete_clock's, when the caller read it."""
+    if zone is st.UNREAD:
+        zone = await st.athlete_clock(db, user_id, now)
+    if zone is None:
+        return None
     moment = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
-    return moment.astimezone(timezones.athlete_zone(await db.get(User, user_id))).replace(tzinfo=None)
+    return moment.astimezone(zone).replace(tzinfo=None)
 
 
 def _slept(nights, d: date) -> bool:
@@ -634,9 +637,9 @@ async def _timeline(db: AsyncSession, user_id: int, nights, d: date) -> dict:
 
 
 async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = None,
-                        latest: date | None = None) -> date:
+                        latest: date | None = None, zone=st.UNREAD) -> date:
     """sante_training.athlete_today (a seam the tests move to a fixed day)."""
-    return await st.athlete_today(db, user_id, now, latest)
+    return await st.athlete_today(db, user_id, now, latest, zone=zone)
 
 
 async def _night_state(db: AsyncSession, user_id: int, today: date, seen: set[str]) -> dict[str, dict]:

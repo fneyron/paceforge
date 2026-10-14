@@ -77,9 +77,12 @@ async def test_phone_only_local_next_day_is_not_hidden(db_session, test_user):
                               value=70, measured_at=now, sources=['Scale']))
     await db_session.flush()
     assert await st.athlete_today(db_session, test_user.id, now) == tomorrow
-    # No data: the supplied clock in the athlete's zone (users.timezone, else Europe/Paris: owner, 2026-10-14 —
-    # it was UTC without a session's offset), not the machine's real date: 23:30 UTC on 12/09 is 01:30 on 13/09
+    # No data: the supplied clock, not the machine's real date; in the athlete's zone once users.timezone is set,
+    # else their latest activity's UTC offset, else UTC (review, 2026-10-14: the zone is NULL for every athlete
+    # who signed up before it, so Europe/Paris in its place moved them all; 23:30 UTC on 12/09 stays the 12th)
     other = User(firstname='Other'); db_session.add(other); await db_session.flush()
+    assert await st.athlete_today(db_session, other.id, now - timedelta(days=30)) == now.date() - timedelta(days=30)
+    other.timezone = "Europe/Paris"  # 01:30 on 13/09 there
     assert await st.athlete_today(db_session, other.id, now - timedelta(days=30)) == now.date() - timedelta(days=29)
     other.timezone = "America/New_York"  # 19:30 on 12/09 there
     assert await st.athlete_today(db_session, other.id, now - timedelta(days=30)) == now.date() - timedelta(days=30)

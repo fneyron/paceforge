@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.health import HealthMetric
 from app.models.mobile import MobileDaily
 from app.models.user import User
+from app.services import sante_training as st
 from app.services import viz
 from app.services.health_sources import preference, select_metrics
 from app.services.night_measurements import series_source
@@ -142,10 +143,12 @@ async def _phone_rows(db: AsyncSession, user_id: int, today: date) -> list[Mobil
     return rows
 
 
-async def daily_context(db: AsyncSession, user_id: int, today: date, now: datetime | None = None) -> list[dict]:
+async def daily_context(db: AsyncSession, user_id: int, today: date, now: datetime | None = None,
+                        zone=st.UNREAD) -> list[dict]:
     """The « Au quotidien » cards: the 30 days up to `today` (each metric's latest older value still dated), one
     value per day and metric; the weight is the one weight rule's (athlete_weight: the most recent dated value of
-    the weigh-ins and the value typed in Réglages, stale after 30 days), the chart its weigh-ins of the 30 days."""
+    the weigh-ins and the value typed in Réglages, stale after 30 days), the chart its weigh-ins of the 30 days.
+    `zone`: sante_training.athlete_clock's, when the caller read it (the weigh-in's date is on that clock)."""
     rows = await _metric_rows(db, user_id, today)
     # Select exactly one value per day. Prefer a direct watch to its phone copy
     # for aggregates; a weigh-in instead follows its actual measurement time.
@@ -176,12 +179,13 @@ async def daily_context(db: AsyncSession, user_id: int, today: date, now: dateti
     rows = list(by_day.values())
     cards = [c for metric in SIGNALS if metric != "weight"
              and (c := daily_card(metric, [r for r in rows if r.metric == metric], today))]
-    if (weight := await _weight_card(db, user_id, [r for r in rows if r.metric == "weight"], today, now)):
+    if (weight := await _weight_card(db, user_id, [r for r in rows if r.metric == "weight"], today, now, zone)):
         cards.insert(list(SIGNALS).index("weight"), weight)
     return cards
 
 
-async def _weight_card(db: AsyncSession, user_id: int, rows: list, today: date, now: datetime | None) -> dict | None:
+async def _weight_card(db: AsyncSession, user_id: int, rows: list, today: date, now: datetime | None,
+                       zone=st.UNREAD) -> dict | None:
     """The single weight Santé prints (owner, 2026-10-14: scientific basis — it showed the latest phone weigh-in
     even when stale, and hid a more recent value typed in Réglages): athlete_weight's value, source and date, « Donnée
     ancienne » after 30 days; the 30 days' weigh-ins drawn when that weight is the latest of them."""
@@ -194,8 +198,9 @@ async def _weight_card(db: AsyncSession, user_id: int, rows: list, today: date, 
     if reading is None:
         return card
     typed = reading.source == "Saisie manuelle"
-    latest = timezones.local_date(reading.at, timezones.athlete_zone(user)).strftime("%d/%m/%Y") if reading.at \
-        else None
+    if zone is st.UNREAD:
+        zone = await st.athlete_clock(db, user_id, now, user)
+    latest = timezones.local_date(reading.at, zone or timezone.utc).strftime("%d/%m/%Y") if reading.at else None
     out = {"key": "weight", "title": "Poids du profil" if typed else "Poids", "value": viz.num(reading.kg, 1, "kg"),
            "source": reading.source, "latest": latest, "stale": reading.stale, "chart": None, "trend": None,
            "meaning": "Poids renseigné dans Réglages, sans date de pesée ni historique." if typed

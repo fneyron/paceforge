@@ -3,18 +3,17 @@ recordings included, over UTC days counted back from « now »).
 
 The same sessions and the same daily load as Santé (sante_load: one pipeline): the deduplicated sessions
 (sante_training.load_sessions: copies and false starts left out, as Activités' list), each on the local day it
-ended, the 7 / 28 local days up to the athlete's today (timezones.athlete_zone) and nothing that had not ended by
-`before_date`. The headline kilometres are every sport's, as Activités says them (« 7 j : X km · 28 j : Y km »:
-a cyclist's are a ride's) and as the analyses keep them (training_load_*_km); kilometres per sport too, the
-running's alone apart (run_km_*: Run, TrailRun, VirtualRun), hours of every sport, and the summed daily load with
-the day's heart-rate bounds.
+ended, the 7 / 28 local days up to the athlete's today (sante_training.athlete_clock) and nothing that had not
+ended by `before_date`. The headline kilometres are every sport's, as Activités says them (« 7 j : X km · 28 j :
+Y km »: a cyclist's are a ride's) and as the analyses keep them (training_load_*_km); kilometres per sport too,
+the running's alone apart (run_km_*: Run, TrailRun, VirtualRun), hours of every sport, and the summed daily load
+with the day's heart-rate bounds.
 """
 import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import User
 from app.schemas.analysis import TrainingLoadResult
 from app.services import nights as nt
 from app.services import sante_load, timezones
@@ -40,9 +39,9 @@ async def calculate_training_load(
 ) -> TrainingLoad:
     """The 7 and 28 local days up to the athlete's day of `before_date` (sessions ended by then only)."""
     before = before_date if before_date.tzinfo else before_date.replace(tzinfo=timezone.utc)
-    user = await db.get(User, user_id)
-    today = timezones.local_date(before, timezones.athlete_zone(user))
-    sessions = [s for s in await st.load_sessions(db, user_id, today)
+    zone = await st.athlete_clock(db, user_id, before)
+    today = timezones.local_date(before, zone or timezone.utc)
+    sessions = [s for s in await st.load_sessions(db, user_id, today, zone=zone)
                 if st._utc(s.start) + timedelta(minutes=st.effort_minutes(s)) <= before and s.end_day <= today]
     if not sessions:
         return TrainingLoad()

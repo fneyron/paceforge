@@ -3,8 +3,9 @@ night needed, so it works for an athlete who never wears the watch to bed.
 No brand value is read (v4.4: Strava's Relative Effort and the load model
 built on it are gone; nothing drew it since Santé v4.1).
 
-- the weeks exactly as Activités counts them (UTC Monday, duplicates and false
-  starts left out), so a bar's total is the week's total there;
+- the weeks exactly as Activités counts them (Monday on the athlete's clock,
+  duplicates and false starts left out), so a bar's total is the week's total
+  there;
 - heart rate at easy pace on flat easy runs (Theil–Sen HR = a + b·speed), the
   model of Activités › FC en footing and Santé › Forme (Nuuttila 2022;
   Vesterinen 2014), read from their km splits after the first 10 min on flat
@@ -145,16 +146,20 @@ def int_sum(col, scale=1):
     return func.sum(cast(func.round(case((func.abs(x) < 1e9, x), else_=0)), Integer))
 
 
-async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int = HISTORY_DAYS) -> list[Session]:
+UNREAD = object()  # a clock the caller did not read (athlete_clock's None is a clock: none known)
+
+
+async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int = HISTORY_DAYS,
+                        zone=UNREAD) -> list[Session]:
     """The sessions of the last `days` days, duplicates and false starts left
     out exactly as on Activités. Kept per worker until a session is added (the
     JSON fields cost a read of every activity's raw_data). A session whose UTC offset is unknown is dated on the
-    athlete's own clock (users.timezone: timezones.athlete_zone), never on UTC's; its `offset` stays None (it says
-    nothing of a time zone change)."""
-    from app.models.user import User
-    from app.services import timezones
-
-    zone = timezones.athlete_zone(await db.get(User, user_id))
+    athlete's clock (athlete_clock: their zone once set, else their latest known UTC offset; UTC without either, as
+    before); its `offset` stays None (it says nothing of a time zone change). `zone`: athlete_clock's, when the
+    caller read it."""
+    if zone is UNREAD:
+        zone = await athlete_clock(db, user_id)
+    zone = zone or timezone.utc
     since = datetime.combine(today - timedelta(days=days), datetime.min.time(), tzinfo=timezone.utc)
     where = (Activity.user_id == user_id, Activity.start_date >= since)
     # the sport's family weighs differently, so a re-import from one family to another is seen
@@ -280,15 +285,31 @@ async def utc_offset(db: AsyncSession, user_id: int, now: datetime | None = None
     return known[0] if known else None
 
 
+async def athlete_clock(db: AsyncSession, user_id: int, now: datetime | None = None, user=None):
+    """The clock the athlete's days are read on: their zone once users.timezone is set (owner, 2026-10-14:
+    scientific basis — a fixed offset is a day off after the 25 October clock change or a trip; Strava's profile and
+    the phone's night packets fill it in); until then (NULL for every athlete who signed up before), the older rule:
+    the UTC offset of their latest activity, or of a more recent phone night (utc_offset), held fixed (review,
+    2026-10-14: Europe/Paris in its place put a Garmin athlete in Martinique 4 to 6 hours ahead); None without
+    either (the caller reads UTC, as before). `user`: the row the caller already holds (one read of it per page)."""
+    from app.models.user import User
+    from app.services import timezones
+
+    if user is None:
+        user = await db.get(User, user_id)
+    if user is not None and user.timezone:
+        return timezones.athlete_zone(user)
+    offset = await utc_offset(db, user_id, now)
+    return None if offset is None else timezone(timedelta(seconds=offset))
+
+
 async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = None,
-                        latest: date | None = None) -> date:
-    """The athlete's date, the one Santé, Activités and the race page read: the clock in the athlete's own zone
-    (users.timezone, else Europe/Paris: timezones.athlete_today; owner, 2026-10-14: scientific basis — it was the
-    latest activity's fixed UTC offset, a day off after the 25 October clock change or a trip); the watch's day
-    when it is already on tomorrow (a zone not yet updated after flying east)."""
+                        latest: date | None = None, zone=UNREAD) -> date:
+    """The athlete's date, the one Santé, Activités and the race page read: the clock on athlete_clock (their zone
+    once set, else their latest known UTC offset, else UTC); the watch's day when it is already on tomorrow (a zone
+    not yet updated after flying east). `zone`: athlete_clock's, when the caller read it."""
     from app.models.health import HealthMetric
     from app.models.mobile import MobileDaily
-    from app.models.user import User
     from app.services import timezones
 
     now = now or datetime.now(timezone.utc)
@@ -297,7 +318,9 @@ async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = N
             select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
     mobile_day = await db.scalar(select(func.max(MobileDaily.date)).where(MobileDaily.user_id == user_id))
     latest = max((d for d in (latest, mobile_day) if d is not None), default=None)
-    today = timezones.athlete_today(await db.get(User, user_id), now)
+    if zone is UNREAD:
+        zone = await athlete_clock(db, user_id, now)
+    today = timezones.local_date(now, zone or timezone.utc)
     if latest and today < latest <= today + timedelta(days=1):  # the watch is already on tomorrow
         today = latest
     return today

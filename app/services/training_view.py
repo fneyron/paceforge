@@ -101,8 +101,9 @@ async def spike_ids(db: AsyncSession, user_id: int, since: date, now: datetime |
     """The activities of the list (since `since`) that are a single-run spike (spikes): their rows say « plus
     longue que d'habitude » (v4.3: no ▲ on the chart any more). Never fails the list."""
     try:
-        today = await st.athlete_today(db, user_id, now)
-        return {s.id for s, _ in spikes(await st.load_sessions(db, user_id, today), since)}
+        zone = await st.athlete_clock(db, user_id, now)
+        today = await st.athlete_today(db, user_id, now, zone=zone)
+        return {s.id for s, _ in spikes(await st.load_sessions(db, user_id, today, zone=zone), since)}
     except Exception:
         logger.exception("Activités › spikes failed for user %d", user_id)
         return set()
@@ -301,8 +302,9 @@ async def training_top(db: AsyncSession, user_id: int, now: datetime | None = No
         weeks, first = await week_totals(db, user_id, sport, now)
         easy = None
         if sport in FOOTING_SPORTS:
-            today = await st.athlete_today(db, user_id, now)
-            sessions = await st.load_sessions(db, user_id, today)
+            zone = await st.athlete_clock(db, user_id, now)
+            today = await st.athlete_today(db, user_id, now, zone=zone)
+            sessions = await st.load_sessions(db, user_id, today, zone=zone)
             # their km splits: the same steady flat splits Santé › Forme reads (sante_training.comparable)
             await st.load_hr_segments(db, user_id, sessions, today - timedelta(days=st.EASY_FIT_DAYS))
             easy = footing(sessions, today, st.hr_max(sessions, today)) if sessions else None
