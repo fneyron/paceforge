@@ -154,7 +154,9 @@ async def test_methode_numbers_come_from_the_json(client: AsyncClient, stats_fil
     assert "data-transjeju" not in html
     assert ">131<" not in html and f"23{NNBSP}456" not in html
     assert "995" not in html and "21,5" not in html
-    assert "jamais vues pendant le réglage" in html
+    # the held-out events were looked at while some settings were chosen: never « jamais vues »
+    assert "sur lesquelles la courbe n'est pas ajustée" in html and "un peu optimiste" in html
+    assert "jamais vues" not in html
 
 
 @pytest.mark.asyncio
