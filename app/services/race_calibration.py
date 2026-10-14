@@ -8,12 +8,27 @@ athlete actually sustains when it counts: on their previous races, measured as
 how long the effort lasts — the longer the race, the lower the sustainable rate.
 
     ekm_h(T) = a · T^(−b)          (T in hours; b = endurance decay)
+    ⇔  ln T = c + k · ln E         (E = the race's effort-km, k = 1 / (1 − b))
 
-Fitted on the athlete's races (Strava "race" tag, workout_type == 1). With a
-single race the decay is the generic ultra default; with two or more it is
-their own. The resulting total time re-levels the terrain-shaped prediction:
-the shape (where the time goes) still comes from the gradient profile, the
-level (how fast overall) from the races.
+Fitted on the athlete's races (Strava "race" tag, workout_type == 1) as a
+regression of ln T on ln E: E is known exactly, T carries the race's noise
+(the former fit regressed ln(E/T) on ln T, the noisy variable on both sides).
+The exponent k is shrunk toward the population value (normal prior, Efron &
+Morris 1975): with one race, or races of one length, it IS the population
+value; races of different lengths move it toward the athlete's own. The level
+c is the recency- and tag-weighted mean of the races (no « best effort »
+selection: it read the athlete faster than he is).
+
+Population k = 1.28 (b ≈ 0.22): at a fixed UTMB index, the finish time of
+48 640 finishers of 170 UTMB Live races (21 events) grows as E^1.30
+(leave-one-event-out 1.29-1.31; one festival, several distances: median
+1.28). The former b = 0.08 (k = 1.087) put 140-200 km finishers 17 % too
+fast and < 60 km ones 9.5 % too slow (leave-one-event-out finish MAE 12.9 %
+vs 10.1 % at k = 1.28).
+
+The resulting total time re-levels the terrain-shaped prediction: the shape
+(where the time goes) still comes from the gradient profile, the level (how
+fast overall) from the races.
 """
 
 from __future__ import annotations
@@ -31,8 +46,11 @@ from app.models.activity import Activity
 logger = logging.getLogger(__name__)
 
 RUN_TYPES = ("Run", "TrailRun", "VirtualRun")
-DEFAULT_DECAY = 0.08          # generic endurance decay for trail ultras
-DECAY_MIN, DECAY_MAX = 0.02, 0.20
+DEFAULT_DECAY = 0.22          # population endurance decay: T ∝ E^1.28 at a fixed level (see above)
+DECAY_MIN, DECAY_MAX = 0.10, 0.35
+K_PRIOR = 1.28                # population exponent k = 1 / (1 − b)
+K_PRIOR_SD = 0.08             # its spread between athletes (prior SD)
+RACE_LOG_SD = 0.10            # one race's ln T around the athlete's law: day 0.07 + course 0.07
 MIN_RACE_KM = 15.0            # shorter "races" (park runs, 10 km) say little about an ultra
 MIN_RACE_H = 1.0
 LONG_EFFORT_KM = 40.0         # untagged very long efforts used as fallback (weight 0.5)
@@ -135,36 +153,47 @@ def _is_race(a: Activity) -> bool:
     return wt == 1
 
 
+def _ekm(p: dict) -> float:
+    """A point's effort-km (older points carry only the rate)."""
+    return float(p.get("ekm") or (p.get("ekm_h", 0) or 0) * (p.get("hours", 0) or 0))
+
+
+def fit_hours(p: dict) -> float:
+    """The hours a point weighs in the fit: its moving hours."""
+    return float(p.get("hours", 0) or 0)
+
+
 def fit_effort_model(points: list[dict]) -> dict | None:
-    """Fit a·T^(−b) on [{hours, ekm_h, weight}]. Weighted least squares in log-log."""
-    pts = [p for p in points if p.get("hours", 0) > 0 and p.get("ekm_h", 0) > 0]
+    """Fit ln T = c + k·ln E on [{hours, ekm, weight}] (weighted), k shrunk
+    toward the population: k̂ = (Sxy/σ² + k0/τ²) / (Sxx/σ² + 1/τ²), σ = one
+    race's log-time noise, k0 ± τ the population exponent. With one race (or
+    races of one length) Sxx = 0 and k̂ = k0. Returned as the a·T^(−b) model
+    (b = 1 − 1/k, a = e^(−c/k)) plus what the scenarios' spread needs."""
+    pts = [p for p in points if fit_hours(p) > 0 and _ekm(p) > 0]
     if not pts:
         return None
-    if len(pts) == 1:
-        p = pts[0]
-        b = DEFAULT_DECAY
-        a = p["ekm_h"] * (p["hours"] ** b)
-        return {"a": a, "b": b, "n": 1, "fitted": False}
-    xs = [math.log(p["hours"]) for p in pts]
-    ys = [math.log(p["ekm_h"]) for p in pts]
-    ws = [float(p.get("weight", 1.0)) for p in pts]
+    xs = [math.log(_ekm(p)) for p in pts]
+    ys = [math.log(fit_hours(p)) for p in pts]
+    ws = [max(1e-6, float(p.get("weight", 1.0))) for p in pts]
     sw = sum(ws)
-    mx = sum(w * x for w, x in zip(ws, xs, strict=False)) / sw
-    my = sum(w * y for w, y in zip(ws, ys, strict=False)) / sw
-    sxx = sum(w * (x - mx) ** 2 for w, x in zip(ws, xs, strict=False))
-    sxy = sum(w * (x - mx) * (y - my) for w, x, y in zip(ws, xs, ys, strict=False))
-    if sxx < 1e-6:  # all races of the same duration → slope undefined
-        b = DEFAULT_DECAY
-    else:
-        b = -(sxy / sxx)
-    b = max(DECAY_MIN, min(DECAY_MAX, b))
-    # intercept re-solved with the clamped slope so the fit passes through the cloud
-    log_a = my + b * mx
-    return {"a": math.exp(log_a), "b": b, "n": len(pts), "fitted": sxx >= 1e-6}
+    mx = sum(w * x for w, x in zip(ws, xs, strict=True)) / sw
+    my = sum(w * y for w, y in zip(ws, ys, strict=True)) / sw
+    sxx = sum(w * (x - mx) ** 2 for w, x in zip(ws, xs, strict=True))
+    sxy = sum(w * (x - mx) * (y - my) for w, x, y in zip(ws, xs, ys, strict=True))
+    s2, t2 = RACE_LOG_SD ** 2, K_PRIOR_SD ** 2
+    k = (sxy / s2 + K_PRIOR / t2) / (sxx / s2 + 1 / t2)
+    k = max(1 / (1 - DECAY_MIN), min(1 / (1 - DECAY_MAX), k))
+    c = my - k * mx  # the level passes through the weighted mean of the races
+    return {
+        "a": math.exp(-c / k), "b": 1 - 1 / k, "k": k, "c": c, "n": len(pts),
+        "fitted": sxx >= 1e-6,
+        # for the scenarios' spread: mean ln E of the races, the weighted count (Kish), Sxx
+        "log_ekm_mean": mx, "n_eff": sw * sw / sum(w * w for w in ws), "sxx": sxx,
+    }
 
 
 def predict_total_s(model: dict, course_ekm: float) -> int | None:
-    """Solve ekm / T = a·T^(−b)  →  T = (ekm / a)^(1 / (1 − b))."""
+    """Solve ekm / T = a·T^(−b)  →  T = (ekm / a)^(1 / (1 − b)) = e^c · ekm^k."""
     a, b = model.get("a") or 0, model.get("b") or 0
     if a <= 0 or course_ekm <= 0 or b >= 1:
         return None
@@ -230,16 +259,17 @@ def race_point(name: str, km: float, dplus: float, hours: float, is_race: bool,
 def model_from_points(points: list[dict], today: date | None = None) -> dict | None:
     """Selection + fit on prepared points (see race_point): the tagged races
     when two or more of them are real races (not a triathlon or relay leg, an
-    abandon, a hike…), else the long untagged efforts help."""
+    abandon, a hike…), else the long untagged efforts help. Every race kept
+    weighs its tag (race 1, long effort 0.5) × its recency."""
     races = [p for p in points if p.get("is_race")]
     real = [p for p in races if not_a_race_reason(p.get("name")) is None]
     pts = races if len(real) >= 2 else points
     if not pts:
         return None
-    used, ignored = select_best_efforts(pts)
+    pts = [{**p, "weight": p.get("weight", 1.0) * recency_weight(p.get("day"), today)} for p in pts]
+    used, ignored = select_races(pts)
     if not used:
         return None
-    used = [{**p, "weight": p.get("weight", 1.0) * recency_weight(p.get("day"), today)} for p in used]
     model = fit_effort_model(used)
     if not model:
         return None
@@ -304,17 +334,20 @@ def not_a_race_reason(name: str | None) -> str | None:
     return None
 
 
-BEST_BIN_FACTOR = 1.5   # duration bins: 3-4.5 h, 4.5-6.75 h, … one best effort each
-OUTLIER_RATIO = 0.8     # a race more than 20 % under the curve of the others is not a performance
+# A race whose time sits this far from the curve of the athlete's other races
+# (ln T, either way) is not his level: an injury, a race run with a friend, a
+# course much longer or shorter than its name. ln 1.35 ≈ 3 × one race's noise
+# (RACE_LOG_SD): symmetric, so the level is not pulled fast as the former
+# « best effort per duration » selection did.
+OUTLIER_LOG = math.log(1.35)
 
 
-def select_best_efforts(points: list[dict]) -> tuple[list[dict], list[dict]]:
-    """A race curve is fitted on what the athlete CAN do, not on the average
-    of everything tagged « race » on Strava: a hike, a recce, a day spent
-    pacing a friend, an abandon, a triathlon's run leg, a relay leg all sit
-    far under the real curve or measure something else. Keep, per duration
-    bin, the fastest effort; then drop what still sits well under the curve
-    of the others."""
+def select_races(points: list[dict]) -> tuple[list[dict], list[dict]]:
+    """The races the level is read on: everything tagged « race » that
+    measures a standalone running race (no triathlon run leg, relay leg or
+    abandon; a hike, a recce, a day pacing a friend only when too little is
+    left), then, from three races on, what sits far off the curve of the
+    others (either way) is set aside."""
     kept, ignored, soft = [], [], []
     for p in points:
         why = not_a_race_reason(p.get("name"))
@@ -329,30 +362,20 @@ def select_best_efforts(points: list[dict]) -> tuple[list[dict], list[dict]]:
         # triathlon leg, a relay leg or an abandon never comes back
         kept = kept + soft
         ignored = [p for p in ignored if p["why"] != "pas une course"]
-    # best effort per duration bin (log-spaced)
-    best: dict[int, dict] = {}
-    for p in kept:
-        b = int(math.floor(math.log(max(p["hours"], 0.1)) / math.log(BEST_BIN_FACTOR)))
-        if b not in best or p["ekm_h"] > best[b]["ekm_h"]:
-            best[b] = p
-    chosen = list(best.values())
-    for p in kept:
-        if p not in chosen:
-            ignored.append({**p, "why": "moins bonne perf sur cette durée"})
-    # second pass: a remaining point far under the curve of the others is not a performance
-    if len(chosen) >= 3:
-        keep2 = []
-        for p in chosen:
-            others = [q for q in chosen if q is not p]
-            m = fit_effort_model(others)
-            pred = (m["a"] * (p["hours"] ** (-m["b"]))) if m else None
-            if pred and p["ekm_h"] < OUTLIER_RATIO * pred:
-                ignored.append({**p, "why": "bien sous ta courbe"})
-            else:
-                keep2.append(p)
-        if len(keep2) >= 2:
-            chosen = keep2
-    return chosen, ignored
+    # one at a time, the farthest first (a very fast race must not make the others look slow), while
+    # three races or more are left
+    while len(kept) >= 3:
+        offs = []
+        for p in kept:
+            m = fit_effort_model([q for q in kept if q is not p])
+            pred = predict_total_s(m, _ekm(p)) if m else None
+            offs.append(math.log(fit_hours(p) * 3600 / pred) if pred and fit_hours(p) > 0 else 0.0)
+        i = max(range(len(kept)), key=lambda j: abs(offs[j]))
+        if abs(offs[i]) <= OUTLIER_LOG:
+            break
+        ignored.append({**kept[i], "why": "bien sous ta courbe" if offs[i] > 0 else "bien au-dessus de ta courbe"})
+        kept = kept[:i] + kept[i + 1:]
+    return kept, ignored
 
 
 def race_level_total_s(course, model: dict | None, training_total_s: float) -> float | None:

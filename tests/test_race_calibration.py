@@ -217,7 +217,7 @@ def test_triathlon_legs_and_relays_never_come_back():
         {"name": "Ultra 01 - Relais 7", "hours": 1.74, "ekm_h": 17.5},
         {"name": "Reco CCC", "hours": 8.0, "ekm_h": 8.0},
     ]
-    used, ignored = rc.select_best_efforts(pts)
+    used, ignored = rc.select_races(pts)
     # one race left: the recce still helps, the tri leg and the relay don't
     assert {p["name"] for p in used} == {"UTMB", "Reco CCC"}
     assert {p["why"] for p in ignored} == {"course d'un triathlon", "relais"}
@@ -292,11 +292,16 @@ def test_owner_races_selection():
         assert rc.not_a_race_reason(leg) == "course d'un triathlon"
     assert ignored.get("Ultra 01 - Relais 7") == "relais"
     used = {p["name"] for p in model["races"]}
-    assert {"UTMB Transjeju 100M - 2eme", "TDS UTMB - 30eme", "100k UTMB Chiang Mai"} <= used
+    # every real race counts (no « best effort per duration »: it read him faster than he is)
+    assert used == {"UTMB Transjeju 100M - 2eme", "TDS UTMB - 30eme", "100k UTMB Chiang Mai", "Marathon du mont blanc 90km",
+                    "Marathon du mont blanc 90k", "Trans Inthanon", "Maxi Race", "Semi Pollencia"}
     assert not used & {"IM 70.3 monde - CaP", "Alpsman - CAP", "Half IM Greece - Run", "70.3 Marbella - Run", "Ultra 01 - Relais 7"}
-    # replayed on his Transjeju course (147.9 km, 4854 m by the effort algorithm): 16h-17h30 moving (real 16h04)
+    # replayed on his Transjeju course (147.9 km, 4854 m by the effort algorithm): 18h-19h moving at the weighted
+    # mean of his races (real 16h04, his best race by far: the former best-effort selection said 16h47)
     hours = rc.predict_total_s(model, rc.effort_km(147.9, 4854)) / 3600
-    assert 16.0 < hours < 17.5
+    assert 18.0 < hours < 19.0
+    # his own exponent, shrunk toward the population's: races from 21 to 237 effort-km say a little less than 1.28
+    assert 1.18 < model["k"] < 1.28 and model["b"] == pytest.approx(1 - 1 / model["k"])
 
 
 # ── recency ──
@@ -318,7 +323,6 @@ def test_recent_races_weigh_more_in_the_fit(monkeypatch):
         rc.race_point("Old ultra", 100, 4000, 10.0, True, day=today - timedelta(days=760)),
         rc.race_point("Recent ultra", 100, 4000, 9.0, True, day=today - timedelta(days=30)),
     ]
-    monkeypatch.setattr(rc, "BEST_BIN_FACTOR", 1.05)  # narrow duration bins: both kept
     monkeypatch.setattr(rc, "RECENCY_HALF_LIFE_DAYS", None)
     flat = rc.model_from_points(pts, today=today)
     monkeypatch.setattr(rc, "RECENCY_HALF_LIFE_DAYS", 548.0)
