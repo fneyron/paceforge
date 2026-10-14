@@ -39,7 +39,9 @@ async def test_an_undated_typed_value_counts_only_without_a_weigh_in(db_session,
     test_user.weight_kg, test_user.weight_set_at = 72.0, None
     await db_session.flush()
     w = await athlete_weight(db_session, test_user, NOW)
-    assert (w.kg, w.source, w.at, w.stale) == (72.0, "Saisie manuelle", None, True)
+    # its age is unknown, not old: never « Donnée ancienne » (review, 2026-10-14: every value typed before
+    # weight_set_at existed read so)
+    assert (w.kg, w.source, w.at, w.stale) == (72.0, "Saisie manuelle", None, False)
     db_session.add(_phone(test_user.id, 80.0, NOW - timedelta(days=60), platform="android"))
     await db_session.flush()
     w = await athlete_weight(db_session, test_user, NOW)
@@ -54,6 +56,16 @@ async def test_a_dated_watch_weigh_in_competes_with_the_phone(db_session, test_u
     await db_session.flush()
     w = await athlete_weight(db_session, test_user, NOW)
     assert (w.kg, w.source) == (69.6, "Garmin")
+
+
+@pytest.mark.asyncio
+async def test_a_dated_value_is_stale_after_30_days(db_session, test_user):
+    test_user.weight_kg, test_user.weight_set_at = 72.0, NOW - timedelta(days=31)
+    await db_session.flush()
+    assert (await athlete_weight(db_session, test_user, NOW)).stale
+    test_user.weight_set_at = NOW - timedelta(days=29)
+    await db_session.flush()
+    assert not (await athlete_weight(db_session, test_user, NOW)).stale
 
 
 @pytest.mark.asyncio

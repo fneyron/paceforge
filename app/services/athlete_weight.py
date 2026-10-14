@@ -5,7 +5,9 @@ Connect: MobileDaily.measured_at) or from a watch import (HealthMetric « weight
 with details.measured_at), or the value typed in Réglages (users.weight_kg, dated by
 users.weight_set_at). A typed value with no date (typed before the date was kept)
 counts only when no weigh-in exists. Values are never averaged. A reading older than
-STALE_DAYS is still returned, flagged `stale`, so a screen can say how old it is.
+STALE_DAYS is still returned, flagged `stale`, so a screen can say how old it is; an
+undated typed value is never flagged (its age is unknown, not old: every value typed
+before weight_set_at existed is one).
 """
 
 from __future__ import annotations
@@ -84,5 +86,5 @@ async def athlete_weight(db: AsyncSession, user, now: datetime | None = None) ->
     if chosen is None:
         return None
     kg, at, source = chosen
-    stale = at is None or now - at > timedelta(days=STALE_DAYS)
+    stale = at is not None and now - at > timedelta(days=STALE_DAYS)
     return WeightReading(kg=round(kg, 1), at=at, source=source, stale=stale)

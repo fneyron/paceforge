@@ -81,6 +81,27 @@ async def test_a_card_whose_30_days_are_all_out_of_range_keeps_its_latest_valid_
     assert (cards['steps']['value'], cards['steps']['latest']) == ('8000\u202fpas', '04/09/2026')
 
 
+async def test_the_weight_card_names_its_scale_and_never_ages_an_undated_typed_value(db_session, test_user):
+    """A weigh-in older than the 30 days (no chart): its value, its date, « Donnée ancienne », and the scale it came
+    from (« Apple Santé · Balance », as before the one weight rule: it read « Apple Santé » alone). A value typed in
+    Réglages before its date was kept: no date, never « Donnée ancienne » (its age is unknown, not old; review,
+    2026-10-14)."""
+    today = datetime(2026, 10, 14).date()
+    test_user.weight_kg, test_user.weight_set_at = 71.0, None
+    await db_session.flush()
+    card = next(c for c in await daily_context(db_session, test_user.id, today) if c['key'] == 'weight')
+    assert (card['title'], card['value'], card['latest'], card['source'], card['stale']) == \
+        ('Poids du profil', '71,0\u202fkg', None, 'Saisie manuelle', False)
+    at = datetime(2026, 9, 1, 6, 30, tzinfo=timezone.utc)
+    db_session.add(MobileDaily(user_id=test_user.id, platform='ios', date=at.date(), metric='weight', value=70.2,
+                               sources=['Balance'], measured_at=at))
+    await db_session.flush()
+    card = next(c for c in await daily_context(db_session, test_user.id, today, now=at + timedelta(days=43))
+                if c['key'] == 'weight')
+    assert (card['title'], card['value'], card['latest'], card['source'], card['stale'], card['chart']) == \
+        ('Poids', '70,2\u202fkg', '01/09/2026', 'Apple Santé · Balance', True, None)
+
+
 async def test_mobile_changes_refresh_sante_even_within_one_second(db_session, test_user):
     at = datetime.now(timezone.utc).replace(microsecond=1000)
     before = await data_version(db_session, test_user.id)

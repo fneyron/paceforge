@@ -56,6 +56,11 @@ def _source(row: HealthMetric) -> str:
     return source + (" · " + ", ".join(origins) if origins else "")
 
 
+def _aware(moment: datetime) -> datetime:
+    """An instant as the app stores them: a naive one is UTC."""
+    return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment
+
+
 def _measured_at(row: HealthMetric) -> datetime | None:
     """Only an explicit instant can beat a timestamped phone weigh-in.
 
@@ -175,7 +180,7 @@ async def daily_context(db: AsyncSession, user_id: int, today: date, now: dateti
         previous = by_day.get(key)
         newer_weigh_in = False
         if r.metric in ("weight", "body_fat") and r.measured_at:
-            instant = r.measured_at.replace(tzinfo=timezone.utc) if r.measured_at.tzinfo is None else r.measured_at
+            instant = _aware(r.measured_at)
             # Brand selection is inappropriate for discrete measurements: check
             # every dated candidate, including one hidden by the preferred watch.
             candidates = [v for v in rows if (v.date, v.metric) == key and _valid(v) and _measured_at(v)]
@@ -187,8 +192,9 @@ async def daily_context(db: AsyncSession, user_id: int, today: date, now: dateti
         if previous is None or newer_weigh_in:
             source = "Apple Santé" if r.platform == "ios" else "Health Connect"
             by_day[key] = HealthMetric(date=r.date, metric=r.metric, value=r.value, source=source,
-                                       details={"origins": sorted(r.sources),
-                                                "measured_at": r.measured_at.isoformat() if r.measured_at else None})
+                                       details={"origins": sorted(r.sources),  # the instant in UTC (SQLite's naive)
+                                                "measured_at": _aware(r.measured_at).isoformat() if r.measured_at
+                                                else None})
     rows = list(by_day.values())
     cards = [c for metric in SIGNALS if metric != "weight"
              and (c := daily_card(metric, [r for r in rows if r.metric == metric], today))]
@@ -201,7 +207,9 @@ async def _weight_card(db: AsyncSession, user_id: int, rows: list, today: date, 
                        zone=st.UNREAD) -> dict | None:
     """The single weight Santé prints (owner, 2026-10-14: scientific basis — it showed the latest phone weigh-in
     even when stale, and hid a more recent value typed in Réglages): athlete_weight's value, source and date, « Donnée
-    ancienne » after 30 days; the 30 days' weigh-ins drawn when that weight is the latest of them."""
+    ancienne » after 30 days (never for an undated typed value: its age is unknown); the 30 days' weigh-ins drawn
+    when that weight is the latest of them; a weigh-in's source names its scale (« Apple Santé · Balance »), chart
+    or not."""
     from app.services import timezones
     from app.services.athlete_weight import athlete_weight
 
@@ -214,8 +222,10 @@ async def _weight_card(db: AsyncSession, user_id: int, rows: list, today: date, 
     if zone is st.UNREAD:
         zone = await st.athlete_clock(db, user_id, now, user)
     latest = timezones.local_date(reading.at, zone or timezone.utc).strftime("%d/%m/%Y") if reading.at else None
+    row = None if typed else next((r for r in rows if _valid(r) and _measured_at(r) == reading.at), None)
     out = {"key": "weight", "title": "Poids du profil" if typed else "Poids", "value": viz.num(reading.kg, 1, "kg"),
-           "source": reading.source, "latest": latest, "stale": reading.stale, "chart": None, "trend": None,
+           "source": _source(row) if row else reading.source, "latest": latest, "stale": reading.stale,
+           "chart": None, "trend": None,
            "meaning": "Poids renseigné dans Réglages, sans date de pesée ni historique." if typed
            else SIGNALS["weight"][4]}
     if card and not typed and card["chart"]:
