@@ -345,10 +345,11 @@ async def strava_link(request: Request, next: str | None = None,
         request.session.setdefault("strava_next", "/connections/strava")
     else:
         return RedirectResponse(f"/setup?next={next}" if next in ("settings", "devices") else "/setup", status_code=302)
-    # Bind the attempt to its selected app, even if configuration changes meanwhile.
-    state = await begin_strava(request, db, user.id, {
-        "client_id": service.client_id, "client_secret": service.client_secret, "mode": mode,
-    })
+    # Bind the attempt to its selected app, even if configuration changes meanwhile. The shared app's
+    # secret stays in the server configuration: the attempt keeps its client id only.
+    state = await begin_strava(request, db, user.id, {"mode": "shared", "client_id": service.client_id}
+                               if mode == "shared" else
+                               {"client_id": service.client_id, "client_secret": service.client_secret, "mode": mode})
     return RedirectResponse(service.get_authorize_url(state), status_code=302)
 
 
@@ -372,9 +373,10 @@ async def strava_callback(
 
     pending_id, pending_secret = pending.get("client_id"), pending.get("client_secret")
     shared = pending.get("mode") == "shared"
-    if shared and (not settings.strava_shared_ready or pending_id != settings.STRAVA_CLIENT_ID
-                   or pending_secret != settings.STRAVA_CLIENT_SECRET):
-        return _back_to_settings(request, "La connexion Strava a changé. Recommence depuis Réglages.") or RedirectResponse("/connections/strava", status_code=302)
+    if shared:
+        if not settings.strava_shared_ready or pending_id != settings.STRAVA_CLIENT_ID:
+            return _back_to_settings(request, "La connexion Strava a changé. Recommence depuis Réglages.") or RedirectResponse("/connections/strava", status_code=302)
+        pending_secret = settings.STRAVA_CLIENT_SECRET  # never stored with the attempt
     if pending_id and pending_secret:
         strava = StravaService(db, client_id=pending_id, client_secret=pending_secret)
     elif user.has_own_strava_app:

@@ -43,3 +43,10 @@ celery_app.conf.update(
         # disabled: weekly-digest
     },
 )
+
+# Expired Strava link attempts are purged every hour (app.tasks.oauth_cleanup)
+celery_app.conf.include = [*celery_app.conf.include, "app.tasks.oauth_cleanup"]
+celery_app.conf.beat_schedule["purge-oauth-attempts"] = {
+    "task": "paceforge.purge_oauth_attempts",
+    "schedule": crontab(minute=37),
+}
