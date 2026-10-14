@@ -3,12 +3,15 @@ import { ActivityIndicator, AppState, Linking, Platform, Pressable, StyleSheet, 
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
-import * as SecureStore from 'expo-secure-store';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
-import { api, ApiError, ORIGIN, trusted } from './src/api';
+import { api, ApiError, authorized, Credentials, ORIGIN, rotateToken, rotationDue, trusted } from './src/api';
 import { authorize, collect, collectSleep } from './src/health';
 import { Pair } from './src/types';
-import { due, fullDue, reportText, syncIssue, SyncReport, syncHealth } from './src/sync';
+import { due, fullDue, reportText, syncIssue, SyncReport, syncHealth, Trigger } from './src/sync';
+import { KEYS, KeychainLocked, secure } from './src/secure';
+import { backgroundBlock, backgroundPending, blockBackgroundSync, disableBackgroundSync, enableBackgroundSync,
+  onBackgroundReport, resetBackgroundState, syncExclusively } from './src/background';
+import type { Block } from './src/background-engine';
 import { appShellScript, destinations, isBridgeUrl, prepareNavigationScript, presentationScript, refreshable, sameScreen, screenUrl, Tab, tabForUrl, tabs } from './src/navigation';
 import { Connections, Provider } from './src/connections';
 import { acknowledge, inlineConnectionsScript, inlineSessionScript, Pending, retryBridgeScript, takeReply } from './src/bridge';
@@ -17,7 +20,6 @@ import { Button, DeviceTheme } from './src/device-ui';
 import { useOfflinePlans } from './src/useOfflinePlans';
 import { OfflinePlansScreen } from './src/OfflinePlansScreen';
 
-const KEY = 'paceforge.phone.v1';
 const random = () => Array.from(Crypto.getRandomBytes(32), b => b.toString(16).padStart(2, '0')).join('');
 
 function Companion() {
@@ -48,6 +50,15 @@ function Companion() {
   const [detail, setDetail] = useState<DeviceDetail>(null);
   const [connections, setConnections] = useState<Connections | null>(null);
   const [needsReconnect, setNeedsReconnect] = useState(false);
+  // Web logout or another account in the web session: no background sync until confirmed.
+  const [block, setBlock] = useState<Block>('');
+  // A background launch (HealthKit, periodic task) mounts this screen without showing it:
+  // the WebView would load Santé for nobody. It mounts on the first return to the foreground.
+  const [webStarted, setWebStarted] = useState(AppState.currentState !== 'background');
+  const stored = useRef(false);
+  const reconciled = useRef(false);
+  const rotationRefused = useRef(false);
+  const syncTrigger = useRef<Trigger>('manual');
   const externalReturn = useRef(false);
   const web = useRef<WebView>(null);
   const offline = useOfflinePlans(script => web.current?.injectJavaScript(script), random);
@@ -69,15 +80,44 @@ function Companion() {
   const recoveringBridge = useRef(false);
   const syncReturn = useRef<{ tab: Tab; url: string; showWeb: boolean } | null>(null);
 
+  // A locked phone (background launch) cannot read the keychain: this is never « not
+  // paired ». The read is retried on the first return to the foreground.
+  const loadStored = useEffectEvent(async () => {
+    try {
+      await secure.migrate().catch(e => { if (e instanceof KeychainLocked) throw e; });
+      const [saved, time, auto, receipt, blocked] = await Promise.all([secure.recover(KEYS.pair), secure.get(KEYS.last),
+        secure.get(KEYS.auto), secure.get(KEYS.sync), backgroundBlock()]);
+      const account = saved ? JSON.parse(saved) as Pair : null;
+      const previous = receipt ? JSON.parse(receipt) as SyncReport : null;
+      stored.current = true;
+      setPair(account); setLast(time || ''); setAutomatic(auto === 'true'); setBlock(blocked);
+      if (previous?.userId === account?.user_id) { setReport(previous); setNeedsReconnect(!!previous?.reconnect); }
+    } catch (e) {
+      if (e instanceof KeychainLocked) return;
+      stored.current = true;
+      setError('Impossible de lire l’association. Reconnecte le téléphone.');
+    }
+    setReady(true);
+  });
+  // Background runs keep the receipt up to date while the app is away.
+  const rereadReceipt = useEffectEvent(async () => {
+    if (lock.current || !pair) return;
+    try {
+      const [time, receipt] = await Promise.all([secure.get(KEYS.last), secure.get(KEYS.sync)]);
+      const previous = receipt ? JSON.parse(receipt) as SyncReport : null;
+      if (lock.current || previous?.userId !== pair.user_id) return;
+      setReport(previous); setLast(time || '');
+      if (previous.reconnect) setNeedsReconnect(true);
+    } catch { /* the receipt on screen stays */ }
+  });
+  const backgroundReport = useEffectEvent((r: SyncReport) => {
+    if (lock.current || !pair || r.userId !== pair.user_id) return;
+    setReport(r); if (r.lastReceivedAt) setLast(r.lastReceivedAt);
+    if (r.reconnect) setNeedsReconnect(true);
+  });
+  useEffect(() => onBackgroundReport(r => backgroundReport(r)), []);
   useEffect(() => {
-    Promise.all([SecureStore.getItemAsync(KEY), SecureStore.getItemAsync(KEY + '.last'), SecureStore.getItemAsync(KEY + '.auto'), SecureStore.getItemAsync(KEY + '.sync')])
-      .then(([saved, time, auto, receipt]) => {
-        const account = saved ? JSON.parse(saved) as Pair : null;
-        const previous = receipt ? JSON.parse(receipt) as SyncReport : null;
-        setPair(account); setLast(time || ''); setAutomatic(auto === 'true');
-        if (previous?.userId === account?.user_id) { setReport(previous); setNeedsReconnect(!!previous?.reconnect); }
-      })
-      .catch(() => setError('Impossible de lire l’association. Reconnecte le téléphone.')).finally(() => setReady(true));
+    void loadStored();
     Linking.getInitialURL().then(u => { if (u) onAppLink(u); });
     const subscription = Linking.addEventListener('url', e => onAppLink(e.url));
     return () => { subscription.remove(); if (watchdog.current) clearTimeout(watchdog.current); if (nextNavigation.current) clearTimeout(nextNavigation.current.timer); };
@@ -157,6 +197,7 @@ function Companion() {
   function sync(quiet = false, consent = false, forceSources = false) {
     if (!pair || !start()) return;
     setHealthIssue('');
+    syncTrigger.current = quiet && !forceSources ? 'auto' : 'manual';
     syncReturn.current = quiet ? { tab, url: screenUrl(webLocation.current), showWeb } : null;
     const nonce = random(), target = `${ORIGIN}/mobile/session?nonce=${nonce}`;
     inlineSync.current = quiet && documentReady.current && refreshable(documentUrl.current);
@@ -183,23 +224,38 @@ function Companion() {
     if (!inlineSync.current) { setShowWeb(false); setTab('devices'); setDetail('health'); }
     let refresh = false;
     try {
-      if (consent) { setStatus('Choisis les données à partager…'); await authorize(); }
-      const full = consent || syncFull.current;
-      const result = await syncHealth({
-        userId: account.user_id, full, previous: report,
-        daily: () => collect(() => setStatus('Lecture des mesures quotidiennes…'), full ? 30 : 7),
-        sleep: () => collectSleep(() => setStatus('Lecture du sommeil…'), full ? 60 : 7),
-        send: (path, body) => api(path, 'POST', body, account.token), progress: setStatus,
-        save: async receipt => {
-          await SecureStore.setItemAsync(KEY + '.sync', JSON.stringify(receipt)); setReport(receipt);
-          if (receipt.lastReceivedAt) {
-            await SecureStore.setItemAsync(KEY + '.last', receipt.lastReceivedAt); setLast(receipt.lastReceivedAt);
-          }
-        },
+      // One sync at a time, also with a background run (another runtime on Android).
+      await syncExclusively(async () => {
+        if (consent) { setStatus('Choisis les données à partager…'); await authorize(automatic && Platform.OS === 'android'); }
+        const full = consent || syncFull.current;
+        let credentials: Pair = account;
+        const keep = async (next: Credentials) => {
+          credentials = { ...credentials, token: next.token, prev_token: next.prev_token };
+          await secure.rewrite(KEYS.pair, JSON.stringify(credentials)); setPair(credentials);
+        };
+        const result = await syncHealth({
+          userId: account.user_id, full, previous: report, trigger: consent ? 'manual' : syncTrigger.current,
+          daily: () => collect(() => setStatus('Lecture des mesures quotidiennes…'), full ? 30 : 7),
+          sleep: () => collectSleep(() => setStatus('Lecture du sommeil…'), full ? 60 : 7),
+          send: (path, body, meta) => authorized(credentials,
+            token => api(path, 'POST', body, token, { headers: { 'X-PaceForge-Read-At': meta.readAt } }), keep),
+          progress: setStatus,
+          save: async receipt => {
+            await secure.set(KEYS.sync, JSON.stringify(receipt)); setReport(receipt);
+            if (receipt.lastReceivedAt) {
+              await secure.set(KEYS.last, receipt.lastReceivedAt); setLast(receipt.lastReceivedAt);
+            }
+          },
+        });
+        setNeedsReconnect(result.reconnect); setStatus(reportText(result));
+        refresh = result.received > 0 || refreshSources.current;
+        setHealthIssue(syncIssue(result, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect'));
+        if (!result.reconnect && !rotationRefused.current && rotationDue(credentials.rotated_at)) {
+          // Foreground only. The server keeps the old token valid 7 days, until the new one is used.
+          await rotateToken(credentials, async next => { await secure.rewrite(KEYS.pair, JSON.stringify(next)); setPair(next); })
+            .catch(e => { if (e instanceof ApiError && [404, 405].includes(e.status)) rotationRefused.current = true; });
+        }
       });
-      setNeedsReconnect(result.reconnect); setStatus(reportText(result));
-      refresh = result.received > 0 || refreshSources.current;
-      setHealthIssue(syncIssue(result, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect'));
     } catch (e) { fail(e); } finally {
       if (!refresh || !refreshable(webLocation.current)) setUserRefreshing(false);
       restoreSync(refresh); finish();
@@ -252,6 +308,7 @@ function Companion() {
       if (!inlineSync.current) setShowWeb(false);
       if (reply.kind === 'connections') {
         setConnections(reply.snapshot); setShowWeb(false); setStatus('');
+        if (pair) confirmAccount(reply.snapshot.user_id === pair.user_id);
         if (reply.task.pageUrl && offline.library.userId !== reply.snapshot.user_id) {
           // A session may have changed while Settings covered the document.
           // Clear the old account's copies and replace its still-mounted page.
@@ -262,21 +319,32 @@ function Companion() {
         return;
       }
       if (reply.kind === 'pair') {
-        const account: Pair = await api('/api/mobile/exchange', 'POST', { code: reply.code, verifier: reply.task.verifier });
-        await SecureStore.setItemAsync(KEY, JSON.stringify(account)); setPair(account); setShowWeb(false); setTab('devices');
-        await SecureStore.deleteItemAsync(KEY + '.last'); setLast('');
-        await SecureStore.deleteItemAsync(KEY + '.sync'); setReport(null);
-        await SecureStore.deleteItemAsync(KEY + '.auto'); setAutomatic(false);
+        const account: Pair = { ...await api('/api/mobile/exchange', 'POST', { code: reply.code, verifier: reply.task.verifier }),
+          rotated_at: new Date().toISOString() };
+        const sameAccount = pair?.user_id === account.user_id;
+        await secure.rewrite(KEYS.pair, JSON.stringify(account)); setPair(account); setShowWeb(false); setTab('devices');
+        await secure.remove(KEYS.last); setLast('');
+        await secure.remove(KEYS.sync); setReport(null);
+        // Reconnecting the same account (refused token) keeps the automatic update choice.
+        if (!sameAccount) { await secure.remove(KEYS.auto); setAutomatic(false); }
+        await resetBackgroundState(account.user_id); setBlock('');
         setNeedsReconnect(false);
         await upload(account, true);
       } else if (reply.kind === 'check') {
         if (!pair || reply.userId !== pair.user_id) {
-          setNeedsReconnect(true);
+          setNeedsReconnect(true); confirmAccount(false);
           throw new Error('Le compte affiché a changé. Utilise « Connecter » pour confirmer le compte qui recevra tes mesures.');
         }
+        confirmAccount(true);
         await upload(pair, reply.task.consent);
       }
     } catch (e) { fail(e); }
+  }
+  /** The web session matches the paired account (or not): background sync follows. */
+  function confirmAccount(same: boolean) {
+    const next: Block = same ? '' : 'mismatch';
+    if (same ? !block : block === 'mismatch') return;
+    setBlock(next); void blockBackgroundSync(next).catch(() => {});
   }
   function connectHealth() {
     setDetail('health');
@@ -304,21 +372,40 @@ function Companion() {
     if (!pair || !start()) return;
     try {
       await api('/api/mobile/device', 'DELETE', undefined, pair.token);
-      await SecureStore.deleteItemAsync(KEY); await SecureStore.deleteItemAsync(KEY + '.auto'); await SecureStore.deleteItemAsync(KEY + '.last'); await SecureStore.deleteItemAsync(KEY + '.sync');
+      await secure.erase(KEYS.pair); await secure.remove(KEYS.auto); await secure.remove(KEYS.last); await secure.remove(KEYS.sync);
+      await disableBackgroundSync().catch(() => {}); await secure.remove(KEYS.background).catch(() => {});
       setPair(null); setAutomatic(false); setLast(''); setReport(null); setHealthIssue(''); setNeedsReconnect(false);
       setStatus('Téléphone dissocié. L’historique reçu reste dans ton compte.');
     } catch (e) { fail(e); } finally { finish(); }
   }
   const onForeground = useEffectEvent(() => {
-    if (lock.current || !ready || offline.view !== null) return;
+    // Never during a background launch: the screen is not shown, nothing to verify.
+    if (AppState.currentState !== 'active' || lock.current || !ready || offline.view !== null) return;
     if (externalReturn.current) {
       externalReturn.current = false; setTab('devices'); setShowWeb(false); setDetail(null); refreshConnections();
-    } else if (tab !== 'devices' && automatic && pair && !needsReconnect && documentReady.current && refreshable(documentUrl.current) && due(report, lastAttempt.current)) sync(true);
+    } else if (tab !== 'devices' && automatic && pair && !needsReconnect && documentReady.current && refreshable(documentUrl.current) &&
+      (due(report, lastAttempt.current) || (backgroundPending() && Date.now() - lastAttempt.current >= 60000))) sync(true);
+  });
+  // Background sync follows the toggle, the pairing and the account. Registered from
+  // the foreground only (iOS: after the HealthKit permission sheet).
+  const wantBackground = !!pair && automatic && !needsReconnect && !block && !(connections && pair && connections.user_id !== pair.user_id);
+  const reconcile = useEffectEvent(() => {
+    if (!ready || AppState.currentState !== 'active') return;
+    reconciled.current = true;
+    void (wantBackground ? enableBackgroundSync() : disableBackgroundSync()).catch(() => {});
   });
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', state => { if (state === 'active') onForeground(); });
+    const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'active') return;
+      setWebStarted(true);
+      if (!stored.current) void loadStored();
+      else void rereadReceipt();
+      if (!reconciled.current) reconcile();
+      onForeground();
+    });
     return () => subscription.remove();
   }, []);
+  useEffect(() => { reconcile(); }, [ready, wantBackground]);
   useEffect(() => {
     if (ready) onForeground();
   }, [ready, tab]);
@@ -395,7 +482,11 @@ function Companion() {
     {tab === 'devices' && !showWeb && offline.view === null && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} report={report} automatic={automatic}
       busy={busy} ready={ready} status={status} error={error || (detail === 'health' ? '' : visibleIssue)} connections={connections} needsReconnect={needsReconnect}
       connectHealth={connectHealth} sync={() => sync()} disconnect={disconnect}
-      auto={v => { setAutomatic(v); SecureStore.setItemAsync(KEY + '.auto', String(v)).catch(fail); }}
+      auto={v => {
+        setAutomatic(v); secure.set(KEYS.auto, String(v)).catch(fail);
+        // Android: reading in the background needs its own Health Connect permission.
+        if (v && Platform.OS === 'android') void authorize(true).catch(() => {}).finally(() => reconcile());
+      }}
       provider={openProvider} refresh={refreshConnections} settings={openSettings} health={() => openTab('health')} />}
     {webVisible && tab === 'courses' && (offline.busy || offline.notice) && <View style={[styles.syncStatus, night && styles.darkSurface]} accessibilityLiveRegion="polite">
       {offline.busy && <ActivityIndicator size="small" />}<Text style={[styles.syncText, night && styles.darkMuted]}>{offline.busy ? 'Enregistrement du plan sur le téléphone…' : offline.notice}</Text>
@@ -408,7 +499,7 @@ function Companion() {
     </View> : webVisible && concealBridge ? <View style={styles.returning} accessibilityLabel="Chargement de PaceForge"><ActivityIndicator color="#0b5f6e" /></View> : null}
     <View style={[styles.web, (!webVisible || concealBridge || !!loadError) && styles.hidden]} pointerEvents={webVisible && !concealBridge && !loadError ? 'auto' : 'none'} accessibilityElementsHidden={!webVisible || concealBridge || !!loadError} importantForAccessibility={webVisible && !concealBridge && !loadError ? 'auto' : 'no-hide-descendants'}>
       {showWeb && <Button text="Retour aux connexions" disabled={busy && !pending.current} onPress={() => { if (pending.current) { web.current?.stopLoading(); restoreSync(); finish(); setShowWeb(false); setTab('devices'); setDetail(null); setStatus(''); } else openTab('devices'); }} secondary />}
-      <WebView ref={web} source={{ uri: url }} style={styles.web} sharedCookiesEnabled thirdPartyCookiesEnabled={false}
+      {webStarted && <WebView ref={web} source={{ uri: url }} style={styles.web} sharedCookiesEnabled thirdPartyCookiesEnabled={false}
         pullToRefreshEnabled={Platform.OS === 'ios' && webVisible && !concealBridge && refreshable(documentUrl.current) && !busy && !pageRefreshing}
         bounces decelerationRate="normal" automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never"
         injectedJavaScriptBeforeContentLoaded={appShellScript + textScaleScript} injectedJavaScript={appShellScript + textScaleScript}
@@ -450,7 +541,7 @@ function Companion() {
               else { refresh(); return false; }
             }
             const path = new URL(request.url).pathname;
-            if (path === '/auth/logout') offline.forget();
+            if (path === '/auth/logout') { offline.forget(); setBlock('logout'); void blockBackgroundSync('logout').catch(() => {}); }
             if (path === '/settings' && ['#connections', '#coros', '#garmin', '#strava'].includes(new URL(request.url).hash)) { openTab('devices'); return false; }
             if (['/auth/strava', '/coros/connect', '/setup'].includes(path)) {
               // Start AND finish OAuth in the same browser session.
@@ -499,7 +590,7 @@ function Companion() {
             } else if (path.startsWith('/auth/')) tabLocations.current = {};
           }
         }}
-      />
+      />}
     </View>
     </View>
     <View style={[styles.tabs, night && styles.darkSurface]}>
