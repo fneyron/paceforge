@@ -102,7 +102,10 @@ def test_a_cool_damp_hour_is_not_heat():
     from app.services.weather import compute_heat_factor
 
     assert compute_heat_factor(10.0, 90.0) == 1.0 and compute_heat_factor(14.9, 100.0) == 1.0  # was 1.025, 1.035
-    assert compute_heat_factor(15.0, 85.0) == pytest.approx(1.02) and compute_heat_factor(30.0, 90.0) == pytest.approx(1.145)
+    # phased in from 15 to 20 °C: no step at 15 °C (14.9 °C / 95 % 1.000, 15.0 °C 1.030 before), full from 20 °C
+    assert compute_heat_factor(15.0, 95.0) == 1.0
+    assert compute_heat_factor(17.5, 95.0) == pytest.approx(1.0 + 2.5 * 0.004 + 0.030 * 0.5)
+    assert compute_heat_factor(20.0, 85.0) == pytest.approx(1.04) and compute_heat_factor(30.0, 90.0) == pytest.approx(1.145)
 
 
 def test_mean_heat_over_the_race_hours():
@@ -149,7 +152,7 @@ async def test_the_races_heat_is_looked_up_once_and_read_by_the_model(db_session
     # the race's own altitude, as the course's forecast: 1 500 m above the values' 500 m, 9.75 °C cooler
     assert high.raw_data[rc.HEAT_CACHE_KEY]["dz"] == 1500 and high.raw_data[rc.HEAT_CACHE_KEY]["t"] == pytest.approx(21.2, abs=0.1)
     assert high.raw_data[rc.HEAT_CACHE_KEY]["h"] == pytest.approx(weather.compute_heat_factor(21.25, 40.0), abs=1e-3)
-    assert nowhere.raw_data[rc.HEAT_CACHE_KEY] == {"v": 2, "h": None, "src": "none"}
+    assert nowhere.raw_data[rc.HEAT_CACHE_KEY] == {"v": rc.HEAT_CACHE_VERSION, "h": None, "src": "none"}
     assert await rc.backfill_race_heat(db_session, test_user.id) == 0 and len(calls) == 2  # never asked again
     model = await rc.build_race_effort_model(db_session, test_user.id)
     hot = next(p for p in model["races"] if p["name"] == "Ultra chaud")

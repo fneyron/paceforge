@@ -694,7 +694,7 @@ async def _backfill_dplus(db: AsyncSession, user, strava, limit: int) -> int:
 # lapse rate from the elevation Open-Meteo's values are for to the middle of
 # the race's lowest and highest points (Strava's elev_low / elev_high).
 HEAT_CACHE_KEY = "paceforge_heat"
-HEAT_CACHE_VERSION = 2  # 2: altitude-corrected, humidity from 15 °C
+HEAT_CACHE_VERSION = 3  # 2: altitude-corrected, humidity from 15 °C; 3: humidity phased in to 20 °C
 HEAT_LOOKUPS_PER_PASS = 10
 
 
