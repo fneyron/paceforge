@@ -454,6 +454,23 @@ def test_the_profiles_night_bands_follow_the_sun():
     assert len(bands) == 1 and 5 < bands[0]["start_km"] < 15 and bands[0]["end_km"] == 40.0  # dark from ~17:45
 
 
+def test_the_night_is_read_on_the_clock_with_the_planned_stops():
+    """The plan draws its night bands on the clock with the stops in it: the pace's night penalty reads the same
+    clock (a 1 h stop at km 10 puts the end of a 17:00 start into the dark an hour earlier)."""
+    prof = AthleteGradientProfile(flat_pace_s_per_km=360, gradient_factors=dict(rs._DEFAULT_GRADIENT_FACTORS), data_points=0,
+                                  sport_types_used=[])
+    plain = rs.predict_course(_flat(), prof, start_hour=17)
+    stopped = rs.predict_course(_flat(), prof, start_hour=17, aid_stops={10.0: 3600})
+    assert rs.predict_course(_flat(), prof, start_hour=17, aid_stops={}).predicted_total_time_s == plain.predicted_total_time_s
+    before = [s.predicted_time_s for s in plain.segments]
+    after = [s.predicted_time_s for s in stopped.segments]
+    assert after[:10] == before[:10]  # before the stop: the same clock
+    assert sum(after[10:]) > sum(before[10:])  # after it, an hour later: more of it in the dusk and the dark
+    course = _flat()
+    expect = [3600.0 * (s.start_km >= 10 - 1e-6) + 600.0 * (s.start_km >= 20 - 1e-6) for s in course.segments]
+    assert rs._stops_before(course, {10.0: 3600, 20.0: 600}) == expect  # a station delays every segment after it
+
+
 # ── 5b. the pin floor ──
 
 def test_a_pin_may_not_ask_a_leg_faster_than_70_percent_of_the_model():

@@ -375,12 +375,11 @@ async def _passage_table_context(
             course, profile, start_hour=start_hour, start_minute=start_minute,
             plan_moving_s=objective_moving_s(
                 target_time_s, course.total_distance_km, checkpoints, stop_min * 60, aid_kms, aid_stops,
-            ), **clock,
+            ), aid_stops=aid_stops, **clock,
         )
     else:  # no plan: the stops of the predicted finish (the prediction plus its own stops)
-        course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, **clock)
-        finish_s = _finish_with_stops(course.predicted_total_time_s, checkpoints, stop_minutes, total_km)
-        aid_stops = _aid_stops(checkpoints, stop_minutes, finish_s, total_km)
+        course, finish_s, aid_stops = _predict_with_stops(course, profile, start_hour, start_minute, clock, checkpoints,
+                                                          stop_minutes, total_km)
 
     sections = compute_passage_times(
         course, checkpoints, target_time_s, heat_factor,
@@ -1909,6 +1908,22 @@ def _aid_stops(cps: list[dict], override_min: int | None = None, finish_s: float
     return out
 
 
+def _predict_with_stops(course, profile, start_hour: int, start_minute: int, clock: dict, cps: list[dict],
+                        override_min: int | None, total_km: float | None):
+    """Without an objective: (course, finish, stops) — the prediction, the stops of its finish, then the
+    prediction again with the night read on the clock those stops make (the terrain read once)."""
+    from app.services.race_simulator import _fine_terrain, predict_course
+
+    fine = _fine_terrain(course, profile)
+    course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, fine_terrain=fine, **clock)
+    finish_s = _finish_with_stops(course.predicted_total_time_s, cps, override_min, total_km)
+    aid_stops = _aid_stops(cps, override_min, finish_s, total_km)
+    if aid_stops:
+        course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, fine_terrain=fine,
+                                aid_stops=aid_stops, **clock)
+    return course, finish_s, aid_stops
+
+
 def _finish_with_stops(moving_s: float | None, cps: list[dict], override_min: int | None,
                        total_km: float | None) -> float | None:
     """The finish the stop model reads when no objective is set: the predicted moving time plus the stops it
@@ -2044,12 +2059,11 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
             course, profile, start_hour=start_hour, start_minute=start_minute,
             plan_moving_s=objective_moving_s(
                 route.target_time_s, course.total_distance_km, cps, stop_min * 60, aid, aid_stops,
-            ), **clock,
+            ), aid_stops=aid_stops, **clock,
         )
     else:  # no objective: the stops of the predicted finish
-        course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, **clock)
-        finish_s = _finish_with_stops(course.predicted_total_time_s, cps, route.stop_minutes, total_km)
-        aid_stops = _aid_stops(cps, route.stop_minutes, finish_s, total_km)
+        course, finish_s, aid_stops = _predict_with_stops(course, profile, start_hour, start_minute, clock, cps,
+                                                          route.stop_minutes, total_km)
     sections = compute_passage_times(
         course, cps, route.target_time_s, 1.0 if route.weather_json else _no_weather_heat(profile), start_hour, start_minute,
         route.weather_json.get("hourly") if route.weather_json else None,

@@ -695,6 +695,7 @@ def _segment_times(
     tilt: float,
     clock_scale: float = 1.0,
     sun: "SunClock | None" = None,
+    stops_before: list[float] | None = None,
 ) -> list[tuple[float, float]]:
     """(pace s/km, moving time s) of every segment at the profile's flat pace (heat included).
 
@@ -702,7 +703,9 @@ def _segment_times(
     total times ``clock_scale`` (planned level / the level simulated here). At
     1.0 it is the training level itself. Night: by the sun at the segment's
     place and time when ``sun`` is known (race date and clock), else the fixed
-    window.
+    window, on the clock the plan draws: the moving time plus the planned stops
+    made before the segment (``stops_before``, s per segment). Fatigue keeps the
+    hours on the move (as fitted).
     """
     total_distance = course.total_distance_km
     cumulative_time = 0.0
@@ -730,7 +733,8 @@ def _segment_times(
         factor = grade_factor * alt * terrain
         factor *= _fatigue_factor(clock_s / 3600, progress, total_distance, tilt)
         factor *= heat_factor
-        factor *= sun.factor(idx, clock_s) if sun is not None else _night_penalty(clock_s, start_hour_frac)
+        night_s = clock_s + (stops_before[idx] if stops_before else 0.0)
+        factor *= sun.factor(idx, night_s) if sun is not None else _night_penalty(night_s, start_hour_frac)
 
         predicted_pace = profile.flat_pace_s_per_km * factor
         predicted_time = predicted_pace * (segment.distance_m / 1000)
@@ -746,7 +750,7 @@ LEVEL_PASSES = 12
 
 
 def _times_at_level(
-    course, profile, fine, heat_factor, start_hour_frac, tilt, first: list, total_s: float, sun=None,
+    course, profile, fine, heat_factor, start_hour_frac, tilt, first: list, total_s: float, sun=None, stops_before=None,
 ) -> list:
     """Segment (pace, time) whose clock, once re-levelled to ``total_s``, is the
     one fatigue and night were read on: scale = total_s / (total of the run at
@@ -754,7 +758,8 @@ def _times_at_level(
     rows = first
     prev = sum(t for _, t in rows)
     for _ in range(LEVEL_PASSES):
-        rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt, total_s / (prev or 1.0), sun)
+        rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt, total_s / (prev or 1.0), sun,
+                              stops_before)
         total = sum(t for _, t in rows)
         if abs(total - prev) < 1.0:
             break
@@ -772,6 +777,7 @@ def predict_course(
     fine_terrain: list[float] | None = None,
     race_date=None,
     utc_offset_s: int | None = None,
+    aid_stops: dict | None = None,
 ) -> CourseProfile:
     """Apply gradient-adjusted pace prediction with fatigue, heat, altitude, terrain, night.
 
@@ -787,14 +793,17 @@ def predict_course(
 
     ``race_date`` and ``utc_offset_s`` (the race's clock, see
     race_utc_offset_s): night by the sun at each segment's place and time;
-    without them, the fixed 21:00-06:00 window.
+    without them, the fixed 21:00-06:00 window. ``aid_stops`` ({km: s}, the
+    plan's): night read on the clock with the stops made before each segment,
+    as the plan's night bands are drawn.
     """
     start_hour_frac = start_hour + (start_minute or 0) / 60
     tilt = getattr(profile, "fatigue_tilt", None) or DEFAULT_FATIGUE_TILT
     fine = fine_terrain if fine_terrain is not None else _fine_terrain(course, profile)
     sun = sun_clock(course, race_date, start_hour, start_minute, utc_offset_s)
+    stops = _stops_before(course, aid_stops)
 
-    rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt, sun=sun)
+    rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt, sun=sun, stops_before=stops)
     training_total = sum(t for _, t in rows)
 
     # Races, not training, set the level of the prediction (see race_calibration).
@@ -805,7 +814,7 @@ def predict_course(
 
         race_total = race_level_total_s(course, race_model, training_total)
         if race_total:
-            rows = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, race_total, sun)
+            rows = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, race_total, sun, stops)
 
     # The basis used to split a TARGET into passage times: terrain, fatigue
     # and night, not heat (applied per section with the forecast). A plan
@@ -813,7 +822,7 @@ def predict_course(
     # faster than the 2025 Transjeju winner ran them.
     basis = rows
     if plan_moving_s and plan_moving_s > 0:
-        basis = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, plan_moving_s, sun)
+        basis = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, plan_moving_s, sun, stops)
 
     cumulative_time = 0.0
     for segment, (predicted_pace, predicted_time), (_, base) in zip(course.segments, rows, basis, strict=True):
@@ -835,6 +844,20 @@ def predict_course(
         )
 
     return course
+
+
+def _stops_before(course: CourseProfile, aid_stops: dict | None) -> list[float] | None:
+    """Seconds of planned stops made before each segment starts (a station at km X delays every segment from X)."""
+    if not aid_stops:
+        return None
+    marks = sorted((float(k), float(v)) for k, v in aid_stops.items() if v)
+    out, acc, i = [], 0.0, 0
+    for seg in course.segments:
+        while i < len(marks) and marks[i][0] <= seg.start_km + 1e-6:
+            acc += marks[i][1]
+            i += 1
+        out.append(acc)
+    return out
 
 
 def format_time(seconds: int) -> str:
