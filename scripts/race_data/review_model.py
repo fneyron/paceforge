@@ -1,4 +1,18 @@
-"""Fail-closed quality checks for a candidate. Passing never edits production."""
+"""Fail-closed quality checks for a candidate. Passing never edits production.
+
+Adoption rule (fit_model.py, WHAT IS SCORED / ADOPTION):
+
+- the evidence is there: separate train / validation events, enough held-out
+  races and finishers, every held-out race compared, all four distance bands;
+- PRIMARY: mean |ln(predicted / actual)| at the checkpoints; the event-bootstrap
+  95 % CI of candidate − current must lie below 0 (upper bound < 0): an
+  average gain inside the noise of 6 events is not a gain;
+- no distance band gets worse by more than 2 % (relative) on the primary metric.
+
+Per-race results, the Transjeju guards, the mean |gap| in minutes, the share of
+races improved and LiveTrail are reported as diagnostics: they inform the
+reviewer, they do not veto (one race or one runner is not a validation set).
+"""
 
 from __future__ import annotations
 
@@ -6,6 +20,8 @@ import argparse
 import json
 import math
 from pathlib import Path
+
+BAND_TOLERANCE = 0.02
 
 
 def number(value):
@@ -17,13 +33,20 @@ def number(value):
     )
 
 
+def finite(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
 def review(params: dict) -> dict:
     validation = params.get("validation") or {}
     selected = (params.get("selected") or {}).get("model", "fit")
-    checks = []
+    checks, diagnostics = [], []
 
     def check(name, passed, detail):
         checks.append({"name": name, "passed": bool(passed), "detail": detail})
+
+    def note(name, ok, detail):
+        diagnostics.append({"name": name, "ok": bool(ok), "detail": detail})
 
     train, test = set(params.get("train_events", [])), set(params.get("test_events", []))
     check(
@@ -36,28 +59,25 @@ def review(params: dict) -> dict:
         validation.get("held_out_races", 0) >= 20 and validation.get("held_out_runners", 0) >= 1000,
         "At least 20 held-out races and 1,000 finishers",
     )
-    scores = validation.get("mean_abs_gap") or {}
-    current, candidate = scores.get("current"), scores.get("fit")
-    valid = number(current) and number(candidate) and current > 0
+    primary = validation.get("primary") or {}
+    ci = primary.get("ci95") or [None, None]
+    valid = (number(primary.get("current")) and number(primary.get("fit")) and finite(primary.get("diff"))
+             and len(ci) == 2 and all(finite(v) for v in ci) and ci[0] <= primary.get("diff") <= ci[1])
     check(
-        "overall_improvement",
-        valid and current - candidate >= max(0.25, current * 0.02),
-        "Mean checkpoint error must improve by at least 2% and 0.25 minutes",
+        "primary_improvement",
+        valid and ci[1] < 0,
+        "Mean |ln(predicted / actual)| at the checkpoints: the event-bootstrap 95 % CI of candidate - current "
+        "lies below 0",
     )
-    for key in ("by_group", "by_band"):
-        rows = validation.get(key) or {}
+    bands = primary.get("by_band") or {}
+    check("by_band_coverage", len(bands) >= 4, "All four distance bands")
+    for label, row in bands.items():
+        before, after = row.get("current"), row.get("fit")
         check(
-            key + "_coverage",
-            len(rows) >= 4,
-            "All four distance bands / at least four finish-time groups",
+            f"by_band:{label}",
+            number(before) and number(after) and after <= before * (1 + BAND_TOLERANCE),
+            "No distance band worse by more than 2 % (relative) on the primary metric",
         )
-        for label, row in rows.items():
-            before, after = row.get("current"), row.get("fit")
-            check(
-                f"{key}:{label}",
-                number(before) and number(after) and after <= before + max(0.25, before * 0.02),
-                "No material regression in this group",
-            )
     per_race = validation.get("per_race") or {}
     paired = [v for v in per_race.values() if number(v.get("current")) and number(v.get("fit"))]
     check(
@@ -65,38 +85,37 @@ def review(params: dict) -> dict:
         len(paired) >= 20 and len(paired) == validation.get("held_out_races"),
         "Every held-out race must have a comparison",
     )
-    check(
-        "races_improved",
-        bool(paired) and sum(v["fit"] < v["current"] for v in paired) / len(paired) >= 0.6,
-        "At least 60% of held-out races improve",
-    )
-    for race, row in per_race.items():
-        before, after = row.get("current"), row.get("fit")
-        check(
-            "race:" + race,
-            number(before) and number(after) and after <= before + max(1, before * 0.05),
-            "No race may regress by more than 1 minute or 5%",
-        )
+
+    # ── diagnostics: reported, never a veto ──
+    def fmt(v):
+        return f"{v:.2f}" if number(v) else str(v)
+
+    scores = validation.get("mean_abs_gap") or {}
+    cur, cand = scores.get("current"), scores.get("fit")
+    note("minutes", number(cur) and number(cand) and cand <= cur,
+         f"Mean |gap| at the checkpoints: {fmt(cur)} -> {fmt(cand)} min")
+    if paired:
+        share = sum(v["fit"] < v["current"] for v in paired) / len(paired)
+        note("races_improved", share >= 0.5, f"{share:.0%} of the held-out races improve")
+    worse = sorted(race for race, row in per_race.items()
+                   if number(row.get("current")) and number(row.get("fit"))
+                   and row["fit"] > row["current"] + max(1, row["current"] * 0.05))
+    note("races_worse", not worse, "Races worse by more than 1 minute and 5 %: " + (", ".join(worse) or "none"))
     guards = validation.get("guards") or {}
     for race in ("utmb/transjeju_2025/100m", "utmb/transjeju_2026/100m"):
         row = guards.get(race) or {}
         before, after = row.get("current"), row.get(selected)
-        check(
-            "guard:" + race,
-            number(before) and number(after) and after <= before + 0.1,
-            "Transjeju guard must be present and not regress (0.1 minute rounding tolerance)",
-        )
+        note("guard:" + race, number(before) and number(after) and after <= before + 0.1,
+             f"Finishers 16-21 h: {fmt(before)} -> {fmt(after)} min")
     live = validation.get("livetrail") or {}
     ls = live.get("mean_abs_gap") or {}
-    before, after = ls.get("current"), ls.get(selected)
-    check(
-        "livetrail",
-        live.get("courses_scored", 0) >= 20
-        and number(before)
-        and number(after)
-        and after <= before + max(0.2, before * 0.01),
-        "At least 20 LiveTrail courses, no material regression",
-    )
+    note("livetrail", number(ls.get("current")) and number(ls.get(selected)) and ls[selected] <= ls["current"],
+         f"LiveTrail ({live.get('courses_scored', 0)} courses): {fmt(ls.get('current'))} -> {fmt(ls.get(selected))} min")
+    level = validation.get("level") or {}
+    if level:
+        note("level", True, f"Finish time (UTMB index, leave-one-event-out): MAE {level.get('mae_pct')} %, "
+                            f"inside Optimiste-Sécurité {level.get('coverage_pct')} % (target 60 %)")
+
     failed = [row["name"] for row in checks if not row["passed"]]
     return {
         "status": "rejected" if failed else "eligible_for_review",
@@ -104,9 +123,10 @@ def review(params: dict) -> dict:
         "production_path_verified": False,
         "failed_checks": failed,
         "checks": checks,
+        "diagnostics": diagnostics,
         "next_step": (
             "An eligible candidate still requires validate_app.py on the production "
-            "implementation and a reviewed deployment."
+            "implementation, the lockbox (lockbox.py, once per release) and a reviewed deployment."
         ),
     }
 

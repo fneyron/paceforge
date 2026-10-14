@@ -20,14 +20,19 @@ LiveTrail archives (no track) are scored once at the end as an extra
 validation set, never in the selection; night is not scored there (the
 archives give no start clock).
 
-WHAT IS SCORED (same metric as calibrate.score_race): for each race and level
-group (finish 0-12, 12-18, 18-24, 24-30, 30+ h of MOVING time, stops removed
-where departures are timed), the plan is simulated at the group's median finish
-(flat pace re-levelled 4x, so fatigue-by-hours and night see the right clock),
-then scaled to each runner's own finish; the metric is the mean |predicted -
-actual| in minutes at the intermediate checkpoints, averaged over (race, group)
-weighted by the group's runner count. The production path reproduces
-calibrate.score_race exactly.
+WHAT IS SCORED: for each race and level group (finish 0-12, 12-18, 18-24,
+24-30, 30+ h of MOVING time, stops removed where departures are timed), the
+plan is simulated at the group's median finish (flat pace re-levelled 4x, so
+fatigue-by-hours and night see the right clock), then scaled to each runner's
+own finish. PRIMARY METRIC: the mean |ln(predicted / actual)| (x 100, ~ % of
+the time at the checkpoint) at the intermediate checkpoints, averaged over
+(race, group) weighted by the group's runner count, reported by distance
+band: scale-free, where the mean |gap| in minutes grows with the race (8.4 min
+at 40-60 km, 28.8 at 140-180 km held out, 1.4-1.7 % of the finish in every
+band). The minutes (calibrate.score_race's metric, reproduced exactly by the
+production path) stay as a readout. This scores the SHAPE: the finish time
+(the LEVEL) is scored by level_benchmark.py (finish MAE %, P20-P80 coverage,
+interval score on the UTMB index, leave-one-event-out).
 
 FAST PATH: fit_data.py stores per 1 km segment a histogram of the 25 m sample
 points over (integer gradient, LiveTrail class), built exactly as the app's
@@ -62,12 +67,21 @@ MODELS
 
 SPLIT: by EVENT (all editions and distances of an event on the same side).
 The test events are FIXED (TEST_EVENTS, those of the first fit) so that a refit
-is scored on the same events as the model it would replace; events added to
-the dataset since then go to train.
+is scored on the same events as the model it would replace. They are not
+pristine: the -20 % gradient value (Puerto Vallarta, Whistler, UTMB), the
+fatigue's level anchor (Transjeju 2026), the trail surface factor (Transjeju
+2025) and the Transjeju guard were chosen looking at them. Hence the LOCKBOX:
+the events first collected after 2026-10-05 (not in lockbox_baseline.json) are
+in neither train nor test; lockbox.py scores the shipped app on them once per
+release (lockbox_ledger.json). New editions of a known event follow its side.
 
-ADOPTION: a refit goes into race_simulator.py only if it lowers the held-out
-mean |gap| against "current" and the Transjeju guard does not get worse; then
-validate_app.py re-scores the app's own path before / after.
+ADOPTION (review_model.py): a change goes into race_simulator.py only if the
+event-bootstrap 95 % CI (4,000 resamples of the held-out events) of candidate
+- current on the primary metric lies below 0 (upper bound < 0) and no
+distance band gets worse by more than 2 % (relative); per-race results, the
+Transjeju guards and LiveTrail are diagnostics, not vetoes. Then
+validate_app.py re-scores the app's own path before / after. Nothing is ever
+written into the app automatically.
 
 Outputs: scripts/race_data/refit_params.json (default --params) and
 scripts/race_data/fit_results.txt. fitted_params.json is the fit the app's
@@ -116,6 +130,9 @@ APP_CLAMP = (-20, 30)  # race_simulator._get_factor reads the integer gradient c
 BOGUS_ROAD_SHARE = 0.8  # a trail race whose track is > 80 % "R" has unusable labels (Translantau): all -> U
 SEED = 7
 TEST_EVENTS = ["chiangmai", "kullamannen", "puertovallarta", "transjeju", "utmb", "whistler"]
+LOCKBOX_BASELINE = HERE / "lockbox_baseline.json"  # the events known on 2026-10-05; any other is the lockbox
+BOOTSTRAP_B = 4000
+BAND_TOLERANCE = 0.02  # a band may not get worse by more than 2 % (relative) on the primary metric
 GUARD_MODELS = ("legacy", "current", "curcurve_fitrest", "fit_hours", "fit_general", "fit_general+level")
 OWNER_RACE, OWNER_BIB = "utmb/transjeju_2026/100m", "10"
 ITER = 4  # flat-pace re-levelling passes (calibrate.score_race uses 3; 4 converges with hours fatigue)
@@ -411,6 +428,40 @@ class Problem:
         v = float(np.sum(m[ok] * self.nrun[ok]) / np.sum(self.nrun[ok]))
         return v if math.isfinite(v) else 1e4
 
+    def pair_rel(self, pred):
+        """The PRIMARY metric per pair: mean |ln(predicted / actual)| x 100 at the checkpoints, each runner
+        at his own finish."""
+        fin = pred[np.arange(len(pred)), self.last]
+        p = pred[self.op, self.oi] * self.oT / fin[self.op]
+        ok = (self.oa > 0) & (p > 0)
+        g = np.zeros(len(p))
+        g[ok] = np.abs(np.log(p[ok] / self.oa[ok])) * 100
+        s = np.bincount(self.op, weights=g, minlength=len(pred))
+        n = np.bincount(self.op, weights=ok.astype(float), minlength=len(pred))
+        return np.where(n > 0, s / np.maximum(n, 1), np.nan)
+
+    def rel_score(self, pred):
+        m = self.pair_rel(pred)
+        ok = self.has_obs & np.isfinite(m)
+        v = float(np.sum(m[ok] * self.nrun[ok]) / np.sum(self.nrun[ok]))
+        return v if math.isfinite(v) else 1e4
+
+    def band_of(self, p):
+        for lo, hi in BANDS:
+            if lo <= self.km[p] < hi:
+                return f"{lo}-{min(hi, 180)} km"
+        return None
+
+    def rel_by_band(self, pred):
+        """{band: (runners, primary metric)}."""
+        m = self.pair_rel(pred)
+        agg = {}
+        for p in np.where(self.has_obs & np.isfinite(m))[0]:
+            a = agg.setdefault(self.band_of(p), [0.0, 0.0])
+            a[0] += self.nrun[p]
+            a[1] += self.nrun[p] * m[p]
+        return {k: (int(v[0]), v[1] / v[0]) for k, v in agg.items() if k}
+
     def table(self, pred, key):
         """{label: (runners, mean |gap|)} aggregated by key(pair index)."""
         m, _ = self.pair_gaps(pred)
@@ -561,9 +612,67 @@ def _final_job(job):
 # ---------------------------------------------------------------- split / reports
 
 
+def known_events() -> dict | None:
+    return dataset.known_events(LOCKBOX_BASELINE)
+
+
+def in_lockbox(race, known=None) -> bool:
+    """A race of an event first collected after 2026-10-05 (dataset.in_lockbox)."""
+    return dataset.in_lockbox(race, known if known is not None else known_events())
+
+
+def lockbox(races):
+    known = known_events()
+    return [r for r in races if in_lockbox(r, known)]
+
+
 def split(races):
+    """(train, test, test events): by event, the lockbox's events in neither."""
     test = set(TEST_EVENTS)
+    known = known_events()
+    races = [r for r in races if not in_lockbox(r, known)]
     return [r for r in races if r["event"] not in test], [r for r in races if r["event"] in test], sorted(test)
+
+
+def event_bootstrap(prob, pred_a, pred_b, metric="rel", resamples=BOOTSTRAP_B, seed=1):
+    """a − b, runner-weighted over (race, level group), with its 95 % CI from ``resamples`` resamples of the EVENTS (the
+    unit the split holds out): {"diff", "ci95": [lo, hi], "per_event": {event: diff}}. metric: "rel" (the
+    primary, % of the time at the checkpoints) or "min" (mean |gap|, minutes)."""
+    if metric == "rel":
+        ma, mb = prob.pair_rel(pred_a), prob.pair_rel(pred_b)
+    else:
+        ma, mb = prob.pair_gaps(pred_a)[0], prob.pair_gaps(pred_b)[0]
+    ok = prob.has_obs & np.isfinite(ma) & np.isfinite(mb)
+    ev = np.array([prob.races[pp[0]]["event"] for pp in prob.pairs])
+    events = sorted(set(ev[ok]))
+    w = prob.nrun
+    sums = {e: (float(np.sum((w * ma)[ok & (ev == e)])), float(np.sum((w * mb)[ok & (ev == e)])),
+                float(np.sum(w[ok & (ev == e)]))) for e in events}
+
+    def diff(keys):
+        a = sum(sums[k][0] for k in keys)
+        b = sum(sums[k][1] for k in keys)
+        n = sum(sums[k][2] for k in keys)
+        return (a - b) / n
+
+    rng = random.Random(seed)
+    boots = sorted(diff([rng.choice(events) for _ in events]) for _ in range(resamples))
+    return {"diff": diff(events), "ci95": [boots[int(0.025 * resamples)], boots[int(0.975 * resamples) - 1]],
+            "per_event": {e: diff([e]) for e in events}, "events": len(events), "resamples": resamples}
+
+
+def primary_summary(prob, pred_fit, pred_cur) -> dict:
+    """The adoption numbers (review_model.py): the primary metric of both, the event-bootstrap CI of the
+    difference, each band's values."""
+    boot = event_bootstrap(prob, pred_fit, pred_cur)
+    bf, bc = prob.rel_by_band(pred_fit), prob.rel_by_band(pred_cur)
+    return {
+        "metric": "mean |ln(predicted / actual)| x 100 at the intermediate checkpoints, each runner at his own finish",
+        "current": prob.rel_score(pred_cur), "fit": prob.rel_score(pred_fit),
+        "diff": boot["diff"], "ci95": boot["ci95"], "events": boot["events"], "resamples": boot["resamples"],
+        "per_event": boot["per_event"],
+        "by_band": {band: {"runners": bc[band][0], "current": bc[band][1], "fit": bf[band][1]} for band in bc if band in bf},
+    }
 
 
 def fmt_table(title, cols, rows):
@@ -816,6 +925,13 @@ def main():
         say(f"  {rid:40s}{n:5d}{v['legacy']:8.1f}{v['current']:8.1f}{v['fit']:8.1f}")
     improved = sum(v["fit"] < v["current"] for _, v in pr.values())
     say(f"  races where the fit beats current: {improved}/{len(pr)}; beats legacy: {sum(v['fit'] < v['legacy'] for _, v in pr.values())}/{len(pr)}")
+    primary = primary_summary(pte, preds["fit"], preds["current"])
+    say("\nHELD-OUT PRIMARY METRIC (mean |ln(predicted / actual)| x 100 at the checkpoints; adoption: CI upper bound < 0, "
+        f"no band worse by > {BAND_TOLERANCE:.0%})")
+    say(f"  current {primary['current']:.3f}, fit {primary['fit']:.3f}: fit - current {primary['diff']:+.3f} "
+        f"[{primary['ci95'][0]:+.3f}, {primary['ci95'][1]:+.3f}] (event bootstrap, {primary['events']} events)")
+    for band, v in primary["by_band"].items():
+        say(f"  {band:12s} current {v['current']:.3f}  fit {v['fit']:.3f}  ({v['fit'] / v['current'] - 1:+.1%})")
 
     gmodels = {k: models[k] for k in GUARD_MODELS}
     guards = {}
@@ -864,6 +980,7 @@ def main():
         "train_races": len(train), "train_finishers": sum(len(r["runners"]) for r in train),
         "fit_races": len(races), "fit_finishers": sum(len(r["runners"]) for r in races),
         "mean_abs_gap": {k: round(pte.score(p), 2) for k, p in preds.items()},
+        "primary": primary,
         "races_improved_vs_current": improved,
         "guards": {rid: {k: g[f"mean_abs_gap_{k}"] for k in GUARD_MODELS} | {"runners": g["runners"]} for rid, g in guards.items()},
         "owner": own, "transjeju_2026_all": tj26_all, "livetrail": lt,

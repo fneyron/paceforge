@@ -210,6 +210,9 @@ def good_candidate():
         "validation": {
             "held_out_races": 20,
             "held_out_runners": 1500,
+            # the primary metric (mean |ln(predicted / actual)| x 100) with its event-bootstrap CI, per band
+            "primary": {"current": 4.5, "fit": 4.3, "diff": -0.2, "ci95": [-0.3, -0.1],
+                        "by_band": {str(i): {"current": 4.5, "fit": 4.3} for i in range(4)}},
             "mean_abs_gap": {"current": 20.0, "fit": 19.0},
             "by_group": copy.deepcopy(buckets),
             "by_band": copy.deepcopy(buckets),
@@ -233,24 +236,43 @@ def test_eligible_candidate_still_requires_production_validation():
 
 
 @pytest.mark.parametrize(
-    "change", ["small_gain", "regression", "missing_guard", "nan", "leakage", "missing_band"]
+    "change", ["gain_inside_the_noise", "band_regression", "nan", "inconsistent_ci", "leakage", "missing_band",
+               "missing_primary"]
 )
 def test_quality_gate_rejects_bad_or_incomplete_evidence(change):
     candidate = good_candidate()
     data = candidate["validation"]
-    if change == "small_gain":
-        data["mean_abs_gap"]["fit"] = 19.98
-    elif change == "regression":
-        data["by_group"]["0"]["fit"] = 25
-    elif change == "missing_guard":
-        data["guards"] = {}
+    primary = data["primary"]
+    if change == "gain_inside_the_noise":  # the event-bootstrap CI reaches 0
+        primary.update(diff=-0.1, ci95=[-0.25, 0.02])
+    elif change == "band_regression":  # one band worse by more than 2 % on the primary metric
+        primary["by_band"]["0"]["fit"] = 4.6
     elif change == "nan":
-        data["mean_abs_gap"]["fit"] = float("nan")
+        primary["fit"] = float("nan")
+    elif change == "inconsistent_ci":
+        primary["ci95"] = [-0.1, -0.05]
     elif change == "leakage":
         candidate["test_events"][0] = "train0"
+    elif change == "missing_band":
+        primary["by_band"].pop("0")
     else:
-        data["by_band"].pop("0")
+        data.pop("primary")
     assert review(candidate)["status"] == "rejected"
+
+
+def test_per_race_results_and_the_guards_are_diagnostics_not_vetoes():
+    candidate = good_candidate()
+    data = candidate["validation"]
+    data["guards"] = {}
+    data["per_race"]["race0"]["fit"] = 30.0  # one race much worse
+    data["mean_abs_gap"]["fit"] = 20.5  # minutes worse, the scale-free primary metric better
+    result = review(candidate)
+    assert result["status"] == "eligible_for_review" and result["failed_checks"] == []
+    flagged = {d["name"] for d in result["diagnostics"] if not d["ok"]}
+    assert {"races_worse", "minutes", "guard:utmb/transjeju_2025/100m"} <= flagged
+    # and a band within 2 % is no regression
+    data["primary"]["by_band"]["0"]["fit"] = 4.59
+    assert review(candidate)["status"] == "eligible_for_review"
 
 
 def test_persistent_branch_roundtrip_does_not_change_application(tmp_path, monkeypatch):
@@ -281,3 +303,19 @@ def test_persistent_branch_roundtrip_does_not_change_application(tmp_path, monke
     archive.write_bytes(b"second update")
     next_commit = state_store.save()
     assert state_store.git("rev-parse", next_commit + "^") == saved
+
+
+def test_the_lockbox_holds_the_events_first_collected_after_the_baseline():
+    """fit_model.py SPLIT: an event the corpus of 2026-10-05 did not hold is in neither train nor test (scored
+    once per release by lockbox.py); a new edition of a known event follows its event's side."""
+    from pathlib import Path
+
+    from scripts.race_data import dataset
+
+    known = dataset.known_events(Path("scripts/race_data/lockbox_baseline.json"))
+    assert known and "transjeju" in known["utmb"] and "utmb" in known["utmb"] and len(known["livetrail"]) > 100
+    assert not dataset.in_lockbox({"event": "transjeju", "source": "utmb"}, known)  # its 2027 edition too
+    assert dataset.in_lockbox({"event": "newrace", "source": "utmb"}, known)
+    assert dataset.in_lockbox({"event": "transjeju", "source": "livetrail"}, known)  # per source
+    assert dataset.known_events(Path("missing.json")) is None
+    assert not dataset.in_lockbox({"event": "newrace"}, None)  # no baseline: no lockbox
