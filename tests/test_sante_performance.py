@@ -1,63 +1,144 @@
-"""Repeated sleep-history calculations keep their results and request isolation."""
-from datetime import date, timedelta
+"""Repeated Santé calculations keep their results and their isolation, and the page stays within its budget (owner,
+2026-10-14: the page cost 1.5–2.8 s of CPU per load: the Charge accumulée recomputed every session's load for each
+of 400 days, the 14-day history its sleep bases, and every daily row was read whole)."""
+import math
+import re
+import time
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
-from app.services import nights as nt
-from app.services import sante_sleep as sl
+from sqlalchemy import event
 
+from app.models.activity import Activity
+from app.models.health import HealthMetric
+from app.models.mobile import MobileDaily
+from app.services import nights as nt
+from app.services import sante
+from app.services import sante_training as st
+from app.services.sante import local_clock as _local_clock  # the real one (the suite moves sante.local_clock)
 
 TODAY = date(2026, 10, 13)
 
 
-def nights(minutes=500, source="COROS"):
+def nights(hr=48.0, source="COROS"):
     return {TODAY - timedelta(days=i): nt.Night(
-        day=TODAY - timedelta(days=i), source=source, asleep=minutes + i % 4 * 5,
+        day=TODAY - timedelta(days=i), source=source, asleep=480, hr=hr + i % 3, hr_source=source,
+        hrv=60.0 * math.exp(0.05 * (i % 5 - 2)), hrv_source=source,
     ) for i in range(150)}
 
 
-def test_sleep_history_reuses_each_baseline_without_changing_the_need():
+def test_the_history_reuses_each_trend_without_changing_it():
+    """Fourteen days read their trends and baselines once per (metric, day) inside the page's memo; the results
+    are those computed without it."""
     rows = nights()
-    rows[TODAY - timedelta(days=3)].tags.add("long")
-    raced = {TODAY - timedelta(days=11)}
     days = [TODAY - timedelta(days=i) for i in range(14)]
-    expected = [sl.sleep_need(rows, day, raced) for day in days]
+    expected = [nt.trend(rows, m, d) for d in days for m in ("hrv", "hr")]
     with nt.memo():
         nt.freeze(rows)
-        with patch.object(sl, "_sleep_baseline", wraps=sl._sleep_baseline) as calculate:
-            assert [sl.sleep_need(rows, day, raced) for day in days] == expected
-            # Fourteen daily needs overlap: twenty-one distinct baseline days,
-            # instead of rereading sixty nights eight times for every chart day.
-            assert calculate.call_count == 21
-            assert [sl.sleep_need(rows, day, raced) for day in days] == expected
-            assert calculate.call_count == 21
+        with patch.object(nt, "_trend", wraps=nt._trend) as calculate:
+            assert [nt.trend(rows, m, d) for d in days for m in ("hrv", "hr")] == expected
+            assert calculate.call_count == 28
+            assert [nt.trend(rows, m, d) for d in days for m in ("hrv", "hr")] == expected
+            assert calculate.call_count == 28
 
 
-def test_baselines_do_not_leak_between_accounts_requests_or_race_contexts():
-    a, b = nights(500), nights(550, "Garmin")
-    raced = {TODAY - timedelta(days=i) for i in range(1, 60)}
-    expected_a, expected_b = sl.sleep_baseline(a, TODAY), sl.sleep_baseline(b, TODAY)
-    expected_raced = sl.sleep_baseline(a, TODAY, raced)
-    assert expected_a != expected_b and expected_a != expected_raced
+def test_trends_do_not_leak_between_accounts_or_requests():
+    a, b = nights(48.0), nights(55.0, "Garmin")
+    expected_a, expected_b = nt.trend(a, "hr", TODAY), nt.trend(b, "hr", TODAY)
+    assert expected_a != expected_b
     with nt.memo():
         nt.freeze(a)
         nt.freeze(b)
-        assert sl.sleep_baseline(a, TODAY) == expected_a
-        assert sl.sleep_baseline(b, TODAY) == expected_b
-        assert sl.sleep_baseline(a, TODAY, raced) == expected_raced
-        # Callers cannot accidentally alter the retained result.
-        sl.sleep_baseline(a, TODAY)["value"] = 0
-        assert sl.sleep_baseline(a, TODAY) == expected_a
+        assert nt.trend(a, "hr", TODAY) == expected_a and nt.trend(b, "hr", TODAY) == expected_b
     for night in a.values():
-        night.asleep = 420
+        night.hr += 5
     with nt.memo():
         nt.freeze(a)
-        assert sl.sleep_baseline(a, TODAY) != expected_a
+        assert nt.trend(a, "hr", TODAY) != expected_a
 
 
 def test_mutable_nights_are_not_cached_without_explicit_freeze():
-    rows = nights(500)
+    rows = nights()
     with nt.memo():
-        before = sl.sleep_baseline(rows, TODAY)
+        before = nt.trend(rows, "hr", TODAY)
         for night in rows.values():
-            night.asleep = 420
-        assert sl.sleep_baseline(rows, TODAY) != before
+            night.hr += 5
+        assert nt.trend(rows, "hr", TODAY) != before
+
+
+def test_a_session_load_is_memoized_per_its_bounds():
+    """One session's load is computed once per (session, its heart-rate fields, the day's bounds)."""
+    s = st.Session(id=987_001, start=datetime(2026, 10, 1, 7, tzinfo=timezone.utc), day=date(2026, 10, 1),
+                   sport="Run", minutes=60, dplus=0, km=10, speed=2.8, hr=150, hr_peak=180, workout_type=0,
+                   temp=None, segs=((30, 140.0), (30, 160.0)))
+    with patch.object(st, "_session_load", wraps=st._session_load) as calculate:
+        first = st.session_load(s, 50, 190)
+        assert st.session_load(s, 50, 190) == first and calculate.call_count == 1
+        assert st.session_load(s, 48, 190) != first and calculate.call_count == 2  # other bounds: computed anew
+
+
+async def test_the_page_stays_within_its_budget(db_session, test_user, monkeypatch):
+    """500 activities with laps and splits, 400 nights of Garmin rows, Garmin day rows carrying their raw readings:
+    the whole page in a few statements and well under a second (it took 1.5–2.8 s of CPU), on SQLite and on
+    PostgreSQL alike: the statements and the process's CPU (the page's own work, the driver's decoding included),
+    and the wall time, which holds the database's (PostgreSQL's server and its transfers: reading the raw readings
+    would show there). The first load reads the sessions (their raw data, laps and splits); the next one reuses
+    them, as a worker does until an activity is added. The route's own path: the page finds its day and its wall
+    clock (the athlete's zone unset: their latest activity's UTC offset), the user read once (review, 2026-10-14:
+    three identical reads of it per load)."""
+    monkeypatch.setattr(sante, "local_clock", _local_clock)
+    for k in range(400):
+        d = TODAY - timedelta(days=k)
+        start = datetime.combine(d - timedelta(days=1), datetime.min.time()).replace(hour=23)
+        rows = (("sleep", 440 + k % 7 * 10, {"main_start": start.isoformat(timespec="minutes"),
+                                             "main_end": f"{d}T07:00", "tz": 120}),
+                ("hrv", 60 * math.exp(0.05 * (k % 5 - 2)), {"method": "ln_mean_main", "n": 80}),
+                ("hr_night", 48 + k % 3, {"method": "points"}), ("resp_night", 14 + k % 2 * 0.2, {"method": "points"}),
+                ("steps", 9000, {}), ("hr_day", 62, {"readings": [[i, 60 + i % 30] for i in range(700)]}))
+        for metric, value, details in rows:
+            db_session.add(HealthMetric(user_id=test_user.id, date=d, metric=metric, value=value, source="Garmin",
+                                        details=details))
+        if k % 3 == 0:
+            db_session.add(MobileDaily(user_id=test_user.id, platform="ios", date=d, metric="weight", value=70,
+                                       sources=["Balance"], measured_at=datetime.combine(d, datetime.min.time(),
+                                                                                         tzinfo=timezone.utc)))
+    for i in range(500):
+        d = TODAY - timedelta(days=int(i * 0.8))
+        laps = [{"moving_time": 300, "average_heartrate": 140 + i % 20, "distance": 1000} for _ in range(12)]
+        splits = [{"distance": 1000, "moving_time": 330, "average_heartrate": 140, "elevation_difference": 3}] * 10
+        db_session.add(Activity(user_id=test_user.id, strava_activity_id=50_000 + i, sport_type="Run", name=f"r{i}",
+                                start_date=datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
+                                + timedelta(hours=7), distance=10_000, moving_time=3600, elapsed_time=3700,
+                                total_elevation_gain=50, average_speed=2.8, average_heartrate=140 + i % 20,
+                                max_heartrate=175, raw_data={"utc_offset": 7200}, laps=laps, splits_metric=splits))
+    await db_session.flush()
+    st._CACHE.clear()
+    st._SEGS.clear()
+    engine = db_session.get_bind()
+    count, users = [0], [0]
+
+    def counted(conn, cursor, statement, *a):
+        count[0] += 1
+        users[0] += bool(re.search(r"\bFROM users\b", statement))
+    event.listen(engine, "before_cursor_execute", counted)
+    db_session.expunge(test_user)  # as a request's session holds it: not yet read
+    try:
+        now = datetime(2026, 10, 13, 8, tzinfo=timezone.utc)  # 10:00 on the athlete's clock (their runs' +2 h)
+        cold_wall = time.perf_counter()
+        await sante.health_page(db_session, test_user.id, now=now)  # cold: the sessions read
+        cold_wall, cold_count, cold_users = time.perf_counter() - cold_wall, count[0], users[0]
+        count[0] = 0
+        started, wall = time.process_time(), time.perf_counter()
+        page = await sante.health_page(db_session, test_user.id, now=now)
+        cpu, wall = time.process_time() - started, time.perf_counter() - wall
+    finally:
+        event.remove(engine, "before_cursor_execute", counted)
+    assert page["state"] and page["load"] and page["fitness_progress"] and page["today"] == TODAY
+    assert (cold_users, users[0]) == (1, 2), users  # the user read once per load (it was three times)
+    # measured 2026-10-14 on the route's path, SQLite and PostgreSQL alike: 18 statements and ≈ 0,25 s cold, 16
+    # and ≈ 0,2 s warm (≈ 3 s of CPU before): its day (the latest dates, the user once, their latest offsets: no
+    # zone set), the sessions' key (and, cold, the sessions and their laps), the nights, the sources, the daily
+    # cards and the weight; one statement more is a decision
+    assert cold_count <= 19 and cold_wall < 1.5, (cold_count, cold_wall)
+    assert count[0] <= 17, count[0]
+    assert cpu < 0.6 and wall < 1.0, (cpu, wall)

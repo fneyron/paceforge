@@ -26,7 +26,9 @@ def _nights(rows, today=D):
     return nights
 
 
-def test_sleep_reference_is_the_same_personal_need_as_the_hero(monkeypatch):
+def test_sleep_reference_is_the_same_need_as_the_hero(monkeypatch):
+    """The bars' reference line, the hero's need and each readout read one need: 8 h (owner, 2026-10-14: scientific
+    basis — each day's learnt need moved the line), and the sleep owed is the section's own figure."""
     nights = _nights(night_rows(range(20)))
     captured = []
     original = viz.day_bars
@@ -36,11 +38,12 @@ def test_sleep_reference_is_the_same_personal_need_as_the_hero(monkeypatch):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(viz, "day_bars", capture)
-    section = sl.sleep_section(nights, D, need_of=lambda d: 550 if d == D else 480)
-    assert section["hero"]["need"] == "besoin estimé 9h10"
-    assert captured[0]["targets"][-2:] == [480, 550]
+    section = sl.sleep_section(nights, D)
+    assert section["hero"]["need"] == "besoin estimé 8h00"
+    assert captured[0]["targets"] == [480] * 14
     assert section["bars"]["14"]["ref"] is None
-    assert "besoin estimé 9h10" in json.loads(section["bars"]["14"]["data"])["r"][-1][2]
+    assert "besoin estimé 8h00" in json.loads(section["bars"]["14"]["data"])["r"][-1][2]
+    assert section["deficit"]["minutes"] == 280 and "need" not in section and "baseline" not in section
 
 
 def test_long_range_rolling_mean_includes_nights_before_the_visible_window(monkeypatch):
@@ -79,16 +82,14 @@ def test_three_months_only_with_a_night_14_to_90_days_old_and_r_is_honoured():
 
 
 def test_the_hero_prints_the_times_the_nap_and_this_mornings_hours():
-    """The Sommeil dial at the top says this morning's 24 h as a percentage of the day's need, so the Sommeil card's
-    first row prints its hours (once on the page) « besoin estimé 8h00 » (8 h without an answer), with the nap it
-    counts; « besoin estimé 9h00 » when that morning's need is 9 h (sleep_need)."""
+    """The Sommeil dial at the top says this morning's 24 h as a percentage of the 8-h need, so the Sommeil card's
+    first row prints its hours (once on the page) « besoin estimé 8h00 », with the nap it counts."""
     rows = night_rows([0], asleep=350, start=(23, 35), end=(5, 38))
     rows["nap"][D] = (140, {"windows": [[f"{D}T06:42", f"{D}T09:07"]]}, "Garmin")
     h = sl.hero(_nights(rows), D)
     assert (h["label"], h["times"], h["nap"], h["total"], h["need"]) == ("Cette nuit", "23:35 → 05:40",
                                                                          "+ sieste 2h20", "8h10",
                                                                          "besoin estimé 8h00")
-    assert sl.hero(_nights(rows), D, need_of=lambda d: 540)["need"] == "besoin estimé 9h00"
     t = h["timeline"]
     assert len(t["naps"]) == 1 and [nm for nm, _, _ in t["lanes"]] == ["nuit", "sieste"] and not h["out_naps"]
     # an older night (none this morning): the dial is empty, the card prints that night's hours
@@ -134,7 +135,7 @@ def test_the_bars_rest_on_the_mean_and_print_a_night_on_a_tap():
     mean = round((13 * 440 + 516) / 14 / 5) * 5
     # one line at rest, never the toggle's « 14 nuits » nor the title's « sur 24 h » again
     assert c["read"] == [viz.hm(mean), "en moyenne", "Sur 14 nuits mesurées · 14 nuits"]
-    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · besoin estimé 9h00"]
+    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · besoin estimé 8h00"]
     assert c["ref"] is None and c["targets"] and c["bars"][13]["today"] and c["trend"] is None
     assert all(not b.get("miss") for b in c["bars"])
     gap = sl.bars(_nights(night_rows([0, 2])), D, "14")
@@ -221,7 +222,7 @@ def test_the_nights_method_is_in_the_one_fold_and_names_no_race():
 
     assert not hasattr(sl, "METHOD")
     text = sc.flat(sc.METHOD)
-    for said in ("siestes comprises", "La base part de 8 h", "Ta journée commence au réveil",
+    for said in ("siestes comprises", "besoin de 8 h", "Ta journée commence au réveil",
                  "Ta montre estime tes phases"):
         assert said in text, said
     assert "ne compte" not in text
@@ -229,7 +230,7 @@ def test_the_nights_method_is_in_the_one_fold_and_names_no_race():
     assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text)
     assert [g for g, _ in sl.REFS] == ["Recommandations officielles", "Études scientifiques"]
     labels = [n for _, items in sl.REFS for n, _ in items]
-    assert len(labels) == len(set(labels)) <= 16
+    assert len(labels) == len(set(labels)) <= 17
     links = dict(n_l for _, items in sc.linked(sl.REFS) for n_l in items)
     assert links["CTA/NSF 2052.1‑A"] == "https://www.thensf.org/wp-content/uploads/2022/10/ANSI-CTA-NSF-2052.1-A-FINAL.pdf"
     assert links["Watson 2015b"] == "https://doi.org/10.5665/sleep.4886"

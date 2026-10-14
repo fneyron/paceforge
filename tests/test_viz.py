@@ -196,6 +196,20 @@ def test_night_card_prints_the_night_and_its_normal_never_a_verdict():
             assert viz.num(m, 1) not in printed
 
 
+def test_a_band_narrower_than_its_last_digit_reads_as_one_value():
+    """A night-HR band of mean ± 0.5 σ̂ with σ̂ under 1 bpm rounds to one value: « d'habitude ≈ 48 », « autour de
+    48 » spoken (review, 2026-10-14: it read « 48–48 »); a wider one keeps its two ends."""
+    assert (viz.span(47.8, 48.3), viz.span(46.6, 50.2), viz.span(1.21, 1.24, 1)) == ("≈\u00a048", "47–50", "≈\u00a01,2")
+    assert (viz.span_long(47.8, 48.3), viz.span_long(46.6, 50.2), viz.span_long(46.6, 50.2, between=False)) == \
+        ("autour de 48", "entre 47 et 50", "47 à 50")
+    days = [D - timedelta(days=29 - i) for i in range(30)]
+    c = viz.night_card("fc", days, [48.0] * 30, band=[(47.7, 48.4)] * 30, prov=[False] * 30, mean=[48.0] * 30,
+                       unit="bpm", unit_long="battements par minute", name="FC de nuit")
+    d = json.loads(c["data"])
+    assert c["read"][2] == f"{viz.night_label(D)} · d'habitude ≈\u00a048" and "48–48" not in c["data"]
+    assert d["a"][-1].endswith("FC de nuit 48 battements par minute, d'habitude autour de 48")
+
+
 def test_the_timeline_draws_the_night_and_its_nap_on_a_clock_axis():
     """V4: one bar from bedtime to wake, the nap on its own lane, the hours every 2 h; the times
     themselves are printed once, above it, by the page."""

@@ -66,6 +66,19 @@ def num(v: float, digits: int = 0, unit: str = "") -> str:
     return f"{s}{NNBSP}{unit}" if unit else s
 
 
+def span(lo: float, hi: float, digits: int = 0) -> str:
+    """A usual range as printed: « 46–50 », or « ≈ 48 » when its ends round to one value (a band narrower than
+    the last digit: « 48–48 » said nothing of a range)."""
+    a, b = num(lo, digits), num(hi, digits)
+    return f"≈{NBSP}{a}" if a == b else f"{a}–{b}"
+
+
+def span_long(lo: float, hi: float, digits: int = 0, between: bool = True) -> str:
+    """span, spoken: « entre 46 et 50 » (`between`, else « 46 à 50 »), « autour de 48 »."""
+    a, b = num(lo, digits), num(hi, digits)
+    return f"autour de {a}" if a == b else f"entre {a} et {b}" if between else f"{a} à {b}"
+
+
 def signed(v: float, digits: int = 0, unit: str = "") -> str:
     """« +3 bpm », « −3 bpm », « 0 bpm »."""
     out = num(v, digits, unit)
@@ -383,10 +396,10 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
                 word = " en dessous" + (" (provisoire)" if prov else "")
             vals.append(f"{p['name']} {num(v, dg, p['unit'])}{word}")
             if b:
-                normals.append((f"{p['name']} {num(b[0], dg)}–{num(b[1], dg)}" if len(panels) > 1
-                                else f"{num(b[0], dg)}–{num(b[1], dg)}", prov))
+                normals.append((f"{p['name']} {span(b[0], b[1], dg)}" if len(panels) > 1
+                                else span(b[0], b[1], dg), prov))
             spoken.append(f"{p['name']} {num(v, dg)} {p['unit_long']}{word}"
-                          + (f", ta normale{' provisoire' if prov else ''} {num(b[0], dg)} à {num(b[1], dg)}"
+                          + (f", ta normale{' provisoire' if prov else ''} {span_long(b[0], b[1], dg, False)}"
                              if b else ""))
         ctx = _context(d, races, longs, tags)
         if not vals:
@@ -695,8 +708,8 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             spoken += f", {detail}"
         if b:
             pv = bool(prov[i])
-            line += f" · d'habitude {num(b[0], digits)}–{num(b[1], digits)}{' (provisoire)' if pv else ''}"
-            spoken += (f", d'habitude entre {num(b[0], digits)} et {num(b[1], digits)}"
+            line += f" · d'habitude {span(b[0], b[1], digits)}{' (provisoire)' if pv else ''}"
+            spoken += (f", d'habitude {span_long(b[0], b[1], digits)}"
                        + (", valeurs provisoires" if pv else ""))
         selected_label = ("dernière nuit mesurée" if i == last else "nuit sélectionnée") if label_nights else ""
         r.append([f"{num(v, digits)}{NBSP}{unit}", selected_label, line])

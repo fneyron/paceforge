@@ -4,10 +4,13 @@ to its card below; and the Récupération card's rows. What the page-level tests
 test_health) do not pin: each dial's values, words, colours and missing data, the usual week, the « Effort récent »
 countdown and its colour, the grey words of a night row without a comparison."""
 import re
+import statistics
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
-from app.services import sante
+import pytest
+
+from app.services import sante, sante_load
 from app.services import sante_score as sc
 from app.services import sante_today as td
 from app.services import sante_training as st
@@ -18,9 +21,9 @@ D = date(2026, 10, 8)  # a Thursday: this week's Monday is 05/10
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def _effort(day: date, caps: tuple, kind: str = "ultra", sid: int = 1) -> st.Effort:
+def _effort(day: date, last: int, kind: str = "ultra", sid: int = 1) -> st.Effort:
     return st.Effort(session_id=sid, kind=kind, minutes=700, end=datetime.combine(day, time(12)), day=day,
-                     start_day=day, caps=caps)
+                     start_day=day, last=last)
 
 
 def _day(efforts: list, d: date = D) -> dict:
@@ -53,35 +56,36 @@ def test_the_sommeil_dial():
     assert sante.sleep_dial(420, 480, None)["href"] is None  # no Sommeil card: a plain dial
 
 
-def test_the_sommeil_dial_reads_a_larger_need():
-    """A 9-h need (2026-10-09: the athlete's own, or 8 h with sleep owed): 8h36 is 96 % and « suffisant » (⅞ of it,
-    7h53, reached), 7h50 is 87 % and « un peu court » though over 7 h; 7 h stays the floor of « suffisant » for a
-    smaller need (7 h: 6h30 is « un peu court »); 6 h and « court » never move."""
-    d = sante.sleep_dial(516, 540, "#sommeil")
-    assert (d["value"], d["sub"], d["tone"]) == ("96", "suffisant", "sleep")
-    assert d["aria"] == "Sommeil 96 % de ton besoin estimé de 9 heures, suffisant."
-    short = sante.sleep_dial(470, 540, None)
-    assert (short["value"], short["sub"], short["tone"]) == ("87", "un peu court", "sleep")
-    assert sante.sleep_word(390, 420) == "un peu court" and sante.sleep_word(420, 420) == "suffisant"
-    assert sante.sleep_word(359, 420) == "court" and sante.sleep_word(359, 600) == "court"
+def test_the_sommeil_dial_reads_the_8_h_need():
+    """The need is 8 h for everyone, never raised by the sleep owed or an effort (owner, 2026-10-14: scientific
+    basis — it was 9 h after a short week): 8h36 is 100 % « suffisant », 7h50 98 %; « suffisant » from 7 h,
+    « court » under 6 h, whatever need a caller passes."""
+    d = sante.sleep_dial(516, 480, "#sommeil")
+    assert (d["value"], d["sub"], d["tone"]) == ("100", "suffisant", "sleep")
+    assert d["aria"] == "Sommeil 100\u00a0% de ton besoin estimé de 8 heures, suffisant."
+    short = sante.sleep_dial(470, 480, None)
+    assert (short["value"], short["sub"], short["tone"]) == ("98", "suffisant", "sleep")
+    assert sante.sleep_word(419) == "un peu court" and sante.sleep_word(420) == "suffisant"
+    assert sante.sleep_word(359) == "court" and sante.sleep_word(420, 600) == "suffisant"
+    assert sante.sl.NEED_DEFAULT == 480 and not hasattr(sante.sl, "sleep_need")
 
 
 def test_the_recuperation_dial():
     """The score as a percentage, its arc in its state's colour, the state's word under « Récupération »
     (« bonne », « en cours », « faible »); « — » and « pas de score » without one (no night measured: an empty
     dial, like WHOOP, owner 2026-10-09)."""
-    def dial(value):
-        score = {"value": value, "tone": sc.tone_of(value), "reason": "effort"}
+    def dial(value, tone):
+        score = {"value": value, "tone": tone, "reason": "effort", "reasons": []}
         return sc.dial(score, td.state(score), "#recuperation")
-    dials = (dial(85), dial(65), dial(35))
+    dials = (dial(85, "ok"), dial(65, "warn"), dial(35, "danger"))
     assert [(d["value"], d["unit"], d["label"], d["sub"], d["tone"], _fill(d)) for d in dials] == [
         ("85", "%", "Récupération", "bonne", "ok", 0.85), ("65", "%", "Récupération", "en cours", "warn", 0.65),
         ("35", "%", "Récupération", "faible", "danger", 0.35)]
-    assert dial(65)["aria"] == "Récupération 65 %, en cours."
+    assert dial(65, "warn")["aria"] == "Récupération 65 %, en cours."
     none = sc.dial({"value": None}, None, None)
     assert (none["value"], none["sub"], none["tone"], none["href"], none["dash"]) == ("—", "pas de score", "none",
                                                                                       None, 0)
-    html = render("{{ v.viz_ring(r) }}", r=dial(65))
+    html = render("{{ v.viz_ring(r) }}", r=dial(65, "warn"))
     assert '<a class="pf-ring pf-ring-recup is-warn" href="#recuperation" aria-label="Récupération 65 %, en cours.">' \
         in html
     assert '<span>65<span class="pf-ring-unit">%</span></span>' in html
@@ -103,18 +107,50 @@ def _weeks(minutes_per_week: list, this_week: float | None = None) -> list:
 SINCE = D - timedelta(days=6)  # the 7 days' first day: the usual week is the 11 weeks before it
 
 
+def test_comme_d_habitude_is_the_range_of_the_active_usual_weeks():
+    """« Comme d'habitude » from the lightest to the heaviest of the 11 usual weeks that hold an activity (owner,
+    2026-10-14: scientific basis — the 25th–75th percentiles labelled 57 % of ordinary weeks « plus » or « moins »;
+    the range of 11 weeks, about one in six): 450 min against weeks of 200 to 500 is as usual (it read « plus »
+    over the 75th percentile, 400), a week without an activity is no lower bound."""
+    usual = [200, 300, 400, 500] * 2 + [0, 300, 400]  # the 11 weeks, one of them empty
+    for minutes, word in ((450, "comme d'habitude"), (500, "comme d'habitude"), (501, "plus que d'habitude"),
+                          (200, "comme d'habitude"), (199, "moins que d'habitude")):
+        assert sante.training(_weeks(usual, minutes), D)["dial"]["sub"] == word, minutes
+    w = sante_load.week_ratio(_weeks(usual, 450), st.loads(_weeks(usual, 450), D, 50, 190), D)
+    assert (w["lo"], w["hi"]) == pytest.approx((200 * w["usual"] / statistics.fmean(usual),
+                                                500 * w["usual"] / statistics.fmean(usual)))
+
+
+def test_the_word_needs_8_active_usual_weeks():
+    """A week like the n_a active ones before it falls outside their range 2/(n_a + 1) of the time: the word (and
+    the percentage) only from 8 active weeks of the 11 (H: 22 %; 40 % at 4; the second statistics review,
+    2026-10-14); under them the dial says the 7 days' time, as without a usual week."""
+    eight = [300] * 8 + [0] * 3
+    t = sante.training(_weeks(eight, 300), D)
+    assert (t["dial"]["value"], t["dial"]["sub"]) == ("100", "comme d'habitude")
+    seven = [300] * 7 + [0] * 4
+    t = sante.training(_weeks(seven, 300), D)
+    assert (t["dial"]["value"], t["dial"]["sub"], t["usual"], t["word"], t["ratio"]) == (
+        "5h00", "7 derniers jours", None, sante.NO_USUAL, None)
+    assert sante.training_context({**t, "chart": None})["word"] == "5h00 sur 7 jours"  # no « Charge 7 j : x % »
+    assert sante_load.USUAL_LABEL_WEEKS == 8
+
+
 def test_the_entrainement_dial_against_the_usual_week():
     """The last 7 days' heart-rate load against the usual week's, the mean of the 11 weeks just before them (H;
     never the 7 days themselves: owner, 2026-10-09), as a percentage (100 % as usual), the arc full at
-    twice it, in the accent colour; within ± 20 % « comme d'habitude » (H), else « plus » or « moins que
-    d'habitude »; the card prints the 7 days' time and the usual week's (to 5 min), the dial the percentage: each
-    once. Every session here runs at the same HR: every minute weighs the same, the dial is the hours' ratio (the
-    weighting itself: test_sante_train_hr)."""
-    usual = [300, 400] * 5 + [350] + [900]  # a 12th week back: out of the 11 (mean 350)
+    twice it, in the accent colour; « comme d'habitude » while the 7 days lie between the lightest and the
+    heaviest of those 11 weeks that hold an activity (owner, 2026-10-14: scientific basis — it was ± 20 %: 420 min
+    read « comme d'habitude » though above every usual week; then the 25th–75th percentiles, which called half of
+    the ordinary weeks « plus » or « moins »), else « plus » or « moins que d'habitude »; the card prints the 7
+    days' time and the usual week's (to 5 min), the dial the percentage: each once. Every session here runs at the
+    same HR: every minute weighs the same, the dial is the hours' ratio (the weighting itself:
+    test_sante_train_hr)."""
+    usual = [300, 400] * 5 + [350] + [900]  # a 12th week back: out of the 11 (mean 350, from 300 to 400)
     assert sante.usual_week(_weeks(usual), SINCE) == 350
-    cases = {350: ("100", "comme d'habitude", 0.5), 420: ("120", "comme d'habitude", 0.6),
-             421: ("120", "plus que d'habitude", 0.601), 280: ("80", "comme d'habitude", 0.4),
-             279: ("80", "moins que d'habitude", 0.399), 700: ("200", "plus que d'habitude", 1.0),
+    cases = {350: ("100", "comme d'habitude", 0.5), 400: ("114", "comme d'habitude", 0.571),
+             401: ("115", "plus que d'habitude", 0.573), 300: ("86", "comme d'habitude", 0.429),
+             299: ("85", "moins que d'habitude", 0.427), 700: ("200", "plus que d'habitude", 1.0),
              1013: ("289", "plus que d'habitude", 1.0)}
     for minutes, (value, word, fill) in cases.items():
         t = sante.training(_weeks(usual, minutes), D)
@@ -127,9 +163,14 @@ def test_the_entrainement_dial_against_the_usual_week():
     none = sante.training(_weeks(usual), D)  # nothing in the last 7 days: 0 %, no « Intensité »
     assert (none["dial"]["value"], none["dial"]["sub"], none["week"], none["intensity"]) == (
         "0", "moins que d'habitude", "0 min", None)
-    assert sante.training(_weeks(usual, 421), D)["intensity"] == "comme d'habitude"  # the same minutes' weight
-    # the usual week to 5 min: 4 weeks of 47, 48, 52 and 53 min → 50 min
-    assert sante.training(_weeks([47, 48, 52, 53], 50), D)["usual"] == "ta semaine habituelle : 50 min"
+    assert sante.training(_weeks(usual, 401), D)["intensity"] == "comme d'habitude"  # the same minutes' weight
+    # the usual week to 5 min: 8 weeks of 47, 48, 52 and 53 min → 50 min; with these 4 weeks alone, under the 8
+    # active weeks the word needs, the dial says the 7 days' time, as without a usual week (it read « 50 min »: at 4
+    # active weeks the word came with 40 % of ordinary weeks; the second statistics review, 2026-10-14)
+    assert sante.training(_weeks([47, 48, 52, 53] * 2, 50), D)["usual"] == "ta semaine habituelle : 50 min"
+    four = sante.training(_weeks([47, 48, 52, 53], 50), D)
+    assert (four["usual"], four["word"], four["ratio"], four["dial"]["value"], four["dial"]["sub"]) == (
+        None, sante.NO_USUAL, None, "50 min", "7 derniers jours")
 
 
 def test_the_7_days_never_count_in_the_usual_week():
@@ -212,72 +253,67 @@ def test_the_dials_arcs_reach_3_to_1_in_both_themes():
     assert re.search(r"\.pf-ring-arc, [^{]*\.pf-ring\.is-sleep \.pf-ring-arc[^{]*\{ stroke: CanvasText; \}", css)
 
 
-# ── the Récupération card's rows ────────────────────────────────────────────
+# ── the effort window: a reason of the state ────────────────────────────────
 
-def test_effort_recent_explains_progressive_prudence_without_a_recovery_deadline():
-    """The effort stays visible, without promising recovery on a specific day."""
-    ultra = _effort(D - timedelta(days=2), ((3, 35), (10, 65)))  # D+2: capped at 35, its window to D+10 (16/10)
-    f = sante.effort_row([ultra], _day([ultra]))
-    assert (f["name"], f["value"], f["word"], f["tone"]) == ("Effort récent", None, "prudence après l’effort", "danger")
-    assert "diminue progressivement" in f["detail"] and "récupération musculaire" in f["detail"]
-    later = _day([ultra], D + timedelta(days=2))  # D+4: 65
-    assert (sante.effort_row([ultra], later)["value"], sante.effort_row([ultra], later)["tone"]) == (
-        None, "warn")
-    assert sante.effort_row([ultra], _day([ultra], date(2026, 10, 15)))["value"] is None
-    assert sante.effort_row([ultra], _day([ultra], date(2026, 10, 16)))["value"] is None
-    assert sante.effort_row([ultra], _day([ultra], date(2026, 10, 17))) is None  # the window is over: no row
-    very_long = _effort(D - timedelta(days=1), ((2, 45), (5, 65)), kind="very_long")
-    assert sante.effort_row([very_long], _day([very_long]))["tone"] == "danger"  # 45: red
-    assert sante.effort_row([], _day([])) is None  # no window: no row
-
-
-def test_two_windows_the_row_lasts_until_the_last_one_ends():
-    """Two windows open: the row follows today's lowest cap without a countdown."""
-    old = _effort(D - timedelta(days=9), ((3, 35), (13, 65)), sid=1)  # 65 until D+4
-    new = _effort(D - timedelta(days=1), ((2, 45), (5, 65)), kind="very_long", sid=2)  # 45 today, to D+4
-    longer = _effort(D - timedelta(days=1), ((3, 35), (10, 65)), sid=3)  # 35 today, to D+9
-    f = sante.effort_row([old, new], _day([old, new]))
-    assert (f["value"], f["tone"]) == (None, "danger")
-    f = sante.effort_row([old, longer], _day([old, longer]))
-    assert (f["value"], f["tone"]) == (None, "danger")
+def test_effort_recent_explains_an_indicative_window_without_a_recovery_deadline():
+    """The effort stays visible as a reason (owner, 2026-10-14: scientific basis — it was a cap that decayed day
+    by day): red on D+0 and D+1 after an Ultra, orange to its window's last day, « fenêtre indicative jusqu'à
+    J+n », never a countdown nor a promised recovery day."""
+    ultra = _effort(D - timedelta(days=2), 5)  # D+2 of an Ultra: orange, its window to D+5
+    w = _day([ultra])["window"]
+    assert (w["tone"], w["days"], w["text"]) == ("warn", 2, "fenêtre indicative jusqu'à J+5")
+    assert st.effort_window([ultra], D - timedelta(days=1))["tone"] == "danger"  # D+1: red
+    assert st.effort_window([ultra], date(2026, 10, 11))["days"] == 5
+    assert st.effort_window([ultra], date(2026, 10, 12)) is None  # the window is over: no reason
+    very_long = _effort(D - timedelta(days=1), 3, kind="very_long")
+    assert st.effort_window([very_long], D)["tone"] == "warn"  # never red but after an Ultra
+    assert st.effort_window([], D) is None  # no window: no reason
+    for name in ("effort_row", "night_row", "resp_row", "RESP_WORDS"):
+        assert not hasattr(sante, name), name
 
 
-def test_the_effort_row_shows_whenever_a_window_is_open():
+def test_two_windows_the_strongest_names_the_reason():
+    """Two windows open: the strongest holds (red first, then the bigger effort), until the last one ends."""
+    old = _effort(D - timedelta(days=6), 7, sid=1)  # an Ultra of 24 h or more, D+6: orange
+    new = _effort(D - timedelta(days=1), 3, kind="very_long", sid=2)  # D+1: orange
+    assert st.effort_window([old, new], D)["effort"].session_id == 1  # the bigger effort
+    longer = _effort(D - timedelta(days=1), 5, sid=3)  # an Ultra, D+1: red
+    assert st.effort_window([old, longer], D)["effort"].session_id == 3
+    assert st.effort_window([old, new], D + timedelta(days=1))["effort"].session_id == 1  # D+7 of the Ultra
+    assert st.effort_window([old, new], D + timedelta(days=2))["effort"].session_id == 2  # the Ultra's over
+    assert st.effort_window([old, new], D + timedelta(days=3)) is None  # D+9 and D+4: both over
+
+
+def test_the_effort_reason_shows_whenever_a_window_is_open():
     """Owner, 2026-10-08: « Un effort récent, il faut le prendre en compte et afficher la fatigue quand même »:
-    the row shows whenever a recovery window is open, its cap binding the score or not (here the illness alert's
-    39 binds, under the window's 65); the window still caps the score."""
+    the effort is a reason whenever its window is open, listed after the illness alert's when both hold."""
     from tests.test_sante_score import _day as day_of
     from tests.test_sante_score import _runs, night_rows
 
     rows = night_rows(range(0, 40), hr=lambda k: 58.0 if k < 2 else 44.0 + k % 3)  # the alert
-    ultra = _session(D - timedelta(days=7), 610, sid=9)  # D+7 of an ultra: 65
+    ultra = _session(D - timedelta(days=7), 1500, sid=9)  # 25 h, ended on D-6: orange to D+7
     day = day_of(rows, _runs() + [ultra])
-    assert day["state"]["key"] == "ill" and day["score"]["caps"][0] == "ill" and day["window"]["cap"] == 80
-    f = sante.effort_row(st.efforts(_runs() + [ultra]), day)
-    assert (f["value"], f["tone"]) == (None, "warn")
+    assert day["state"]["key"] == "ill" and day["window"]["tone"] == "warn"
+    assert [(r["key"], r["tone"]) for r in day["state"]["reasons"]] == [("ill", "danger"), ("effort", "warn")]
 
 
-def test_a_night_row_repeats_its_cards_status_never_its_explanation():
-    """VFC / FC de nuit (7 nuits): its card's percentage and word (one source of truth: card_status) in its
-    colour; « comme d'habitude » at 0 %; grey and no percentage without a comparison (« en construction » over
-    when its usual values will be ready, « trop peu de nuits pour comparer »); no row without a card."""
-    def card(key, value, word, tone, detail=None):
-        return {"period": "7 derniers jours", "status": {"key": key, "value": value, "word": word, "detail": detail, "text": "x", "tone": tone,
-                           "meaning": "x"}}
-    rows = [sante.night_row(card("in", "+2 %", sante.STATUS["in"], "ok"), "hrv"),
-            sante.night_row(card("in", None, sante.SAME, "ok"), "hrv"),
-            sante.night_row(card("below", "−12 %", sante.STATUS["below"], "danger"), "hrv"),
-            sante.night_row(card("above", "+9 %", sante.STATUS["above"], "accent"), "hrv"),
-            sante.night_row(card("none", None, sante.BUILDING, None, "prête dans 2 nuits"), "hr"),
-            sante.night_row(card("few", None, sante.FEW, None), "hr")]
-    assert [(r["name"], r["qual"], r["value"], r["word"], r["detail"], r["tone"]) for r in rows] == [
-        ("VFC", "7 derniers jours", "+2 %", "dans tes valeurs habituelles", None, "ok"),
-        ("VFC", "7 derniers jours", None, "comme d'habitude", None, "ok"),
-        ("VFC", "7 derniers jours", "−12 %", "plus basse que d'habitude", None, "danger"),
-        ("VFC", "7 derniers jours", "+9 %", "plus haute que d'habitude", None, "accent"),
-        ("FC de nuit", "7 derniers jours", None, "en construction", "prête dans 2 nuits", "none"),
-        ("FC de nuit", "7 derniers jours", None, "trop peu de nuits pour comparer", None, "none")]
-    assert sante.night_row(None, "hrv") is None
+def test_a_card_status_says_its_place_in_words():
+    """VFC / FC de nuit: the card's status line (card_status) — its percentage and its word, in its colour: « +2 %
+    dans tes valeurs habituelles », « comme d'habitude » at 0 %, « plus basse / haute que d'habitude », grey and no
+    percentage without a comparison (« en construction » with when its usual values will be ready, « trop peu de
+    nuits pour comparer »)."""
+    def status(value, key, metric="hrv"):
+        day = {"day": D, "alert": None,
+               "stats": {metric: {"value": value, "normal": {"center": 50.0, "provisional": False}, "status": key,
+                                  "score_eligible": True}},
+               "trends": {metric: {"last": True, "status": key}}}
+        return sante.card_status({}, metric, day)
+    assert [(c["value"], c["word"], c["tone"]) for c in (status(51.0, "in"), status(50.0, "in"),
+                                                          status(44.0, "below"), status(54.5, "above"))] == [
+        ("+2\u00a0%", "dans tes valeurs habituelles", "ok"), (None, "comme d'habitude", "ok"),
+        ("\u221212\u00a0%", "plus basse que d'habitude", "warn"), ("+9\u00a0%", "plus haute que d'habitude", "accent")]
+    assert status(None, None)["key"] == "few" and status(None, None)["word"] == "trop peu de nuits pour comparer"
+    assert status(44.0, "below")["meaning"] == sante.MEANING["hrv"] and status(54.5, "above")["meaning"] is None
 
 
 # ── v4.4 (owner: « Mets des pourcentages plutôt que des valeurs (comme WHOOP / Oura) ») ──────────────────────────
@@ -286,7 +322,7 @@ def test_the_night_rows_in_percent_from_real_nights():
     """Once the usual values exist, the 7-night mean against the usual value (the band's centre) in whole
     percent, half up, signed: VFC above them is « plus haute que d'habitude », neutral (never praised); « 0 % »
     reads « comme d'habitude »; a week with fewer than 3 measured nights: no percentage; the card's status line
-    and the row are one (card_status)."""
+    is one (card_status)."""
     from app.services import nights as nt
     from tests.test_sante_score import _day as day_of
     from tests.test_sante_score import _nights, _rich, _runs
@@ -303,8 +339,6 @@ def test_the_night_rows_in_percent_from_real_nights():
     assert p > 0 and up["status"] == {"key": "above", "value": f"+{p} %", "word": "plus haute que d'habitude",
                                       "text": f"+{p} % plus haute que d'habitude", "tone": "accent",
                                       "meaning": None}
-    row = sante.night_row(up, "hrv")
-    assert (row["value"], row["word"], row["tone"]) == (up["status"]["value"], up["status"]["word"], "accent")
     rows = _rich()
     for metric in rows:  # only 2 nights in the last 7 (5 and 6 days ago)
         for k in range(5):
@@ -321,6 +355,6 @@ def test_the_percentages_are_said_in_the_fold():
     the dial's word, no bullet any more (the audit, 2026-10-09: one fold, without what the page already says)."""
     text = sc.flat(sc.typo(sc.METHOD)).replace("\u00a0", " ")
     assert sc.pct(100) == "100\u00a0%" and "70 %" not in text
-    assert "Sommeil compare tes 24 h, siestes comprises, à un besoin estimé." in text
+    assert "Sommeil compare tes 24 h, siestes comprises, à un besoin de 8 h." in text
     assert ("Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand "
             "ton pouls est haut.") in sc.METHOD

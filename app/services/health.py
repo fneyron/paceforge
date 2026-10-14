@@ -48,11 +48,11 @@ Brand values (load, recovery, stress, fitness, hrv_norm, body_battery,
 sleep_score, vo2max, the watch's daytime resting HR "rhr") are no longer read
 nor written; rows already stored stay (Réglages still counts them).
 
-Raw samples (HealthSample, local wall-clock times, kept 400 days) remain for
-sources that send only samples: aggregate_days() turns them into daily values.
-The watches' own sleep samples are Garmin's real stage intervals, kept as the
-hypnogram's timeline only: they are never aggregated (the watch's main window
-is the night).
+Raw samples (HealthSample, local wall-clock times, kept 400 days) are Garmin's
+real stage intervals, kept as the hypnogram's timeline only: no daily value is
+ever made from samples (the watch's main window is the night; 2026-10-14: the
+aggregation of sample-only sources, the Apple import PaceForge had before, had
+no producer left and is gone).
 
 Older rows may come from the Apple Health import PaceForge had before.
 """
@@ -71,14 +71,6 @@ from app.services.night_measurements import ASLEEP, WINDOW, series_source
 
 logger = logging.getLogger(__name__)
 
-METRICS = ("hrv", "rhr", "sleep", "weight", "vo2max")
-METRIC_LABELS = {
-    "hrv": "VFC",
-    "rhr": "FC au repos",
-    "sleep": "Sommeil",
-    "weight": "Poids",
-    "vo2max": "VO2 max",
-}
 # what a watch writes per day now (store_daily)
 NIGHT_METRICS = ("sleep", "nap", "hrv", "hr_night", "resp_night")
 # brand values: no longer read nor written; stored rows stay until a later purge
@@ -105,8 +97,6 @@ class Sample:
     source: str = ""
 
 
-_RANGES = {"hrv": (5, 300), "rhr": (25, 140), "weight": (25, 300), "vo2max": (10, 95)}
-ASLEEP_KINDS = ("asleep", "core", "deep", "rem")
 
 
 # ── local times as stored ───────────────────────────────────────────────────
@@ -298,30 +288,18 @@ RAW_RETENTION_DAYS = 400
 _INSERT_CHUNK = 2000
 
 
-def _affected_dates(s: Sample) -> list[date]:
-    d = s.start.date()
-    if s.source in WATCH_SOURCES and s.metric in ("sleep", "hrv"):
-        return []  # a watch's night comes whole (store_daily); its intervals are a timeline only
-    if s.metric == "hrv":
-        return [d, d + timedelta(days=1)] if s.start.hour >= 22 else [d]
-    if s.metric == "sleep":
-        e = s.end.date()
-        return [e, e + timedelta(days=1)]  # the episode it starts may end the next day
-    return [d]
-
-
 async def store_samples(db: AsyncSession, user_id: int, samples: list[Sample]) -> dict:
-    """Idempotent upsert of raw samples (key: metric, start, source, stage), then
-    the touched days are aggregated again."""
+    """Idempotent upsert of raw samples (key: metric, start, source, stage): Garmin's real stage intervals, the
+    hypnogram's timeline only. No daily value is ever made from them (2026-10-14: the aggregation of sample-only
+    sources — the Apple import PaceForge had before — had no producer left; a night comes whole, store_daily, the
+    phone's through apple_nights). `days` stays in the counts for its callers: always {}."""
     keyed: dict[tuple, Sample] = {}
     for s in samples:
         keyed[(s.metric, s.start, s.source, s.kind)] = s
     inserted = updated = 0
-    affected: dict[str, set[date]] = defaultdict(set)
     by_metric: dict[str, list[Sample]] = defaultdict(list)
     for s in keyed.values():
         by_metric[s.metric].append(s)
-        affected[s.metric].update(_affected_dates(s))
 
     for metric, items in by_metric.items():
         lo = min(s.start for s in items)
@@ -349,7 +327,6 @@ async def store_samples(db: AsyncSession, user_id: int, samples: list[Sample]) -
         inserted += len(to_insert)
         updated += len(to_update)
 
-    days = await reaggregate(db, user_id, affected)
     cutoff = datetime.now() - timedelta(days=RAW_RETENTION_DAYS)
     await db.execute(delete(HealthSample).where(
         HealthSample.user_id == user_id, HealthSample.start_at < cutoff))
@@ -360,7 +337,7 @@ async def store_samples(db: AsyncSession, user_id: int, samples: list[Sample]) -
         "updated": updated,
         "unchanged": len(keyed) - inserted - updated,
         "by_metric": {m: len(v) for m, v in by_metric.items()},
-        "days": days,
+        "days": {},
     }
 
 
@@ -458,92 +435,12 @@ async def nights_upgraded(db: AsyncSession, user_id: int, source: str, today: da
     return bool(new)
 
 
-async def reaggregate(db: AsyncSession, user_id: int, affected: dict[str, set[date]]) -> dict[str, int]:
-    """Recompute the daily value of every (metric, day) touched. Returns days written per metric."""
-    written: dict[str, int] = {}
-    for metric, dates in affected.items():
-        if not dates:
-            continue
-        lo = datetime.combine(min(dates) - timedelta(days=1), time(0, 0))
-        hi = datetime.combine(max(dates) + timedelta(days=1), time(0, 0))
-        rows = (await db.execute(
-            select(HealthSample).where(
-                HealthSample.user_id == user_id, HealthSample.metric == metric,
-                HealthSample.start_at >= lo, HealthSample.start_at < hi)
-        )).scalars().all()
-        # Keep raw-sample sources separate too. Reaggregating an Apple export
-        # must never erase a direct watch's daily summary or merge SDNN/RMSSD.
-        sources = {r.source or "" for r in rows}
-        if metric in ("sleep", "hrv"):
-            sources -= set(WATCH_SOURCES)
-        new_rows = []
-        for source in sorted(sources):
-            daily = aggregate_days(metric, [r for r in rows if (r.source or "") == source], dates)
-            dates_list = sorted(dates)
-            for i in range(0, len(dates_list), 500):
-                await db.execute(delete(HealthMetric).where(
-                    HealthMetric.user_id == user_id, HealthMetric.metric == metric,
-                    HealthMetric.source == source, HealthMetric.date.in_(dates_list[i:i + 500])))
-            new_rows.extend({"user_id": user_id, "date": d, "metric": metric, "value": v["value"],
-                             "source": source, "details": v.get("details"), "n_samples": v["n"]}
-                            for d, v in sorted(daily.items()))
-        for i in range(0, len(new_rows), _INSERT_CHUNK):
-            await db.execute(insert(HealthMetric), new_rows[i:i + _INSERT_CHUNK])
-        written[metric] = len(new_rows)
-    return written
-
-
-def aggregate_days(metric: str, samples, dates) -> dict[date, dict]:
-    """{day: {value, n, source?, details?}} for each requested day that has data.
-    `samples` carry .start_at/.end_at/.value/.source/.kind (rows or look-alikes).
-    A watch's sleep and HRV samples are left out: its nights come whole."""
-    if metric in ("sleep", "hrv"):
-        samples = [s for s in samples if s.source not in WATCH_SOURCES]
-    out: dict[date, dict] = {}
-    for d in dates:
-        if metric == "hrv":
-            v = _hrv_day(samples, d)
-        elif metric == "sleep":
-            v = _sleep_night(samples, d)
-        else:
-            v = _last_of_day(samples, d)
-        if v:
-            out[d] = v
-    return out
-
-
-def _dedupe_by_minute(samples) -> list:
-    """The same reading pushed by the Shortcut and found again in the export
-    (different source names) counts once."""
-    seen: dict[datetime, object] = {}
-    for s in samples:
-        seen.setdefault(s.start_at.replace(second=0, microsecond=0), s)
-    return list(seen.values())
-
-
 # HRV is not one number across devices: Apple Health stores SDNN, COROS and
-# Garmin their overnight RMSSD — for the same night, often twice as high. A day
-# therefore takes one source (a watch when it has a value, stored with its name;
-# Apple days keep no source), and the fitness signal compares only days on the
+# Garmin their overnight RMSSD — for the same night, often twice as high. The
+# fitness signal (compute_form, kept for its readers) compares only days on the
 # scale of the latest one (hrv_same_scale): never a COROS week against an
 # Apple baseline.
 RMSSD_SOURCES = ("COROS", "Garmin")
-
-
-def _hrv_day(samples, d: date) -> dict | None:
-    lo = datetime.combine(d - timedelta(days=1), time(22, 0))
-    hi = datetime.combine(d, time(10, 0))
-    night = [s for s in samples if lo <= s.start_at < hi]
-    pool = night or [s for s in samples if s.start_at.date() == d]
-    rmssd = [s for s in pool if s.source in RMSSD_SOURCES]
-    pool = _dedupe_by_minute(rmssd or pool)
-    if not pool:
-        return None
-    out = {"value": round(statistics.fmean(s.value for s in pool), 1), "n": len(pool),
-           "details": {"window": "nuit" if night else "journée"}}
-    if rmssd:
-        out["source"] = rmssd[0].source
-    return out
 
 
 def hrv_same_scale(values: dict[date, float], sources: dict[date, str | None]) -> dict[date, float]:
@@ -553,89 +450,6 @@ def hrv_same_scale(values: dict[date, float], sources: dict[date, str | None]) -
     rmssd = lambda d: sources.get(d) in RMSSD_SOURCES  # noqa: E731
     latest = rmssd(max(values))
     return {d: v for d, v in values.items() if rmssd(d) == latest}
-
-
-def _last_of_day(samples, d: date) -> dict | None:
-    day = [s for s in samples if s.start_at.date() == d]
-    if not day:
-        return None
-    last = max(day, key=lambda s: s.start_at)
-    return {"value": round(last.value, 2), "n": len(day), "source": last.source or None}
-
-
-def _union_minutes(intervals: list[tuple[datetime, datetime]]) -> float:
-    total, cur_s, cur_e = 0.0, None, None
-    for s, e in sorted(intervals):
-        if cur_e is None or s > cur_e:
-            if cur_e is not None:
-                total += (cur_e - cur_s).total_seconds()
-            cur_s, cur_e = s, e
-        elif e > cur_e:
-            cur_e = e
-    if cur_e is not None:
-        total += (cur_e - cur_s).total_seconds()
-    return total / 60
-
-
-EPISODE_GAP = timedelta(minutes=60)  # (H) a wake of an hour or more ends a sleep episode
-MAIN_ENDS_BY = time(14, 0)  # (H) the main episode of day D ends before 14:00 that day
-
-
-def sleep_episodes(intervals: list[tuple[datetime, datetime]]) -> list[tuple[datetime, datetime]]:
-    """Intervals merged into episodes: a gap of 60 min or more starts a new one (H)."""
-    out: list[list[datetime]] = []
-    for a, b in sorted(intervals):
-        if out and a - out[-1][1] < EPISODE_GAP:
-            out[-1][1] = max(out[-1][1], b)
-        else:
-            out.append([a, b])
-    return [(a, b) for a, b in out]
-
-
-def main_episode(intervals, d: date) -> tuple[datetime, datetime] | None:
-    """The night of day D for a source that sends only samples: the longest
-    episode ending on D before 14:00 (H). The others are naps, never merged
-    into the night (an hour rule would merge a morning nap into it)."""
-    cands = [(a, b) for a, b in sleep_episodes(intervals)
-             if b.date() == d and b.time() <= MAIN_ENDS_BY]
-    return max(cands, key=lambda ab: ab[1] - ab[0], default=None)
-
-
-def _sleep_night(samples, d: date) -> dict | None:
-    by_source: dict[str, list] = defaultdict(list)
-    for s in samples:
-        by_source[s.source].append(s)
-    nights: dict[str, list] = {}
-    for source, items in by_source.items():
-        main = main_episode([(s.start_at, s.end_at) for s in items], d)
-        if main:
-            nights[source] = [s for s in items if s.start_at < main[1] and s.end_at > main[0]]
-    if not nights:
-        return None
-
-    def score(items):
-        staged = any(s.kind in ("core", "deep", "rem") for s in items)
-        asleep = _union_minutes([(s.start_at, s.end_at) for s in items if s.kind in ASLEEP_KINDS])
-        in_bed = _union_minutes([(s.start_at, s.end_at) for s in items if s.kind == "in_bed"])
-        return (staged, asleep, in_bed)
-
-    source, items = max(nights.items(), key=lambda kv: score(kv[1]))
-    per_kind = {k: round(_union_minutes([(s.start_at, s.end_at) for s in items if s.kind == k]))
-                for k in ("core", "deep", "rem", "awake", "in_bed")}
-    asleep_ivs = [(s.start_at, s.end_at) for s in items if s.kind in ASLEEP_KINDS]
-    asleep = _union_minutes(asleep_ivs)
-    details = {k: v for k, v in per_kind.items() if v}
-    if asleep > 0:
-        a, b = min(a for a, _ in asleep_ivs), max(b for _, b in asleep_ivs)
-        details.update(bedtime=a.strftime("%H:%M"), wake=b.strftime("%H:%M"), main_start=iso_min(a),
-                       main_end=iso_min(b))
-        value = asleep
-    elif per_kind["in_bed"]:
-        value = per_kind["in_bed"]  # phone only: time in bed is all there is
-        details["from_in_bed"] = True
-    else:
-        return None
-    return {"value": round(value), "n": len(items), "source": source or None, "details": details}
 
 
 async def drop_stale_intervals(db: AsyncSession, user_id: int, source: str,

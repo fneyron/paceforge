@@ -26,7 +26,7 @@ async def test_legacy_home_opens_health(as_user):
 
 
 async def test_activity_only_sync_refreshes_health(as_user, db_session, test_user):
-    version = await routes.data_version(db_session, test_user.id, home=False)
+    version = await routes.data_version(db_session, test_user.id)
     db_session.add(activity(test_user, datetime(2026, 10, 11, 8, tzinfo=timezone.utc), "Nouvelle séance"))
     await db_session.flush()
     response = await as_user.get("/sante/sync-status", params={"v": version})
@@ -34,11 +34,17 @@ async def test_activity_only_sync_refreshes_health(as_user, db_session, test_use
 
 
 async def test_sync_without_new_measurement_refreshes_source_date(as_user, db_session, test_user):
+    """2026-10-14: Santé shows no sync time (Réglages does), so a sync that brought nothing changes nothing and
+    never reloads the page; one that ended in an error does (the page then says so)."""
     from tests.test_coros import _link
 
     connection = await _link(db_session, test_user, last_sync_at=datetime(2026, 10, 11, tzinfo=timezone.utc))
-    version = await routes.data_version(db_session, test_user.id, home=True)
+    version = await routes.data_version(db_session, test_user.id)
     connection.last_sync_at = datetime(2026, 10, 12, tzinfo=timezone.utc)
     await db_session.flush()
-    response = await as_user.get("/sante/sync-status", params={"v": version, "home": "true"})
+    response = await as_user.get("/sante/sync-status", params={"v": version})
+    assert "HX-Refresh" not in response.headers
+    connection.last_error = "network"
+    await db_session.flush()
+    response = await as_user.get("/sante/sync-status", params={"v": version})
     assert response.headers["HX-Refresh"] == "true"

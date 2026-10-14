@@ -17,7 +17,7 @@ right under « Semaines », filtering the chart and the list alike.
   bars and nothing else: the current week lighter (hatched, « en cours » in
   its readout and the legend), one dashed line at the average of the
   complete weeks, labelled « moy. ». The weeks as the list's headings count
-  them (week_totals: UTC Mondays, the same sport filter, its duplicates and
+  them (week_totals: the athlete's local Mondays, the same sport filter, its duplicates and
   false starts out, moving time): a week's own total only on a tap (its
   heading prints it); the resting readout is the average, « 12h20 par
   semaine en moyenne », « sur 11 semaines » (the complete weeks since the
@@ -28,7 +28,9 @@ right under « Semaines », filtering the chart and the list alike.
   que d'habitude » (spike_ids). The toggle and the filter work without JS
   (a GET form, links).
 - A2 « FC en footing » (opens itself when flagged; under « Tout », « Course »
-  and « Trail »: its runs are runs): one dot per flat easy run,
+  and « Trail »: its runs are runs): one dot per flat easy run, its HR and
+  speed from its km splits after the first 10 min within ± 2 % of grade when
+  the athlete's runs have them (Vesterinen 2014; sante_training.comparable),
   its HR moved to the athlete's reference pace (one Theil–Sen slope over 12
   months), hot runs (≥ 25 °C felt, H: sante_training.is_hot) hollow and out of the normal; the normal is
   the median of the 28 days before ± 3 bpm (H; Nuuttila 2022's 3–4 bpm edge)
@@ -44,7 +46,7 @@ right under « Semaines », filtering the chart and the list alike.
   fatigue » (Buchheit 2014): never « fatigue ».
 """
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import String, and_, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -95,12 +97,15 @@ def spikes(sessions: list[st.Session], since: date) -> list[tuple[st.Session, fl
     return out
 
 
-async def spike_ids(db: AsyncSession, user_id: int, since: date, now: datetime | None = None) -> set[int]:
+async def spike_ids(db: AsyncSession, user_id: int, since: date, now: datetime | None = None,
+                    zone=None) -> set[int]:
     """The activities of the list (since `since`) that are a single-run spike (spikes): their rows say « plus
-    longue que d'habitude » (v4.3: no ▲ on the chart any more). Never fails the list."""
+    longue que d'habitude » (v4.3: no ▲ on the chart any more). Never fails the list. `zone`:
+    sante_training.athlete_clock's, when the caller read it."""
     try:
-        today = await st.athlete_today(db, user_id, now)
-        return {s.id for s, _ in spikes(await st.load_sessions(db, user_id, today), since)}
+        zone = zone if zone is not None else await st.athlete_clock(db, user_id)
+        today = await st.athlete_today(db, user_id, now, zone=zone)
+        return {s.id for s, _ in spikes(await st.load_sessions(db, user_id, today, zone=zone), since)}
     except Exception:
         logger.exception("Activités › spikes failed for user %d", user_id)
         return set()
@@ -116,13 +121,20 @@ def _sport_where(sport: str | None):
 
 
 async def week_totals(db: AsyncSession, user_id: int, sport: str | None,
-                      now: datetime) -> tuple[list[dict], date | None]:
+                      now: datetime, zone=None) -> tuple[list[dict], date | None]:
     """The last 12 weeks, oldest first, exactly as the list's week headings count them (dashboard._week_groups):
-    UTC Mondays, the same sport filter, the duplicates among those activities and the false starts left out, the
-    moving time; {monday, current, count, minutes, km, dplus}. And the Monday of the first activity of that
-    filter ever (the average reads the complete weeks since)."""
-    this_monday = st.monday(now)
+    Monday to Sunday on the athlete's clock (sante_training.athlete_clock, the list's; 2026-10-14: they were UTC
+    Mondays, so a run at 00:30 on a Monday in Paris fell in the week before), the same sport filter, the duplicates
+    among those activities and the false starts left out, the moving time; {monday, current, count, minutes, km,
+    dplus}. And the Monday of the first activity of that filter ever (the average reads the complete weeks since).
+    `zone`: athlete_clock's, when the caller read it."""
+    if zone is None:
+        zone = await st.athlete_clock(db, user_id)
+    this_monday = st.local_monday(now, zone)
     lo = this_monday - timedelta(weeks=WEEKS - 1)
+
+    def midnight(d: date) -> datetime:  # a local day's 00:00, in UTC (as activities are stored)
+        return datetime.combine(d, time.min, tzinfo=zone).astimezone(timezone.utc)
     has_splits = and_(Activity.splits_metric.is_not(None), cast(Activity.splits_metric, String).not_in(("null", "[]")))
     where = [Activity.user_id == user_id]
     if (f := _sport_where(sport)) is not None:
@@ -130,8 +142,8 @@ async def week_totals(db: AsyncSession, user_id: int, sport: str | None,
     rows = (await db.execute(select(Activity.id, Activity.start_date, Activity.sport_type, Activity.distance,
                                     Activity.moving_time, Activity.total_elevation_gain, has_splits,
                                     Activity.average_heartrate)
-                             .where(*where, Activity.start_date >= lo,
-                                    Activity.start_date < this_monday + timedelta(weeks=1)))).all()
+                             .where(*where, Activity.start_date >= midnight(lo),
+                                    Activity.start_date < midnight(this_monday + timedelta(weeks=1))))).all()
     first = (await db.execute(select(func.min(Activity.start_date)).where(*where))).scalar()
 
     class _Row:  # what activity_dedupe reads
@@ -145,11 +157,12 @@ async def week_totals(db: AsyncSession, user_id: int, sport: str | None,
     out = []
     for i in range(WEEKS):
         m = lo + timedelta(weeks=i)
-        week = [a for a in acts if a.id not in skip and not is_false_start(a) and st.monday(a.start_date) == m]
-        out.append({"monday": m.date(), "current": m == this_monday, "count": len(week),
+        week = [a for a in acts if a.id not in skip and not is_false_start(a)
+                and st.local_monday(a.start_date, zone) == m]
+        out.append({"monday": m, "current": m == this_monday, "count": len(week),
                     "minutes": sum(a.moving_time for a in week) / 60, "km": sum(a.distance for a in week) / 1000,
                     "dplus": sum(a.dplus for a in week)})
-    return out, (st.monday(first).date() if first else None)
+    return out, (st.local_monday(first, zone) if first else None)
 
 
 def _big(v: float, key: str) -> str:
@@ -281,17 +294,21 @@ def footing(sessions: list[st.Session], today: date, peak: float) -> dict | None
 # ── the block ───────────────────────────────────────────────────────────────
 
 async def training_top(db: AsyncSession, user_id: int, now: datetime | None = None, sport: str | None = None,
-                       measure: str | None = None) -> dict | None:
+                       measure: str | None = None, zone=None) -> dict | None:
     """What partials/activity_training.html draws for the sport filter `sport` (None: every sport), or None on a
     failure (the list below never blanks for it): « Semaines » (None without an activity in its 12 weeks) and
-    « FC en footing » (under « Tout », « Course » and « Trail »). No planned race is read."""
+    « FC en footing » (under « Tout », « Course » and « Trail »). No planned race is read. `zone`:
+    sante_training.athlete_clock's, when the caller read it."""
     try:
         now = now or datetime.now(timezone.utc)
-        weeks, first = await week_totals(db, user_id, sport, now)
+        zone = zone if zone is not None else await st.athlete_clock(db, user_id)
+        weeks, first = await week_totals(db, user_id, sport, now, zone)
         easy = None
         if sport in FOOTING_SPORTS:
-            today = await st.athlete_today(db, user_id, now)
-            sessions = await st.load_sessions(db, user_id, today)
+            today = await st.athlete_today(db, user_id, now, zone=zone)
+            sessions = await st.load_sessions(db, user_id, today, zone=zone)
+            # their km splits: the same steady flat splits Santé › Forme reads (sante_training.comparable)
+            await st.load_hr_segments(db, user_id, sessions, today - timedelta(days=st.EASY_FIT_DAYS))
             easy = footing(sessions, today, st.hr_max(sessions, today)) if sessions else None
         return {"weeks": semaines(weeks, first, measure, sport), "easy": easy}
     except Exception:

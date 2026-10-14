@@ -5,7 +5,10 @@ night from firing the illness alert: every measured night counts in the
 bands, the 7-night means and the timing, owner 2026-10-08), one band per
 watch, 7-night means, the illness alert. The check-in tags stay for the race
 page only (Santé v4 reads none)."""
+import math
 from datetime import date, datetime, timedelta, timezone
+
+import pytest
 
 from app.services import coros
 from app.services import nights as nt
@@ -96,11 +99,18 @@ def night_rows(days, hr=45.0, hrv=60.0, source="Garmin", today=D, asleep=440, st
 
 def test_bands_count_every_measured_night_on_one_watch():
     """Every measured night of the 60 days on the watch counts, whatever its tags (owner, 2026-10-08: « Tous les
-    relevés VFC doivent compter en fait, pareil pour la FC »): full from 14, « provisoire » from 7 (H)."""
+    relevés VFC doivent compter en fait, pareil pour la FC »): full from 14, « provisoire » from 7 (H). The HR band
+    is the mean ± 0.5 σ̂ (owner, 2026-10-14: scientific basis — it was the median ± 3 bpm, then the median ± 0.5
+    robust σ̂: the trend compares a mean), σ̂ the SD shrunk towards 4 % of the mean; the illness alert keeps the
+    median + max(2 robust σ̂, 5 bpm), the robust σ̂ (1.4826 × MAD) shrunk towards 4 % of the median."""
     rows = night_rows(range(1, 30, 2), hr=lambda k: 44 + k % 3, hrv=lambda k: 55 + k % 10)  # 15 nights
     nights = nt.build_nights(rows, D)
     b = nt.band(nights, "hr", D)
-    assert b["n"] == 15 and b["center"] == 45 and (b["lo"], b["hi"]) == (42, 48)
+    sd = math.sqrt((15 * (10 / 14) + 7 * (0.04 * 45) ** 2) / 22)  # 5 × 44, 45, 46: SD 0,85, prior 1,8 bpm: 1,23
+    robust = math.sqrt((15 * 1.4826 ** 2 + 7 * (0.04 * 45) ** 2) / 22)  # MAD 1 bpm: 1,59
+    assert b["n"] == 15 and b["center"] == b["median"] == 45 and b["sd"] == pytest.approx(sd)
+    assert b["robust_sd"] == pytest.approx(robust)
+    assert (b["lo"], b["hi"]) == pytest.approx((45 - 0.5 * sd, 45 + 0.5 * sd))  # was (42, 48)
     assert b["alert"] == 50  # max(2 robust SD, 5 bpm) above the median
     h = nt.band(nights, "hrv", D)
     assert h["lo"] < h["center"] < h["hi"] and abs(h["center"] - 59) < 1.5
@@ -117,25 +127,32 @@ def test_bands_count_every_measured_night_on_one_watch():
     assert nt.band(few(13), "hr", D, full=True) is None
     assert nt.band(few(7), "hr", D)["n"] == 7 and nt.band(few(7), "hr", D)["provisional"]
     assert nt.band(few(6), "hr", D) is None
-    # a new watch: its band starts again
+    # a new watch: its own band starts again, never mixed with the old one's; one night of it leaves the series
+    # with the watch worn most (owner, 2026-10-14: scientific basis — it switched to the new one's at once)
     rows2 = night_rows(range(1, 30, 2))
     rows2["hr_night"][D] = (50.0, {"method": "coros_sleep_summary"}, "COROS")
-    assert nt.band(nt.build_nights(rows2, D), "hr", D + timedelta(days=1)) is None
+    mixed = nt.build_nights(rows2, D)
+    assert nt.band(mixed, "hr", D + timedelta(days=1), source="COROS") is None
+    assert nt.band(mixed, "hr", D + timedelta(days=1))["n"] == 15 and nt.mean_source(mixed, "hr", D) == "Garmin"
 
 
-def test_the_usual_values_include_last_night():
-    """Santé's usual values (nights.normal) are every measured night of the 60 days up to and including last
-    night, no longer only the nights before the 7-night window (owner, 2026-10-08); the 7-night means read every
-    measured night too. The illness alert keeps its full band of the 60 days before its 2 nights."""
+def test_the_usual_values_stop_a_week_before_the_day():
+    """Santé's usual values (nights.normal) are the measured nights from day −67 to day −8 (owner, 2026-10-14:
+    scientific basis — they held the very week the 7-night trend judges: « the usual values include last night »
+    until then): 7 nights up to this morning make no baseline yet (they were a provisional one), a night counts in
+    it a week after it; the 7-night means read every measured night of the last 7. The illness alert reads the
+    same baseline (full: 14 nights)."""
     nights = nt.build_nights(night_rows(range(0, 7)), D)  # 7 nights, the last one this morning
-    b = nt.normal(nights, "hr", D)
-    assert b["n"] == 7 and b["provisional"] and b["until"] == D + timedelta(days=1)
-    assert nt.band(nights, "hr", D) is None  # the 60 days before this morning: 6 nights
-    assert nt.normal(nights, "hr", D - timedelta(days=1)) is None  # yesterday's: 6 nights
+    assert nt.normal(nights, "hr", D) is None and nt.baseline_count(nights, "hr", D) == 0  # was 7, provisional
     assert nt.mean7(nights, "hr", D) == {"value": 45, "n": 7}
-    lo = D - timedelta(days=nt.BAND_DAYS - 1)  # the window's first day
+    later = nt.build_nights(night_rows(range(0, 15)), D)  # nights 8 to 14 days old: 7 in the baseline
+    b = nt.normal(later, "hr", D)
+    assert b["n"] == 7 and b["provisional"] and b["until"] == D - timedelta(days=7) == nt.baseline_until(D)
+    y = D - timedelta(days=1)  # yesterday's baseline: 6 of them, none yet
+    assert nt.normal(later, "hr", y) is None and nt.baseline_count(later, "hr", y) == 6
+    lo, hi = D - timedelta(days=nt.BAND_DAYS + 7), D - timedelta(days=8)  # the window's first and last days
     edge = nt.build_nights(night_rows(range(0, 70)), D)
-    assert nt.normal(edge, "hr", D)["n"] == 60 == sum(1 for d in edge if lo <= d <= D)
+    assert nt.normal(edge, "hr", D)["n"] == 60 == sum(1 for d in edge if lo <= d <= hi)
 
 
 def test_a_coros_nap_day_counts_but_never_fires_the_alert():
@@ -154,14 +171,30 @@ def test_a_coros_nap_day_counts_but_never_fires_the_alert():
 
 
 def test_mean7_and_status():
+    """The 7-night mean and its place against the usual values (nights.trend: z = (mean − the baseline's mean) / σ̂,
+    outside from |z| ≥ T, 1.28 standard errors of the week's mean against the baseline's for nights correlated at
+    ρ = 0.3 (nights.threshold); owner, 2026-10-14: scientific basis — it was the band's ± 3 bpm, then
+    max(0.5, 1.28/√n7))."""
     nights = nt.build_nights(night_rows(range(0, 40), hr=lambda k: 49 if k < 7 else 45), D)
     m = nt.mean7(nights, "hr", D)
     assert m == {"value": 49, "n": 7}
-    assert nt.status(m["value"], nt.band(nights, "hr", D - timedelta(days=6))) == "above"
-    assert nt.status(46, nt.band(nights, "hr", D - timedelta(days=6))) == "in"
-    assert nt.status(46, None) is None
+    t = nt.trend(nights, "hr", D)
+    sd = math.sqrt(7 * 1.8 ** 2 / (32 + 7))  # 32 nights at 45 in the baseline (days −39 → −8): SD 0, the prior
+    # 7 nights in a row against 32: T = 1,28·√(Σ 0,3^|i−j| / 49 + 1,3/(0,7·32)) = 0,70 (was 0,5)
+    t7 = 1.28 * math.sqrt(sum(0.3 ** abs(i - j) for i in range(7) for j in range(7)) / 49 + 1.3 / 0.7 / 32)
+    assert t["baseline"]["n"] == 32 and t["z"] == pytest.approx(4 / sd) and t["status"] == "above"
+    assert t["T"] == pytest.approx(t7) and round(t7, 2) == 0.70
+    near = nt.build_nights(night_rows(range(0, 40), hr=lambda k: 45.3 if k < 7 else 45), D)
+    assert nt.trend(near, "hr", D)["status"] == "in"  # + 0,3 bpm: z 0,39 < 0,70
+    thin = nt.build_nights(night_rows([0, 2, 5] + list(range(8, 40)), hr=lambda k: 45.6 if k < 7 else 45), D)
+    t3 = nt.trend(thin, "hr", D)  # 3 nights (days 0, −2, −5): T 0,83 (was 1,28/√3 = 0,74), z = 0,6/0,76 = 0,79
+    assert t3["n"] == 3 and t3["T"] == pytest.approx(nt.threshold([0, -2, -5], 32)) and round(t3["T"], 2) == 0.83
+    assert t3["status"] == "in"  # just inside now (it was just outside)
+    thin7 = nt.build_nights(night_rows([0, 2, 5] + list(range(8, 40)), hr=lambda k: 45.7 if k < 7 else 45), D)
+    assert nt.trend(thin7, "hr", D)["status"] == "above"  # + 0,7 bpm: z 0,92 ≥ 0,83
     sparse = nt.build_nights(night_rows([0, 3]), D)
     assert nt.mean7(sparse, "hr", D) is None  # 2 nights of 7: no mean
+    assert nt.trend(sparse, "hr", D)["status"] is None
 
 
 def test_context_tags_never_leave_a_night_out():
@@ -294,6 +327,20 @@ def test_illness_alert():
     assert nt.illness_alert(few, D) is None  # no band, no alert
 
 
+def test_an_alert_episode_ends_at_the_median_plus_3_bpm():
+    """An episode runs from its first night while the nights stay above the median + 3 bpm of the alert's baseline
+    (ALERT_END_BPM, H), 14 days at most. Not the trend band's top (mean + 0.5 σ̂, within a beat of the mean): nights
+    back to 1–2 bpm over the usual kept « FC de nuit haute » for 14 days (review, 2026-10-14)."""
+    base = night_rows(range(22, 90), hr=lambda k: 44 + k % 3)  # median 45: the alert line 50, the end 48
+    rows = {m: {**base[m], **night_rows([20, 19], hr=56.0)[m], **night_rows(range(6, 19), hr=47.0)[m]} for m in base}
+    nights = nt.build_nights(rows, D)
+    a = nt.illness_alert(nights, D - timedelta(days=19))
+    assert a["threshold"] == 50 and a["end"] == 48 and a["hi"] < 46  # 47 is over the band's top, under the end
+    assert sorted(nt.alert_episodes(nights, D)) == [D - timedelta(days=20), D - timedelta(days=19)]  # was 15 nights
+    rows["hr_night"].update(night_rows(range(15, 19), hr=49.0)["hr_night"])  # still over the end: still on
+    assert len(nt.alert_episodes(nt.build_nights(rows, D), D)) == 6  # nights −20 to −15, then 47 at −14
+
+
 def test_timing_rounding_and_resettled_wakes():
     rows = night_rows(range(0, 10), start=(23, 7), end=(6, 38))
     rows["nap"][D] = (60, {"windows": [["2026-10-07T07:30", "2026-10-07T08:30"]]}, "Garmin")
@@ -375,16 +422,24 @@ async def test_alert_nights_say_fc_de_nuit_haute_never_malade(db_session, test_u
 
 
 def test_a_new_watch_is_never_read_against_the_old_watchs_band():
-    """F2: 60 Garmin nights at 45 bpm, then a COROS watch: no status, no alert
-    until the new watch has its own 14 nights (Dial 2025)."""
+    """F2: 60 Garmin nights at 45 bpm, then a COROS watch: never read against the Garmin band (Dial 2025). The
+    series is the watch with the most nights in the 28 days among those worn in the last 7 (owner, 2026-10-14:
+    scientific basis — two watches taking turns swapped the series night after night): 3 COROS nights leave
+    Garmin's series in place (it was COROS at once), and as last night is not on it, no state; once Garmin is a week
+    gone, COROS's own series, with no baseline yet: no word."""
     from app.services import sante
 
     rows = night_rows(range(3, 63), hr=45.0, hrv=95.0)
     new = night_rows(range(0, 3), hr=49.0, hrv=70.0, source="COROS")
     nights = nt.build_nights({m: {**rows[m], **new[m]} for m in rows}, D)
+    assert nt.mean_source(nights, "hr", D) == "Garmin" and nt.mean7(nights, "hr", D)["value"] == 45  # was COROS, 49
+    assert not nt.trend(nights, "hr", D)["last"] and sante._assess(nights, [], [], D)["score"]["value"] is None
+    rows = night_rows(range(8, 68), hr=45.0, hrv=95.0)
+    new = night_rows(range(0, 8), hr=49.0, hrv=70.0, source="COROS")
+    nights = nt.build_nights({m: {**rows[m], **new[m]} for m in rows}, D)
     assert nt.mean_source(nights, "hr", D) == "COROS" and nt.mean7(nights, "hr", D)["value"] == 49
     for metric in ("hr", "hrv"):
-        st = sante._night_stat(nights, metric, D)
+        st = sante._night_stat(nights, metric, D, nt.trend(nights, metric, D))
         assert st["value"] is not None and st["status"] is None and st["normal"] is None  # no band yet: no word
     # 2 COROS nights at 51 after Garmin nights at 44–46: never the Garmin alert line
     rows = night_rows(range(2, 62), hr=lambda k: 44 + k % 3)
@@ -398,6 +453,57 @@ def test_a_new_watch_is_never_read_against_the_old_watchs_band():
     # the same watch throughout: the alert still fires
     same = nt.build_nights({m: {**rows[m], **night_rows([0, 1], hr=51.0)[m]} for m in rows}, D)
     assert nt.illness_alert(same, D)["source"] == "Garmin"
+
+
+def test_two_watches_taking_turns_keep_one_series():
+    """Two devices alternating (owner, 2026-10-14: scientific basis — the latest night's series switched every
+    morning, and with it the baseline and the trend): the one with the most nights in the 28 days holds, whatever
+    measured last night (never mixed)."""
+    rows = night_rows(range(0, 40), hr=45.0, source="Apple Santé:watch")
+    other = night_rows([0, 4, 9, 13], hr=60.0, source="Apple Santé:ring")  # a few nights, last night among them
+    nights = nt.build_nights({m: {**rows[m], **other[m]} for m in rows}, D)
+    assert nights[D].hr_source.startswith("Apple Santé:ring")
+    assert nt.mean_source(nights, "hr", D).startswith("Apple Santé:watch")
+    assert nt.mean_source(nights, "hr", D - timedelta(days=1)).startswith("Apple Santé:watch")
+    assert nt.device("Garmin (sommeil)") == "Garmin" and nt.device("Apple Santé:x (sommeil)") == "Apple Santé:x"
+
+
+def test_a_tie_between_watches_never_follows_the_latest_night():
+    """COROS and Garmin worn strictly in turn hold as many nights each: the tie was broken by the latest night, so
+    the series switched every morning (59 times in 59 days). Ties now read the larger baseline, then the series of
+    the day before, then a fixed order (COROS, Garmin): one series for the whole stretch."""
+    coros = night_rows(range(0, 120, 2), source="COROS", hr_method="coros_sleep_summary")
+    garmin = night_rows(range(1, 120, 2), source="Garmin")
+    nights = nt.build_nights({m: {**coros[m], **garmin[m]} for m in coros}, D)
+    seq = [nt.device(nt.mean_source(nights, "hrv", D - timedelta(days=k))) for k in range(60)]
+    assert len(set(seq)) == 1
+    with nt.memo():  # the same choice inside the page's memo
+        nt.freeze(nights)
+        assert [nt.device(nt.mean_source(nights, "hrv", D - timedelta(days=k))) for k in range(60)] == seq
+
+
+def test_one_night_of_another_calculation_is_no_upgrade():
+    """99 Garmin nights with timed stages, then one without (« nuit sans phases »): the series stays the staged one
+    (most nights in the 28 days among the watch's series measured in the 7), so its 92-night baseline holds; last
+    night is not on it, so no state that morning, and the page says why. A real upgrade takes over once the old
+    calculation has not been measured for 7 days."""
+    staged = night_rows(range(1, 100), source="Garmin")
+    for metric in ("hrv", "hr_night"):
+        for d, (v, det, src) in list(staged[metric].items()):
+            staged[metric][d] = (v, {**det, "scope": "sleep_stages_v1"}, src)
+    window = night_rows([0], source="Garmin")
+    for metric in ("hrv", "hr_night"):
+        v, det, src = window[metric][D]
+        window[metric][D] = (v, {**det, "scope": "main_window_v1"}, src)
+    nights = nt.build_nights({m: {**staged[m], **window[m]} for m in staged}, D)
+    assert nights[D].hrv_source != nights[D - timedelta(days=1)].hrv_source
+    series = nt.mean_source(nights, "hrv", D)
+    assert series == nights[D - timedelta(days=1)].hrv_source and nt.baseline_count(nights, "hrv", D) == 60
+    t = nt.trend(nights, "hrv", D)
+    assert t["source"] == series and not t["last"]
+    upgraded = nt.build_nights({m: {**staged[m], **night_rows(range(0, 8), source="Garmin")[m]} for m in staged},
+                               D)  # 8 nights of the other calculation: the staged one not measured for 8 days
+    assert nt.mean_source(upgraded, "hrv", D) == upgraded[D].hrv_source
 
 
 def test_a_clock_change_at_home_is_no_time_zone_change():

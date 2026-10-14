@@ -25,7 +25,6 @@ from app.models.route import Route
 from app.models.user import User
 from app.services import nights as nt
 from app.services import sante
-from app.services import sante_sleep as sl
 from tests import test_coros
 from tests.owner_v4 import D8, seed_owner_v4
 from tests.test_coros import _link
@@ -36,7 +35,7 @@ as_user, no_commit = test_coros.as_user, test_coros.no_commit
 ROOT = Path(__file__).resolve().parent.parent
 BRAND = ("Récup COROS", "calculée par COROS", "Training Readiness", "Body Battery", "Score de sommeil", "×1,",
          "forte hausse", "84 %", "VO2", "Stress de jour", "fatigue %", "Fraîcheur")
-NEVER = ("pas jugée", "pas assez de nuits", "autour de la course", "Ce matin",
+NEVER = ("pas jugée", "autour de la course",
          "Comment je vais", "⚑", "J+", "J‑", "Jour de course", "Footing facile", "Reprise",
          "Forme du jour", "Cœur la nuit",
          # v4.1: no sync status (Réglages'), no Charge card (Activités'), no unlabelled tick on the Charge ring
@@ -161,13 +160,14 @@ async def test_the_check_in_post_is_kept_harmlessly(as_user: AsyncClient, db_ses
     recovery never reads it (no « malade » trigger, no Ressenti)."""
     await seed_owner_v4(db_session, test_user)
     before = (await sante.health_page(db_session, test_user.id, today=D8))["score"]["value"]
+    assert before is None  # his baselines are building (owner, 2026-10-14: scientific basis)
     r = await as_user.post("/sante/feel", data={"feel": "3", "toggle": "sick"}, headers={"HX-Request": "true"})
     assert r.status_code == 204 and r.headers["HX-Redirect"] == "/sante"  # REG-1: htmx navigates, never nests
     assert (await as_user.post("/sante/feel", data={"feel": "3"})).status_code == 303  # a plain form: a redirect
     row = (await db_session.execute(select(HealthMetric).where(HealthMetric.metric == "feel"))).scalar_one()
     assert row.value == 3 and row.details["why"] == ["sick"]
     page = await sante.health_page(db_session, test_user.id, today=D8)
-    assert page["score"]["value"] == before and page["state"]["key"] == "effort"
+    assert page["score"]["value"] == before and page["state"] is None  # a check-in never makes a state
     html = (await as_user.get("/sante")).text
     assert "/sante/feel" not in html and "Ce matin" not in html and "Malade" not in html
 
@@ -219,7 +219,7 @@ async def test_a_strava_link_lands_on_sante_unless_it_said_where(client: AsyncCl
     from tests.test_settings_links import _callback
 
     monkeypatch.setattr(StravaService, "exchange_token", AsyncMock(return_value={
-        "access_token": "at", "refresh_token": "rt", "expires_at": 2147483000,
+        "access_token": "at", "refresh_token": "rt", "expires_at": 2147483000,  # int32: PostgreSQL's column
         "athlete": {"id": 778, "firstname": "A", "lastname": "B", "profile": None}}))
     monkeypatch.setattr(StravaService, "create_webhook_subscription", AsyncMock(return_value=None))
     monkeypatch.setattr("app.tasks.initial_sync.initial_sync.delay", lambda uid: None)
@@ -254,26 +254,24 @@ async def test_the_installed_app_opens_on_sante(as_user: AsyncClient, client: As
 # ── the owner, 8 Oct 2026 ───────────────────────────────────────────────────
 
 async def test_owner_8_october_state_and_score(db_session: AsyncSession, test_user: User):
-    """The Transjeju (an activity: 16h53 stops included, ended 03/10 13:53 in Korea) is an ultra that ran
-    through the night (01:00 → 05:00 local, H): the raw score capped at 35 on D+1 → D+3, then at 65 until D+13
-    (16/10; v4.2); 08/10 is D+5 from its end, 6 days after it started. No band yet (5 nights of VFC, 6 of FC de
-    nuit: 7 needed), so Sommeil alone makes the mean (8h36 → 100; no Charge récente in it since 2026-10-08, owner:
-    « Fais comme WHOOP »): raw 100; its window's 65 binds (80 without VFC nor FC de nuit): 65, « Récupération en
-    cours », as with v4.2's Charge (raw 68). v4.3: the page says the state in words only, no activity named (owner:
-    « mets juste les scores »); his Les Houches days of 18/09 and 19/09 have no window left (each ended on D+5:
-    23/09, 24/09)."""
+    """The Transjeju (an activity: 16h53 stops included, ended 03/10 13:53 in Korea) is an Ultra under 24 h: red on
+    D+0 and D+1, orange to D+5 (owner, 2026-10-14: scientific basis — capped at 35 then 65 until D+13, its night
+    run through extending it); 08/10 is D+5 from its end, its last orange day. His heart baselines are building: 2
+    nights from day −67 to −8 (29/09, 30/09; 14 needed), so no state and no number — a reason instead, never a score
+    from Sommeil alone (it was 69, « Récupération en cours », the window's cap over Sommeil's 100). v4.3: no
+    activity named (owner: « mets juste les scores »)."""
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D8)
     st, s = page["state"], page["score"]
-    assert (st["key"], st["tone"], st["word"], st["text"]) == ("effort", "warn", "Récupération en cours", None)
-    assert "href" not in st and "estimated" not in st and st["aria"] == "Récupération en cours."
-    assert s["raw0"] == 100 and s["value"] == 69 and s["tone"] == "warn" and s["reason"] == "effort"
-    assert {p["key"]: round(p["sub"]) for p in s["parts"]} == {"sleep": 100}
-    assert s["absent"] == ["hrv", "hr"] and s["caps"] == ["effort", "no_heart"]  # the window's 65 binds
+    assert st is None and s["value"] is None and s["parts"] == [] and s["absent"] == ["hrv", "hr"]
+    assert s["missing"] == {"key": "building", "label": "repères en construction (2/14)", "n": 2, "required": 14,
+                            "metric": "hrv"}
+    assert page["line"] == "Pas de score ce matin : repères en construction (2/14)."
     from app.services import sante_training as st_
     sessions = await st_.load_sessions(db_session, test_user.id, D8)
     w = st_.effort_window(st_.efforts(sessions), D8)
-    assert (w["cap"], w["until"]) == (68.5, date(2026, 10, 16))  # D+13: it ran through the night (01:00 → 05:00, H)
+    assert (w["tone"], w["days"], w["until"]) == ("warn", 5, date(2026, 10, 8))
+    assert w["text"] == "fenêtre indicative jusqu'à J+5"
 
 
 async def test_owner_nights_tags_and_no_band_yet(db_session: AsyncSession, test_user: User):
@@ -304,32 +302,29 @@ async def test_owner_nights_tags_and_no_band_yet(db_session: AsyncSession, test_
 
 async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user: User):
     """The approved mockup (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple »), on his fixture: three
-    dials — Sommeil 96 % « suffisant » (8h36 of a 9-h need: 8 h, + 1 h owed since the race,
-    in the sleep hue), Récupération 65 % « en cours »,
-    Entraînement 15h35 (moving time, as Activités) « 7 derniers jours » (his activities since 18/09 are 3 complete weeks: under the 4 of a
-    usual week, so the 7 days' time itself, no arc, and no « Intensité » row: no usual week to weigh them against) —
-    each a link to its card; the Récupération card's rows: « Effort récent » first, the row that decides the day
-    (the audit, 2026-10-09), 8 days before he is recovered (the Transjeju's window to 16/10, at 65: orange), then
-    VFC and FC de nuit « en construction », ready in 2 nights and after his next night (every measured night
-    counts)."""
+    dials — Sommeil 100 % « suffisant » (8h36 of the 8-h need, in the sleep hue: owner, 2026-10-14: scientific basis
+    — it was 96 % of a 9-h need, 8 h + 1 h owed since the race), Récupération empty « pas de score » (his baselines
+    are building: it was 65 %), Entraînement 15h35 (moving time, as Activités) « 7 derniers jours » (his
+    activities since 18/09 are 3 complete weeks: under the 4 of a usual week, so the 7 days' time itself, no arc,
+    and no « Intensité » row: no usual week to weigh them against) — each a link to its card; the line says why
+    there is no state; the cards say when the usual values come (a night counts a week after it)."""
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D8)
     assert [(d["key"], d["value"], d["unit"], d["label"], d["sub"], d["tone"], d["href"]) for d in page["dials"]] == [
-        ("sommeil", "96", "%", "Sommeil", "suffisant", "sleep", "#sommeil"),
-        ("recup", "69", "%", "Récupération", "en cours", "warn", "#recuperation"),
+        ("sommeil", "100", "%", "Sommeil", "suffisant", "sleep", "#sommeil"),
+        ("recup", "—", None, "Récupération", "pas de score", "none", "#recuperation"),
         ("entrainement", "15h35", None, "Entraînement", "7 derniers jours", "accent", "#entrainement")]
     assert [d["aria"] for d in page["dials"]] == [
-        "Sommeil 96\u00a0% de ton besoin estimé de 9 heures, suffisant.", "Récupération 69\u00a0%, en cours.",
+        "Sommeil 100\u00a0% de ton besoin estimé de 8 heures, suffisant.", "Récupération : pas de score ce matin.",
         "Entraînement : 15 heures 35 d'activité ces 7 derniers jours, pas encore d'habitude."]
     assert [d["dash"] for d in page["dials"]][2] == 0 and "ring" not in page and "facts" not in page
-    assert [(r["name"], r["qual"], r["value"], r["word"], r["detail"], r["tone"]) for r in page["rows"]] == [
-        ("Effort récent", None, None, "prudence après l’effort", "Son influence diminue progressivement. La montre ne mesure pas la récupération musculaire.", "warn"),
-        ("VFC", "7 derniers jours", None, "en construction", "prête dans 2\u00a0nuits", "none"),
-        ("FC de nuit", "7 derniers jours", None, "en construction", "prête après ta prochaine nuit", "none")]
+    assert "rows" not in page and page["line"] == "Pas de score ce matin : repères en construction (2/14)."
+    assert [(page[k]["status"]["word"], page[k]["status"]["detail"]) for k in ("vfc", "fc")] == [
+        ("en construction", "prête dans 10\u00a0nuits"), ("en construction", "prête dans 9\u00a0nuits")]
     train = page["training"]
     assert {key: value for key, value in train.items() if key != "chart"} == {
         "dial": page["dials"][2], "week": "15h35", "usual": None,
-        "word": "pas encore de semaine habituelle", "intensity": None, "since": date(2026, 10, 2)}
+        "word": "pas encore de semaine habituelle", "intensity": None, "since": date(2026, 10, 2), "ratio": None}
     assert not train["dial"]["usual_marker"]  # a measured duration does not invent a usual week
     chart = train["chart"]
     chart_data = json.loads(chart["data"])
@@ -338,13 +333,17 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     assert chart_data["r"][1][:2] == ["15h35", "1 séance"]
     assert all(row[:2] == ["0 min", "Aucune séance enregistrée"]
                for i, row in enumerate(chart_data["r"]) if i != 1)
-    # Sommeil: « Cette nuit », the times (22:42 is approximate: 22:40) and this morning's 24 h over its 9-h need,
-    # its hours printed once (the dial says 96 %); the need said under it, computed (2026-10-09: never asked)
+    # Sommeil: « Cette nuit », the times (22:42 is approximate: 22:40) and this morning's 24 h over the 8-h need,
+    # its hours printed once (the dial says 100 %); the sleep owed apart: 4 of the 7 nights measured (03/10, raced
+    # through, its naps only; 06, 07 and 08/10): 7/4 × 9h41 → 17h00, never added to the need (never asked)
     s = page["sleep"]
     h = s["hero"]
     assert (h["label"], h["times"], h["nap"], h["total"], h["need"]) == ("Cette nuit", "22:40 → 07:30", None, "8h36",
-                                                                         "besoin estimé 9h00")
-    assert s["need"] == "Besoin estimé\u00a0: 8\u00a0h, + 1\u00a0h de sommeil en retard."  # never asked
+                                                                         "besoin estimé 8h00")
+    # 3 measured nights and the night the Transjeju ran through: not estimable (4 measured nights needed; owner,
+    # 2026-10-14: scientific basis — the raced night was scaled up with the others, 17h00)
+    assert "need" not in s and (s["deficit"]["minutes"], s["deficit"]["n"], s["deficit"]["raced"],
+                                s["deficit"]["text"]) == (None, 3, 1, "manque non estimable (3/7 nuits)")
     # its stages from COROS's « Sleep Summary » (the main night's: shown, never judged), WHOOP's order; COROS has
     # no intervals: no hypnogram, and no plain night bar either (the stages bar replaces it)
     assert h["timeline"] is None and not h["stages"]
@@ -359,8 +358,8 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     # it rests on the mean (the latest night is the Sommeil row's); a tap: the 24 h, its parts, the night and its
     # times
     assert bars["read"] == ["8h20", "en moyenne", "Sur 6 nuits mesurées · 14 nuits"]
-    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · besoin estimé 9h00"]
-    assert d["r"][12] == ["8h10", "nuit 5h50 + sieste 2h20", "nuit du mar. 6 au mer. 7 · 23:35 → 05:40 · besoin estimé 9h30"]
+    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · besoin estimé 8h00"]
+    assert d["r"][12] == ["8h10", "nuit 5h50 + sieste 2h20", "nuit du mar. 6 au mer. 7 · 23:35 → 05:40 · besoin estimé 8h00"]
     assert d["r"][0] == ["1h22", "sieste seule", "nuit du jeu. 24 au ven. 25 · nuit non enregistrée"]  # no « ? »
     assert "?" not in json.dumps(d["r"], ensure_ascii=False)
     # every night counts in the medians (owner, 2026-10-08), the jet-lagged and the post-ultra ones too: 6 nights in
@@ -388,57 +387,23 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
     # never a cliff from a few ms: the VFC axis spans ≥ 30 % of its median, the FC axis ≥ 14 bpm
     assert [t["label"] for t in vfc["ticks"]] == ["80", "100"] and [t["label"] for t in fc["ticks"]] == ["30", "40"]
     assert "charge" not in page  # no « Charge · 14 jours »: the activities are Activités' (v4.1)
-    # each card opens on its status line (v4.3): no usual values yet. Every measured night counts, last night
-    # included (owner, 2026-10-08: « Tous les relevés VFC doivent compter en fait, pareil pour la FC »): VFC has 5
-    # (29/09, 30/09, 01/10, 07/10, 08/10), 2 more make the 7 of a band; FC de nuit 6 (06/10 too), 1 more
-    # the row in the Récupération card says when they will be ready (printed once), the card says it in words
-    when = {"vfc": "dans 2\u00a0nuits", "fc": "après ta prochaine nuit"}
+    # each card opens on its status line (v4.3): no usual values yet. Every measured night counts, a week after it
+    # (owner, 2026-10-14: scientific basis — the baseline stops at day −8): VFC has 5 nights (29/09, 30/09, 01/10,
+    # 07/10, 08/10), 2 of them already in the baseline window, the 7th comes in 10 nights; FC de nuit 6 (06/10 too):
+    # 9 nights; the card says it in words
+    when = {"vfc": "dans 10\u00a0nuits", "fc": "dans 9\u00a0nuits"}
     for key, c in (("vfc", vfc), ("fc", fc)):
         assert c["status"] == {"key": "none", "value": None, "word": "en construction", "detail": f"prête {when[key]}",
                                "tone": None, "meaning": None,
-                               "text": "Tes valeurs habituelles s'afficheront ici dès 7 nuits mesurées."}
+                               "text": "Tes valeurs habituelles s'afficheront ici dès 7 nuits mesurées avant les 7 derniers jours."}
         assert not c["band"] and not c["band_prov"] and all(set(d) == {"i", "x", "y"} for d in c["dots"])  # filled
+        assert c["reference"]["label"] == "Référence · 2/7 nuits"
     # the 7-night line where 3 nights of the last 7 hold: FC de nuit from 06/10 (01/10 alone draws no segment)
     assert vfc["legend"] == fc["legend"] == [sante.LEGEND_DOT, sante.LEGEND_MEAN]
-    # Récupération · 14 jours: each day as computed that day, with the same rule; it rests on the mean
-    rec = page["recup"]
-    d = json.loads(rec["data"])
-    points = {day: r[:2] for day, r in zip(d["d"], d["r"], strict=True)}
-    # 25/09 → 28/09: no night, and his Les Houches days (two Très longues, 18/09 and 19/09) have no window left
-    # (65 until 23/09 and 24/09): no score — v4.2's M3 made them one 16-h ultra, 65 until 29/09 (« Grosse sortie :
-    # Morning Trail Run », the owner's « je ne comprends pas »)
-    assert [points[f"2026-09-{k}"] for k in (25, 26, 27, 28)] == [["—", ""]] * 4
-    # a day without a score draws nothing (owner, 2026-10-08: « pas de point »): a tap says it plainly
-    assert d["r"][0] == ["—", "", "ven. 25 sept. · pas de mesure ce jour-là"]
-    assert d["a"][0] == "vendredi 25 septembre : pas de mesure ce jour-là."
-    assert [b["i"] for b in rec["bars"] if b.get("miss")] == [0, 1, 2, 3, 7, 8, 9, 10]
-    # before the race: Sommeil alone (no band): 100, capped at 80 without VFC nor FC
-    assert points["2026-09-29"] == points["2026-10-01"] == ["80\u00a0%", "● Bonne récupération"]
-    # 02/10: the Transjeju still running at midnight (uploaded on 03/10), no night: no score; 03/10 (the day it
-    # ended) → 05/10: no night, no score either, its window or not (owner, 2026-10-09, like WHOOP: « Mets un
-    # cadran vide, oui »): nothing drawn, a tap says it plainly
-    assert points["2026-10-02"] == points["2026-10-03"] == points["2026-10-04"] == points["2026-10-05"] == ["—", ""]
-    assert [d["r"][k][2] for k in (8, 9, 10)] == [f"{x} · pas de mesure ce jour-là" for x in (
-        "sam. 3 oct.", "dim. 4 oct.", "lun. 5 oct.")]
-    assert d["a"][8] == "samedi 3 octobre : pas de mesure ce jour-là."
-    # 06/10: D+3, 5h33 against a 9h30 need (8 h, + 30 min after the ultra, + 1 h owed): Sommeil alone 20, under
-    # the window's 35 (2026-10-09; 35 before, the need then 8 h)
-    assert points["2026-10-06"] == ["20\u00a0%", "■ Récupération faible"] and d["r"][11][2] == "mar. 6 oct."
-    assert d["a"][11] == "mardi 6 octobre : 20\u00a0%, récupération faible."
-    # 07/10 and 08/10: Sommeil 95 and 100 (8h10 of 9h30, 8h36 of 9 h), the window's 65 binds
-    assert points["2026-10-07"] == ["65\u00a0%", "◐ Récupération en cours"]
-    assert points["2026-10-08"] == ["69\u00a0%", "◐ Récupération en cours"]
-    assert d["a"][13] == "jeudi 8 octobre : 69\u00a0%, récupération en cours."
-    # the date, the score and the state only: no activity named in the card (v4.3, owner: « mets juste les scores »)
-    for word in ("Transjeju", "Morning", "sortie", "il y a"):
-        assert word not in rec["data"], word
-    # nothing selected, no number (the audit, 2026-10-09: « 65 % en moyenne sur 14 jours » decided nothing and
-    # looked like the dial's): the card's title rests in the readout's place
-    assert rec["read"] == ["", "Historique · 14 jours", ""] and rec["title"] == "Récupération · 14 jours"
-    classes, est = [b["cls"] for b in rec["bars"]], [b["est"] for b in rec["bars"]]
-    assert classes[4] == "ok" and classes[8:11] == [""] * 3 and classes[11] == "danger" and classes[12] == "warn"
-    assert rec["bars"][-1]["today"] and not any(est) and rec["hatched"] == []  # no score estimated any more
-    assert d["t"][11] == "danger" and [ln["label"] for ln in rec["lines"]] == ["70\u00a0%", "40\u00a0%"]
+    # Récupération · 14 jours: each day as computed that day, with the same rule — none of his days has a full
+    # baseline, so none has a state and the card is not drawn (it showed Sommeil-alone scores capped at 80, 65 or
+    # 20: owner, 2026-10-14: scientific basis — never a state from sleep alone)
+    assert page["recup"] is None and page["score"]["value"] is None
 
 
 async def test_the_entrainement_link_lists_the_7_days_it_counts(as_user: AsyncClient, db_session: AsyncSession,
@@ -490,12 +455,14 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert 'href="/sante/lactate"' not in main
     assert 'class="pf-night-trend"' not in main
     assert main.count('class="pf-measurement-head"') == 2
-    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 6
-    assert 'data-viz-key="recuperation"' in main and "Récupération sur 14 jours" in main
+    # no 14-day Récupération chart: none of his days has a state yet (owner, 2026-10-14: scientific basis)
+    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 5
+    assert 'data-viz-key="recuperation"' not in main and "Récupération sur 14 jours" not in main
     assert 'data-viz-key="entrainement"' in main and "Entraînement sur 7 jours" in main
     assert '<details id="charge-detail" class="pf-chart-details pf-load-detail">' in main
     assert 'href="/activities?depuis=2026-10-02"' in main
-    assert "besoin estimé 9h00" in main
+    assert "besoin estimé 8h00" in main
+    assert "Pas de score ce matin : repères en construction (2/14)." in main
     assert 'href="/sante/aide"' in main
     assert "Comprendre la récupération" not in main
     assert "pf-viz-gap" not in main and "is-out" not in main
@@ -507,7 +474,7 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     # Cardiac measurements are visible, each once; training keeps its duration both
     # in the baseline-free dial and above the now visible daily chart.
     seen = re.sub(r"\s+", " ", _visible(html).replace("\u00a0", " ").replace("\u202f", " "))
-    for number in ("96 %", "69 %", "8h36", "100 ms", "35 bpm"):
+    for number in ("100 %", "8h36", "100 ms", "35 bpm"):
         assert len(re.findall(rf"(?<![\d,h:]){re.escape(number)}(?![\d,h:A-Za-z])", seen)) == 1, number
     assert len(re.findall(r"(?<![\d,h:])15h35(?![\d,h:A-Za-z])", seen)) == 2
     assert '<div id="mesures-nocturnes" class="pf-health-nights" role="group"' in main
@@ -537,6 +504,9 @@ async def test_nothing_that_was_removed_comes_back(as_user: AsyncClient, db_sess
     lower = main.lower()
     for word in NEVER + BRAND:
         assert word.lower() not in lower, word
+    # the v3 check-in's « Ce matin » title (the empty dial's « pas de score ce matin » is no title); « pas assez
+    # de nuits » is the state's reason only (owner, 2026-10-14), never the old « pas jugée » line
+    assert "Ce matin" not in main and "pas assez de nuits pour" not in lower
     assert '"1 séance"' in main and '"Aucune séance enregistrée"' in main
     # no training prescription (« Pas d'intensité aujourd'hui », « Reprends l'intensité »): « Intensité » is only the
     # Entraînement card's row, a word on the 7 days (2026-10-09, the approved mockup)
@@ -574,10 +544,9 @@ async def _seed_rows(db: AsyncSession, user: User, rows: dict):
 
 
 @pytest.fixture
-def rested(monkeypatch):
-    """These athletes need 7h30 (the app counts 8 h for everyone since 2026-10-09): their 7h20 nights owe 10 min
-    each, a 7h50 need, « suffisant », so the rules a test reads stay alone (the 8-h need: test_sante_need)."""
-    monkeypatch.setattr(sl, "NEED_DEFAULT", 450)
+def rested():
+    """Kept for the tests that name it: the need is 8 h for everyone since 2026-10-14 (owner: scientific basis), no
+    personal base left to set."""
 
 
 async def _runs(db: AsyncSession, user: User, today: date, n: int = 10):
@@ -590,34 +559,32 @@ async def _runs(db: AsyncSession, user: User, today: date, n: int = 10):
     await db.flush()
 
 
-async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSession, test_user: User, rested):
-    """A full band, HR in it, the 7-night HRV under it (sub-score 40–69): the score is the weighted mean of VFC,
-    FC de nuit and Sommeil (no window: no Charge, v4.2), no placement: still « Bonne récupération » (≥ 70), lower;
-    the VFC row is orange (under its normal), and its card says so in words (v4.3); no sub-score shown (v4.4). The
-    usual values are every measured night of the 60 days up to and including last night (owner, 2026-10-08)."""
+async def test_rich_wearer_a_lowish_hrv_is_orange(db_session: AsyncSession, test_user: User):
+    """A full baseline, HR in it, the 7-night HRV under it: z −1,4 against days −67 → −8 (the week out of its own
+    baseline: owner, 2026-10-14: scientific basis — it was the 60 days up to last night, and a weighted score kept
+    the day « Bonne récupération »): the VFC, the primary marker, is outside its smallest worthwhile change, an
+    orange reason, « Récupération en cours », the indice held to 69; its card says so in words and in orange; no
+    sub-score shown (v4.4)."""
     today = date(2026, 10, 8)
     await _seed_rows(db_session, test_user, _garmin_rows(today, hrv_last=60.0))
     await _runs(db_session, test_user, today)
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["state"]["key"] == "ok" and page["state"]["text"] is None
+    assert page["state"]["key"] == "hrv" and page["state"]["text"] is None
     s = page["score"]
     nights = nt.build_nights(_garmin_rows(today, hrv_last=60.0), today)
     b = nt.normal(nights, "hrv", today)
-    assert b["n"] == 60 and b["until"] == today + timedelta(days=1)  # the week itself included
+    assert b["n"] == 52 and b["until"] == today - timedelta(days=7)  # the week itself left out
     z = (math.log(60.0) - math.log(b["center"])) / b["sd"]
-    sub = 100 * (z + 2.5) / 2
-    raw = (25 * sub + 25 * 100 + 30 * 100) / 80
-    assert not b["provisional"] and -2.5 < z < -0.5 and 40 <= sub < 70
-    assert s["value"] == math.floor(raw + 0.5) and 70 <= s["value"] < 90 and s["caps"] == []
-    # the dials, in percent: Sommeil 7h20 of his 7h50 need (7h30, + 20 min owed), 94 % « suffisant »
-    # (the sleep colour); Récupération the score, « bonne »; the rows: no Effort récent (no window); VFC's 7-night
-    # mean (60 ms, every night) against its usual value (the band's centre), orange; FC de nuit's 44,86 against 45:
-    # −0,3 %, to the percent 0 %: « comme d'habitude »
-    assert [(d["value"], d["sub"], d["tone"]) for d in page["dials"][:2]] == [("100", "suffisant", "sleep"),
-                                                                             (str(s["value"]), "bonne", "ok")]
+    assert not b["provisional"] and -2.5 < z < -0.5 and s["caps"] == []
+    assert next(p for p in s["parts"] if p["key"] == "hrv")["z"] == pytest.approx(z)
+    assert s["value"] == 69  # (s_VFC 0,55 + s_FC 1)/2 = 77, held to the orange range
+    # the dials, in percent: Sommeil 7h20 of the 8-h need, 92 % « suffisant » (the sleep colour); Récupération the
+    # indice, « en cours »; VFC's 7-night mean (60 ms, every night) against its usual value (the baseline's centre),
+    # orange; FC de nuit's 44,86 against 45: −0,3 %, to the percent 0 %: « comme d'habitude »
+    assert [(d["value"], d["sub"], d["tone"]) for d in page["dials"][:2]] == [("92", "suffisant", "sleep"),
+                                                                             ("69", "en cours", "warn")]
     vfc = f"{sante.viz.signed(sante.sc.rounded(100 * (60.0 - b['center']) / b['center']))}\u00a0%"
-    assert vfc.startswith("\u2212") and [(f["name"], f["value"], f["word"], f["tone"]) for f in page["rows"]] == [
-        ("VFC", vfc, "plus basse que d'habitude", "warn"), ("FC de nuit", None, "comme d'habitude", "ok")]
+    assert vfc.startswith("\u2212") and "rows" not in page
     # « bien ou pas bien ? »: each card opens on its status line, its row's percentage, word and colour
     assert page["vfc"]["status"] == {"key": "below", "value": vfc, "word": "plus basse que d'habitude",
                                      "text": f"{vfc} plus basse que d'habitude", "tone": "warn",
@@ -629,27 +596,23 @@ async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSess
     assert "provisoire" not in page["vfc"]["read"][2] and page["vfc"]["title"] == "VFC · 30 nuits"
 
 
-async def test_rich_wearer_a_red_hrv_makes_the_dial_69_en_cours(db_session: AsyncSession, test_user: User, rested):
-    """The judges' rich user: the 7-night VFC far under its normal (an empty bar) with FC de nuit in its normal:
-    alone it caps nothing (v4.2, Buchheit 2014 Table 2), so its row is orange, never red; the mean
-    (25 × 0 + 25 × 100 + 30 × 100) / 80 = 68,75 → 69, « Récupération en cours » (the reason is data: no sentence).
-    The week's own nights are in the usual values now (owner, 2026-10-08): 7 nights at 35 ms (−46 %) empty the bar
-    (z −2,6); 7 at 50 ms (−26 %) no longer do (test_sante_score: a low week is read against a band that holds
-    it)."""
+async def test_rich_wearer_a_far_lower_hrv_makes_the_dial_50_en_cours(db_session: AsyncSession, test_user: User):
+    """The judges' rich user: the 7-night VFC far under its usual values (z −6,2) with FC de nuit in them: orange
+    (an orange reason, never red: only the illness alert and the first days after an ultra are), the indice the
+    mean of s_VFC 0 and s_FC 1: 50 (owner, 2026-10-14: scientific basis — it was 69, a weighted mean with Sommeil's
+    30); the reason is data (no sentence printed); its card says −50 % in orange."""
     today = date(2026, 10, 8)
     await _seed_rows(db_session, test_user, _garmin_rows(today, hrv_last=35.0))
     await _runs(db_session, test_user, today)
     page = await sante.health_page(db_session, test_user.id, today=today)
     st, s = page["state"], page["score"]
     assert (st["key"], st["tone"], st["text"]) == ("hrv", "warn", None)
-    assert s["value"] == 69 and s["caps"] == [] and s["raw0"] == 68.75
-    assert next(p for p in s["parts"] if p["key"] == "hrv")["sub"] == 0
-    row = {f["key"]: f for f in page["rows"]}["vfc"]
-    assert (row["value"], row["word"], row["tone"]) == ("\u221246\u00a0%", "plus basse que d'habitude", "warn")
+    assert s["value"] == 50 and s["caps"] == []
+    assert next(p for p in s["parts"] if p["key"] == "hrv")["s"] == 0
     assert (page["vfc"]["status"]["value"], page["vfc"]["status"]["word"], page["vfc"]["status"]["tone"]) == (
-        row["value"], row["word"], row["tone"])  # one source of truth
+        "\u221250\u00a0%", "plus basse que d'habitude", "warn")
     d = page["dials"][1]
-    assert (d["key"], d["value"], d["unit"], d["sub"], d["tone"]) == ("recup", "69", "%", "en cours", "warn")
+    assert (d["key"], d["value"], d["unit"], d["sub"], d["tone"]) == ("recup", "50", "%", "en cours", "warn")
 
 
 async def test_rich_wearer_hypnogram_in_the_hero(db_session: AsyncSession, test_user: User):
@@ -681,7 +644,7 @@ async def test_strava_only_has_no_score_and_one_line(as_user: AsyncClient, db_se
     page = await sante.health_page(db_session, test_user.id, today=today)
     assert page["state"] is None and page["score"]["value"] is None
     assert page["line"] == "Connecte ta montre pour voir ta récupération." and page["connect"]
-    assert page["rows"] == [] and "ring" not in page and "facts" not in page
+    assert "rows" not in page and "ring" not in page and "facts" not in page
     assert page["recup"] is None and page["sleep"]["state"] == "never"
     assert page["vfc"] is None and page["fc"] is None and "charge" not in page
     # no card for them: the empty Sommeil and Récupération dials are plain (never a link to nothing), each with its
@@ -731,23 +694,23 @@ def _sleep_only(rows: dict) -> dict:
 
 async def test_the_dials_link_to_a_section_the_page_has(db_session: AsyncSession, test_user: User):
     """A watch that sent one night (its sleep alone) but none this morning, no score: Sommeil links to its card,
-    Récupération is a plain dial (no row, under 2 days for its 14 days: nothing to link to), Entraînement always
-    links to its card; no state: the line says why. With 2 past days scored, Récupération links to its 14 days in
-    the details (no row: no card under the dials) even without today's score; a night with its heart values gives
-    the card its rows (VFC, FC de nuit), and the dial links to it."""
+    Récupération is a plain dial (no state, nothing to link to), Entraînement always links to its card; no state:
+    the line says why. Sleep alone never makes a state, past or present (owner, 2026-10-14: scientific basis — 2
+    past days scored on Sommeil alone gave the dial a 14-day card), so a second sleep-only night changes nothing; a
+    night with its heart values gives the card its night cards (VFC, FC de nuit), and the dial links to it."""
     today = date(2026, 10, 8)
     kw = {"today": today, "source": "COROS", "hr_method": "coros_sleep_summary"}
     await _seed_rows(db_session, test_user, _sleep_only(night_rows([3], **kw)))
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["score"]["value"] is None and page["recup"] is None and page["rows"] == []
+    assert page["score"]["value"] is None and page["recup"] is None and page["vfc"] is None
     assert [d["href"] for d in page["dials"]] == ["#sommeil", None, "#entrainement"]
     assert page["line"] == sante.td.NO_NIGHT and page["sleep"]["state"] == "ok"
     await _seed_rows(db_session, test_user, _sleep_only(night_rows([2], **kw)))
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["score"]["value"] is None and page["recup"] and page["dials"][1]["href"] == "#recuperation"
+    assert page["score"]["value"] is None and page["recup"] is None and page["dials"][1]["href"] is None
     await _seed_rows(db_session, test_user, night_rows([5], **kw))
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert [(r["key"], r["word"]) for r in page["rows"]] == [("vfc", "en construction"), ("fc", "en construction")]
+    assert [page[k]["status"]["word"] for k in ("vfc", "fc")] == ["en construction", "en construction"]
     assert page["dials"][1]["href"] == "#recuperation"
 
 
@@ -792,6 +755,89 @@ async def test_opening_sante_syncs_a_stale_link_and_reloads_only_with_news(as_us
     await db_session.flush()
     page = (await as_user.get("/sante")).text  # a failed watch: not retried on its own (Réglages say why)
     assert started == [] and 'data-sync-issue="COROS n’a pas pu être actualisé."' in page
+
+
+async def test_a_sync_that_only_failed_reloads_the_page_once(as_user: AsyncClient, db_session: AsyncSession,
+                                                            test_user: User, monkeypatch):
+    """The link's state is in the page's version (owner, 2026-10-14 — it was, for the old home's pollers only, so
+    a sync that only failed never reloaded Santé and its issue line stayed hidden): an error, or a link to
+    reconnect, reloads it once; a sync that brought nothing (only its time moved) does not."""
+    from app.routers import sante as routes
+    from app.services import coros as coros_service
+
+    conn = await _link(db_session, test_user)
+    monkeypatch.setattr(coros_service, "schedule_sync", lambda uid: True)
+    version = await routes.data_version(db_session, test_user.id)
+    conn.last_sync_at = datetime.now(timezone.utc)
+    await db_session.flush()
+    assert await routes.data_version(db_session, test_user.id) == version
+    r = await as_user.get("/sante/sync-status", params={"v": version})
+    assert "HX-Refresh" not in r.headers
+    conn.last_error = "COROS ne répond pas pour l'instant."
+    await db_session.flush()
+    r = await as_user.get("/sante/sync-status", params={"v": version})
+    assert r.headers.get("HX-Refresh") == "true"
+    page = (await as_user.get("/sante")).text  # reloaded: the issue line, and no retry of its own
+    assert 'data-sync-issue="COROS n’a pas pu être actualisé."' in page and "sante-sync\" hx-get" not in page
+    errored = await routes.data_version(db_session, test_user.id)
+    conn.needs_reauth = True
+    await db_session.flush()
+    assert await routes.data_version(db_session, test_user.id) != errored
+
+
+async def test_a_coros_link_no_key_decrypts_is_one_to_reconnect_and_never_synced(
+        as_user: AsyncClient, db_session: AsyncSession, test_user: User, monkeypatch):
+    """A COROS link whose tokens no configured key decrypts is one to reconnect on Santé too, as on Réglages
+    (coros.coros_status: tokens_readable, computed when read, never stored): its issue line, no opening sync, the
+    phone's refresh says it, and the page's version moves with it (review, 2026-10-14 — Santé read the raw columns:
+    no line, and a background sync scheduled on every open)."""
+    from app.routers import sante as routes
+    from app.services import coros as coros_service
+
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=5))
+    started = []
+    monkeypatch.setattr(coros_service, "schedule_sync", lambda uid: started.append(uid) or True)
+    readable = await routes.data_version(db_session, test_user.id)
+    conn.access_token_encrypted = conn.refresh_token_encrypted = b"not-a-fernet-token"
+    await db_session.flush()
+    assert not coros_service.tokens_readable(conn) and not conn.needs_reauth and conn.last_error is None
+    assert await routes.data_version(db_session, test_user.id) != readable
+    page = (await as_user.get("/sante")).text
+    assert started == [] and 'data-sync-issue="Reconnecte COROS dans Réglages."' in page
+    link = (await routes.link_state(db_session, test_user.id))[0]
+    assert link["needs_reauth"] and link["last_error"] == coros_service.EXPIRED
+    assert coros_service.link_flags(conn) == (True, coros_service.EXPIRED)  # Réglages' rule (coros_status) too
+    r = await as_user.post("/sante/sync", headers={"accept": "application/json", "x-paceforge-refresh": "1"})
+    assert r.json()["watches"] == [] and r.json()["errors"] == ["Reconnecte COROS dans Réglages."]
+    r = await as_user.get("/sante/sync-status", params={"watches": "COROS"}, headers={"accept": "application/json"})
+    assert r.json() == {"pending": [], "errors": ["Reconnecte COROS dans Réglages."]}
+
+
+async def test_a_non_finite_activity_value_breaks_neither_the_version_nor_the_sessions(db_session: AsyncSession,
+                                                                                      test_user: User):
+    """An activity's NaN or ±∞ (a broken file's average) counts as 0 in the integer sums of Santé's version and of
+    the sessions' cache key: PostgreSQL cannot cast them to an integer, and the page failed whole (review,
+    2026-10-14). The other activities still count."""
+    from app.routers import sante as routes
+    from app.services import sante_training as st
+
+    now = datetime.now(timezone.utc)
+    nan, inf = float("nan"), float("inf")  # SQLite keeps a NaN as NULL, PostgreSQL as NaN
+    for i, (hr, dplus) in enumerate(((nan, 10.0), (140.0, inf), (inf, -inf))):
+        db_session.add(Activity(user_id=test_user.id, strava_activity_id=880_000 + i, sport_type="Run", name="r",
+                                start_date=now - timedelta(days=i + 1), distance=10000, moving_time=3600,
+                                elapsed_time=3600, total_elevation_gain=dplus, average_speed=2.8,
+                                average_heartrate=hr, max_heartrate=170, raw_data={}))
+    await db_session.flush()
+    version = await routes.data_version(db_session, test_user.id)
+    assert len(await st.load_sessions(db_session, test_user.id, now.date())) == 3
+    db_session.add(Activity(user_id=test_user.id, strava_activity_id=880_009, sport_type="Run", name="r",
+                            start_date=now - timedelta(days=5), distance=8000, moving_time=2400, elapsed_time=2400,
+                            total_elevation_gain=12, average_speed=3.3, average_heartrate=141, max_heartrate=166,
+                            raw_data={}))
+    await db_session.flush()
+    assert await routes.data_version(db_session, test_user.id) != version
+    assert len(await st.load_sessions(db_session, test_user.id, now.date())) == 4
 
 
 async def test_a_crashing_sync_never_stays_en_cours(db_session: AsyncSession, test_user: User, monkeypatch):
