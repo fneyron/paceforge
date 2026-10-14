@@ -362,6 +362,27 @@ async def test_bodies_are_capped_before_parsing_and_errors_keep_their_shape(clie
     assert (await client.post('/api/mobile/daily', content=b'{', headers=headers)).status_code == 422
 
 
+async def test_a_night_sets_the_athlete_zone_once_and_never_from_a_fixed_offset(client, test_user):
+    from tests.test_apple_nights import packet
+    account, _ = await paired(client, test_user)
+    for zone in ('UTC', 'Etc/GMT-2'):
+        assert (await client.post('/api/mobile/nights', json=packet() | {'timezone': zone},
+                                  headers=bearer(account['token']))).status_code == 200
+        assert test_user.timezone is None
+    assert (await client.post('/api/mobile/nights', json=packet() | {'timezone': 'Europe/Paris'},
+                              headers=bearer(account['token']))).status_code == 200
+    assert test_user.timezone == 'Europe/Paris'
+    assert (await client.post('/api/mobile/nights', json=packet() | {'timezone': 'America/New_York'},
+                              headers=bearer(account['token']))).status_code == 200
+    assert test_user.timezone == 'Europe/Paris'
+    # Validation and reduction run off the event loop; their refusals stay 422.
+    p = packet()
+    p['naps'] = [p['sleep']]
+    assert (await client.post('/api/mobile/nights', json=p, headers=bearer(account['token']))).status_code == 422
+    assert (await client.post('/api/mobile/nights', json=packet() | {'timezone': 'Nowhere/City'},
+                              headers=bearer(account['token']))).status_code == 422
+
+
 def test_mobile_migration_roundtrip():
     from alembic.config import Config
     from alembic.migration import MigrationContext
