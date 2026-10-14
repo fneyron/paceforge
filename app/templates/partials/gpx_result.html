@@ -957,7 +957,7 @@ window._sim = {};
         var pd = document.getElementById('plan-data'); planData = pd ? JSON.parse(pd.textContent) : null;
         if (planData && planData.estimate_s) {  // the estimate read with this edit: the hero, the field and the slider follow it
             predictedTotalS = planData.estimate_s;
-            if (!objectiveSet && !heroOpen()) { var eh = Math.floor(predictedTotalS / 3600), em = Math.round((predictedTotalS % 3600) / 60); if (em === 60) { eh += 1; em = 0; } document.getElementById('target-h').value = eh; document.getElementById('target-m').value = pad2(em); }
+            if (!objectiveSet && !heroOpen()) fieldToEstimate();
         }
         drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap(); refreshSheet(); fillSwitchSelect(); updateHero();
     }
@@ -1036,6 +1036,7 @@ window._sim = {};
     // heroPrev: the objective last committed (on opening, then by the slider or « Revenir à l'estimation » while open)
     var heroPrev = null;
     function pad2(n) { return (n < 10 ? '0' : '') + n; }
+    function fieldToEstimate() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } document.getElementById('target-h').value = h; document.getElementById('target-m').value = pad2(m); }
     function heroOpen() { var e = document.getElementById('hero-edit'); return !!e && !e.classList.contains('hidden'); }
     function heroEdit() {
         var b = document.getElementById('hero-time'), e = document.getElementById('hero-edit'), th = document.getElementById('target-h'); if (!b || !e) return;
@@ -1054,6 +1055,7 @@ window._sim = {};
         if (commit && valid) { if (isNaN(m)) m = 0; th.value = h; tm.value = pad2(m); if (!heroPrev || h !== heroPrev.h || m !== heroPrev.m) setTarget(h, m); }
         else if (heroPrev) { th.value = heroPrev.h; tm.value = pad2(heroPrev.m); }
         heroPrev = null;
+        if (!objectiveSet) fieldToEstimate();  // the estimate may have moved while the editor was open
         if (refocus) { try { b.focus({ preventScroll: true }); } catch (err) {} }
     }
 
