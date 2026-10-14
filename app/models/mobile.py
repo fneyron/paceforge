@@ -19,6 +19,10 @@ class MobileDevice(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # sliding expiry: renewed on use; a rotated token stays valid a few days as prev_token_hash
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    prev_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
+    prev_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class MobileDaily(Base):
@@ -32,4 +36,6 @@ class MobileDaily(Base):
     value: Mapped[float] = mapped_column(Float)
     sources: Mapped[list] = mapped_column(JSONType)
     measured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # the phone that sent the row: the same phone may correct its own day (a weigh-in deleted in Santé)
+    device_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

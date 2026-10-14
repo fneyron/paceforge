@@ -67,7 +67,13 @@ class User(Base):
 
     # Physical
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # when the athlete typed weight_kg (the latest of this and a dated weigh-in wins: services/athlete_weight)
+    weight_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     health_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # IANA zone of the athlete (« Europe/Paris »): every local day is read in it (services/timezones)
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # bumped on password change / reset: sessions carrying an older value are refused
+    session_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     # FTP typed by the athlete (W); overrides the Strava-based estimate when set
     ftp_watts: Mapped[float | None] = mapped_column(Float, nullable=True)
 
