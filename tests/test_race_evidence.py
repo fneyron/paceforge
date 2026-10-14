@@ -253,6 +253,11 @@ def test_scenario_settings_his_own_values_win_the_former_defaults_are_automatic(
     p = {"scenario_fast_pct": 7.0}
     _apply_scenarios({"scenario_fast_pct": "", "scenario_safe_pct": "20", "switch_km": ""}, p, type("R", (), {"total_distance_km": 30})())
     assert "scenario_fast_pct" not in p and p["scenario_safe_pct"] == 20.0  # empty = automatique
+    # saved by today's form (its version marked), 5 / 10 are his own choice
+    p = {}
+    _apply_scenarios({"scenario_fast_pct": "5", "scenario_safe_pct": "10", "switch_km": ""}, p, type("R", (), {"total_distance_km": 30})())
+    chosen = _scenario_settings(p, None, course)
+    assert (chosen["fast_pct"], chosen["safe_pct"], chosen["fast_own"], chosen["safe_own"]) == (5.0, 10.0, 5.0, 10.0)
 
 
 @pytest.mark.asyncio

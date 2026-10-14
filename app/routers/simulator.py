@@ -1916,17 +1916,19 @@ def _finish_with_stops(moving_s: float | None, cps: list[dict], override_min: in
     return float(moving_s) + sum(_aid_stops(cps, override_min, float(moving_s), total_km).values())
 
 
-# The former fixed Optimiste / Sécurité defaults: saved with the form until now (the form posts both fields),
-# they are read as « automatique »: the 20th / 80th percentiles of the finish time.
+# The former fixed Optimiste / Sécurité defaults: saved with the form until 2026-10-14 (it posted both fields),
+# they are read as « automatique » (the 20th / 80th percentiles of the finish time) on settings saved before
+# then. The form now writes SCENARIO_VERSION with them: on those, 5 or 10 is the athlete's own choice.
 LEGACY_SCENARIO_PCTS = (5.0, 10.0)
+SCENARIO_VERSION = 2
 
 
-def _own_pct(value, legacy: float) -> float | None:
+def _own_pct(value, legacy: float | None) -> float | None:
     try:
         v = float(value)
     except (TypeError, ValueError):
         return None
-    return None if v == legacy else v
+    return None if legacy is not None and v == legacy else v
 
 
 def _scenario_settings(params: dict, profile, course, known_course: bool = False, sport: str = "trail") -> dict:
@@ -1942,8 +1944,9 @@ def _scenario_settings(params: dict, profile, course, known_course: bool = False
         model = getattr(profile, "race_model", None) if getattr(profile, "race_calibration", None) else None
         ekm = effort_km(course.total_distance_km, course_dplus(course)) if course is not None and course.total_distance_km else None
         auto_fast, auto_safe = scenario_pcts(model, ekm, known_course)
-    own_fast = _own_pct(params.get("scenario_fast_pct"), LEGACY_SCENARIO_PCTS[0])
-    own_safe = _own_pct(params.get("scenario_safe_pct"), LEGACY_SCENARIO_PCTS[1])
+    legacy = (None, None) if params.get("scenario_v") == SCENARIO_VERSION else LEGACY_SCENARIO_PCTS
+    own_fast = _own_pct(params.get("scenario_fast_pct"), legacy[0])
+    own_safe = _own_pct(params.get("scenario_safe_pct"), legacy[1])
     return {
         "fast_pct": own_fast if own_fast is not None else auto_fast,
         "safe_pct": own_safe if own_safe is not None else auto_safe,
@@ -2155,7 +2158,8 @@ def _form_num(form, key, lo, hi, cast=float):
 
 def _apply_scenarios(form, p: dict, route: Route) -> None:
     """The athlete's own Optimiste / Sécurité percentages; an empty field is « automatique » (the 20th / 80th
-    percentiles of his finish time, _scenario_settings)."""
+    percentiles of his finish time, _scenario_settings). Marked SCENARIO_VERSION: 5 / 10 are then his own."""
+    p["scenario_v"] = SCENARIO_VERSION
     for key, hi in (("scenario_fast_pct", 30), ("scenario_safe_pct", 60)):
         v = _form_num(form, key, 0, hi)
         if v is None:
