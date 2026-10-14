@@ -32,9 +32,20 @@ LIMITS = {"steps": (0, 200000), "hr_day": (25, 230), "resp_night": (4, 40),
           "stress": (0, 100), "weight": (25, 300), "body_fat": (1, 75), "resp_day": (4, 60)}
 
 
+def _in_limits(metric: str, value) -> bool:
+    """A value a card can show: finite and within its metric's LIMITS (a glitching sensor's 0 bpm is none)."""
+    lo, hi = LIMITS.get(metric, (-math.inf, math.inf))
+    return value is not None and math.isfinite(value) and lo <= value <= hi
+
+
 def _valid(row: HealthMetric) -> bool:
-    lo, hi = LIMITS[row.metric]
-    return math.isfinite(row.value) and lo <= row.value <= hi
+    return _in_limits(row.metric, row.value)
+
+
+def _within(model):
+    """_in_limits as SQL (a NaN or ±∞ is outside any range on PostgreSQL; SQLite keeps a NaN as NULL)."""
+    return or_(*(and_(model.metric == m, model.value.between(lo, hi)) for m, (lo, hi) in LIMITS.items()),
+               model.metric.not_in(LIMITS))
 
 
 def _source(row: HealthMetric) -> str:
@@ -107,18 +118,19 @@ def _light(date_, metric, value, source, details) -> HealthMetric:
 
 
 async def _metric_rows(db: AsyncSession, user_id: int, today: date) -> list[HealthMetric]:
-    """The daily rows of the 30 days up to `today`, plus, for a metric without one, its latest day before them
-    (every source of that day), each with the details keys a card reads (DETAIL_KEYS) only; COROS's stress is an
-    archive the page never shows (its connection no longer sends it)."""
+    """The daily rows of the 30 days up to `today`, plus, for a metric without a valid one (_in_limits: review,
+    2026-10-14 — ten days of a glitching sensor's 0 bpm lost the card), its latest day before them with a valid
+    value (every source of that day), each with the details keys a card reads (DETAIL_KEYS) only; COROS's stress is
+    an archive the page never shows (its connection no longer sends it)."""
     lo = today - timedelta(days=WINDOW_DAYS - 1)
     cols = (HealthMetric.date, HealthMetric.metric, HealthMetric.value, HealthMetric.source,
             HealthMetric.details["origins"], *(HealthMetric.details[k].as_string() for k in DETAIL_KEYS[1:]))
     shown = and_(HealthMetric.user_id == user_id, HealthMetric.metric.in_(SIGNALS),
                  or_(HealthMetric.metric != "stress", HealthMetric.source != "COROS"))
     rows = (await db.execute(select(*cols).where(shown, HealthMetric.date >= lo, HealthMetric.date <= today))).all()
-    have = {r[1] for r in rows}
+    have = {r[1] for r in rows if _in_limits(r[1], r[2])}
     older = (await db.execute(select(HealthMetric.metric, func.max(HealthMetric.date)).where(
-        shown, HealthMetric.date < lo, HealthMetric.metric.not_in(have) if have else true())
+        shown, _within(HealthMetric), HealthMetric.date < lo, HealthMetric.metric.not_in(have) if have else true())
         .group_by(HealthMetric.metric))).all()
     if older:
         rows += (await db.execute(select(*cols).where(shown, or_(*(and_(HealthMetric.metric == m, HealthMetric.date == d)
@@ -127,15 +139,16 @@ async def _metric_rows(db: AsyncSession, user_id: int, today: date) -> list[Heal
 
 
 async def _phone_rows(db: AsyncSession, user_id: int, today: date) -> list[MobileDaily]:
-    """The phone's rows of the 30 days, plus each metric's latest day before them when it has none in them."""
+    """The phone's rows of the 30 days, plus each metric's latest day before them with a valid value when it has
+    no valid one in them (_in_limits)."""
     lo = today - timedelta(days=WINDOW_DAYS - 1)
     order = (MobileDaily.measured_at.asc().nullsfirst(), MobileDaily.updated_at, MobileDaily.id)
     rows = list((await db.scalars(select(MobileDaily).where(
         MobileDaily.user_id == user_id, MobileDaily.date >= lo, MobileDaily.date <= today).order_by(*order))).all())
-    have = {r.metric for r in rows}
+    have = {r.metric for r in rows if _in_limits(r.metric, r.value)}
     older = (await db.execute(select(MobileDaily.metric, func.max(MobileDaily.date)).where(
-        MobileDaily.user_id == user_id, MobileDaily.date < lo, MobileDaily.metric.not_in(have) if have else true())
-        .group_by(MobileDaily.metric))).all()
+        MobileDaily.user_id == user_id, _within(MobileDaily), MobileDaily.date < lo,
+        MobileDaily.metric.not_in(have) if have else true()).group_by(MobileDaily.metric))).all()
     if older:
         rows = list((await db.scalars(select(MobileDaily).where(
             MobileDaily.user_id == user_id, or_(*(and_(MobileDaily.metric == m, MobileDaily.date == d)

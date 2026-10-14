@@ -57,6 +57,30 @@ async def test_latest_scale_reading_beats_an_undated_daily_export(db_session, te
     assert next(c for c in cards if c['key'] == 'weight')['value'].startswith('70')
 
 
+async def test_a_card_whose_30_days_are_all_out_of_range_keeps_its_latest_valid_value(db_session, test_user):
+    """Ten days of a glitching sensor (0 bpm, outside the card's limits) are no value: the card shows the latest
+    valid one before the 30 days, dated and « ancienne », instead of vanishing (review, 2026-10-14: the older rows
+    were read only for a metric without any row in the 30 days). The same for the phone's rows."""
+    today = datetime(2026, 10, 14).date()
+    for k in range(40, 60):
+        db_session.add(HealthMetric(user_id=test_user.id, date=today - timedelta(days=k), metric='hr_day', value=62,
+                                    source='Garmin', details={}))
+        db_session.add(MobileDaily(user_id=test_user.id, platform='ios', date=today - timedelta(days=k),
+                                   metric='steps', value=8000, sources=['iPhone']))
+    db_session.add(HealthMetric(user_id=test_user.id, date=today - timedelta(days=61), metric='hr_day', value=0,
+                                source='Garmin', details={}))  # an older glitch is never the one read
+    for k in range(10):
+        db_session.add(HealthMetric(user_id=test_user.id, date=today - timedelta(days=k), metric='hr_day', value=0,
+                                    source='Garmin', details={}))
+        db_session.add(MobileDaily(user_id=test_user.id, platform='ios', date=today - timedelta(days=k),
+                                   metric='steps', value=-5, sources=['iPhone']))
+    await db_session.flush()
+    cards = {c['key']: c for c in await daily_context(db_session, test_user.id, today)}
+    assert (cards['hr_day']['value'], cards['hr_day']['latest'], cards['hr_day']['stale']) == \
+        ('62\u202fbpm', '04/09/2026', True)
+    assert (cards['steps']['value'], cards['steps']['latest']) == ('8000\u202fpas', '04/09/2026')
+
+
 async def test_mobile_changes_refresh_sante_even_within_one_second(db_session, test_user):
     at = datetime.now(timezone.utc).replace(microsecond=1000)
     before = await data_version(db_session, test_user.id)
