@@ -597,3 +597,195 @@ def test_the_verify_tokens_are_never_logged(caplog):
     text = caplog.text
     assert "Invalid webhook validation" in text and "Strava webhook validated" in text
     assert secret[:12] not in text and settings.STRAVA_WEBHOOK_VERIFY_TOKEN not in text
+
+
+# ── Activités: the athlete's weeks, one clock, « Synchroniser » ──────────────
+
+async def test_every_sync_saves_an_activity_alike(db_session, test_user, task_session, monkeypatch):
+    """Base code: four builders, each with its own fields (the poll dropped laps, calories, power, best efforts…)."""
+    from app.services.strava_activities import activity_from_strava
+    from app.tasks.initial_sync import _run_initial_sync
+    from app.tasks.poll_activities import _poll_user
+    from app.tasks.webhook_sync import _run_webhook_sync
+
+    await _own_app(db_session, test_user, done=False)
+    now = datetime.now(timezone.utc)
+    summary = dict(average_cadence=88.0, max_heartrate=180.0, average_heartrate=150.0, max_speed=5.0,
+                   average_speed=3.0, average_watts=180.0)  # in the list too
+    extra = dict(summary, calories=640.0, max_watts=300.0, weighted_average_watts=210.0, suffer_score=40,
+                 laps=[{"lap_index": 1}], splits_metric=[{"split": 1}], best_efforts=[{"name": "1k"}])
+    fields = [c for c in Activity.__table__.columns.keys()
+              if c not in {"id", "created_at", "strava_activity_id", "raw_data", "name"}]
+
+    def saved(row: Activity) -> dict:
+        return {c: getattr(row, c) for c in fields}
+    model = saved(activity_from_strava(_data(1, now, **extra), test_user.id))
+    model["start_date"] = model["start_date"].replace(tzinfo=None)
+
+    async def check(sid):
+        row = await _row(db_session, sid)
+        got = saved(row)
+        got["start_date"] = got["start_date"].replace(tzinfo=None)
+        assert got == model, sid
+
+    # the first import (its detail completes the list's row)
+    monkeypatch.setattr(StravaService, "get_all_activities_since",
+                        AsyncMock(return_value=[_data(770_001, now, **summary)]))
+    monkeypatch.setattr(StravaService, "get_activity",
+                        AsyncMock(side_effect=lambda user, sid: _data(sid, now, **extra)))
+    await _run_initial_sync(test_user.id)
+    await check(770_001)
+    # the poll and « Synchroniser » (the list), the webhook (the detail)
+    monkeypatch.setattr(StravaService, "get_recent_activities", AsyncMock(return_value=[_data(770_002, now, **extra)]))
+    await _poll_user(test_user.id)
+    await check(770_002)
+    from app.routers.dashboard import _sync_recent_activities
+
+    monkeypatch.setattr(StravaService, "get_recent_activities", AsyncMock(return_value=[_data(770_003, now, **extra)]))
+    assert await _sync_recent_activities(test_user, db_session) == 1
+    await check(770_003)
+    await _run_webhook_sync(770_004, test_user.strava_athlete_id)
+    await check(770_004)
+
+
+class _Frozen(datetime):
+    at: datetime = datetime(2026, 10, 8, 10, tzinfo=timezone.utc)
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.at.astimezone(tz) if tz else cls.at.replace(tzinfo=None)
+
+
+@pytest.fixture
+def frozen(monkeypatch):
+    """Activités' wall clock (dashboard reads datetime.now)."""
+    from app.routers import dashboard
+
+    monkeypatch.setattr(dashboard, "datetime", _Frozen)
+    monkeypatch.setattr(_Frozen, "at", _Frozen.at)
+    return _Frozen
+
+
+@pytest.fixture
+async def as_user(client: AsyncClient, test_user: User, db_session: AsyncSession, monkeypatch):
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
+    client._transport.app.dependency_overrides[get_current_user] = lambda: test_user
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:
+        yield c
+
+
+def _weeks(html: str) -> list[tuple[str, str, list[str]]]:
+    """(key, label, the rows' « day dd/mm ») of each week heading."""
+    out = []
+    for key, label, body in re.findall(r'<section id="week-([\d-]+)">\s*<div class="pf-week-heading">\s*'
+                                       r'<h2 class="pf-h3">([^<]+)</h2>(.*?)</section>', html, re.S):
+        out.append((key, label.strip(), re.findall(r'<span class="pf-item-sub block">(\w+ \d\d/\d\d)', body)))
+    return out
+
+
+async def test_activites_weeks_are_the_athletes(as_user, db_session, test_user, frozen):
+    """Base code: UTC Mondays — a run at 00:30 on Monday in Paris (Sunday 22:30 UTC) was in the week before, its row
+    saying « dim 04/10 »."""
+    db_session.add_all([
+        _run(test_user, 780_001, datetime(2026, 10, 4, 22, 30, tzinfo=timezone.utc), "Minuit lundi"),
+        _run(test_user, 780_002, datetime(2026, 10, 4, 20, 0, tzinfo=timezone.utc), "Dimanche soir"),
+        _run(test_user, 780_003, datetime(2026, 10, 6, 7, 0, tzinfo=timezone.utc)),
+    ])
+    await db_session.flush()
+    frozen.at = datetime(2026, 10, 8, 10, tzinfo=timezone.utc)  # Thursday
+    assert _weeks((await as_user.get("/activities")).text) == [
+        ("2026-10-05", "Cette semaine", ["mar 06/10", "lun 05/10"]),
+        ("2026-09-28", "Semaine dernière", ["dim 04/10"]),
+    ]
+    # Monday 00:30 in Paris: already the new week (« today » too)
+    frozen.at = datetime(2026, 10, 4, 22, 45, tzinfo=timezone.utc)
+    assert [w[:2] for w in _weeks((await as_user.get("/activities")).text)] == [
+        ("2026-10-05", "Cette semaine"), ("2026-09-28", "Semaine dernière")]
+    # an athlete in New York: their own Mondays
+    test_user.timezone = "America/New_York"
+    await db_session.flush()
+    frozen.at = datetime(2026, 10, 8, 10, tzinfo=timezone.utc)
+    weeks = _weeks((await as_user.get("/activities")).text)
+    assert weeks == [("2026-10-05", "Cette semaine", ["mar 06/10"]),
+                     ("2026-09-28", "Semaine dernière", ["dim 04/10", "dim 04/10"])]
+    # the « load more » partial reads the same weeks
+    part = (await as_user.get("/partials/activities?page=1")).text
+    assert [w[:2] for w in _weeks(part)] == [w[:2] for w in weeks]
+
+
+async def test_synchroniser_asks_strava_once_a_minute(as_user, db_session, test_user, monkeypatch):
+    """Base code: every click asked Strava (up to 5 pages each); `last_strava_sync` was written to the session and
+    never read."""
+    await _own_app(db_session, test_user)
+    fetch = AsyncMock(return_value=[])
+    monkeypatch.setattr(StravaService, "get_recent_activities", fetch)
+    for _ in range(3):
+        r = await as_user.post("/api/sync")
+        assert "Déjà à jour" in r.text
+    assert fetch.await_count == 1
+    headers = {"accept": "application/json", "x-paceforge-refresh": "1"}
+    assert (await as_user.post("/api/sync", headers=headers)).json() == {"received": 0, "errors": []}
+    assert fetch.await_count == 1
+    assert "last_strava_sync" not in str(as_user.cookies.get("paceforge_session"))
+    # a failed attempt can be tried again at once
+    strava_state.release(f"manual:{test_user.id}")
+    fetch.side_effect = httpx.ConnectError("down")
+    assert (await as_user.post("/api/sync", headers=headers)).json()["errors"]
+    fetch.side_effect, fetch.return_value = None, [_data(795_001, datetime.now(timezone.utc))]
+    assert (await as_user.post("/api/sync", headers=headers)).json() == {"received": 1, "errors": []}
+
+
+D = date(2026, 10, 8)
+
+
+@pytest.fixture
+def on_day(monkeypatch):
+    """Santé's and Activités' « today » is D (as tests/test_sante_v43 pins it)."""
+    from app.services import sante
+    from app.services import sante_training as st
+
+    async def today(*a, **k):
+        return D
+    monkeypatch.setattr(sante, "athlete_today", today)
+    monkeypatch.setattr(st, "athlete_today", today)
+    return D
+
+
+@pytest.mark.parametrize("wall", [datetime(2026, 12, 28, 12, tzinfo=timezone.utc),
+                                  datetime(2027, 3, 1, 12, tzinfo=timezone.utc),
+                                  datetime(2027, 10, 15, 8, tzinfo=timezone.utc)])
+async def test_activites_take_now_from_the_athletes_today(as_user, db_session, test_user, on_day, frozen, wall):
+    """Base code: « Semaines » read the wall clock while « today » was pinned: from late December 2026 its 12 weeks no
+    longer held the activities around D, and test_sante_v43's Strava-only user and cyclist lost their « Semaines »."""
+    for k in range(1, 70, 2):
+        start = datetime(D.year, D.month, D.day, 5, tzinfo=timezone.utc) - timedelta(days=k)
+        db_session.add(Activity(user_id=test_user.id, strava_activity_id=50_000 + k, sport_type="Run",
+                                name="Footing", start_date=start, distance=7000, moving_time=3300,
+                                elapsed_time=3400, total_elevation_gain=120, raw_data={"utc_offset": 7200}))
+    await db_session.flush()
+    frozen.at = wall
+    html = (await as_user.get("/activities")).text
+    assert re.findall(r'data-range="(\w+)"', html) == ["duree", "distance", "dplus"]
+    assert _weeks(html)[0][:2] == ("2026-10-05", "Cette semaine")
+    assert "7 j : 21 km · 28 j : 98 km" in html  # the volume of the days before D
+
+
+async def test_activites_keep_the_wall_clock_when_the_athletes_day_agrees(db_session, test_user, monkeypatch,
+                                                                         frozen):
+    """A day apart at most (a watch already on tomorrow, another zone): « now » stays the wall clock."""
+    from app.routers.dashboard import _clock
+    from app.services import sante_training as st
+
+    frozen.at = datetime(2026, 10, 8, 21, 30, tzinfo=timezone.utc)  # 23:30 in Paris
+    for day in (date(2026, 10, 7), date(2026, 10, 8), date(2026, 10, 9)):
+        async def today(*a, _day=day, **k):
+            return _day
+        monkeypatch.setattr(st, "athlete_today", today)
+        now, zone = await _clock(db_session, test_user)
+        assert now == frozen.at and zone.key == "Europe/Paris"
+
+    async def far(*a, **k):
+        return date(2026, 10, 1)
+    monkeypatch.setattr(st, "athlete_today", far)
+    now, _ = await _clock(db_session, test_user)
+    assert now == datetime(2026, 10, 1, 10, tzinfo=timezone.utc)  # noon in Paris on that day

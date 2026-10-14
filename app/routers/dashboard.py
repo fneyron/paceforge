@@ -1,5 +1,6 @@
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -12,10 +13,13 @@ from app.features import cycling_enabled
 from app.models.activity import Activity
 from app.models.user import User
 from app.schemas.activity import ActivitySummary
+from app.services import sante_training as st
+from app.services import strava_state
 from app.services.activity_dedupe import SPORT_GROUPS, find_duplicate_ids, is_false_start
-from app.services.activity_sources import adopt_watch_twin
 from app.services.model_stats import load_model_stats
 from app.services.strava import StravaService
+from app.services.strava_activities import adopt_zone, import_recent
+from app.services.timezones import athlete_zone, local_date, zone_of
 from app.services.training_load import calculate_training_load
 from app.services.training_view import MEASURES, spike_ids, training_top
 from app.services.viz import d_short, hm
@@ -32,6 +36,8 @@ HOME = "/sante"  # Santé is the main dashboard
 # The history is paginated by WEEKS (not by row count) so a week is never split
 # across two "load more" chunks and weekly totals stay honest.
 WEEKS_PER_PAGE = 6
+SYNC_PAGES = 5  # « Synchroniser »: 150 activities at most
+SYNC_COOLDOWN_S = 60  # « Synchroniser » asks Strava once a minute per athlete at most (a click more: nothing new)
 FILTERS = [(None, "Tout"), ("run", "Course"), ("trail", "Trail"), ("bike", "Vélo"), ("other", "Autre")]
 _FILTER_KEYS = {"run", "trail", "bike", "other"}
 _MONTHS_FR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
@@ -101,15 +107,15 @@ async def activities_page(
     counts them."""
     sport = sport if sport in _FILTER_KEYS else None
     m = m if m in {k for k, _, _ in MEASURES} else None
-    now = datetime.now(timezone.utc)
+    now, zone = await _clock(db, user)
     training_load = await calculate_training_load(db, user.id, now)
-    recent = await _recent(db, user.id, depuis) if depuis else None
+    recent = await _recent(db, user.id, depuis, zone) if depuis else None
     if recent is not None:
         return templates.TemplateResponse(request, "activities.html", context={
             "user": user, "recent": recent, "training_load": training_load, "weeks": [], "has_more": False,
             "page": 1, "sport": None, "filters": FILTERS, "training": None, "spikes": set()})
 
-    weeks, has_more, spikes = await _week_groups(db, user.id, page, sport)
+    weeks, has_more, spikes = await _week_groups(db, user.id, page, sport, now, zone)
     # Semaines and FC en footing: on the first page, for the sport chosen
     training = await training_top(db, user.id, now, sport, m) if page == 1 else None
 
@@ -138,7 +144,8 @@ async def activities_partial(
     db: AsyncSession = Depends(get_db),
 ):
     sport = sport if sport in _FILTER_KEYS else None
-    weeks, has_more, spikes = await _week_groups(db, user.id, page, sport)
+    now, zone = await _clock(db, user)
+    weeks, has_more, spikes = await _week_groups(db, user.id, page, sport, now, zone)
     return templates.TemplateResponse(
         request, "partials/activity_weeks.html",
         context={"weeks": weeks, "has_more": has_more, "page": page, "sport": sport, "oob": True, "spikes": spikes},
@@ -162,7 +169,6 @@ async def manual_sync(
             else:
                 try:
                     received = await _sync_recent_activities(user, db, strict=True)
-                    request.session["last_strava_sync"] = datetime.now().timestamp()
                 except Exception:
                     await db.rollback()
                     errors.append("Strava : synchronisation incomplète. Réessaie dans un instant.")
@@ -170,7 +176,6 @@ async def manual_sync(
     new_count = 0  # sessions Strava brought, a watch's row taken over included
     if user.has_strava_linked and user.has_strava_app and user.strava_credentials_valid:
         new_count = await _sync_recent_activities(user, db)
-        request.session["last_strava_sync"] = datetime.now().timestamp()
 
     if new_count > 0:
         # Show the result, then refresh so the new rows land in their week.
@@ -192,13 +197,28 @@ async def manual_sync(
 RECENT_MAX_DAYS = 31  # how far back Santé's link may open the list (its 7 days, a cycle's 8 at most)
 
 
-async def _recent(db: AsyncSession, user_id: int, depuis: str) -> dict | None:
+async def _clock(db: AsyncSession, user: User) -> tuple[datetime, ZoneInfo]:
+    """Activités' « now » and the athlete's zone (their weeks run Monday to Sunday there). « now » comes from the
+    source of « today » (st.athlete_today, the day Santé reads, and the one tests pin): the wall clock, unless that
+    day is further from it than a time zone can be (then its noon) — so the weeks, « Semaines », the 7 / 28-day
+    volume and the spikes all read one day."""
+    zone = athlete_zone(user)
+    now = datetime.now(timezone.utc)
+    try:
+        today = await st.athlete_today(db, user.id, now)
+    except Exception:
+        logger.exception("Activités: the athlete's day failed for user %d", user.id)
+        return now, zone
+    if abs((today - local_date(now, zone)).days) > 1:
+        now = datetime.combine(today, time(12), tzinfo=zone).astimezone(timezone.utc)
+    return now, zone
+
+
+async def _recent(db: AsyncSession, user_id: int, depuis: str, zone: ZoneInfo | None = None) -> dict | None:
     """What Santé's Entraînement card counts, for its link (owner, 2026-10-09: « Ça ne filtre pas sur la
     semaine ? »): the sessions from `depuis` (the athlete's local day) to now, duplicates and false starts left out
     exactly as Santé reads them, newest first, their moving time summed alike (the card's figure); None for a day
     that is not a date of the last month (the whole list then)."""
-    from app.services import sante_training as st
-
     try:
         since = date.fromisoformat(depuis)
     except ValueError:
@@ -215,13 +235,25 @@ async def _recent(db: AsyncSession, user_id: int, depuis: str) -> dict | None:
     ))).all()} if ids else {}
     dplus = sum(s.dplus for s in sessions)
     return {"label": "7 derniers jours" if (today - since).days in (6, 7) else f"Depuis le {d_short(since)}",
-            "activities": [_activity_to_summary(rows[s.id]) for s in sessions if s.id in rows],
+            "activities": [_activity_to_summary(rows[s.id], zone=zone) for s in sessions if s.id in rows],
             "hours": hm(sum(s.minutes for s in sessions)), "km": sum(s.km for s in sessions),
             "dplus_formatted": dplus_fmt(dplus) if round(dplus) >= 1 else None}
 
 
-def _monday(dt: datetime) -> datetime:
-    return (dt - timedelta(days=dt.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+def _monday(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def _midnight(day: date, zone: ZoneInfo) -> datetime:
+    """The day's local 00:00, in UTC (as activities are stored)."""
+    return datetime.combine(day, time.min, tzinfo=zone).astimezone(timezone.utc)
+
+
+def _local(moment: datetime, zone: ZoneInfo | None) -> datetime:
+    """An activity's start on the athlete's clock (stored in UTC, naive ones too)."""
+    if zone is None:
+        return moment
+    return (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).astimezone(zone)
 
 
 def _sport_filter(query, sport: str | None):
@@ -238,8 +270,8 @@ def _fmt_hours(seconds: float) -> str:
     return hm(seconds / 60)
 
 
-def _week_label(monday: datetime, this_monday: datetime) -> str:
-    weeks_ago = (this_monday.date() - monday.date()).days // 7
+def _week_label(monday: date, this_monday: date) -> str:
+    weeks_ago = (this_monday - monday).days // 7
     if weeks_ago == 0:
         return "Cette semaine"
     if weeks_ago == 1:
@@ -251,13 +283,14 @@ def _week_label(monday: datetime, this_monday: datetime) -> str:
     return f"{monday.day} {_MONTHS_FR[monday.month - 1]} – {sunday.day} {_MONTHS_FR[sunday.month - 1]}{year}"
 
 
-def _activity_to_summary(activity: Activity | Row, duplicate_ids: frozenset | set = frozenset()) -> ActivitySummary:
+def _activity_to_summary(activity: Activity | Row, duplicate_ids: frozenset | set = frozenset(),
+                         zone: ZoneInfo | None = None) -> ActivitySummary:
     return ActivitySummary(
         id=activity.id,
         strava_activity_id=activity.strava_activity_id,
         sport_type=activity.sport_type,
         name=activity.name,
-        start_date=activity.start_date,
+        start_date=_local(activity.start_date, zone),  # its row's day and date are the athlete's
         distance=activity.distance,
         moving_time=activity.moving_time,
         average_speed=activity.average_speed,
@@ -269,14 +302,17 @@ def _activity_to_summary(activity: Activity | Row, duplicate_ids: frozenset | se
 
 
 async def _week_groups(
-    db: AsyncSession, user_id: int, page: int, sport: str | None
+    db: AsyncSession, user_id: int, page: int, sport: str | None, now: datetime | None = None,
+    zone: ZoneInfo | None = None,
 ) -> tuple[list[dict], bool, set[int]]:
     """Activities of a WEEKS_PER_PAGE window, grouped by week (newest first), and the ids of the single-run
-    spikes among them (their rows say « plus longue que d'habitude », training_view.spike_ids)."""
-    now = datetime.now(timezone.utc)
-    this_monday = _monday(now)
-    window_end = this_monday + timedelta(weeks=1) - timedelta(weeks=(page - 1) * WEEKS_PER_PAGE)
-    window_start = window_end - timedelta(weeks=WEEKS_PER_PAGE)
+    spikes among them (their rows say « plus longue que d'habitude », training_view.spike_ids). The athlete's
+    weeks: Monday to Sunday in their zone (a run at 00:30 on Monday is that week's), « now » from _clock."""
+    now, zone = now or datetime.now(timezone.utc), zone or zone_of(None)
+    this_monday = _monday(local_date(now, zone))
+    end = this_monday + timedelta(weeks=1) - timedelta(weeks=(page - 1) * WEEKS_PER_PAGE)
+    start = end - timedelta(weeks=WEEKS_PER_PAGE)
+    window_start, window_end = _midnight(start, zone), _midnight(end, zone)
 
     # Keep splits' original truth value for duplicate ranking (including older
     # malformed values), but leave all unrelated bulk data in the database.
@@ -291,9 +327,9 @@ async def _week_groups(
 
     groups: dict[str, dict] = {}
     for a in activities:
-        summary = _activity_to_summary(a, duplicate_ids)
-        monday = _monday(a.start_date)
-        key = monday.strftime("%Y-%m-%d")
+        summary = _activity_to_summary(a, duplicate_ids, zone)
+        monday = _monday(summary.start_date.date())
+        key = monday.isoformat()
         g = groups.setdefault(key, {
             "key": key, "monday": monday, "activities": [],
             "km": 0.0, "dplus": 0.0, "seconds": 0, "count": 0,
@@ -321,81 +357,31 @@ async def _week_groups(
     )
     has_more = ((await db.execute(older)).scalar() or 0) > 0
     shown = {a.id for a in activities}
-    spikes = (await spike_ids(db, user_id, window_start.date(), now)) & shown if shown else set()
+    spikes = (await spike_ids(db, user_id, start, now)) & shown if shown else set()
     return weeks, has_more, spikes
 
 
 async def _sync_recent_activities(user: User, db: AsyncSession, *, strict: bool = False) -> int:
-    """Sync recent activities from Strava. Paginates until we find existing ones.
-    Returns how many Strava sessions were saved."""
+    """« Synchroniser »: the athlete's newest Strava activities until a page is all known (strava_activities).
+    Once a minute per athlete at most: a click within it asks nothing and reads as nothing new (a failed one may be
+    tried again at once). Returns how many Strava sessions were saved."""
+    cooldown = f"manual:{user.id}"
+    if not strava_state.claim(cooldown, SYNC_COOLDOWN_S):
+        return 0
     total_synced = 0
     try:
         strava = StravaService.for_user(db, user)
-        page = 1
-        total_synced = 0
-
-        while page <= 5:  # Max 5 pages (150 activities) per sync
-            strava_activities = await strava.get_recent_activities(
-                user, per_page=30, page=page
-            )
-            if not strava_activities:
-                break
-
-            all_known = True
-            for data in strava_activities:
-                strava_id = data.get("id")
-                if not strava_id:
-                    continue
-
-                # Check if already exists
-                result = await db.execute(
-                    select(func.count(Activity.id)).where(
-                        Activity.strava_activity_id == strava_id
-                    )
-                )
-                if result.scalar() > 0:
-                    continue
-
-                all_known = False
-                start_date = data.get("start_date")
-                if isinstance(start_date, str):
-                    start_date = datetime.fromisoformat(
-                        start_date.replace("Z", "+00:00")
-                    )
-
-                activity = Activity(
-                    strava_activity_id=strava_id,
-                    user_id=user.id,
-                    sport_type=data.get("sport_type", data.get("type", "Unknown")),
-                    name=data.get("name", "Untitled"),
-                    start_date=start_date,
-                    distance=data.get("distance", 0),
-                    moving_time=data.get("moving_time", 0),
-                    elapsed_time=data.get("elapsed_time", 0),
-                    total_elevation_gain=data.get("total_elevation_gain", 0),
-                    average_speed=data.get("average_speed"),
-                    max_speed=data.get("max_speed"),
-                    average_heartrate=data.get("average_heartrate"),
-                    max_heartrate=data.get("max_heartrate"),
-                    average_cadence=data.get("average_cadence"),
-                    average_watts=data.get("average_watts"),
-                    raw_data=data,
-                )
-                activity = await adopt_watch_twin(db, activity)  # a watch may have brought it first
-                total_synced += 1
-
-            # If all activities on this page were already known, stop paginating
-            if all_known:
-                break
-            page += 1
-
+        total_synced = await import_recent(db, user, strava, SYNC_PAGES)
         await db.flush()
+        await adopt_zone(db, user)
+        user.last_activity_poll_at = datetime.now(timezone.utc)  # Réglages' « Dernière synchro »
         if total_synced:
             logger.info(
                 "Synced %d new activities from Strava for user %d",
                 total_synced, user.id,
             )
     except Exception:
+        strava_state.release(cooldown)
         logger.exception("Failed to sync activities from Strava")
         if strict:
             raise
