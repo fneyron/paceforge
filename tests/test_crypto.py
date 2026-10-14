@@ -161,83 +161,78 @@ def _coros_link(user_id):
                            expires_at=datetime.now(timezone.utc) + timedelta(days=30))
 
 
-async def test_no_start_when_the_key_that_encrypted_the_links_is_missing(stored, monkeypatch, caplog):
-    """The owner set ENCRYPTION_KEYS, the tokens were refreshed under it, then one deploy went without it: the
-    app used to start and its first sync round flagged every link « to reconnect » for good."""
-    from app.main import check_stored_secrets
-    from app.models.user import User
+async def test_a_missing_key_never_stops_the_start_its_rows_are_logged_per_kind(stored, monkeypatch, caplog):
+    """The owner set ENCRYPTION_KEYS, tokens were written under it, then a deploy went without it (or old rows
+    were written under a SECRET_KEY changed long ago): the app starts, and the logs list, kind by kind, the rows
+    no configured key decrypts with what to do. Nothing is refused, nothing is changed."""
+    import logging
+    from datetime import datetime, timedelta, timezone
+
+    from app.crypto import unreadable_rows
+    from app.main import scan_stored_secrets
+    from app.models.garmin import GarminConnection
 
     engine, db = stored
     monkeypatch.setattr(settings, "SECRET_KEY", "a-long-random-production-secret-key")
     key = Fernet.generate_key().decode()
     monkeypatch.setattr(settings, "ENCRYPTION_KEYS", key)
-    user = User(email="a@x.fr")
-    db.add(user)
+    a, b = User(email="a@x.fr"), User(email="b@x.fr")
+    db.add_all([a, b])
     await db.flush()
-    db.add(_coros_link(user.id))
+    a_id, b_id = a.id, b.id
+    db.add(_coros_link(a_id))  # under the key about to go missing
+    db.add(GarminConnection(user_id=b_id, di_client_id="d", access_token_encrypted=_foreign("g").encode(),
+                            expires_at=datetime.now(timezone.utc) + timedelta(hours=1)))  # an old row, long broken
+    raw = text("UPDATE users SET strava_client_secret_encrypted = :s, strava_access_token = :t, "
+               "strava_refresh_token = :r WHERE id = :id")  # no column type: as stored
+    await db.execute(raw, {"s": _foreign("s3cret").encode(), "t": "a" * 40, "r": _foreign("r" * 40), "id": b_id})
     await db.commit()
-    await check_stored_secrets(engine)  # the key is there: starts
-    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", "")  # the deploy without it
-    with pytest.raises(RuntimeError, match="COROS") as refused:
-        await check_stored_secrets(engine)
-    assert "ENCRYPTION_KEYS" in str(refused.value)
-    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", key)
-    await check_stored_secrets(engine)
-
-
-async def test_no_start_when_the_last_written_value_of_a_kind_is_unreadable(stored):
-    from datetime import datetime, timedelta, timezone
-
-    from app.crypto import unreadable_secrets
-    from app.main import check_stored_secrets
-    from app.models.garmin import GarminConnection
-    from app.models.user import User
-
-    engine, db = stored
-    user = User(email="a@x.fr")
-    db.add(user)
-    await db.flush()
-    raw = text("UPDATE users SET strava_refresh_token = :t WHERE id = :id")  # no column type: stored in clear
-    await db.execute(raw, {"t": "b" * 40, "id": user.id})
-    await db.commit()
-    async with engine.connect() as conn:
-        assert await unreadable_secrets(conn) == ([], [])  # nothing encrypted yet, the clear token ignored
-    db.add(GarminConnection(user_id=user.id, di_client_id="d", access_token_encrypted=_foreign("g").encode(),
-                            expires_at=datetime.now(timezone.utc) + timedelta(hours=1)))
-    await db.commit()
-    with pytest.raises(RuntimeError, match="Garmin") as refused:
-        await check_stored_secrets(engine)
-    assert "ENCRYPTION_KEYS" in str(refused.value)
-
-
-async def test_an_old_row_alone_unreadable_is_logged_and_the_app_starts(stored, caplog):
-    """Production may hold rows already unreadable today (a token written under a SECRET_KEY changed long ago):
-    the new release must start all the same, saying which row."""
-    import logging
-    from datetime import datetime, timezone
-
-    from sqlalchemy import update
-
-    from app.crypto import unreadable_secrets
-    from app.main import check_stored_secrets
-    from app.models.user import User
-
-    engine, db = stored
-    old, new = User(email="old@x.fr"), User(email="new@x.fr", strava_refresh_token="c" * 40)
-    db.add_all([old, new])
-    await db.flush()
-    old_id, new_id = old.id, new.id
-    raw = text("UPDATE users SET strava_refresh_token = :t, updated_at = :at WHERE id = :id")  # no column type
-    await db.execute(raw, {"t": _foreign("b" * 40), "at": "2026-01-02 00:00:00", "id": old_id})
-    await db.execute(update(User).where(User.id == new_id).values(updated_at=datetime.now(timezone.utc)))
-    await db.commit()
-    async with engine.connect() as conn:
-        assert await unreadable_secrets(conn) == ([], [("Strava", old_id)])
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", "")  # the deploy without the key
+    async with engine.connect() as conn:  # the token in clear is not a secret no key decrypts
+        assert await unreadable_rows(conn) == {"COROS": [1], "Garmin": [1], "Strava app keys": [b_id],
+                                               "Strava": [b_id]}
     caplog.set_level(logging.ERROR)
-    await check_stored_secrets(engine)  # starts
-    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
-    assert len(errors) == 1 and "Stored Strava secret of row %d" % old_id in errors[0].getMessage()
-    assert "ENCRYPTION_KEYS" in errors[0].getMessage()
+    await scan_stored_secrets(engine)  # never raises
+    errors = sorted(r.getMessage() for r in caplog.records if r.levelno == logging.ERROR)
+    assert len(errors) == 4 and all("ENCRYPTION_KEYS" in e and "nothing is changed" in e for e in errors)
+    assert errors[0].startswith("Stored COROS secrets no configured key decrypts, rows 1:")
+    assert any(e.startswith(f"Stored Strava app keys secrets no configured key decrypts, rows {b_id}:")
+               for e in errors)
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", key)  # the key back: only the old rows stay listed
+    async with engine.connect() as conn:
+        assert await unreadable_rows(conn) == {"Garmin": [1], "Strava app keys": [b_id], "Strava": [b_id]}
+
+
+async def test_the_start_never_waits_for_the_scan_and_one_worker_per_deploy_runs_it(monkeypatch):
+    import asyncio
+    import time
+
+    from app import main
+
+    monkeypatch.setattr(settings, "SECRET_KEY", "a-long-random-secret-key-for-this-test")
+    ran, claims = [], iter([True, False])
+
+    async def slow_scan(engine=None):
+        ran.append(1)
+        await asyncio.sleep(30)
+    monkeypatch.setattr(main, "scan_stored_secrets", slow_scan)
+
+    async def first_start():
+        return next(claims)
+    monkeypatch.setattr(main, "_first_start_of_this_build", first_start)
+    for _ in range(2):  # two workers of the same deploy
+        t0 = time.monotonic()
+        async with main.lifespan(main.create_app()):
+            assert time.monotonic() - t0 < 1  # started at once
+            await asyncio.sleep(0.05)
+    assert ran == [1]  # the first worker scans, the second skips; the slow scan was cancelled at shutdown
+
+
+async def test_without_redis_every_worker_scans(monkeypatch):
+    from app import main
+
+    monkeypatch.setattr(settings, "REDIS_URL", "redis://127.0.0.1:1/0")  # nothing listens there
+    assert await main._first_start_of_this_build()
 
 
 async def test_a_database_that_does_not_answer_never_blocks_the_start(tmp_path, caplog):
@@ -245,11 +240,11 @@ async def test_a_database_that_does_not_answer_never_blocks_the_start(tmp_path, 
 
     from sqlalchemy.ext.asyncio import create_async_engine
 
-    from app.main import check_stored_secrets
+    from app.main import scan_stored_secrets
 
     caplog.set_level(logging.WARNING)
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/missing/dir/x.db")  # cannot open
-    await check_stored_secrets(engine)
+    await scan_stored_secrets(engine)
     assert "not checked at start" in caplog.text
     await engine.dispose()
 

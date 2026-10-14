@@ -60,41 +60,56 @@ def check_secrets() -> None:
         logger.warning("ENCRYPTION_KEYS is not set: stored tokens are encrypted with a key derived from SECRET_KEY")
 
 
-KEY_HINT = ("put back the key that encrypted it in ENCRYPTION_KEYS (any place after the first; a former SECRET_KEY "
-            "as legacy_key(old SECRET_KEY))")
+KEY_HINT = ("Put back the key that encrypted them in ENCRYPTION_KEYS (any place after the first), or, after a "
+            "SECRET_KEY change, set ENCRYPTION_KEYS = new,legacy_key(old SECRET_KEY) (app.crypto).")
 
 
-async def check_stored_secrets(engine=None) -> None:
-    """No start when the last written value of a kind of stored secret no configured key decrypts: the key in
-    use was dropped (ENCRYPTION_KEYS emptied, SECRET_KEY changed without its legacy key), and started, the syncs
-    would mark every such link « to reconnect » for good. An old row alone unreadable (written under a key gone
-    long ago) is only logged as an error: it never stops the start. A database that does not answer within 10 s
-    never blocks it either (warned, unchecked)."""
-    from app.crypto import unreadable_secrets
+async def scan_stored_secrets(engine=None) -> None:
+    """List in the logs, one ERROR per kind with its rows, the stored secrets no configured key decrypts. Never
+    stops the start: such links are only paused, untouched, until the key is back. A database that does not
+    answer within 10 s leaves them unlisted (warned)."""
+    from app.crypto import unreadable_rows
 
     if engine is None:
         from app.database import engine
     try:
         async with asyncio.timeout(10), engine.connect() as conn:
-            lost, old = await unreadable_secrets(conn)
+            unreadable = await unreadable_rows(conn)
     except Exception:
         logger.warning("Stored secrets not checked at start: the database did not answer", exc_info=True)
         return
-    for kind, row_id in old:
-        logger.error("Stored %s secret of row %d: no configured key decrypts it (written under an older key); that "
-                     "link will ask to reconnect. To keep it, %s.", kind, row_id, KEY_HINT)
-    if lost:
-        raise RuntimeError(
-            f"The last stored {', '.join(lost)} secrets: no configured key decrypts them. Before starting, "
-            f"{KEY_HINT}: running now would ask those athletes to reconnect.")
+    for kind, ids in unreadable.items():
+        logger.error("Stored %s secrets no configured key decrypts, rows %s: those links are paused, nothing "
+                     "is changed. %s", kind, ", ".join(map(str, ids)), KEY_HINT)
+
+
+async def _first_start_of_this_build() -> bool:
+    """Whether this worker is the first of the deploy to start (a short Redis claim on the build); every worker
+    is, when Redis does not answer."""
+    try:
+        import redis.asyncio as aioredis
+
+        r = aioredis.Redis.from_url(settings.REDIS_URL, socket_timeout=0.5, socket_connect_timeout=0.5)
+        try:
+            return bool(await r.set(f"paceforge:start-scan:{BUILD_ID}", "1", nx=True, ex=15 * 60))
+        finally:
+            await r.aclose()
+    except Exception:
+        return True
+
+
+async def _scan_once_per_deploy() -> None:
+    if await _first_start_of_this_build():
+        await scan_stored_secrets()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
-    check_secrets()
-    await check_stored_secrets()
+    check_secrets()  # configuration only: stored data never stops the start
+    scan = asyncio.get_running_loop().create_task(_scan_once_per_deploy())  # in the background: no delay
     logger.info("PaceForge starting up")
     yield
+    scan.cancel()
     logger.info("PaceForge shutting down")
 
 

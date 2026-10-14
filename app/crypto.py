@@ -8,7 +8,9 @@ refresh). To change SECRET_KEY later, first add legacy_key(old SECRET_KEY) at
 the end of ENCRYPTION_KEYS: what it encrypted stays readable.
 
 A value no configured key opens raises InvalidToken here; the columns below
-read it as empty instead, so its link asks to be made again (never a crash).
+read it as empty instead, and no code writes anything because of it: the link
+is paused, untouched, and works again as soon as the key is back. Such values
+are listed in the logs at each deploy (app.main.scan_stored_secrets).
 """
 import base64
 import hashlib
@@ -55,44 +57,33 @@ def decrypt_secret(ciphertext: bytes, ttl: int | None = None) -> str:
     return _get_fernet().decrypt(ciphertext, ttl=ttl).decode()
 
 
-# The stored secrets, one kind per line: (name, table, column, the column ordering its rows by last write,
-# whether values stored in clear before may remain: Strava tokens until their next refresh).
+# Every stored secret: (kind, table, column, whether values stored in clear before may remain: Strava tokens
+# until they are encrypted, app.tasks.oauth_cleanup).
 _STORED = (
-    ("COROS", "coros_connections", "access_token_encrypted", "expires_at", False),
-    ("Garmin", "garmin_connections", "access_token_encrypted", "expires_at", False),
-    ("Strava app keys", "users", "strava_client_secret_encrypted", "updated_at", False),
-    ("Strava", "users", "strava_refresh_token", "updated_at", True),
+    ("COROS", "coros_connections", "access_token_encrypted", False),
+    ("COROS", "coros_connections", "refresh_token_encrypted", False),
+    ("Garmin", "garmin_connections", "access_token_encrypted", False),
+    ("Garmin", "garmin_connections", "refresh_token_encrypted", False),
+    ("Strava app keys", "users", "strava_client_secret_encrypted", False),
+    ("Strava", "users", "strava_access_token", True),
+    ("Strava", "users", "strava_refresh_token", True),
 )
 
 
-async def unreadable_secrets(conn) -> tuple[list[str], list[tuple[str, int]]]:
-    """Stored secrets no configured key decrypts, judged on two raw values of each kind: the last written
-    (unreadable: the key in use was dropped, every link of that kind would be lost) and the first written (a
-    row written under an older key only). Returns (kinds whose last written value fails, (kind, row id) of
-    those whose first written value alone fails). Two small queries per kind."""
+async def unreadable_rows(conn) -> dict[str, list[int]]:
+    """The rows holding a stored secret no configured key decrypts, by kind (read raw: a few hundred values)."""
     from sqlalchemy import text
 
-    def readable(value) -> bool:
-        try:
-            _get_fernet().decrypt(value.encode() if isinstance(value, str) else bytes(value))
-        except InvalidToken:
-            return False
-        return True
-
-    lost, old = [], []
-    for name, table, column, written, in_clear in _STORED:
+    out: dict[str, set[int]] = {}
+    for kind, table, column, in_clear in _STORED:
         sealed = f" AND {column} LIKE '{FERNET_PREFIX}%'" if in_clear else ""
-        rows = [(await conn.execute(text(
-            f"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL{sealed} ORDER BY {order} LIMIT 1")
-        )).first() for order in (f"{written} DESC NULLS LAST", f"{written} ASC NULLS FIRST")]
-        newest, oldest = rows
-        if newest is None:
-            continue  # none stored
-        if not readable(newest[1]):
-            lost.append(name)
-        elif not readable(oldest[1]):
-            old.append((name, oldest[0]))
-    return lost, old
+        for row_id, value in (await conn.execute(text(
+                f"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL{sealed}"))).all():
+            try:
+                _get_fernet().decrypt(value.encode() if isinstance(value, str) else bytes(value))
+            except InvalidToken:
+                out.setdefault(kind, set()).add(row_id)
+    return {kind: sorted(ids) for kind, ids in out.items()}
 
 
 class EncryptedString(TypeDecorator):
