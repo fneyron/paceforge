@@ -12,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.crypto import encrypt_secret
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, sign_in
 from app.models.user import User
 from app.services.auth import (
     DUMMY_HASH,
@@ -211,7 +211,7 @@ async def login(
     if not user.email_verified:
         request.session["pending_user_id"] = user.id
         return RedirectResponse("/auth/check-email", status_code=302)
-    request.session["user_id"] = user.id
+    sign_in(request, user)
     logger.info("User %d logged in", user.id)
 
     return RedirectResponse(url=f"/connections/{next}" if next else HOME, status_code=302)
@@ -298,13 +298,14 @@ async def reset_password(
     user.password_hash = await hash_password_async(password)
     user.password_reset_token = None
     user.password_reset_expires_at = None
+    user.session_version = (user.session_version or 0) + 1  # every other session of the account is signed out
     await db.flush()
 
     request.session.clear()
     if not user.email_verified:
         request.session["pending_user_id"] = user.id
         return RedirectResponse("/auth/check-email", status_code=302)
-    request.session["user_id"] = user.id
+    sign_in(request, user)
     logger.info("Password reset for user %d", user.id)
 
     return RedirectResponse(url=HOME, status_code=302)

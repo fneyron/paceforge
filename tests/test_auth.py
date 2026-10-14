@@ -211,3 +211,24 @@ async def test_a_verification_link_verifies_but_never_signs_the_browser_in(clien
         assert (await victim.get("/settings")).headers["location"] == "/auth/login"  # not signed in
     user = (await db_session.execute(select(User).where(User.email == "attacker@x.fr"))).scalar_one()
     assert user.email_verified and user.email_verify_token is None
+
+
+async def test_a_password_reset_signs_out_every_other_session(client, db_session, no_commit):
+    from datetime import datetime, timedelta, timezone
+
+    user = await _member(db_session)
+    async with AsyncClient(transport=client._transport, base_url="https://test") as other, \
+            AsyncClient(transport=client._transport, base_url="https://test") as here:
+        for c in (other, here):
+            assert (await _login(c, user.email, "pw-12345678")).status_code == 302
+            assert (await c.get("/settings")).status_code == 200
+        user.password_reset_token = "reset-token"
+        user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        await db_session.flush()
+        r = await here.post("/auth/reset-password", data={"token": "reset-token", "password": "pw-87654321"})
+        assert r.headers["location"] == "/sante"
+        assert (await here.get("/settings")).status_code == 200  # the browser that reset it stays signed in
+        assert (await other.get("/settings")).headers["location"] == "/auth/login"  # every other one is out
+        assert (await other.get("/connections/strava")).headers["location"] == "/auth/login?next=strava"
+        assert (await _login(other, user.email, "pw-87654321")).status_code == 302  # the new password works
+        assert (await other.get("/settings")).status_code == 200
