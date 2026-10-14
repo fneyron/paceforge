@@ -505,33 +505,35 @@ async def zone_name(lat: float, lon: float) -> str | None:
 
 
 # A race's start zone when no forecast gives its offset (more than 15 days out): asked with the weather (a POST,
-# never while a page renders), once a day per place and worker, an answer or its absence alike.
+# never while a page renders), per place and worker: a zone, or that the place has none, kept a day; a lookup that
+# failed (Open-Meteo down, slow, rate-limiting) asked again after ZONE_RETRY_S at most, never kept as « none ».
 ZONE_TTL_S = 24 * 3600
+ZONE_RETRY_S = 15 * 60
 ZONE_CACHE_SIZE = 512
-_ZONES: dict[tuple, tuple[float, str | None]] = {}
+_ZONES: dict[tuple, tuple[float, str | None]] = {}  # place -> (until, zone)
 
 
 async def start_zone_name(lat: float, lon: float) -> str | None:
     """The start's IANA zone for the race's clock (race_match.race_clock), or None: off like the background
-    lookups (ACTIVITY_ENV_FETCH, the outage marker); a failure sets the marker and is kept a day as « none »."""
+    lookups (ACTIVITY_ENV_FETCH, the outage marker); a failure sets the marker."""
     from app.config import settings
 
     key, now = (round(float(lat), 2), round(float(lon), 2)), time.monotonic()
     hit = _ZONES.get(key)
-    if hit and now - hit[0] < ZONE_TTL_S:
+    if hit and now < hit[0]:
         return hit[1]
     if not settings.ACTIVITY_ENV_FETCH or await lookups_paused():
         return None
     try:
-        name = await zone_name(*key)
+        name, ttl = await zone_name(*key), ZONE_TTL_S
     except LookupUnavailable:
         await pause_lookups()
-        name = None
-    for k in [k for k, (at, _) in _ZONES.items() if now - at >= ZONE_TTL_S]:
+        name, ttl = None, ZONE_RETRY_S
+    for k in [k for k, (until, _) in _ZONES.items() if now >= until]:
         del _ZONES[k]
     if len(_ZONES) >= ZONE_CACHE_SIZE:
         _ZONES.pop(min(_ZONES, key=lambda k: _ZONES[k][0]))
-    _ZONES[key] = (now, name)
+    _ZONES[key] = (now + ttl, name)
     return name
 
 

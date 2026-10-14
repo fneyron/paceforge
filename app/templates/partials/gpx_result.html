@@ -217,6 +217,7 @@ window._sim = {};
     var elevData = course.elevation_points || [];
     var totalDistKm = course.total_distance_km || 0;
     var predictedTotalS = {{ est_s }};  // « Estimation »: the finish, its stops in it (not the course's moving time)
+    var objectiveSet = {{ 'true' if has_obj else 'false' }};  // a time he set (typed, slid): his until « Revenir à l'estimation »
 
     var map = null, hoverMarker = null;
     var checkpoints = [], cpMarkerEls = [];
@@ -901,8 +902,11 @@ window._sim = {};
         var b = new URLSearchParams();
         if (!currentRouteId) b.append('course_json', document.getElementById('courseJsonData').value);
         b.append('checkpoints_json', JSON.stringify(checkpoints));
-        if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor);
+        if (ts > 0 && hasRealTarget()) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor);  // no objective: the server reads the estimate again
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m);
+        // the date and the fetched weather's zone as the page has them, ahead of the save: night by the sun at once
+        b.append('race_date', raceDate || '');
+        if (currentWeather && !currentWeather.error) { if (currentWeather.tz) b.append('wx_tz', currentWeather.tz); if (currentWeather.utc_offset_s !== undefined && currentWeather.utc_offset_s !== null) b.append('wx_offset_s', currentWeather.utc_offset_s); if (currentWeather.date) b.append('wx_date', currentWeather.date); }
         if (currentHourly && !(currentRouteId && hourlySaved)) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId);
         if (liveAnchor) { b.append('anchor_km', liveAnchor.anchor_km); b.append('anchor_clock', liveAnchor.anchor_clock); }
         var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0);
@@ -951,6 +955,10 @@ window._sim = {};
     function afterTable() {
         renderedCps = checkpoints.slice();
         var pd = document.getElementById('plan-data'); planData = pd ? JSON.parse(pd.textContent) : null;
+        if (planData && planData.estimate_s) {  // the estimate read with this edit: the hero, the field and the slider follow it
+            predictedTotalS = planData.estimate_s;
+            if (!objectiveSet && !heroOpen()) fieldToEstimate();
+        }
         drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap(); refreshSheet(); fillSwitchSelect(); updateHero();
     }
     // the switch-point choice follows the checkpoints
@@ -966,7 +974,7 @@ window._sim = {};
     // ── OBJECTIVE: the number is the control ──
     var sliderMin = 0, sliderMax = 0;
     function currentTargetS() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0; return h * 3600 + m * 60; }
-    function hasRealTarget() { var ts = currentTargetS(); return ts > 0 && Math.abs(ts - predictedTotalS) > 60; }
+    function hasRealTarget() { return objectiveSet && currentTargetS() > 0; }
     function syncSlider() {
         var sl = document.getElementById('obj-slider'), est = document.getElementById('obj-est');
         if (!sl || !predictedTotalS) { if (est) est.classList.add('hidden'); return; }
@@ -1028,6 +1036,7 @@ window._sim = {};
     // heroPrev: the objective last committed (on opening, then by the slider or « Revenir à l'estimation » while open)
     var heroPrev = null;
     function pad2(n) { return (n < 10 ? '0' : '') + n; }
+    function fieldToEstimate() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } document.getElementById('target-h').value = h; document.getElementById('target-m').value = pad2(m); }
     function heroOpen() { var e = document.getElementById('hero-edit'); return !!e && !e.classList.contains('hidden'); }
     function heroEdit() {
         var b = document.getElementById('hero-time'), e = document.getElementById('hero-edit'), th = document.getElementById('target-h'); if (!b || !e) return;
@@ -1046,6 +1055,7 @@ window._sim = {};
         if (commit && valid) { if (isNaN(m)) m = 0; th.value = h; tm.value = pad2(m); if (!heroPrev || h !== heroPrev.h || m !== heroPrev.m) setTarget(h, m); }
         else if (heroPrev) { th.value = heroPrev.h; tm.value = pad2(heroPrev.m); }
         heroPrev = null;
+        if (!objectiveSet) fieldToEstimate();  // the estimate may have moved while the editor was open
         if (refocus) { try { b.focus({ preventScroll: true }); } catch (err) {} }
     }
 
@@ -1130,13 +1140,14 @@ window._sim = {};
     function printPlan() { _saveThenOpen(function(id) { return '/simulator/routes/' + id + '/print'; }); }
 
     // ── START / OBJECTIVE / PASSAGE ──
-    function setTarget(h, m) {
+    function setTarget(h, m, own) {
+        objectiveSet = own !== false;  // set by him, unless « Revenir à l'estimation »
         h = parseInt(h, 10) || 0; m = parseInt(m, 10) || 0; if (m > 59) m = 59;
         document.getElementById('target-h').value = h; document.getElementById('target-m').value = pad2(m);
         if (heroOpen()) heroPrev = { h: h, m: m };  // committed while the editor is open: a later OK or Escape compares with this one
         recalc(); scheduleSave();
     }
-    function resetTarget() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } setTarget(h, m); }
+    function resetTarget() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } setTarget(h, m, false); }
     function setStartTime(v) { if (!v || !/^\d{2}:\d{2}$/.test(v)) return; startVal = v; var el = document.getElementById('start-time'); if (el) el.value = v; updateMeta(); recalc(); scheduleSave(); }
     function setPassage(cpIndex, km, clock) { if (!clock || !/^\d{2}:\d{2}$/.test(clock)) return; var cp = checkpoints[cpIndex]; liveAnchor = { anchor_km: km, anchor_clock: clock, anchor_name: cp ? cp.name : ('km ' + km) }; recalc(); persistLive(); }
     function clearPassage() { liveAnchor = null; recalc(); persistLive(); }

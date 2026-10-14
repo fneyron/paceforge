@@ -932,6 +932,7 @@ def compute_passage_times(
     stop_s_per_aid: int = 0,
     aid_kms: set | None = None,
     aid_stops: dict | None = None,
+    objective: bool | None = None,
 ) -> list[dict]:
     """Compute passage times between checkpoints.
 
@@ -966,7 +967,9 @@ def compute_passage_times(
     flagged (``pin_clamped``). Sections of a pinned plan carry ``pinned``,
     ``pin_target_s``, ``pin_clamped`` and ``auto_clock_s`` (the clock the plan
     would give there without that pin); the finish carries ``objective_s``.
-    Without pins the output is unchanged (no extra keys).
+    Without pins the output is unchanged (no extra keys). ``objective``: the
+    target is his objective (True) or the estimate the plan runs on (False);
+    None (unsaid): an objective when more than a minute from the estimate.
     """
     from app.schemas.simulator import PassageTimeSection
     from app.services.weather import compute_heat_factor
@@ -1104,9 +1107,10 @@ def compute_passage_times(
     # is the model's finish: each section at its heat, with the planned stops.
     pin_plan = None
     if pins:
-        estimate_s = sum(r["model"] for r in raw) + sum(r["stop"] for r in raw)
-        objective = target_time_s if has_objective(target_time_s, estimate_s) else None
-        pin_plan = _pinned_plan(raw, pins, objective)
+        if objective is None:
+            estimate_s = sum(r["model"] for r in raw) + sum(r["stop"] for r in raw)
+            objective = has_objective(target_time_s, estimate_s)
+        pin_plan = _pinned_plan(raw, pins, target_time_s if objective and target_time_s else None)
 
     # Pass 3: accumulate final times.
     sections = []
