@@ -17,12 +17,11 @@ from app.models.health import HealthMetric
 from app.models.user import User
 from app.services import coros, garmin, sante
 from app.services import nights as nt
-from app.services import sante_score as sc
 from app.services import sante_today as td
 from app.services import sante_training as st
 from tests import test_coros, test_garmin
 from tests.owner_v4 import D8, seed_owner_v4
-from tests.test_sante import rested  # noqa: F401 (a fixture: a 7h30 need, these 7h20 nights « suffisant »)
+from tests.test_sante import rested  # noqa: F401 (a fixture the tests name: a no-op since the 8-h need, 2026-10-14)
 
 as_user, no_commit = test_coros.as_user, test_coros.no_commit
 D = date(2026, 10, 8)
@@ -133,33 +132,33 @@ def _coherent(html: str) -> str:
 
 async def test_owner_les_houches_two_efforts_from_his_activities(db_session: AsyncSession, test_user: User):
     """His real 18/09 (9h04 stops included, +3 511 m) and 19/09 (7h04, +2 847 m) at Les Houches: two Très
-    longues, each its own window (45 to D+2, 65 to D+5): the last 65 day is 24/09, 25/09 is free. On 24/09 no
-    night was measured: no score (owner, 2026-10-09, like WHOOP: « Mets un cadran vide, oui »), and « Effort
-    récent » says it is the window's last day; on 25/09 there is no score and no Effort récent."""
+    longues, each its own window, orange through D+3 (owner, 2026-10-14: scientific basis — it was 45 to D+2, 65
+    to D+5): the last orange day is 22/09, 23/09 is free. On 22/09 no night was measured: no state (owner,
+    2026-10-09, like WHOOP: « Mets un cadran vide, oui »), the window is a reason of a state only; on 25/09 no
+    state and no window."""
     await seed_owner_v4(db_session, test_user)
     sessions = await st.load_sessions(db_session, test_user.id, D8)
     houches = [e for e in st.efforts(sessions) if e.start_day in (date(2026, 9, 18), date(2026, 9, 19))]
-    assert [(e.kind, e.day, round(e.minutes), e.caps) for e in houches] == [
-        ("very_long", date(2026, 9, 18), 544, ((2, 45), (5, 65))),
-        ("very_long", date(2026, 9, 19), 424, ((2, 45), (5, 65)))]
-    caps = {k: (st.effort_window(houches, date(2026, 9, k)) or {}).get("cap") for k in range(18, 26)}
-    assert caps == pytest.approx({18: 45, 19: 45, 20: 45, 21: 55, 22: 65, 23: 230/3, 24: 265/3, 25: None})
-    page = await sante.health_page(db_session, test_user.id, today=date(2026, 9, 24))
+    assert [(e.kind, e.day, round(e.minutes), e.last) for e in houches] == [
+        ("very_long", date(2026, 9, 18), 544, 3), ("very_long", date(2026, 9, 19), 424, 3)]
+    tones = {k: (st.effort_window(houches, date(2026, 9, k)) or {}).get("tone") for k in range(18, 26)}
+    assert tones == {18: "warn", 19: "warn", 20: "warn", 21: "warn", 22: "warn", 23: None, 24: None, 25: None}
+    last = st.effort_window(houches, date(2026, 9, 22))
+    assert (last["effort"].session_id, last["until"], last["days"]) == (houches[1].session_id, date(2026, 9, 22), 3)
+    page = await sante.health_page(db_session, test_user.id, today=date(2026, 9, 22))
     assert (page["score"]["value"], page["state"], page["line"]) == (None, None, td.NO_NIGHT)
     assert (page["dials"][1]["value"], page["dials"][1]["sub"]) == ("—", "pas de score")
-    effort = {r["key"]: r for r in page["rows"]}["effort"]
-    assert (effort["value"], effort["word"], effort["tone"]) == (None, "prudence après l’effort", "warn")
     free = await sante.health_page(db_session, test_user.id, today=date(2026, 9, 25))
     assert free["score"]["value"] is None and free["state"] is None and free["line"] == td.NO_NIGHT
-    assert "effort" not in {r["key"] for r in free["rows"]}
+    assert st.effort_window(houches, date(2026, 9, 25)) is None
 
 
 async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_session: AsyncSession,
                                                      test_user: User, on_day):
     """Owner, 2026-10-08 evening: « Ne mentionne pas les sorties dans la partie Santé, ça complexifie : mets juste
     les scores. » His page on 08/10 (the Transjeju 6 days ago, Les Houches 3 weeks ago) names no activity and no
-    outing — state line, Détail, history readouts, cards, the nights' table and its readouts — but for one plain
-    bullet of « Comment je calcule »: Récupération limited after a big effort, up to 2 weeks after an ultra."""
+    outing — state line, Détail, history readouts, cards, the nights' table and its readouts. His 10 nights give
+    2 of the 14 a baseline needs from day −67 to −8 (owner, 2026-10-14: scientific basis): the line says so."""
     import html as H
 
     await seed_owner_v4(db_session, test_user)
@@ -172,7 +171,8 @@ async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_s
     rest = H.unescape(re.sub(r'<div class="pf-fitness-progress".*?</div>', "", rest, flags=re.S))
     for word in ("sortie", "ultra", "course", "il y a", "Plafonné", "Grosse"):
         assert word not in rest, word
-    assert "◇ après un gros effort" in rest and "Récupération en cours" in rest  # the 06/10 and 07/10 nights; today
+    assert "◇ après un gros effort" in rest  # the 06/10 and 07/10 nights
+    assert "Pas de score ce matin : repères en construction (2/14)." in rest  # today
 
 
 # ── time zones: from each user's own data (brief §H) ────────────────────────
@@ -240,27 +240,28 @@ def garmin_rows_without_tz(days) -> dict:
 # ── every user (brief §H) ────────────────────────────────────────────────────
 
 async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day, rested):
-    """COROS nights every night for 40 days, no activity: a full normal, the score from the nights (no Charge,
-    no window), « Bonne récupération »; the dials, the Récupération card's rows and the chart cards' status lines;
-    no Effort récent; no activity: « 0 min » over « 7 derniers jours »; Activités empty."""
+    """COROS nights every night for 40 days, no activity: a full baseline, the state from the nights (no Charge,
+    no window), « Bonne récupération »; the dials (7h20 against the 8-h need: 92 %, « suffisant »; owner,
+    2026-10-14: scientific basis — the need no longer moves) and the chart cards' status lines; no activity:
+    « 0 min » over « 7 derniers jours »; Activités empty."""
     await test_coros._link(db_session, test_user)
     await _seed(db_session, test_user, coros_rows(D, range(0, 40), hrv=lambda k: 60.0 + (k % 3) - 1))
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["state"]["word"] == "Bonne récupération" and page["score"]["value"] == 100
-    assert [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr", "sleep"] and page["score"]["absent"] == []
+    assert [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr"] and page["score"]["absent"] == []
     # its 7-night means at their usual values to the percent: « comme d'habitude » (« 0 % » said in words)
     assert page["vfc"]["status"]["text"] == page["fc"]["status"]["text"] == "comme d'habitude"
     assert [(d["key"], d["value"], d["unit"], d["sub"], d["tone"]) for d in page["dials"]] == [
-        ("sommeil", "100", "%", "suffisant", "sleep"), ("recup", "100", "%", "bonne", "ok"),
+        ("sommeil", "92", "%", "suffisant", "sleep"), ("recup", "100", "%", "bonne", "ok"),
         ("entrainement", "0 min", None, "7 derniers jours", "accent")]
-    assert [(f["key"], f["value"], f["word"], f["tone"]) for f in page["rows"]] == [
-        ("vfc", None, "comme d'habitude", "ok"), ("fc", None, "comme d'habitude", "ok")]
+    assert [(k, page[k]["status"]["word"], page[k]["status"]["tone"]) for k in ("vfc", "fc")] == [
+        ("vfc", "comme d'habitude", "ok"), ("fc", "comme d'habitude", "ok")]
     main = _coherent((await as_user.get("/sante")).text)
     assert "Détail du score" not in main and 'class="pf-row is-ok"' not in main
     for key, unit in (("vfc", "ms"), ("fc", "bpm")):
         card = re.search(rf'<article id="{key}"[^>]*>(.*?)</article>', main, re.S).group(1)
         primary, reference = card.split('<details', 1)
-        assert re.search(rf'<b data-r>\d+\u00a0{unit}</b>', primary)
+        assert re.search(rf'<b data-r>\d+ {unit}</b>', primary)
         assert "Dernière nuit" in primary and "COROS" in primary
         assert "comme d&#39;habitude" in reference  # retained as explanation, not repeated before the value
         assert 'pf-card-status is-ok' not in primary
@@ -269,26 +270,30 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
 
 
 async def test_a_garmin_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
-    """Garmin nights through its own parser (12 nights, last night included: a « provisoire » normal from 7, H),
-    no activity: VFC and FC de nuit in the score, the cards' readouts say « (provisoire) »."""
+    """Garmin nights through its own parser, no activity. Owner, 2026-10-14: scientific basis — a baseline holds
+    the nights from day −67 to −8, « provisoire » from 7 (drawn dashed, H), read by the state from 14: with 18
+    nights, 10 are in it: the cards' readouts say « (provisoire) », no state yet, the line says why."""
     await test_garmin._link(db_session, test_user)
-    await _seed(db_session, test_user, garmin_rows(D, range(0, 12)))
+    await _seed(db_session, test_user, garmin_rows(D, range(0, 18)))
     page = await sante.health_page(db_session, test_user.id, today=D)
-    assert {p["key"] for p in page["score"]["parts"]} == {"hrv", "hr", "sleep"}
-    assert all(p["prov"] for p in page["score"]["parts"] if p["key"] in ("hrv", "hr"))
-    assert page["vfc"]["read"][3].endswith("(provisoire)") and page["state"]["word"] in td.WORDS.values()
+    assert page["score"]["value"] is None and page["score"]["building"] == ["hrv", "hr"]
+    assert page["line"] == "Pas de score ce matin : repères en construction (10/14)."
+    assert page["vfc"]["read"][3].endswith("(provisoire)") and page["fc"]["read"][3].endswith("(provisoire)")
+    assert page["vfc"]["reference"]["provisional"] and page["vfc"]["band_prov"]
     main = _coherent((await as_user.get("/sante")).text)
     assert "Récupération" in main and (await as_user.get("/activities")).status_code == 200
 
 
 async def test_a_strava_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
     """Strava, no watch: no nightly score (« Connecte ta montre pour ta récupération. », the connect links), no
-    rows, no cards, no folds but the recovery one; Activités: « Semaines » with its three measures."""
+    cards (the rows were never drawn: gone, 2026-10-14), no folds but the recovery one; Activités: « Semaines »
+    with its three measures."""
     for k in range(1, 70, 2):
         db_session.add(_act(test_user, 50_000 + k, D - timedelta(days=k), 7, 55, dplus=120))
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
-    assert page["state"] is None and page["line"] == td.NO_WATCH and page["rows"] == []
+    assert page["state"] is None and page["line"] == td.NO_WATCH and "rows" not in page
+    assert page["vfc"] is None and page["fc"] is None
     main = _coherent((await as_user.get("/sante")).text)
     assert td.NO_WATCH in main and 'href="/settings#coros"' in main and "Les chiffres de chaque nuit" not in main
     act = _coherent((await as_user.get("/activities")).text)
@@ -296,8 +301,9 @@ async def test_a_strava_only_user(as_user: AsyncClient, db_session: AsyncSession
 
 
 async def test_a_cyclist(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
-    """Rides only, flat (no D+ recorded): a 7-h ride yesterday is one class lower (M4: a Longue, 65 until D+3, its
-    night D+1 out of the normal by its time); Activités offers Durée and Distance, never D+."""
+    """Rides only, flat (no D+ recorded): a 7-h ride yesterday is one class lower (M4: a Longue, orange through
+    D+1 — owner, 2026-10-14: scientific basis, it was a cap of 65 to D+3 — its nights following its time);
+    Activités offers Durée and Distance, never D+."""
     await test_garmin._link(db_session, test_user)
     await _seed(db_session, test_user, garmin_rows(D, range(0, 40)))
     for k in range(3, 80, 4):
@@ -307,10 +313,9 @@ async def test_a_cyclist(as_user: AsyncClient, db_session: AsyncSession, test_us
                         name="Grand tour", hr=128))
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
-    w = page["score"]["parts"]
-    assert {p["key"] for p in w} == {"hrv", "hr", "sleep"}
-    # Cumulative exposure may strengthen, never lift, the long-ride precaution.
-    assert 60 <= page["score"]["value"] <= 65 and "effort" in page["score"]["caps"]
+    assert {p["key"] for p in page["score"]["parts"]} == {"hrv", "hr"}
+    # the window is a reason: the indice held to the orange range; the load never lifts nor lowers it
+    assert page["score"]["value"] == 69 and [r["key"] for r in page["score"]["reasons"]] == ["effort"]
     assert page["state"]["word"] == "Récupération en cours" and page["state"]["text"] is None
     marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
     assert marks[D.isoformat()] == "◇ après un gros effort"  # 7 h: its nights follow its time (M4), no outing named
@@ -323,7 +328,9 @@ async def test_a_user_in_utc_minus_5(as_user: AsyncClient, db_session: AsyncSess
                                      monkeypatch):
     """A user living in New York (UTC−4 in October, −5 in winter): the athlete's date is theirs (a run at 21:00
     local is on that local day, the morning after at 01:00 UTC still that day), their Garmin nights at −240
-    without any time-zone tag (no change), the pages coherent."""
+    without any time-zone tag (no change), the pages coherent. Their zone is their own (users.timezone; owner,
+    2026-10-14: scientific basis — « today » came from the latest activity's fixed offset)."""
+    test_user.timezone = "America/New_York"
     for k in range(1, 40, 2):  # evening runs at 21:00 local: 01:00 UTC the next day
         db_session.add(_act(test_user, 70_000 + k, D - timedelta(days=k), 21, 50, offset=-14400))
     await test_garmin._link(db_session, test_user)
@@ -337,7 +344,7 @@ async def test_a_user_in_utc_minus_5(as_user: AsyncClient, db_session: AsyncSess
     nights = await nt.load_nights(db_session, test_user.id, D, sessions=sessions, efforts=st.efforts(sessions))
     assert not any(n.tags & {"tz", "jetlag"} for n in nights.values())
     page = await sante.health_page(db_session, test_user.id, today=D)
-    assert page["state"]["word"] in td.WORDS.values() and page["rows"]
+    assert page["state"]["word"] in td.WORDS.values() and page["vfc"] and page["fc"]
 
     async def today(*a, **k):
         return D
@@ -364,11 +371,12 @@ async def test_a_brand_new_user(as_user: AsyncClient, db_session: AsyncSession, 
 async def test_a_watch_without_hrv_never_says_its_normal_is_building(db_session: AsyncSession, test_user: User,
                                                                      rested):
     """A normal « being built » only after a signal measured lately: a watch that never measures HRV just misses
-    it, and neither its card nor its row exists (v4.4: no « pas encore de normale » for a signal never seen)."""
+    it, and its card does not exist (v4.4: no « pas encore de normale » for a signal never seen); the FC de nuit
+    is then the primary marker (owner, 2026-10-14: scientific basis), the indice its own."""
     rows = garmin_rows(D, range(0, 40))
     rows.pop("hrv")
     await _seed(db_session, test_user, rows)
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["score"]["absent"] == ["hrv"] and page["score"]["building"] == [] and page["vfc"] is None
-    assert [f["key"] for f in page["rows"]] == ["fc"] and page["dials"][0]["sub"] == "suffisant"
-    assert page["score"]["value"] == sc.rounded((25 * 100 + 30 * 100) / 55)
+    assert page["fc"] is not None and page["dials"][0]["sub"] == "suffisant"
+    assert (page["score"]["primary"], page["score"]["value"], page["state"]["tone"]) == ("hr", 100, "ok")
