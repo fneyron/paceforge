@@ -364,8 +364,8 @@ async def _passage_table_context(
     # plan's fatigue and night the objective's clock. Heat is applied once, in
     # compute_passage_times.
     profile = profile or await build_athlete_gradient_profile(db, user_id)
-    if hourly_weather is None and heat_factor == 1.0 and not (route_obj and route_obj.weather_json):
-        heat_factor = _no_weather_heat(profile)  # no weather: the heat his races were read in
+    # no weather (no date, nothing fetched): the level at the heat his races were run in (predict_course)
+    own_weather = hourly_weather is not None or heat_factor != 1.0 or bool(route_obj and route_obj.weather_json)
     total_km = course.total_distance_km
     clock = await _race_clock(db, user_id, route_obj, course)  # night by the sun once the race is dated
     if target_time_s:
@@ -375,11 +375,11 @@ async def _passage_table_context(
             course, profile, start_hour=start_hour, start_minute=start_minute,
             plan_moving_s=objective_moving_s(
                 target_time_s, course.total_distance_km, checkpoints, stop_min * 60, aid_kms, aid_stops,
-            ), aid_stops=aid_stops, **clock,
+            ), aid_stops=aid_stops, own_weather=own_weather, **clock,
         )
     else:  # no plan: the stops of the predicted finish (the prediction plus its own stops)
         course, finish_s, aid_stops = _predict_with_stops(course, profile, start_hour, start_minute, clock, checkpoints,
-                                                          stop_minutes, total_km)
+                                                          stop_minutes, total_km, own_weather)
 
     sections = compute_passage_times(
         course, checkpoints, target_time_s, heat_factor,
@@ -804,7 +804,7 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
     course = predict_course(
         course, profile,
         start_hour=route.start_hour if route.start_hour is not None else 6,
-        start_minute=route.start_minute or 0,
+        start_minute=route.start_minute or 0, own_weather=bool(route.weather_json),
         **await _race_clock(db, user_id, route, course),
     )
 
@@ -1909,18 +1909,19 @@ def _aid_stops(cps: list[dict], override_min: int | None = None, finish_s: float
 
 
 def _predict_with_stops(course, profile, start_hour: int, start_minute: int, clock: dict, cps: list[dict],
-                        override_min: int | None, total_km: float | None):
+                        override_min: int | None, total_km: float | None, own_weather: bool = False):
     """Without an objective: (course, finish, stops) — the prediction, the stops of its finish, then the
     prediction again with the night read on the clock those stops make (the terrain read once)."""
     from app.services.race_simulator import _fine_terrain, predict_course
 
     fine = _fine_terrain(course, profile)
-    course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, fine_terrain=fine, **clock)
+    course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, fine_terrain=fine,
+                            own_weather=own_weather, **clock)
     finish_s = _finish_with_stops(course.predicted_total_time_s, cps, override_min, total_km)
     aid_stops = _aid_stops(cps, override_min, finish_s, total_km)
     if aid_stops:
         course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, fine_terrain=fine,
-                                aid_stops=aid_stops, **clock)
+                                aid_stops=aid_stops, own_weather=own_weather, **clock)
     return course, finish_s, aid_stops
 
 
@@ -1970,14 +1971,6 @@ def _scenario_settings(params: dict, profile, course, known_course: bool = False
         "fast_own": own_fast, "safe_own": own_safe, "fast_auto": auto_fast, "safe_auto": auto_safe,
         "switch_km": params.get("switch_km"),
     }
-
-
-def _no_weather_heat(profile) -> float:
-    """The heat of a plan without weather (no race date, nothing fetched): the mean heat the athlete's races were
-    run in when his level comes from them (read without it), so such a plan stays where it was before the level
-    was read heat-free; 1 otherwise."""
-    model = getattr(profile, "race_model", None) if getattr(profile, "race_calibration", None) else None
-    return float((model or {}).get("heat_mean") or 1.0)
 
 
 async def _race_clock(db: AsyncSession, user_id: int, route: Route | None, course) -> dict:
@@ -2052,6 +2045,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
         profile = await build_athlete_gradient_profile(db, user.id)
     total_km = course.total_distance_km
     clock = await _race_clock(db, user.id, route, course)
+    own_weather = bool(route.weather_json)  # without: the level at the heat his races were run in (predict_course)
     if route.target_time_s:
         finish_s = float(route.target_time_s)
         aid_stops = _aid_stops(cps, route.stop_minutes, finish_s, total_km)
@@ -2059,13 +2053,13 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
             course, profile, start_hour=start_hour, start_minute=start_minute,
             plan_moving_s=objective_moving_s(
                 route.target_time_s, course.total_distance_km, cps, stop_min * 60, aid, aid_stops,
-            ), aid_stops=aid_stops, **clock,
+            ), aid_stops=aid_stops, own_weather=own_weather, **clock,
         )
     else:  # no objective: the stops of the predicted finish
         course, finish_s, aid_stops = _predict_with_stops(course, profile, start_hour, start_minute, clock, cps,
-                                                          route.stop_minutes, total_km)
+                                                          route.stop_minutes, total_km, own_weather)
     sections = compute_passage_times(
-        course, cps, route.target_time_s, 1.0 if route.weather_json else _no_weather_heat(profile), start_hour, start_minute,
+        course, cps, route.target_time_s, 1.0, start_hour, start_minute,
         route.weather_json.get("hourly") if route.weather_json else None,
         stop_s_per_aid=stop_min * 60, aid_kms=aid, aid_stops=aid_stops,
     )

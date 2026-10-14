@@ -334,36 +334,42 @@ def test_the_objective_plan_gives_a_hot_section_its_heat():
 
 
 @pytest.mark.asyncio
-async def test_a_plan_without_weather_takes_the_heat_his_races_were_read_in(db_session, test_user, monkeypatch):
+async def test_a_course_without_weather_is_read_at_the_heat_his_races_were_run_in(db_session, test_user):
     """The level is read without the races' heat; a course with no weather (no date, nothing fetched) takes back
-    the heat they were run in, so it stays where it was before (not 1-4 % faster)."""
+    the heat they were run in — the estimate, the page's table and the printed plan alike — so it stays where it
+    was before (not 1-4 % faster). With its own weather the level stays heat-free: race day's heat comes from it."""
     from app.models.route import Route
     from app.routers import simulator as sim
-    from app.services import race_simulator
+    from app.schemas.simulator import CourseProfile
 
     m = rc.model_from_points([_pt("A", 100, 10.0, heat=1.04), _pt("B", 160, 18.0, heat=1.02)])
     assert m["heat_mean"] == pytest.approx(1.03)
     assert rc.model_from_points([_pt("A", 100, 10.0)])["heat_mean"] == 1.0
     prof = AthleteGradientProfile(flat_pace_s_per_km=330, gradient_factors=dict(rs._DEFAULT_GRADIENT_FACTORS), data_points=0,
                                   sport_types_used=[], race_model=m)
-    assert sim._no_weather_heat(prof.model_copy(update={"race_calibration": {"total_s": 1}})) == pytest.approx(1.03)
-    assert sim._no_weather_heat(prof) == 1.0  # the level not read on his races (predict_course sets race_calibration)
-    seen = []
-    real = race_simulator.compute_passage_times
+    dry = rs.predict_course(_course(), prof.model_copy()).predicted_total_time_s
+    wet = rs.predict_course(_course(), prof.model_copy(), own_weather=True).predicted_total_time_s
+    assert dry == pytest.approx(wet * 1.03, rel=0.002)
+    # training alone (no race model): no heat of his races to take back
+    bare = prof.model_copy(update={"race_model": None})
+    plain = rs.predict_course(_course(), bare).predicted_total_time_s
+    assert plain == rs.predict_course(_course(), bare, own_weather=True).predicted_total_time_s
 
-    def spy(course, cps, target, heat, *a, **kw):
-        seen.append(heat)
-        return real(course, cps, target, heat, *a, **kw)
-
-    monkeypatch.setattr(race_simulator, "compute_passage_times", spy)
     route = Route(user_id=test_user.id, name="Sans météo", total_distance_km=30.0, total_elevation_gain=800.0,
                   course_json=json.loads(_course().model_dump_json()), sport_type="trail")
     db_session.add(route)
     await db_session.flush()
-    await sim._plan_bundle(route, db_session, test_user, profile=prof)
+
+    async def table():
+        ctx = await sim._passage_table_context(db_session, test_user.id, CourseProfile(**route.course_json), [], None,
+                                               1.0, 6, 0, None, route, None, None, None, profile=prof.model_copy())
+        return ctx["predicted_total"]
+
+    assert (await sim._plan_bundle(route, db_session, test_user, profile=prof.model_copy()))["predicted_total_s"] == dry
+    assert await table() == dry
     route.weather_json = {"heat_factor": 1.0, "hourly": {"temps": [10.0] * 48, "humidity": [50] * 48}}
-    await sim._plan_bundle(route, db_session, test_user, profile=prof)
-    assert seen == [pytest.approx(1.03), 1.0]  # with its own weather, the forecast decides
+    assert (await sim._plan_bundle(route, db_session, test_user, profile=prof.model_copy()))["predicted_total_s"] == wet
+    assert await table() == wet
 
 
 # ── 5. night by the sun ──

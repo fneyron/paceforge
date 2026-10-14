@@ -411,27 +411,32 @@ def select_races(points: list[dict]) -> tuple[list[dict], list[dict]]:
     return kept, ignored
 
 
-def race_level_total_s(course, model: dict | None, training_total_s: float) -> float | None:
+def race_level_total_s(course, model: dict | None, training_total_s: float, heat: float = 1.0) -> float | None:
     """The course's moving time at the level of the athlete's races, or None
-    when the model does not apply."""
+    when the model does not apply. ``heat``: the heat it is read at (1: the
+    level as fitted, heat-free; predict_course passes the races' mean heat,
+    heat_mean, for a course without weather)."""
     if not model or not course.segments or not training_total_s or training_total_s <= 0:
         return None
     total = predict_total_s(model, effort_km(course.total_distance_km, course_dplus(course)))
     if not total or total <= 0:
         return None
+    total *= heat or 1.0
     # A wild ratio means the races don't describe this course (e.g. a 10 km
     # road race used to level a 100-miler): cap the correction.
     return training_total_s * max(0.60, min(1.40, total / training_total_s))
 
 
-def apply_race_calibration(course, model: dict | None, training_total_s: float | None = None) -> dict | None:
+def apply_race_calibration(course, model: dict | None, training_total_s: float | None = None,
+                           heat: float = 1.0) -> dict | None:
     """Re-level the predicted segment times so the total matches the race
     model. Keeps the terrain shape. Returns a summary dict (or None if the
     model does not apply).
 
     ``training_total_s`` is the prediction at the training level when the
     course was already re-simulated on the race level's clock (predict_course):
-    the cap and the « training alone » figure are read against it."""
+    the cap and the « training alone » figure are read against it. ``heat``: as
+    race_level_total_s."""
     if not model or not course.segments or not course.predicted_total_time_s:
         return None
     from app.services.race_simulator import format_time
@@ -439,7 +444,7 @@ def apply_race_calibration(course, model: dict | None, training_total_s: float |
     dplus, dplus_src = course_dplus_src(course)
     ekm = effort_km(course.total_distance_km, dplus)
     before = float(training_total_s or course.predicted_total_time_s)
-    target = race_level_total_s(course, model, before)
+    target = race_level_total_s(course, model, before, heat)
     if not target:
         return None
     ratio = target / before

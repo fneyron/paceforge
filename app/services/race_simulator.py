@@ -778,6 +778,7 @@ def predict_course(
     race_date=None,
     utc_offset_s: int | None = None,
     aid_stops: dict | None = None,
+    own_weather: bool = False,
 ) -> CourseProfile:
     """Apply gradient-adjusted pace prediction with fatigue, heat, altitude, terrain, night.
 
@@ -796,6 +797,12 @@ def predict_course(
     without them, the fixed 21:00-06:00 window. ``aid_stops`` ({km: s}, the
     plan's): night read on the clock with the stops made before each segment,
     as the plan's night bands are drawn.
+
+    ``own_weather``: the course has its race day's weather (forecast or season
+    normals, applied by compute_passage_times), and the race level is read
+    heat-free, as fitted. Without it (no date, nothing fetched) the level is
+    read at the heat his races were run in (the race model's heat_mean), so
+    such a course is not 1-4 % faster than his races say.
     """
     start_hour_frac = start_hour + (start_minute or 0) / 60
     tilt = getattr(profile, "fatigue_tilt", None) or DEFAULT_FATIGUE_TILT
@@ -809,10 +816,11 @@ def predict_course(
     # Races, not training, set the level of the prediction (see race_calibration).
     race_model = getattr(profile, "race_model", None)
     race_total = None
+    level_heat = 1.0 if own_weather else float((race_model or {}).get("heat_mean") or 1.0)
     if race_model:
         from app.services.race_calibration import race_level_total_s
 
-        race_total = race_level_total_s(course, race_model, training_total)
+        race_total = race_level_total_s(course, race_model, training_total, level_heat)
         if race_total:
             rows = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, race_total, sun, stops)
 
@@ -840,7 +848,7 @@ def predict_course(
         from app.services.race_calibration import apply_race_calibration
 
         profile.race_calibration = (
-            apply_race_calibration(course, race_model, training_total) if race_total else None
+            apply_race_calibration(course, race_model, training_total, level_heat) if race_total else None
         )
 
     return course
