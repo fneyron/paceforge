@@ -71,10 +71,12 @@ def test_without_usual_values_the_card_says_when_they_come():
     assert sante.nights_to_normal(_nights(night_rows([0])), "hrv", D) == 14
 
 
-@pytest.mark.parametrize("count, in_baseline, remaining", [(1, 0, 21), (8, 0, 14), (14, 6, 8), (22, 14, 0)])
-def test_sdnn_progress_matches_its_fourteen_night_reference(count, in_baseline, remaining):
+@pytest.mark.parametrize("count, in_baseline, remaining, provisional",
+                         [(1, 0, 21, False), (8, 0, 14, False), (14, 14, 0, True), (22, 14, 0, False)])
+def test_sdnn_progress_matches_its_fourteen_night_reference(count, in_baseline, remaining, provisional):
     """Apple's SDNN has its own 14-night reference, from day −67 to −8 (a night counts a week after it): `count`
-    nights up to this morning hold `in_baseline` of them."""
+    nights up to this morning hold `in_baseline` of them; with 14 up to last night and fewer in that window, the
+    card draws a provisional one from them (nights.drawn_band, 2026-10-14), said so."""
     source = "Apple Santé:" + "a" * 64 + " (SDNN sommeil)"
     nights = {D - timedelta(days=i): nt.Night(D - timedelta(days=i), hrv=40 + i % 3, hrv_source=source)
               for i in range(count)}
@@ -85,11 +87,9 @@ def test_sdnn_progress_matches_its_fourteen_night_reference(count, in_baseline, 
                    for i in range(first, first + 20)})
     day = sante._assess(nights, [], [], D)
     card = sante._night_card(nights, "hrv", D, day)
-    # 14 nights up to this morning: the card draws a dashed band from them while the lagged reference builds
-    # (nights.drawn_band, 2026-10-14), its detail says so
-    detail = "Référence provisoire : 14 nuits mesurées." if count >= 14 and remaining else None
+    detail = f"Référence provisoire : {in_baseline} nuits mesurées." if provisional else None
     assert card["reference"] == {"n": in_baseline, "required": 14, "remaining": remaining,
-                                 "provisional": False, "ready": remaining == 0,
+                                 "provisional": provisional, "ready": remaining == 0,
                                  "source": "Apple Santé · SDNN", "detail": detail,
                                  "label": f"Référence · {in_baseline} nuits" if remaining == 0
                                  else f"Référence · {in_baseline}/14 nuits"}
@@ -102,7 +102,7 @@ def test_sdnn_progress_matches_its_fourteen_night_reference(count, in_baseline, 
         assert day["stats"]["hrv"]["normal"] is None
     else:
         assert day["stats"]["hrv"]["normal"]["source"] == source
-        assert not day["stats"]["hrv"]["normal"]["provisional"]
+        assert day["stats"]["hrv"]["normal"]["provisional"] == provisional
 
 
 def test_sdnn_wait_accounts_for_nights_leaving_the_sixty_day_window():

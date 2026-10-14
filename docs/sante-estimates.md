@@ -19,8 +19,12 @@ Code : `app/services/nights.py` (C2–C4), `sante_sleep.py` (C5), `sante_trainin
   moyenne qui la contient. C'est un choix de conception **(H)**, pas une règle publiée. Avant, la
   référence allait jusqu'à la dernière nuit incluse.
 - **Nombre de nuits.** Référence complète dès 14 nuits mesurées dans cette fenêtre. De 7 à 13
-  nuits, une référence « provisoire » est tracée en pointillés. Elle n'alimente jamais l'état du
-  jour **(H)**.
+  nuits, une référence « provisoire » est tracée en pointillés ; l'état la lit et le dit
+  (« Repères provisoires ») **(H)**. Une série plus jeune que la fenêtre décalée (une montre
+  nouvelle) trace et lit de la même façon une référence provisoire prise sur les 60 nuits jusqu'à
+  la dernière incluse, le temps que la fenêtre décalée se remplisse (propriétaire, 2026-10-14 :
+  « il y a bien un score » ; avant l'audit, 7 nuits jusqu'à la dernière donnaient déjà un score
+  provisoire). Le seuil T tient compte du petit nombre de nuits de référence (C3).
 - **Centre.** Moyenne du ln RMSSD pour la VFC (moyenne géométrique). Moyenne pour la tendance de
   la FC de nuit : elle compare une moyenne de 7 nuits, et la comparer à une médiane donnait 26 à
   32 % de matins « au-dessus » quand quelques nuits chaudes étirent la distribution vers le haut.

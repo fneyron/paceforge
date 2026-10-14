@@ -741,9 +741,10 @@ def test_rung_2_an_effort_window_is_the_reason_never_printed():
 
 def test_the_parts_and_what_is_missing():
     """The heart series read in their order and the ones missing, as data (v4.4: no sub-score on the page): the
-    heart signals whose baseline is not full yet are `building` (14 nights from day −67 to −8: owner, 2026-10-14:
-    scientific basis — 7 nights up to last night made a provisional score), with a reason and never a number; a
-    watch that never measures HRV just misses it."""
+    heart signals with no baseline yet are `building` (under 7 nights up to last night), with a reason and never a
+    number; a provisional baseline (7 to 13 nights, or a series younger than its lagged window) makes a score that
+    says « Repères provisoires » (owner, 2026-10-14: « il y a bien un score »); a watch that never measures HRV just
+    misses it."""
     big = _session(D - timedelta(days=2), 200, sid=42)
     day = _day(_rich(hrv_last=58.0), _runs(start=3) + [big])  # a long effort D+2: over, the HRV low
     assert [p["key"] for p in day["score"]["parts"]] == ["hrv", "hr"]
@@ -751,8 +752,9 @@ def test_the_parts_and_what_is_missing():
     young = _day(night_rows(range(0, 6)), _runs())  # 6 nights: no baseline yet
     assert young["score"]["absent"] == ["hrv", "hr"] and young["score"]["building"] == ["hrv", "hr"]
     assert young["score"]["value"] is None and young["score"]["missing"]["label"] == "repères en construction (0/14)"
-    week = _day(night_rows(range(0, 21)), _runs())  # 13 nights from day −20 to −8: still building (was a score)
-    assert week["score"]["missing"]["label"] == "repères en construction (13/14)" and week["state"] is None
+    week = _day(night_rows(range(0, 21)), _runs())  # 13 nights from day −20 to −8: a provisional score
+    assert week["score"]["missing"] is None and week["state"] is not None and week["score"]["building"] == []
+    assert sc.quality(week)["provisional"] and sc.quality(week)["label"] == "Repères provisoires"
     assert _day(night_rows(range(0, 22)), _runs())["score"]["absent"] == []  # the 14th, 21 days ago, makes it
     # a watch that never measures HRV: VFC is just missing, nothing is being built for it
     no_hrv = night_rows(range(0, 6))
@@ -794,12 +796,13 @@ def test_a_card_wears_its_place_against_the_usual_values():
 
 
 def test_provisional_bands_say_so_on_the_cards():
-    """A « provisoire » baseline (7 to 13 nights from day −67 to −8, H): drawn dashed, never read by the state;
-    the cards' readouts say « (provisoire) » after the band's numbers, the status line keeps its plain words."""
+    """A « provisoire » baseline (7 to 13 nights from day −67 to −8, H): drawn dashed, read by the state, which
+    says so (« Repères provisoires »); the cards' readouts say « (provisoire) » after the band's numbers, the
+    status line keeps its plain words."""
     rows = night_rows(range(0, 18))  # 10 nights in the baseline window: provisional
     day = _day(rows, _runs())
-    assert day["stats"]["hrv"]["normal"]["provisional"] and day["score"]["parts"] == []
-    assert day["score"]["missing"]["label"] == "repères en construction (10/14)"
+    assert day["stats"]["hrv"]["normal"]["provisional"] and [p["key"] for p in day["score"]["parts"]] == ["hrv", "hr"]
+    assert day["score"]["missing"] is None and sc.quality(day)["provisional"]
     nights = _nights(rows, _runs())
     with nt.memo():
         nt.freeze(nights)
