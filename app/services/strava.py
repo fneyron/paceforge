@@ -1,6 +1,7 @@
 import logging
 import secrets
 import time
+from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,12 +9,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.exceptions import StravaAPIError, StravaRateLimitError, StravaTokenError
 from app.models.user import User
+from app.services import strava_state
 
 logger = logging.getLogger(__name__)
 
 STRAVA_BASE_URL = "https://www.strava.com"
 STRAVA_API_URL = f"{STRAVA_BASE_URL}/api/v3"
 STRAVA_OAUTH_URL = f"{STRAVA_BASE_URL}/oauth"
+QUOTA_SHARE = 0.8  # of a Strava rate-limit window, the background syncs' share
+
+
+def backing_off(client_id: str | None) -> bool:
+    """The background syncs of this app wait for its quota window to turn (strava_state)."""
+    until = strava_state.backoff_until(client_id)
+    return until is not None and until > time.time()
 
 
 class StravaService:
@@ -154,16 +163,7 @@ class StravaService:
                 **kwargs,
             )
 
-        # Check rate limits
-        rate_limit_usage = response.headers.get("X-RateLimit-Usage", "")
-        if rate_limit_usage:
-            short, daily = rate_limit_usage.split(",")
-            if int(short) > 90 or int(daily) > 950:
-                logger.warning(
-                    "Strava rate limit warning: %s/100 (15min), %s/1000 (daily)",
-                    short,
-                    daily,
-                )
+        self._note_quota(response)
 
         if response.status_code == 429:
             raise StravaRateLimitError()
@@ -175,6 +175,38 @@ class StravaService:
             )
 
         return response
+
+    def _note_quota(self, response: httpx.Response) -> None:
+        """The app's quota is shared by its athletes: past QUOTA_SHARE of a Strava window, or on a 429, the
+        background syncs (round, first import's details, races' D+) wait until that window turns — the next quarter
+        hour, or midnight UTC for the day's — leaving the rest to the webhooks and the athletes' own clicks."""
+        windows = []
+        for prefix in ("X-RateLimit", "X-ReadRateLimit"):  # all requests, and the reads (Strava counts both)
+            try:
+                used = [int(v) for v in response.headers[f"{prefix}-Usage"].split(",")]
+                limit = [int(v) for v in response.headers[f"{prefix}-Limit"].split(",")]
+            except (KeyError, ValueError):
+                continue
+            windows += [(u, n, i == 1) for i, (u, n) in enumerate(zip(used, limit)) if n > 0]
+        full = [daily for used, limit, daily in windows if used >= QUOTA_SHARE * limit]
+        if response.status_code == 429 and not full:
+            full = [False]  # no usable header: the quarter hour
+        if not full:
+            return
+        now = time.time()
+        step = 86400 if any(full) else 900
+        until = (now // step + 1) * step
+        strava_state.back_off(self.client_id, until)
+        logger.warning("Strava quota of app %s (%s): background syncs wait %d min", self.client_id,
+                       response.headers.get("X-RateLimit-Usage") or response.status_code, (until - now) // 60)
+
+    def backing_off(self) -> bool:
+        """This app's background syncs wait for its quota window to turn."""
+        return backing_off(self.client_id)
+
+    async def get_athlete(self, user: User) -> dict:
+        response = await self._make_request(user, "GET", "/athlete")
+        return response.json()
 
     async def get_activity(self, user: User, strava_activity_id: int) -> dict:
         response = await self._make_request(
@@ -355,12 +387,18 @@ def strava_status(user: User) -> dict:
         # stored keys Strava refused: say so and offer the wizard
         return {"connected": False, "bad_keys": user.has_own_strava_app and not user.strava_credentials_valid,
                 "own_app": user.has_own_strava_app, "shared_ready": settings.strava_shared_ready}
+    # a first import that failed (Strava's quota, an error): the round tries it again at `sync_retry_at`
+    failed = None
+    if not user.initial_sync_done:
+        failed = strava_state.initial_failure(user.id)
     return {
         "connected": True,
         "needs_reauth": not (user.strava_credentials_valid and user.has_strava_app),
         "own_app": user.has_own_strava_app, "shared_ready": settings.strava_shared_ready,
         "last_sync_at": user.last_activity_poll_at,
         "last_sync_ago": _ago(user.last_activity_poll_at),
+        "sync_error": failed.get("error") if failed else None,  # "rate_limited" | "failed"
+        "sync_retry_at": datetime.fromtimestamp(failed.get("next_at", 0), timezone.utc) if failed else None,
     }
 
 
