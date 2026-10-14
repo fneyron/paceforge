@@ -895,3 +895,52 @@ def test_the_pacing_guide_plans_the_moving_time_of_its_target():
     guide = build_pacing_guide(course, 5 * 3600, plan_sections=secs)
     moving = sum(sum(x["time_s"] for x in b["rows"]) if "rows" in b else b.get("time_s", 0) for b in guide["blocks"])
     assert moving == pytest.approx(5 * 3600 - sum(stops.values()), rel=0.002)  # the stops are not run
+
+
+@pytest.mark.asyncio
+async def test_after_an_edit_the_page_arrives_with_the_saved_plan(as_user: AsyncClient, db_session, test_user):
+    """Review: the page kept posting its load-time estimate as the target, so after a station, a stop or a forecast
+    its table, hero and field stayed on the old number while the saved plan used the new one (and a pinned plan
+    was anchored at it). Without an objective the page now posts none: the table reads the estimate again, sends
+    it back (plan-data), and arrives where the printed plan and the phone's copy do once the edit is saved."""
+    import re
+
+    def finish(html):
+        return int(re.findall(r'data-clock="(\d+)"', html)[-1]) - 6 * 3600
+
+    def estimate(html):
+        return json.loads(re.search(r'id="plan-data">(.*?)</script>', html, re.S).group(1))["estimate_s"]
+
+    r = await as_user.post("/api/simulator/routes", data={
+        "course_json": _course().model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": "En séance",
+        "start_hour": 6, "start_minute": 0, "target_v": "2"})
+    rid = r.json()["id"]
+    page = (await as_user.get(f"/simulator/routes/{rid}")).text
+    loaded = int(re.search(r"var predictedTotalS = (\d+);", page).group(1))
+    base = CPS + [{"name": "Base", "distance_km": 25.0, "kind": "base", "crew": False, "drop_bag": False, "cutoff_clock": None}]
+    hot = {"temps": [22.0 + 8 * (10 <= h % 24 < 18) for h in range(48)], "humidity": [60] * 48}
+    pinned = [dict(CPS[0], target_s=3000)] + CPS[1:]
+    day = (date.today() + timedelta(days=5)).isoformat()
+    for label, cps, extra, before, save in (
+        ("a base vie added", base, {}, {}, {}),
+        ("the race date set (its sun, its clock)", base, {}, {"race_date": day}, {}),
+        ("the forecast arrives", base, {"hourly_json": json.dumps(hot), "heat_factor": 1.06}, {},
+         {"weather_json": json.dumps({"date": day, "heat_factor": 1.06, "source": "prevision", "hourly": hot})}),
+        ("a time pinned at Eau 1", pinned, {}, {}, {}),
+    ):
+        if before:  # saved before the table asks (the page saves the race's name, date and start at once)
+            await as_user.post("/api/simulator/routes", data={
+                "route_id": rid, "checkpoints_json": json.dumps(cps), "target_v": "2", **before})
+        r = await as_user.post("/partials/simulator/passage-times", data={
+            "route_id": rid, "checkpoints_json": json.dumps(cps), "start_hour": 6, "start_minute": 0, **extra})
+        table = r.text
+        await as_user.post("/api/simulator/routes", data={
+            "route_id": rid, "checkpoints_json": json.dumps(cps), "target_v": "2", **before, **save})
+        phone = (await as_user.get(f"/api/simulator/routes/{rid}/offline")).json()["points"][-1]["clock_s"] - 6 * 3600
+        printed = (await as_user.get(f"/simulator/routes/{rid}/print")).text
+        arrival = re.search(r'Arrivée</p>.*?<p class="t">(\d\d:\d\d)', printed, re.S).group(1)
+        assert finish(table) == phone and arrival == _hhmm(6 * 3600 + phone), label
+        if label != "a time pinned at Eau 1":  # pinned: the plan follows the pins, the estimate stays the hero's
+            assert estimate(table) == finish(table), label
+        assert estimate(table) != loaded, label  # the page's hero and field move with it
+        loaded = estimate(table)

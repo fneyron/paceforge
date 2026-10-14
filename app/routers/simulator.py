@@ -341,12 +341,18 @@ async def _passage_table_context(
     db: AsyncSession, user_id: int, course, checkpoints: list[dict], target_time_s: int | None, heat_factor: float,
     start_hour: int, start_minute: int, hourly_weather: dict | None, route_obj: Route | None, stop_minutes: int | None,
     anchor_km: float | None, anchor_clock: str | None, profile=None, route_id: int | None = None,
+    estimate_s: int | None = None,
 ) -> dict:
     """Everything partials/passage_times.html needs: the (re)planned sections, scenarios, plan data.
-    Used by the recalculation endpoint and by the page itself, so the first paint already has the table."""
+    Used by the recalculation endpoint and by the page itself, so the first paint already has the table.
+
+    ``target_time_s``: his objective (the page sends it only when he set one), else None: the plan then runs on
+    the estimate read now, with these points, stops and weather (``estimate_s`` when the caller has it), and the
+    plan data carries it back, so the page's hero and field follow every edit."""
     from app.services.checkpoints import annotate_cutoffs, autonomy_legs
     from app.services.race_simulator import (
         _elevation_at_km,
+        _fine_terrain,
         build_athlete_gradient_profile,
         compute_passage_times,
         objective_moving_s,
@@ -371,23 +377,22 @@ async def _passage_table_context(
     own_weather = hourly_weather is not None or heat_factor != 1.0 or bool(route_obj and route_obj.weather_json)
     total_km = course.total_distance_km
     clock = await _race_clock(db, user_id, route_obj, course)  # night by the sun once the race is dated
-    if target_time_s:
-        finish_s = float(target_time_s)
-        aid_stops = _aid_stops(checkpoints, stop_minutes, finish_s, total_km)
-        course = predict_course(
-            course, profile, start_hour=start_hour, start_minute=start_minute,
-            plan_moving_s=objective_moving_s(
-                target_time_s, course.total_distance_km, checkpoints, stop_min * 60, aid_kms, aid_stops,
-            ), aid_stops=aid_stops, own_weather=own_weather, **clock,
-        )
-    else:  # no plan: the estimate (the prediction, its heat and its own stops)
-        course, finish_s, aid_stops = _estimate(course, profile, start_hour, start_minute, clock, checkpoints, stop_minutes,
-                                                total_km, own_weather, heat_factor, hourly_weather, aid_kms)
-
+    fine = _fine_terrain(course, profile)
+    if estimate_s is None:  # the estimate now (these points, stops and weather): the hero and the field follow it
+        course, est, _ = _estimate(course, profile, start_hour, start_minute, clock, checkpoints, stop_minutes, total_km,
+                                   own_weather, heat_factor, hourly_weather, aid_kms, fine)
+        estimate_s = _to_minute(est)
+    target = target_time_s or estimate_s  # the plan: on his objective, else on the estimate (to the minute)
+    aid_stops = _aid_stops(checkpoints, stop_minutes, float(target), total_km)
+    course = predict_course(
+        course, profile, start_hour=start_hour, start_minute=start_minute,
+        plan_moving_s=objective_moving_s(target, course.total_distance_km, checkpoints, stop_min * 60, aid_kms, aid_stops),
+        fine_terrain=fine, aid_stops=aid_stops, own_weather=own_weather, **clock,
+    )
     sections = compute_passage_times(
-        course, checkpoints, target_time_s, heat_factor,
+        course, checkpoints, target, heat_factor,
         start_hour, start_minute, hourly_weather,
-        stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=aid_stops,
+        stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=aid_stops, objective=target_time_s is not None,
     )
     has_weather = any(s.get("temperature_c") is not None for s in sections)
     start_offset_s = start_hour * 3600 + start_minute * 60
@@ -400,7 +405,7 @@ async def _passage_table_context(
         anchor_clock_s = _clock_to_s(anchor_clock)
         if anchor_clock_s is not None:
             sections, replan = replan_from_passage(
-                sections, start_hour * 3600 + start_minute * 60, target_time_s,
+                sections, start_hour * 3600 + start_minute * 60, target,
                 anchor_km, anchor_clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=aid_stops,
             )
     # Cutoff margins and autonomy legs read the (re)planned clocks, so they
@@ -415,7 +420,7 @@ async def _passage_table_context(
     pinned = is_pinned(sections)
     sc_set = _scenario_settings(params, profile, course, await _known_course(db, user_id, route_obj))
     scenarios = None if replan else build_scenarios(
-        sections, start_offset_s, target_time_s,
+        sections, start_offset_s, target,
         fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=params.get("switch_km"),
         total_distance_km=course.total_distance_km,
@@ -427,7 +432,7 @@ async def _passage_table_context(
 
     zones = await estimate_training_zones(db, user_id)
     rc = resolve_hr_caps(params, zones.get("max_hr"))
-    plan_s = plan_total_s(sections, start_offset_s, target_time_s)  # None: the model's own times
+    plan_s = plan_total_s(sections, start_offset_s, target)
     guide = build_pacing_guide(
         course, plan_s, hr_cap_climb=rc["climb"], hr_cap_flat=rc["flat"], hr_release_descent=rc["descent"],
         walk_grade=rc["walk_grade"], plan_sections=sections,
@@ -435,14 +440,15 @@ async def _passage_table_context(
     from app.services.race_simulator import sun_clock
 
     sun = sun_clock(course, clock.get("race_date"), start_hour, start_minute, clock.get("utc_offset_s")) if clock else None
-    plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None or pinned, course.total_distance_km,
+    plan_data = build_plan_data(sections, start_offset_s, True, course.total_distance_km,
                                 guide["blocks"], scenarios, autonomy=autonomy, dark=sun.is_dark if sun else None)
+    plan_data["estimate_s"] = estimate_s  # the page's « Estimation » now: its hero, field and slider follow it
     legs = _leg_details(guide, sections)
     return {
         "legs": legs,
         "plan_data": _script_json(plan_data),
         "sections": sections,
-        "has_target": (target_time_s is not None) or replan is not None or pinned,
+        "has_target": True,  # the plan's own times: on the objective, else on the estimate
         "replan": replan,
         "has_weather": has_weather,
         "predicted_total": course.predicted_total_time_s,
@@ -844,12 +850,12 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
     try:
         live = route.live_json or {}
         # No objective: the plan runs on the estimate, to the minute, exactly as the page's own recalculations
-        # do (they send the objective field, which then holds the estimate). The first render and the next
-        # ones agree, and the hero's « Estimation » plus the start gives the arrival shown under it.
+        # do (they send no objective then, and the table reads the estimate again with every edit). The first
+        # render and the next ones agree, and the hero's « Estimation » plus the start gives the arrival under it.
         tctx = await _passage_table_context(
-            db, user_id, CourseProfile(**route.course_json), ncps, objective_s or estimate_s,
+            db, user_id, CourseProfile(**route.course_json), ncps, objective_s,
             float(w.get("heat_factor") or 1.0), sh, sm, w.get("hourly"), route, route.stop_minutes,
-            live.get("anchor_km"), live.get("anchor_clock"), profile=profile, route_id=route.id,
+            live.get("anchor_km"), live.get("anchor_clock"), profile=profile, route_id=route.id, estimate_s=estimate_s,
         )
         initial_table_html = templates.get_template("partials/passage_times.html").render(tctx)
     except Exception:
@@ -2120,7 +2126,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     )
     sections = compute_passage_times(
         course, cps, target, heat, start_hour, start_minute, hourly,
-        stop_s_per_aid=stop_min * 60, aid_kms=aid, aid_stops=aid_stops,
+        stop_s_per_aid=stop_min * 60, aid_kms=aid, aid_stops=aid_stops, objective=objective_s is not None,
     )
     sections = annotate_cutoffs(sections, cps, start_offset_s)
     from app.services.race_simulator import is_pinned, plan_total_s
