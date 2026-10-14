@@ -546,14 +546,14 @@ async def test_one_athletes_failure_leaves_the_others_import_whole(task_db, monk
 async def test_the_round_is_hourly_and_leaves_the_webhooks_athletes_alone(db_session, test_user, task_session,
                                                                           monkeypatch):
     """Base code: every athlete, every 5 minutes (≥ 288 reads a day each: the shared app's 1,000 were gone with 4
-    athletes). Now hourly, and only for those the webhook has not reached for 24 h (all are polled once a day all
-    the same); one queued poll per athlete."""
+    athletes). Now a round every 10 minutes, only for those the webhook has not reached for 24 h (all are polled
+    once a day all the same), the shared app's athletes once an hour at most; one queued poll per athlete."""
     from celery.schedules import crontab
 
     from app.celery_app import celery_app
     from app.tasks import poll_activities
 
-    assert celery_app.conf.beat_schedule["poll-new-activities"]["schedule"] == crontab(minute=7)
+    assert celery_app.conf.beat_schedule["poll-new-activities"]["schedule"] == crontab(minute="7-59/10")
     await _own_app(db_session, test_user)
     quiet = await _own_app(db_session, await _athlete(db_session, 901), client_id="901")
     backing = await _own_app(db_session, await _athlete(db_session, 902), client_id="902")
@@ -620,6 +620,7 @@ async def test_the_round_starves_nobody_and_spares_a_live_apps_quiet_athletes(db
 
     from app.tasks import poll_activities
 
+    monkeypatch.setattr(poll_activities, "SHARED_APP_EVERY", timedelta(0))  # rounds here stand for hours
     users = [await _athlete(db_session, 8000 + i, strava_client_id="90001", initial_sync_done=True)
              for i in range(5)]
     strava_state.mark("shared_sub", 24 * 3600, "123456")  # the shared app's subscription, read from Strava before
@@ -662,6 +663,37 @@ async def test_the_round_starves_nobody_and_spares_a_live_apps_quiet_athletes(db
     for _ in range(24):
         await round_()
     assert polled == Counter({u.strava_athlete_id: 1 for u in users})
+
+
+async def test_an_own_app_athlete_is_polled_every_round_the_shared_apps_once_an_hour(db_session, test_user,
+                                                                                     task_session, shared_app,
+                                                                                     monkeypatch):
+    """Production after the hourly round: an athlete on their own Strava app whose webhook is not set up waited up
+    to an hour for a run (5 minutes before). Their app's quota is theirs alone: polled every round (10 minutes). The
+    shared app's quota is everyone's: one poll an hour at most for each of its athletes."""
+    from app.tasks import poll_activities
+
+    own = await _own_app(db_session, test_user)
+    shared = await _athlete(db_session, 8100, strava_client_id="90001", initial_sync_done=True)
+    queued = []
+    monkeypatch.setattr(poll_activities.poll_strava_user, "delay", lambda uid: queued.append(uid))
+
+    async def round_():
+        queued.clear()
+        await poll_activities._run_poll()
+        for uid in queued:
+            strava_state.release(f"poll:{uid}")  # its poll ran
+    await round_()
+    assert sorted(queued) == sorted([own.id, shared.id])
+    now = datetime.now(timezone.utc)
+    own.last_activity_poll_at = shared.last_activity_poll_at = now - timedelta(minutes=10)
+    await db_session.flush()
+    await round_()
+    assert queued == [own.id]  # ten minutes later: their own app again, the shared one waits
+    shared.last_activity_poll_at = now - timedelta(minutes=56)
+    await db_session.flush()
+    await round_()
+    assert sorted(queued) == sorted([own.id, shared.id])
 
 
 async def test_a_failed_first_import_is_queued_again_later_and_said(task_db, monkeypatch):

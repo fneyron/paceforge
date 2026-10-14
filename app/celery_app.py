@@ -31,7 +31,7 @@ celery_app.conf.update(
     beat_schedule={
         "poll-new-activities": {
             "task": "paceforge.poll_new_activities",
-            "schedule": crontab(minute=7),  # hourly: the webhook's fallback (tasks/poll_activities)
+            "schedule": crontab(minute="7-59/10"),  # every 10 min: the webhook's fallback (tasks/poll_activities)
         },
         "sync-coros": {
             "task": "paceforge.sync_coros",

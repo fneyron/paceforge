@@ -34,10 +34,12 @@ mois (son détail) : avec le quota par défaut (1 000 lectures par jour), un nou
 athlète peut en consommer l’essentiel.
 
 Le webhook est la voie principale : chaque activité arrive à son envoi. Le polling
-n’en est que le secours, par une tournée horaire : chaque athlète relié est relu au
-moins une fois par jour (un événement peut se perdre), et toutes les heures
-seulement quand ni lui ni son app n’ont reçu d’événement depuis 24 h ; les athlètes
-restés le plus longtemps sans nouvelles passent d’abord. Chaque relecture complète
+n’en est que le secours, par une tournée toutes les 10 minutes : chaque athlète relié
+est relu au moins une fois par jour (un événement peut se perdre), et à chaque
+tournée seulement quand ni lui ni son app n’ont reçu d’événement depuis 24 h — à
+chaque tournée sur sa propre app Strava (son quota n’est qu’à lui), une fois par
+heure au plus sur l’app commune (un quota pour tous) ; les athlètes restés le plus
+longtemps sans nouvelles passent d’abord. Chaque relecture complète
 aussi quelques activités importées sans leur détail (courses et sorties longues
 d’abord). À 80 % d’une fenêtre de quota Strava (15 min ou jour), ou sur une réponse
 429, les synchronisations de fond (tournée, détails, D+ des courses) attendent la
