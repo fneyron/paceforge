@@ -19,7 +19,7 @@ from app.config import settings
 from app.crypto import encrypt_secret
 from app.database import Base
 from app.dependencies import get_current_user
-from app.exceptions import StravaAPIError, StravaRateLimitError
+from app.exceptions import StravaAPIError, StravaRateLimitError, StravaTokenError
 from app.models.activity import Activity
 from app.models.user import User
 from app.services import strava_state
@@ -255,6 +255,50 @@ async def test_a_rotated_refresh_token_outlives_an_early_return(task_db, monkeyp
     else:
         result = await webhook_sync._run_webhook_sync(1, 12345678)
     assert result["status"] == case and await _stored_refresh_token(task_db, uid) == "rt2"
+
+
+async def test_a_token_endpoint_failure_is_tried_again_never_taken_for_a_refusal(task_db, monkeypatch):
+    """Review D5: a 503 (or any odd answer) of Strava's token endpoint became « reconnect »: the webhook event was
+    dropped without a retry (the athlete's 24 h marker kept the round away) and a real revocation was dropped as
+    « unverified ». Nothing refused, the link intact: every task now raises, so Celery tries again; the webhook's
+    last attempt asks the round to poll the athlete. Only a refusal forgets the link (test_settings_links)."""
+    from app.tasks import initial_sync, poll_activities, webhook_sync
+
+    async with task_db() as db:
+        user = await _own_app(db, await _athlete(db, 12345678), sub=55)
+        user.strava_token_expires_at = int(time.time()) - 60  # expired overnight
+        await db.commit()
+        uid = user.id
+
+    async def post(self, url, **kw):
+        return httpx.Response(503, text="upstream", request=httpx.Request("POST", url))
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    api = AsyncMock()
+    monkeypatch.setattr(httpx.AsyncClient, "request", api)
+    for run in (lambda: webhook_sync._run_webhook_sync(1, 12345678), lambda: webhook_sync._run_deauthorized(12345678),
+                lambda: poll_activities._poll_user(uid)):
+        with pytest.raises(StravaTokenError):
+            await run()
+    async with task_db() as db:
+        (await db.get(User, uid)).initial_sync_done = False
+        await db.commit()
+    with pytest.raises(StravaTokenError):
+        await initial_sync._run_initial_sync(uid)
+    async with task_db() as db:
+        user = await db.get(User, uid)
+        assert user.strava_refresh_token == "rt" and user.strava_credentials_valid and user.strava_athlete_id
+        user.initial_sync_done = True
+        await db.commit()
+    assert api.await_count == 0
+
+    # as Celery runs the webhook task: retried, then the round is asked to poll the athlete
+    strava_state.webhook_reached(uid)
+    result = await asyncio.to_thread(webhook_sync.sync_activity_from_webhook.apply, args=(1, 12345678))
+    assert result.get() == {"status": "failed"} and not strava_state.webhook_recent(uid)
+    queued = []
+    monkeypatch.setattr(poll_activities.poll_strava_user, "delay", lambda u: queued.append(u))
+    await poll_activities._run_poll()
+    assert queued == [uid]
 
 
 # ── the first import, one builder, the athlete's zone ────────────────────────

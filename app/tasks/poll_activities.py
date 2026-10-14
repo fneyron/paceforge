@@ -87,7 +87,7 @@ async def _poll_user(user_id: int) -> dict:
     from app.database import get_task_session
     from app.services.activity_env import enrich
     from app.services.race_calibration import backfill_race_dplus
-    from app.services.strava import StravaService
+    from app.services.strava import StravaService, link_intact
     from app.services.strava_activities import adopt_zone, import_recent
 
     async with get_task_session() as db:
@@ -116,6 +116,9 @@ async def _poll_user(user_id: int) -> dict:
             user.last_activity_poll_at = datetime.now(timezone.utc)
             await db.commit()
         except StravaTokenError:
+            if link_intact(user):  # Strava's token endpoint failed, nothing refused: the next round tries again
+                await db.rollback()
+                raise
             await db.commit()  # what the refresh found (revoked: forgotten; keys refused: flagged) is kept
             return {"user_id": user_id, "status": "reconnect"}
         except Exception:

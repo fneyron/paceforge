@@ -372,6 +372,13 @@ class StravaService:
             logger.exception("Failed to deauthorize Strava for user %d", user.id)
 
 
+def link_intact(user: User) -> bool:
+    """After a StravaTokenError: whether the link survived it. Strava refused nothing (its token endpoint failed:
+    a 5xx, an odd answer), so the work is to be tried again. A refusal forgets the link (400) or flags the app's
+    keys (401): nothing to try until the athlete reconnects."""
+    return bool(user.strava_refresh_token and user.strava_credentials_valid)
+
+
 def _forget_link(user: User) -> None:
     """The tokens go (the athlete and the app keys stay, so reconnecting is
     one click); reconnecting fetches what was recorded meanwhile."""

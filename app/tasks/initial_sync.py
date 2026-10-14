@@ -66,7 +66,7 @@ def initial_sync(self: Task, user_id: int) -> dict:
 
 async def _run_initial_sync(user_id: int) -> dict:
     from app.database import get_task_session
-    from app.services.strava import StravaService
+    from app.services.strava import StravaService, link_intact
 
     async with get_task_session() as db:
         try:
@@ -163,6 +163,9 @@ async def _run_initial_sync(user_id: int) -> dict:
                 "total_fetched": len(activities_data),
             }
         except StravaTokenError:
+            if link_intact(user):  # Strava's token endpoint failed, nothing refused: tried again
+                await db.rollback()
+                raise
             # what the refresh found is kept (the link revoked: forgotten; the app's keys refused: flagged), with
             # what was imported: Réglages asks to reconnect, the rounds leave the athlete alone meanwhile
             await db.commit()

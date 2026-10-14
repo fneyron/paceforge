@@ -75,7 +75,7 @@ def _owner_of(data: dict) -> int | None:
 async def _run_webhook_sync(activity_id: int, owner_id: int, aspect_type: str = "create") -> dict:
     from app.database import get_task_session
     from app.services.activity_env import enrich
-    from app.services.strava import StravaService
+    from app.services.strava import StravaService, link_intact
     from app.services.strava_activities import adopt_zone, save_new
 
     async with get_task_session() as db:
@@ -125,6 +125,9 @@ async def _run_webhook_sync(activity_id: int, owner_id: int, aspect_type: str = 
             user.last_activity_poll_at = datetime.now(timezone.utc)  # Réglages' « Dernière synchro »
             await db.commit()
         except StravaTokenError:
+            if link_intact(user):  # Strava's token endpoint failed, nothing refused: Celery tries again
+                await db.rollback()
+                raise
             await db.commit()  # what the refresh found (revoked: forgotten; keys refused: flagged) is kept
             return {"status": "reconnect"}
         except Exception:
@@ -177,7 +180,7 @@ async def _run_deauthorized(owner_id: int) -> dict:
     id, so the Strava account can be linked again, here or to another account. The activities already received stay,
     as when the athlete disconnects from Réglages (privacy policy: deleting the account deletes them)."""
     from app.database import get_task_session
-    from app.services.strava import StravaService, _forget_link
+    from app.services.strava import StravaService, _forget_link, link_intact
 
     async with get_task_session() as db:
         user = (await db.execute(select(User).where(User.strava_athlete_id == owner_id))).scalar_one_or_none()
@@ -189,6 +192,8 @@ async def _run_deauthorized(owner_id: int) -> dict:
                 logger.warning("Webhook: athlete %d still authorizes PaceForge, revocation ignored", owner_id)
                 return {"status": "still_authorized"}
             except StravaTokenError:
+                if link_intact(user):  # Strava's token endpoint failed: not a refusal, Celery asks again
+                    raise
                 if user.strava_refresh_token:  # the app's keys refused (flagged), not a revocation
                     await db.commit()
                     return {"status": "unverified"}
