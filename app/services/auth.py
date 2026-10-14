@@ -117,9 +117,9 @@ class _RedisCounter:
     async def incr(self, keys: list[str], window: int) -> list[int]:
         async with self.r.pipeline(transaction=False) as pipe:
             for k in keys:
+                pipe.set(k, 0, ex=window, nx=True)  # the window starts with the first attempt
                 pipe.incr(k)
-                pipe.expire(k, window, nx=True)
-            return (await pipe.execute())[0::2]
+            return (await pipe.execute())[1::2]
 
     async def delete(self, key: str) -> None:
         await self.r.delete(key)
