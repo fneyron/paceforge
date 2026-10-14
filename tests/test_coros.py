@@ -1572,3 +1572,27 @@ async def test_an_hrv_format_not_understood_is_not_a_60_day_read_every_sync(db_s
     fake.tool_calls.clear()
     assert (await coros.run_sync(db_session, conn))["ok"]  # the same day
     assert [a["days"] for a in _asked(fake, "querySleepHrv")] == [7, 2] and conn.last_error == coros.HRV_UNREADABLE
+
+
+async def test_the_pkce_verifier_is_not_readable_in_the_session_cookie(as_user: AsyncClient, fake):
+    """The session cookie is signed, not encrypted: the code verifier (the proof that this browser started the
+    link) is kept in it encrypted, for 10 minutes."""
+    r = await as_user.get("/coros/connect")
+    challenge = parse_qs(urlsplit(r.headers["location"]).query)["code_challenge"][0]
+    cookie = as_user.cookies.get("paceforge_session")
+    pending = json.loads(base64.b64decode(cookie.split(".")[0]))["coros_oauth"]
+    stored = pending["verifier"]
+    assert base64.urlsafe_b64encode(hashlib.sha256(stored.encode()).digest()).rstrip(b"=").decode() != challenge
+    assert decrypt_secret(stored.encode()) and len(stored) > 100
+
+
+async def test_a_connect_left_for_more_than_10_minutes_starts_again(as_user: AsyncClient, db_session: AsyncSession,
+                                                                    fake, monkeypatch):
+    from app.routers import coros as coros_router
+
+    state = await _authorize(as_user, fake)
+    monkeypatch.setattr(coros_router, "_PENDING_TTL_S", -1)  # its encrypted verifier is now too old
+    r = await as_user.get(f"/coros/callback?code=the-code&state={state}")
+    assert r.status_code == 303 and not fake.token_calls
+    assert "La connexion à COROS a expiré. Réessaie." in (await as_user.get("/settings")).text
+    assert (await db_session.execute(select(CorosConnection))).scalar_one_or_none() is None

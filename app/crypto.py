@@ -50,8 +50,9 @@ def encrypt_secret(plaintext: str) -> bytes:
     return _get_fernet().encrypt(plaintext.encode())
 
 
-def decrypt_secret(ciphertext: bytes) -> str:
-    return _get_fernet().decrypt(ciphertext).decode()
+def decrypt_secret(ciphertext: bytes, ttl: int | None = None) -> str:
+    """InvalidToken also when `ttl` is given and the value is older than that (seconds)."""
+    return _get_fernet().decrypt(ciphertext, ttl=ttl).decode()
 
 
 class EncryptedString(TypeDecorator):
