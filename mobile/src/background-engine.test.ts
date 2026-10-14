@@ -184,6 +184,33 @@ test('after a rotation the server never stored, the previous token is retried on
   assert.equal(f.stored.pair.prev_token, undefined);
 });
 
+test('a token rotated by the app while a run was suspended is picked up: no reconnect', async () => {
+  const tokens: string[] = [];
+  const f = fixture();
+  f.stored.pair = { token: 'old', user_id: 1, name: 'Florent' };
+  const base = f.deps.send, load = f.deps.load;
+  let loads = 0;
+  f.deps.load = async () => {
+    // The run starts with the old token; the app stores the rotated one meanwhile.
+    if (loads++ === 1) f.stored.pair = { token: 'new', user_id: 1, name: 'Florent', prev_token: 'old' };
+    return load();
+  };
+  f.deps.send = async (path, body, token, timeout, readAt) => {
+    tokens.push(token);
+    if (token !== 'new') throw new ApiError(401);
+    return base(path, body, token, timeout, readAt);
+  };
+  const engine = createEngine(f.deps);
+  assert.equal(await engine.request('task'), 'sent');
+  assert.deepEqual(tokens.slice(0, 2), ['old', 'new']);
+  assert.equal(f.stored.receipt?.reconnect, false);
+  assert.ok(!f.calls.includes('disable'));
+  // Without a newer stored token, a refused token still asks to reconnect.
+  const stale = fixture({ send: async () => { throw new ApiError(401); } });
+  stale.stored.pair = { token: 'old', user_id: 1, name: 'Florent' };
+  assert.equal(await createEngine(stale.deps).request('task'), 'reconnect');
+});
+
 test('a locked phone reads nothing: the keychain is « locked », never « not paired », and the run stays pending', async () => {
   const locked = fixture({ load: async () => { throw new KeychainLocked(); } });
   assert.equal(await createEngine(locked.deps).request('healthkit'), 'locked');

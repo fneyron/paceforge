@@ -176,10 +176,25 @@ export function createEngine(deps: EngineDeps) {
         return daily;
       },
       sleep: () => deps.readNights(NIGHTS, within(SLEEP)),
-      send: (path, body, meta) => authorized(credentials,
-        token => deps.send(path, body, token, Math.max(1000, Math.min(SEND_MS, remaining())), meta.readAt)
-          .catch(e => { refused = e; throw e; }),
-        async next => { credentials = next; await deps.savePair({ ...pair, token: next.token, prev_token: next.prev_token }); }),
+      send: async (path, body, meta) => {
+        const request = (token: string) => deps.send(path, body, token, Math.max(1000, Math.min(SEND_MS, remaining())), meta.readAt)
+          .catch(e => { refused = e; throw e; });
+        const keep = async (next: Credentials) => {
+          credentials = next;
+          await deps.savePair({ ...pair, token: next.token, prev_token: next.prev_token });
+        };
+        try {
+          return await authorized(credentials, request, keep);
+        } catch (e) {
+          // The app may have rotated the token while this run was suspended: once the new
+          // token is used, the old one is refused. Retry with the stored one, never unpair.
+          if (!(e instanceof ApiError) || e.status !== 401) throw e;
+          const latest = (await deps.load().catch(() => null))?.pair;
+          if (!latest || latest.user_id !== pair.user_id || latest.token === credentials.token) throw e;
+          credentials = { token: latest.token, prev_token: latest.prev_token };
+          return authorized(credentials, request, keep);
+        }
+      },
       unsent: async (path, body) => {
         if (path === '/api/mobile/daily') {
           const days: Daily[] = [];
