@@ -298,3 +298,22 @@ async def test_tokens_left_in_clear_are_encrypted_by_the_hourly_upkeep(db_sessio
     assert decrypt_secret((await _raw(db_session, other_id, "strava_access_token")).encode()) == "9" * 40
     assert await oauth_cleanup.encrypt_clear_strava_tokens(db_session) == 0  # once done, nothing more
     await oauth_cleanup._run()  # the hourly task runs it (and purges the expired attempts)
+
+
+async def test_a_deploy_that_only_changes_the_keys_scans_again(monkeypatch):
+    from app import main
+
+    claims = []
+
+    class FakeRedis:
+        async def set(self, key, value, nx, ex):
+            fresh = key not in claims
+            claims.append(key)
+            return fresh
+
+        async def aclose(self):
+            pass
+    monkeypatch.setattr("redis.asyncio.Redis.from_url", lambda *a, **k: FakeRedis())
+    assert await main._first_start_of_this_build() and not await main._first_start_of_this_build()
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    assert await main._first_start_of_this_build()

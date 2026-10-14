@@ -84,14 +84,17 @@ async def scan_stored_secrets(engine=None) -> None:
 
 
 async def _first_start_of_this_build() -> bool:
-    """Whether this worker is the first of the deploy to start (a short Redis claim on the build); every worker
-    is, when Redis does not answer."""
+    """Whether this worker is the first of the deploy to start (a short Redis claim on the code and the keys: a
+    redeploy that only changes ENCRYPTION_KEYS scans again); every worker is, when Redis does not answer."""
+    import hashlib
+
+    keys = hashlib.sha256(f"{settings.SECRET_KEY}|{settings.ENCRYPTION_KEYS}".encode()).hexdigest()[:16]
     try:
         import redis.asyncio as aioredis
 
         r = aioredis.Redis.from_url(settings.REDIS_URL, socket_timeout=0.5, socket_connect_timeout=0.5)
         try:
-            return bool(await r.set(f"paceforge:start-scan:{BUILD_ID}", "1", nx=True, ex=15 * 60))
+            return bool(await r.set(f"paceforge:start-scan:{BUILD_ID}:{keys}", "1", nx=True, ex=15 * 60))
         finally:
             await r.aclose()
     except Exception:
