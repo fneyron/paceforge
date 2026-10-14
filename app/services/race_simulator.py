@@ -94,6 +94,9 @@ _DEFAULT_GRADIENT_FACTORS = {
 # How many km splits of his own an athlete needs on a gradient for them to
 # weigh as much as the generic curve (8 splits → 50 %, 40 → 83 %).
 GRADIENT_PRIOR_SPLITS = 8
+# The slowest km split read as running (s/km): 20 min/km, 40 min/km where the
+# slope passes 15 % (up or down).
+MAX_PACE_S, STEEP_MAX_PACE_S, STEEP_GRADIENT_PCT = 1200, 2400, 15
 
 
 async def build_athlete_gradient_profile(
@@ -149,12 +152,15 @@ async def build_athlete_gradient_profile(
                 continue
 
             pace_s_per_km = moving_time / (distance / 1000)
+            gradient_pct = (elevation_diff / distance) * 100
 
-            # Filter unrealistic paces
-            if pace_s_per_km < 120 or pace_s_per_km > 1200:  # 2min/km to 20min/km
+            # Filter unrealistic paces: 2 to 20 min/km, 40 min/km on slopes over 15 %
+            # (a 25-30 % climb is hiked at 20-35 min/km: cut at 20, the steep buckets
+            # kept only their fastest km and read the athlete faster than he climbs)
+            slowest = STEEP_MAX_PACE_S if abs(gradient_pct) > STEEP_GRADIENT_PCT else MAX_PACE_S
+            if pace_s_per_km < 120 or pace_s_per_km > slowest:
                 continue
 
-            gradient_pct = (elevation_diff / distance) * 100
             data_points.append((gradient_pct, pace_s_per_km))
 
     if not data_points:

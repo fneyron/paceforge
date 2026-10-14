@@ -330,3 +330,20 @@ def test_the_tilt_stored_per_race_and_its_weight():
     assert rc.raw_tilt({"fatigue_tilt": 0.30}) == 0.30 and rc.raw_tilt({}) is None
 
 
+# ── 5f. the steep splits his climbs are read on ──
+
+@pytest.mark.asyncio
+async def test_steep_hiked_splits_count(db_session, test_user):
+    splits = [{"distance": 1000, "moving_time": 330, "elevation_difference": 0} for _ in range(12)]
+    splits += [{"distance": 1000, "moving_time": 1800, "elevation_difference": 250} for _ in range(10)]  # 25 %: 30 min/km
+    db_session.add(Activity(strava_activity_id=92001, user_id=test_user.id, sport_type="TrailRun", name="Montée sèche",
+                            start_date=datetime.now(timezone.utc) - timedelta(days=5), distance=22000.0, moving_time=22 * 600,
+                            elapsed_time=22 * 600, total_elevation_gain=2500.0, raw_data={}, splits_metric=splits))
+    await db_session.flush()
+    prof = await rs.build_athlete_gradient_profile(db_session, test_user.id)
+    assert prof.data_points == 22  # the 30 min/km km on a 25 % slope are read (the cap was 20 min/km)
+    own = 1800 / 330
+    w = 10 / (10 + rs.GRADIENT_PRIOR_SPLITS)
+    assert prof.gradient_factors[25] == pytest.approx(w * own + (1 - w) * rs._get_default_factor(25), abs=1e-3)
+
+
