@@ -18,9 +18,10 @@ const queries: HealthQueries = { queryQuantitySamples, queryCategorySamples, que
   },
   digest: (key: string) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, key) };
 
-// A new weigh-in (Senssun → Santé) or a night recorded by a watch wakes the app.
+// A new weigh-in (Senssun → Santé) or a night recorded by a watch wakes the app. The
+// night's HRV is read with the night (a later night update is sent again): no HRV wakes.
 export const backgroundTypes = ['HKQuantityTypeIdentifierBodyMass', 'HKQuantityTypeIdentifierBodyFatPercentage',
-  'HKCategoryTypeIdentifierSleepAnalysis', 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN'] as const;
+  'HKCategoryTypeIdentifierSleepAnalysis'] as const;
 
 export async function authorize(_background = false): Promise<void> {
   if (!isHealthDataAvailable()) throw new Error('Apple Santé n’est pas disponible sur cet appareil.');

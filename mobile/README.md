@@ -214,8 +214,8 @@ autre compte, à la déconnexion du site et sur un jeton refusé (401, avec la
 demande de reconnexion dans Réglages).
 
 - **iPhone.** Après l’autorisation Apple Santé, l’application enregistre la
-  livraison immédiate en arrière-plan du poids, de la masse grasse, du sommeil et
-  de la VFC (`configureBackgroundTypes`, entitlement
+  livraison immédiate en arrière-plan du poids, de la masse grasse et du sommeil
+  (`configureBackgroundTypes`, entitlement
   `com.apple.developer.healthkit.background-delivery`). iOS réveille alors
   l’application après une nouvelle pesée ou une nuit enregistrée par une montre ;
   les observateurs sont réenregistrés nativement à chaque lancement, avant le
