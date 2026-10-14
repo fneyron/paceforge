@@ -185,37 +185,59 @@ async def test_no_start_when_the_key_that_encrypted_the_links_is_missing(stored,
     await check_stored_secrets(engine)
 
 
-async def test_each_kind_of_stored_secret_is_checked_on_its_first_and_last_written_value(stored, monkeypatch):
+async def test_no_start_when_the_last_written_value_of_a_kind_is_unreadable(stored):
     from datetime import datetime, timedelta, timezone
 
-    from sqlalchemy import update
-
     from app.crypto import unreadable_secrets
+    from app.main import check_stored_secrets
     from app.models.garmin import GarminConnection
     from app.models.user import User
 
     engine, db = stored
-    old = User(email="old@x.fr")
-    db.add(old)
+    user = User(email="a@x.fr")
+    db.add(user)
     await db.flush()
+    raw = text("UPDATE users SET strava_refresh_token = :t WHERE id = :id")  # no column type: stored in clear
+    await db.execute(raw, {"t": "b" * 40, "id": user.id})
+    await db.commit()
+    async with engine.connect() as conn:
+        assert await unreadable_secrets(conn) == ([], [])  # nothing encrypted yet, the clear token ignored
+    db.add(GarminConnection(user_id=user.id, di_client_id="d", access_token_encrypted=_foreign("g").encode(),
+                            expires_at=datetime.now(timezone.utc) + timedelta(hours=1)))
+    await db.commit()
+    with pytest.raises(RuntimeError, match="Garmin") as refused:
+        await check_stored_secrets(engine)
+    assert "ENCRYPTION_KEYS" in str(refused.value)
+
+
+async def test_an_old_row_alone_unreadable_is_logged_and_the_app_starts(stored, caplog):
+    """Production may hold rows already unreadable today (a token written under a SECRET_KEY changed long ago):
+    the new release must start all the same, saying which row."""
+    import logging
+    from datetime import datetime, timezone
+
+    from sqlalchemy import update
+
+    from app.crypto import unreadable_secrets
+    from app.main import check_stored_secrets
+    from app.models.user import User
+
+    engine, db = stored
+    old, new = User(email="old@x.fr"), User(email="new@x.fr", strava_refresh_token="c" * 40)
+    db.add_all([old, new])
+    await db.flush()
+    old_id, new_id = old.id, new.id
     raw = text("UPDATE users SET strava_refresh_token = :t, updated_at = :at WHERE id = :id")  # no column type
-    await db.execute(raw, {"t": "b" * 40, "at": "2026-01-01 00:00:00", "id": old.id})  # stored in clear: skipped
+    await db.execute(raw, {"t": _foreign("b" * 40), "at": "2026-01-02 00:00:00", "id": old_id})
+    await db.execute(update(User).where(User.id == new_id).values(updated_at=datetime.now(timezone.utc)))
     await db.commit()
     async with engine.connect() as conn:
-        assert await unreadable_secrets(conn) == []  # nothing encrypted yet, the clear token ignored
-    new = User(email="new@x.fr", strava_refresh_token="c" * 40, strava_client_id="4242",
-               strava_client_secret_encrypted=encrypt_secret("s3cret"))
-    db.add_all([new, GarminConnection(user_id=old.id, di_client_id="d", access_token_encrypted=_foreign("g").encode(),
-                                      expires_at=datetime.now(timezone.utc) + timedelta(hours=1))])
-    await db.commit()
-    async with engine.connect() as conn:
-        assert await unreadable_secrets(conn) == ["Garmin"]
-    # the first written value under a key now gone, the last one fine: still caught
-    await db.execute(raw, {"t": _foreign("b" * 40), "at": "2026-01-02 00:00:00", "id": old.id})
-    await db.execute(update(User).where(User.id == new.id).values(updated_at=datetime.now(timezone.utc)))
-    await db.commit()
-    async with engine.connect() as conn:
-        assert await unreadable_secrets(conn) == ["Garmin", "Strava"]
+        assert await unreadable_secrets(conn) == ([], [("Strava", old_id)])
+    caplog.set_level(logging.ERROR)
+    await check_stored_secrets(engine)  # starts
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1 and "Stored Strava secret of row %d" % old_id in errors[0].getMessage()
+    assert "ENCRYPTION_KEYS" in errors[0].getMessage()
 
 
 async def test_a_database_that_does_not_answer_never_blocks_the_start(tmp_path, caplog):

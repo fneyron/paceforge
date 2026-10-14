@@ -65,26 +65,34 @@ _STORED = (
 )
 
 
-async def unreadable_secrets(conn) -> list[str]:
-    """The kinds of stored secrets no configured key decrypts, judged on two raw values of each (the last and
-    the first written: a key added lately then dropped, an old one dropped), so a missing key is caught before
-    anything is flagged. Two small queries per kind."""
+async def unreadable_secrets(conn) -> tuple[list[str], list[tuple[str, int]]]:
+    """Stored secrets no configured key decrypts, judged on two raw values of each kind: the last written
+    (unreadable: the key in use was dropped, every link of that kind would be lost) and the first written (a
+    row written under an older key only). Returns (kinds whose last written value fails, (kind, row id) of
+    those whose first written value alone fails). Two small queries per kind."""
     from sqlalchemy import text
 
-    out = []
+    def readable(value) -> bool:
+        try:
+            _get_fernet().decrypt(value.encode() if isinstance(value, str) else bytes(value))
+        except InvalidToken:
+            return False
+        return True
+
+    lost, old = [], []
     for name, table, column, written, in_clear in _STORED:
         sealed = f" AND {column} LIKE '{FERNET_PREFIX}%'" if in_clear else ""
-        for order in (f"{written} DESC NULLS LAST", f"{written} ASC NULLS FIRST"):
-            value = (await conn.execute(text(
-                f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL{sealed} ORDER BY {order} LIMIT 1"))).scalar()
-            if value is None:
-                break  # none stored
-            try:
-                _get_fernet().decrypt(value.encode() if isinstance(value, str) else bytes(value))
-            except InvalidToken:
-                out.append(name)
-                break
-    return out
+        rows = [(await conn.execute(text(
+            f"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL{sealed} ORDER BY {order} LIMIT 1")
+        )).first() for order in (f"{written} DESC NULLS LAST", f"{written} ASC NULLS FIRST")]
+        newest, oldest = rows
+        if newest is None:
+            continue  # none stored
+        if not readable(newest[1]):
+            lost.append(name)
+        elif not readable(oldest[1]):
+            old.append((name, oldest[0]))
+    return lost, old
 
 
 class EncryptedString(TypeDecorator):

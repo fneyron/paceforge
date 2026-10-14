@@ -60,25 +60,33 @@ def check_secrets() -> None:
         logger.warning("ENCRYPTION_KEYS is not set: stored tokens are encrypted with a key derived from SECRET_KEY")
 
 
+KEY_HINT = ("put back the key that encrypted it in ENCRYPTION_KEYS (any place after the first; a former SECRET_KEY "
+            "as legacy_key(old SECRET_KEY))")
+
+
 async def check_stored_secrets(engine=None) -> None:
-    """No start when stored tokens no configured key decrypts (a key dropped from ENCRYPTION_KEYS, SECRET_KEY
-    changed without its legacy key appended): started, the syncs would mark every such link « to reconnect »
-    for good. A database that does not answer never blocks the start (warned, unchecked)."""
+    """No start when the last written value of a kind of stored secret no configured key decrypts: the key in
+    use was dropped (ENCRYPTION_KEYS emptied, SECRET_KEY changed without its legacy key), and started, the syncs
+    would mark every such link « to reconnect » for good. An old row alone unreadable (written under a key gone
+    long ago) is only logged as an error: it never stops the start. A database that does not answer within 10 s
+    never blocks it either (warned, unchecked)."""
     from app.crypto import unreadable_secrets
 
     if engine is None:
         from app.database import engine
     try:
         async with asyncio.timeout(10), engine.connect() as conn:
-            unreadable = await unreadable_secrets(conn)
+            lost, old = await unreadable_secrets(conn)
     except Exception:
         logger.warning("Stored secrets not checked at start: the database did not answer", exc_info=True)
         return
-    if unreadable:
+    for kind, row_id in old:
+        logger.error("Stored %s secret of row %d: no configured key decrypts it (written under an older key); that "
+                     "link will ask to reconnect. To keep it, %s.", kind, row_id, KEY_HINT)
+    if lost:
         raise RuntimeError(
-            f"Stored secrets that no configured key decrypts: {', '.join(unreadable)}. Put back the key that "
-            "encrypted them in ENCRYPTION_KEYS (any order after the first; a former SECRET_KEY as "
-            "legacy_key(old SECRET_KEY)), then start again: running now would ask those athletes to reconnect.")
+            f"The last stored {', '.join(lost)} secrets: no configured key decrypts them. Before starting, "
+            f"{KEY_HINT}: running now would ask those athletes to reconnect.")
 
 
 @asynccontextmanager
