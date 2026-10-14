@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +29,12 @@ HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Fra
 Platform = Literal["ios", "android"]
 LIMITS = {"weight": (25, 300), "body_fat": (1, 75), "steps": (0, 200000), "hr_day": (25, 230), "resp_day": (4, 60)}
 UNITS = {"weight": "kg", "body_fat": "%", "steps": "count", "hr_day": "bpm", "resp_day": "rpm"}
+TOKEN_LIFETIME = timedelta(days=180)
+# Renewed on use once fewer days remain: at most one write a month per phone.
+RENEW_BELOW = timedelta(days=150)
+SEEN_EVERY = timedelta(hours=1)
+# A rotated token keeps working this long, until the new one is first used.
+PREVIOUS_TOKEN_GRACE = timedelta(days=7)
 
 
 def digest(value: str) -> str:
@@ -142,13 +148,49 @@ async def exchange(body: Exchange, db: AsyncSession = Depends(get_db)):
     return JSONResponse({"token": token, "user_id": user.id, "name": user.firstname or "Athlète"}, headers=HEADERS)
 
 
-async def device(authorization: str = Header(default=""), db: AsyncSession = Depends(get_db)) -> MobileDevice:
+def bearer(authorization: str) -> str:
     if not authorization.startswith("Bearer ") or len(authorization) > 200:
         raise HTTPException(401, "Téléphone non associé.")
-    row = await db.scalar(select(MobileDevice).where(MobileDevice.token_hash == digest(authorization[7:])))
-    if not row or utc(row.expires_at) <= datetime.now(timezone.utc):
+    return digest(authorization[7:])
+
+
+async def device(authorization: str = Header(default=""), db: AsyncSession = Depends(get_db)) -> MobileDevice:
+    used = bearer(authorization)
+    now = datetime.now(timezone.utc)
+    row = await db.scalar(select(MobileDevice).where(MobileDevice.token_hash == used))
+    if row is not None and row.prev_token_hash is not None and utc(row.expires_at) > now:
+        # The phone has stored its rotated token: the previous one stops working.
+        row.prev_token_hash = row.prev_expires_at = None
+    elif row is None:
+        row = await db.scalar(select(MobileDevice).where(MobileDevice.prev_token_hash == used))
+        if row is not None and (row.prev_expires_at is None or utc(row.prev_expires_at) <= now):
+            row = None
+    if row is None or utc(row.expires_at) <= now:
         raise HTTPException(401, "Associe à nouveau ce téléphone.")
+    # Sliding expiry: a phone that keeps syncing, including in the background,
+    # is never logged out; an unused one still expires 180 days after its last use.
+    if utc(row.expires_at) - now < RENEW_BELOW:
+        row.expires_at = now + TOKEN_LIFETIME
+    if row.last_seen_at is None or now - utc(row.last_seen_at) >= SEEN_EVERY:
+        row.last_seen_at = now
     return row
+
+
+@router.post("/api/mobile/token")
+async def rotate(authorization: str = Header(default=""), phone: MobileDevice = Depends(device),
+                 db: AsyncSession = Depends(get_db)):
+    """A new token for this phone (asked in the foreground only).
+
+    The token that asked stays valid for 7 days, until the new one is first used:
+    a response lost on the way, or a phone killed before storing it, keeps working.
+    """
+    now = datetime.now(timezone.utc)
+    token = secrets.token_urlsafe(48)
+    phone.prev_token_hash, phone.prev_expires_at = bearer(authorization), now + PREVIOUS_TOKEN_GRACE
+    phone.token_hash, phone.expires_at = digest(token), now + TOKEN_LIFETIME
+    await db.flush()
+    return JSONResponse({"token": token, "user_id": phone.user_id, "expires_at": phone.expires_at.isoformat()},
+                        headers=HEADERS)
 
 
 class Daily(BaseModel):

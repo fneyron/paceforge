@@ -188,6 +188,55 @@ def test_daily_gaps_and_no_trend_across_a_watch_change():
     assert 'jours' in c['chart']['title']
 
 
+def bearer(token):
+    return {"Authorization": "Bearer " + token}
+
+
+async def test_token_expiry_slides_with_use_and_last_seen_is_written_at_most_hourly(client, db_session, test_user):
+    account, _ = await paired(client, test_user)
+    phone = await db_session.scalar(select(MobileDevice).where(MobileDevice.user_id == test_user.id))
+    now = datetime.now(timezone.utc)
+    phone.expires_at, phone.last_seen_at = now + timedelta(days=170), now - timedelta(minutes=30)
+    await db_session.flush()
+    kept = (phone.expires_at, phone.last_seen_at)
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(account['token']))).status_code == 200
+    assert (phone.expires_at, phone.last_seen_at) == kept  # no write on every background run
+    phone.expires_at, phone.last_seen_at = now + timedelta(days=100), now - timedelta(hours=2)
+    await db_session.flush()
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(account['token']))).status_code == 200
+    assert phone.expires_at >= now + timedelta(days=179) and phone.last_seen_at >= now
+    phone.expires_at = now - timedelta(minutes=1)
+    await db_session.flush()
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(account['token']))).status_code == 401
+
+
+async def test_rotation_keeps_the_previous_token_until_the_new_one_is_used(client, db_session, test_user):
+    account, _ = await paired(client, test_user)
+    first = account['token']
+    rotated = await client.post('/api/mobile/token', headers=bearer(first))
+    assert rotated.status_code == 200 and rotated.headers['cache-control'] == 'no-store'
+    second = rotated.json()['token']
+    assert second != first and rotated.json()['user_id'] == test_user.id
+    phone = await db_session.scalar(select(MobileDevice).where(MobileDevice.user_id == test_user.id))
+    assert (phone.token_hash, phone.prev_token_hash) == (digest(second), digest(first))
+    # The response was lost: the phone keeps its token, and rotates again with it.
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(first))).status_code == 200
+    third = (await client.post('/api/mobile/token', headers=bearer(first))).json()['token']
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(second))).status_code == 401
+    # The first use of the new token retires the previous one.
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(third))).status_code == 200
+    assert phone.prev_token_hash is None and phone.prev_expires_at is None
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(first))).status_code == 401
+    # The grace period is bounded, and rotating needs a valid token.
+    fourth = (await client.post('/api/mobile/token', headers=bearer(third))).json()['token']
+    phone.prev_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    await db_session.flush()
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(third))).status_code == 401
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(fourth))).status_code == 200
+    assert (await client.post('/api/mobile/token')).status_code == 401
+    assert (await client.post('/api/mobile/token', headers=bearer('unknown'))).status_code == 401
+
+
 def test_mobile_migration_roundtrip():
     from alembic.config import Config
     from alembic.migration import MigrationContext
