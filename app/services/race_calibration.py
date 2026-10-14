@@ -680,9 +680,12 @@ async def _backfill_dplus(db: AsyncSession, user, strava, limit: int) -> int:
 # else the ERA5 archive), cached in raw_data once: the fit then reads its
 # hours divided by it (fit_hours), and the course's forecast puts the heat of
 # race day back. A race without a position, or an answer without values, is
-# cached empty (factor 1, not asked again).
+# cached empty (factor 1, not asked again). The temperature is read at the
+# race's mean altitude, as the course's forecast is at each section's: the
+# lapse rate from the elevation Open-Meteo's values are for to the middle of
+# the race's lowest and highest points (Strava's elev_low / elev_high).
 HEAT_CACHE_KEY = "paceforge_heat"
-HEAT_CACHE_VERSION = 1
+HEAT_CACHE_VERSION = 2  # 2: altitude-corrected, humidity from 15 °C
 HEAT_LOOKUPS_PER_PASS = 10
 
 
@@ -694,9 +697,10 @@ def activity_heat(a: Activity) -> float | None:
     return None
 
 
-def mean_heat(series: dict, start: datetime, hours: float) -> tuple[float, float] | None:
+def mean_heat(series: dict, start: datetime, hours: float, shift_c: float = 0.0) -> tuple[float, float] | None:
     """(mean heat factor, mean °C) over the hours of a race starting at ``start``
-    (UTC) and lasting ``hours``, from {« YYYY-MM-DDTHH:00 » (GMT): (°C, % RH)}."""
+    (UTC) and lasting ``hours``, from {« YYYY-MM-DDTHH:00 » (GMT): (°C, % RH)};
+    ``shift_c`` moves every temperature to the race's altitude."""
     from app.services.weather import compute_heat_factor
 
     t0 = start.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0, tzinfo=None)
@@ -705,8 +709,8 @@ def mean_heat(series: dict, start: datetime, hours: float) -> tuple[float, float
     for i in range(n + 1):
         v = series.get((t0 + timedelta(hours=i)).strftime("%Y-%m-%dT%H:00"))
         if v and v[0] is not None:
-            hs.append(compute_heat_factor(v[0], v[1] if v[1] is not None else 60))
-            ts.append(v[0])
+            hs.append(compute_heat_factor(v[0] + shift_c, v[1] if v[1] is not None else 60))
+            ts.append(v[0] + shift_c)
     if not hs:
         return None
     return sum(hs) / len(hs), sum(ts) / len(ts)
@@ -729,9 +733,19 @@ async def backfill_race_heat(db: AsyncSession, user_id: int, limit: int = HEAT_L
         return 0
 
 
+def race_altitude(raw: dict) -> float | None:
+    """The race's mean altitude (m), read as the middle of its lowest and highest points (Strava)."""
+    try:
+        lo, hi = float(raw["elev_low"]), float(raw["elev_high"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (lo + hi) / 2 if math.isfinite(lo) and math.isfinite(hi) and hi >= lo else None
+
+
 async def _heat_pass(db: AsyncSession, user_id: int, limit: int, now: datetime) -> int:
     from app.services import weather
     from app.services.activity_env import start_point
+    from app.services.race_simulator import _LAPSE_RATE_C_PER_M
 
     if await weather.lookups_paused():  # Open-Meteo failed lately, for some worker: not now
         return 0
@@ -753,14 +767,17 @@ async def _heat_pass(db: AsyncSession, user_id: int, limit: int, now: datetime) 
             start = a.start_date if a.start_date.tzinfo else a.start_date.replace(tzinfo=timezone.utc)
             last = start + timedelta(hours=hours)
             try:
-                series = await weather.temperature_humidity(place[0], place[1], start.date(), last.date(), now.date())
+                series, at_m = await weather.temperature_humidity(place[0], place[1], start.date(), last.date(), now.date())
             except weather.LookupUnavailable as e:
                 logger.info("race heat backfill: Open-Meteo unavailable for user %d: %s", user_id, e)
                 await weather.pause_lookups()  # every worker stops asking for a while
                 break
-            got = mean_heat(series, start, hours)
+            race_m = race_altitude(raw)
+            dz = race_m - at_m if race_m is not None and at_m is not None else 0.0
+            got = mean_heat(series, start, hours, -_LAPSE_RATE_C_PER_M * dz)
             if got:
-                entry = {"v": HEAT_CACHE_VERSION, "h": round(got[0], 3), "t": round(got[1], 1), "src": "open-meteo"}
+                entry = {"v": HEAT_CACHE_VERSION, "h": round(got[0], 3), "t": round(got[1], 1), "dz": round(dz),
+                         "src": "open-meteo"}
         a.raw_data = {**raw, HEAT_CACHE_KEY: entry}
         done += 1
     if done:

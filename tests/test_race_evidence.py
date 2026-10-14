@@ -126,24 +126,31 @@ async def test_the_races_heat_is_looked_up_once_and_read_by_the_model(db_session
 
     async def fake(lat, lon, first, last, today):
         calls.append((round(lat, 2), first.isoformat()))
-        return {f"{first.isoformat()}T{h:02d}:00": (31.0, 40.0) for h in range(24)}
+        return {f"{first.isoformat()}T{h:02d}:00": (31.0, 40.0) for h in range(24)}, 500.0  # values for 500 m
 
     monkeypatch.setattr(weather, "temperature_humidity", fake)
     now = datetime.now(timezone.utc)
     race = Activity(strava_activity_id=91001, user_id=test_user.id, sport_type="TrailRun", name="Ultra chaud",
                     start_date=(now - timedelta(days=40)).replace(hour=5, minute=0), distance=60000.0, moving_time=8 * 3600,
                     elapsed_time=8 * 3600 + 900, total_elevation_gain=2000.0,
-                    raw_data={"workout_type": 1, "start_latlng": [43.3, 5.4]})
+                    raw_data={"workout_type": 1, "start_latlng": [43.3, 5.4], "elev_low": 300.0, "elev_high": 700.0})
+    high = Activity(strava_activity_id=91003, user_id=test_user.id, sport_type="TrailRun", name="Ultra en altitude",
+                    start_date=(now - timedelta(days=50)).replace(hour=5, minute=0), distance=60000.0, moving_time=9 * 3600,
+                    elapsed_time=9 * 3600, total_elevation_gain=3000.0,
+                    raw_data={"workout_type": 1, "start_latlng": [45.9, 6.9], "elev_low": 1000.0, "elev_high": 3000.0})
     nowhere = Activity(strava_activity_id=91002, user_id=test_user.id, sport_type="TrailRun", name="Sans GPS",
                        start_date=now - timedelta(days=60), distance=50000.0, moving_time=7 * 3600, elapsed_time=7 * 3600,
                        total_elevation_gain=1500.0, raw_data={"workout_type": 1})
-    db_session.add_all([race, nowhere])
+    db_session.add_all([race, high, nowhere])
     await db_session.flush()
-    assert await rc.backfill_race_heat(db_session, test_user.id) == 2
-    assert len(calls) == 1  # the race without a position is not asked, only marked
+    assert await rc.backfill_race_heat(db_session, test_user.id) == 3
+    assert len(calls) == 2  # the race without a position is not asked, only marked
     assert race.raw_data[rc.HEAT_CACHE_KEY]["h"] == pytest.approx(weather.compute_heat_factor(31.0, 40.0), abs=1e-3)
-    assert nowhere.raw_data[rc.HEAT_CACHE_KEY] == {"v": 1, "h": None, "src": "none"}
-    assert await rc.backfill_race_heat(db_session, test_user.id) == 0 and len(calls) == 1  # never asked again
+    # the race's own altitude, as the course's forecast: 1 500 m above the values' 500 m, 9.75 °C cooler
+    assert high.raw_data[rc.HEAT_CACHE_KEY]["dz"] == 1500 and high.raw_data[rc.HEAT_CACHE_KEY]["t"] == pytest.approx(21.2, abs=0.1)
+    assert high.raw_data[rc.HEAT_CACHE_KEY]["h"] == pytest.approx(weather.compute_heat_factor(21.25, 40.0), abs=1e-3)
+    assert nowhere.raw_data[rc.HEAT_CACHE_KEY] == {"v": 2, "h": None, "src": "none"}
+    assert await rc.backfill_race_heat(db_session, test_user.id) == 0 and len(calls) == 2  # never asked again
     model = await rc.build_race_effort_model(db_session, test_user.id)
     hot = next(p for p in model["races"] if p["name"] == "Ultra chaud")
     assert hot["heat"] > 1.1 and rc.fit_hours(hot) < hot["hours"]
