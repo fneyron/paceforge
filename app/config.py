@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     STRAVA_CLIENT_ID: str = ""
     STRAVA_CLIENT_SECRET: str = ""
     STRAVA_WEBHOOK_VERIFY_TOKEN: str = "paceforge-verify"
+    # the shared app's webhook subscription id; optional, discovered when empty
+    STRAVA_SUBSCRIPTION_ID: str = ""
 
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
