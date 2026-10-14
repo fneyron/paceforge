@@ -232,3 +232,18 @@ async def test_a_password_reset_signs_out_every_other_session(client, db_session
         assert (await other.get("/connections/strava")).headers["location"] == "/auth/login?next=strava"
         assert (await _login(other, user.email, "pw-87654321")).status_code == 302  # the new password works
         assert (await other.get("/settings")).status_code == 200
+
+
+async def test_api_404s_are_json_pages_stay_html(client, test_user):
+    from app.dependencies import get_current_user
+
+    client._transport.app.dependency_overrides[get_current_user] = lambda: test_user
+    r = await client.get("/api/simulator/routes/987654/offline")  # the phone app's offline plan, gone
+    assert r.status_code == 404 and r.json() == {"detail": "Not Found"}
+    r = await client.get("/api/nothing-here")
+    assert r.status_code == 404 and r.headers["content-type"].startswith("application/json")
+    assert r.json() == {"detail": "Not Found"}
+    r = await client.get("/api/nothing-here", headers={"Accept": "text/html,application/xhtml+xml"})
+    assert r.status_code == 404 and r.headers["content-type"].startswith("text/html")  # opened as a page
+    r = await client.get("/nothing-here")
+    assert r.status_code == 404 and r.headers["content-type"].startswith("text/html")
