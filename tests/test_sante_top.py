@@ -4,10 +4,13 @@ to its card below; and the Récupération card's rows. What the page-level tests
 test_health) do not pin: each dial's values, words, colours and missing data, the usual week, the « Effort récent »
 countdown and its colour, the grey words of a night row without a comparison."""
 import re
+import statistics
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
-from app.services import sante
+import pytest
+
+from app.services import sante, sante_load
 from app.services import sante_score as sc
 from app.services import sante_today as td
 from app.services import sante_training as st
@@ -104,16 +107,31 @@ def _weeks(minutes_per_week: list, this_week: float | None = None) -> list:
 SINCE = D - timedelta(days=6)  # the 7 days' first day: the usual week is the 11 weeks before it
 
 
+def test_comme_d_habitude_is_the_range_of_the_active_usual_weeks():
+    """« Comme d'habitude » from the lightest to the heaviest of the 11 usual weeks that hold an activity (owner,
+    2026-10-14: scientific basis — the 25th–75th percentiles labelled 57 % of ordinary weeks « plus » or « moins »;
+    the range of 11 weeks, about one in six): 450 min against weeks of 200 to 500 is as usual (it read « plus »
+    over the 75th percentile, 400), a week without an activity is no lower bound."""
+    usual = [200, 300, 400, 500] * 2 + [0, 300, 400]  # the 11 weeks, one of them empty
+    for minutes, word in ((450, "comme d'habitude"), (500, "comme d'habitude"), (501, "plus que d'habitude"),
+                          (200, "comme d'habitude"), (199, "moins que d'habitude")):
+        assert sante.training(_weeks(usual, minutes), D)["dial"]["sub"] == word, minutes
+    w = sante_load.week_ratio(_weeks(usual, 450), st.loads(_weeks(usual, 450), D, 50, 190), D)
+    assert (w["lo"], w["hi"]) == pytest.approx((200 * w["usual"] / statistics.fmean(usual),
+                                                500 * w["usual"] / statistics.fmean(usual)))
+
+
 def test_the_entrainement_dial_against_the_usual_week():
     """The last 7 days' heart-rate load against the usual week's, the mean of the 11 weeks just before them (H;
     never the 7 days themselves: owner, 2026-10-09), as a percentage (100 % as usual), the arc full at
-    twice it, in the accent colour; « comme d'habitude » while the 7 days lie between the 25th and the 75th
-    percentiles of those 11 weeks (owner, 2026-10-14: scientific basis — it was ± 20 %: 420 min read « comme
-    d'habitude » though above every usual week), else « plus » or « moins que d'habitude »; the card prints the 7
+    twice it, in the accent colour; « comme d'habitude » while the 7 days lie between the lightest and the
+    heaviest of those 11 weeks that hold an activity (owner, 2026-10-14: scientific basis — it was ± 20 %: 420 min
+    read « comme d'habitude » though above every usual week; then the 25th–75th percentiles, which called half of
+    the ordinary weeks « plus » or « moins »), else « plus » or « moins que d'habitude »; the card prints the 7
     days' time and the usual week's (to 5 min), the dial the percentage: each once. Every session here runs at the
     same HR: every minute weighs the same, the dial is the hours' ratio (the weighting itself:
     test_sante_train_hr)."""
-    usual = [300, 400] * 5 + [350] + [900]  # a 12th week back: out of the 11 (mean 350, P25 300, P75 400)
+    usual = [300, 400] * 5 + [350] + [900]  # a 12th week back: out of the 11 (mean 350, from 300 to 400)
     assert sante.usual_week(_weeks(usual), SINCE) == 350
     cases = {350: ("100", "comme d'habitude", 0.5), 400: ("114", "comme d'habitude", 0.571),
              401: ("115", "plus que d'habitude", 0.573), 300: ("86", "comme d'habitude", 0.429),

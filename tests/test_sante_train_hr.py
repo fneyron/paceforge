@@ -180,7 +180,7 @@ def test_an_athlete_without_hr_gets_the_time_dial():
                          _session(TUE, 40, hr=None, sport="WeightTraining", sid=99)]
         t = _train(sessions)
         ratio = minutes / 350
-        # between the usual weeks' 25th and 75th percentiles, 300 and 400 min (owner, 2026-10-14: it was ± 20 %)
+        # between the lightest and the heaviest usual week, 300 and 400 min (owner, 2026-10-14: it was ± 20 %)
         word = ("plus que d'habitude" if minutes > 400 else "moins que d'habitude" if minutes < 300
                 else "comme d'habitude")
         assert (t["dial"]["value"], t["dial"]["sub"], t["intensity"]) == (str(sc.rounded(100 * ratio)), word, None)
