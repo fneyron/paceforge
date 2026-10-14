@@ -75,6 +75,20 @@ const stored=(extra={})=>({'paceforge.phone.v1':pair,'paceforge.phone.v1.auto':'
   await racing.getByRole('button',{name:/Course de montagne/}).waitFor();
   await racing.close();
 
+  // An offline index left only as its copy by an interrupted keychain migration is recovered;
+  // on an account change the copy goes too, so it can never bring back the old account's copies.
+  // (Migration already done: only the offline storage itself handles the copy.)
+  const copy=stored({'paceforge.keychain.v2':'1'});delete copy['paceforge.offline.index.v1'];
+  copy['paceforge.offline.index.v1.migrating']=JSON.stringify({userId:1,slot:0});
+  const interrupted=await page('',copy);
+  await interrupted.waitForFunction(()=>window.actual);
+  await interrupted.evaluate(()=>followLink('paceforge://offline'));
+  await interrupted.getByRole('button',{name:/Course de montagne/}).waitFor();
+  await interrupted.evaluate(()=>{window.accountId=2;navigate('https://paceforge.fr/sante');});
+  await interrupted.waitForFunction(()=>{const d=JSON.parse(sessionStorage.getItem('secure'));
+   return !d['paceforge.offline.index.v1.migrating']&&JSON.parse(d['paceforge.offline.index.v1']||'{}').userId===2;});
+  await interrupted.close();
+
   // A refused token in the background stops background sync and asks to reconnect.
   const refused=await page('?state=background',stored());
   await refused.evaluate(()=>{window.failStatus=401;healthChange();});

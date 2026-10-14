@@ -5,9 +5,10 @@ import { OFFLINE_INDEX as INDEX, secure } from './secure';
 const fileAt = (slot: number) => new File(Paths.document, `paceforge-plans-v1-${slot}.json`);
 const empty: OfflineLibrary = { userId: null, plans: [] };
 
-// A locked keychain throws KeychainLocked: never read as « no copies ».
+// A locked keychain throws KeychainLocked: never read as « no copies ». An index
+// rewritten by an interrupted keychain migration is recovered from its copy.
 async function index(): Promise<{ userId: number; slot: 0 | 1 } | null> {
-  const raw = await secure.get(INDEX);
+  const raw = await secure.recover(INDEX);
   if (!raw) return null;
   try {
     const value = JSON.parse(raw);
@@ -32,7 +33,8 @@ export async function loadOfflineLibrary(): Promise<OfflineLibrary> {
  * An interrupted same-account save leaves the previous slot available on restart. */
 export async function storeOfflineLibrary(library: OfflineLibrary): Promise<void> {
   const previous = await index();
-  if (previous?.userId !== library.userId) await secure.remove(INDEX);
+  // Also its copy, which recover() would otherwise bring back.
+  if (previous?.userId !== library.userId) await secure.erase(INDEX);
   if (library.userId !== null) {
     const slot = previous?.slot === 0 ? 1 : 0;
     fileAt(slot).write(JSON.stringify(library));
