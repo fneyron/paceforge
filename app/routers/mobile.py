@@ -20,7 +20,8 @@ from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, model_validator
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import and_, cast, delete, func, or_, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
@@ -351,39 +352,48 @@ async def latest_per_metric(db: AsyncSession, phone: MobileDevice) -> dict:
             for row in rows}
 
 
+def daily_upsert(dialect: str, day: Daily, phone: MobileDevice, seen: datetime | None, now: datetime):
+    """One day's insert-or-update; a no-op when nothing changed."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    postgres = dialect != "sqlite"
+    values = day.model_dump(exclude={"unit"})
+    values.update(user_id=phone.user_id, platform=phone.platform, device_id=phone.id, updated_at=now)
+    stmt = (pg_insert if postgres else sqlite_insert)(MobileDaily).values(**values)
+    new = stmt.excluded
+    # The production column is `json` (migration d4a5b6c7d8e9), which has no equality
+    # operator on PostgreSQL: compare the sources as jsonb there.
+    sources = (cast(MobileDaily.sources, JSONB), cast(new.sources, JSONB)) if postgres else (MobileDaily.sources, new.sources)
+    # Identical re-sends (every background run) change nothing: no updated_at,
+    # receipt count or Santé data version bump.
+    changed = or_(MobileDaily.value.is_distinct_from(new.value), sources[0].is_distinct_from(sources[1]),
+                  MobileDaily.measured_at.is_distinct_from(new.measured_at))
+    if day.metric in ("weight", "body_fat"):
+        # An older snapshot must not replace a later weigh-in: not from another
+        # device, nor from a delayed request. The same phone may replace its own
+        # day when it read Santé after that row was stored: the later weigh-in
+        # was deleted there, and the day's previous one is now its latest.
+        ordered = MobileDaily.measured_at.is_(None) | (new.measured_at >= MobileDaily.measured_at)
+        if seen is not None:
+            ordered = ordered | ((MobileDaily.device_id == phone.id) & (MobileDaily.updated_at <= seen))
+        changed = changed & ordered
+    return stmt.on_conflict_do_update(
+        index_elements=["user_id", "platform", "date", "metric"],
+        set_={key: getattr(new, key) for key in ("value", "sources", "measured_at", "device_id", "updated_at")},
+        where=changed,
+    ).returning(MobileDaily)
+
+
 @router.post("/api/mobile/daily")
 async def ingest(request: Request, phone: MobileDevice = Depends(limited), db: AsyncSession = Depends(get_db),
                  x_paceforge_read_at: str | None = Header(default=None)):
     body = validated(Import, await capped_body(request, MAX_DAILY_BYTES))
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-    insert = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
     now = datetime.now(timezone.utc)
     seen = read_at(x_paceforge_read_at, now)
     received = 0
     for day in body.days:
-        values = day.model_dump(exclude={"unit"})
-        values.update(user_id=phone.user_id, platform=phone.platform, device_id=phone.id, updated_at=now)
-        stmt = insert(MobileDaily).values(**values)
-        new = stmt.excluded
-        # Identical re-sends (every background run) change nothing: no updated_at,
-        # receipt count or Santé data version bump.
-        changed = or_(*(getattr(MobileDaily, key).is_distinct_from(getattr(new, key))
-                        for key in ("value", "sources", "measured_at")))
-        if day.metric in ("weight", "body_fat"):
-            # An older snapshot must not replace a later weigh-in: not from another
-            # device, nor from a delayed request. The same phone may replace its own
-            # day when it read Santé after that row was stored: the later weigh-in
-            # was deleted there, and the day's previous one is now its latest.
-            ordered = MobileDaily.measured_at.is_(None) | (new.measured_at >= MobileDaily.measured_at)
-            if seen is not None:
-                ordered = ordered | ((MobileDaily.device_id == phone.id) & (MobileDaily.updated_at <= seen))
-            changed = changed & ordered
-        result = await db.scalars(stmt.on_conflict_do_update(
-            index_elements=["user_id", "platform", "date", "metric"],
-            set_={key: getattr(new, key) for key in ("value", "sources", "measured_at", "device_id", "updated_at")},
-            where=changed,
-        ).returning(MobileDaily), execution_options={"populate_existing": True})
+        result = await db.scalars(daily_upsert(db.bind.dialect.name, day, phone, seen, now),
+                                  execution_options={"populate_existing": True})
         received += len(result.all())
     if received:
         phone.last_sync_at = now

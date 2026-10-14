@@ -264,6 +264,21 @@ async def test_identical_resends_change_nothing_and_latest_is_one_row_per_metric
     assert await data_version(db_session, test_user.id) != version
 
 
+def test_the_no_op_upsert_compares_sources_as_jsonb_on_postgresql():
+    # The production column is `json` (migration d4a5b6c7d8e9): PostgreSQL has no
+    # json = json operator, so a plain IS DISTINCT FROM failed every daily upload.
+    from sqlalchemy.dialects import postgresql, sqlite
+    now = datetime.now(timezone.utc)
+    phone = MobileDevice(id=1, user_id=2, platform='ios')
+    for payload in (day(), day(metric='steps', value=1000, unit='count', measured_at=None, sources=['iPhone'])):
+        row = mobile.Daily.model_validate(payload)
+        pg = str(mobile.daily_upsert('postgresql', row, phone, now, now).compile(dialect=postgresql.dialect()))
+        assert 'CAST(mobile_daily.sources AS JSONB) IS DISTINCT FROM CAST(excluded.sources AS JSONB)' in pg
+        assert 'mobile_daily.sources IS DISTINCT FROM excluded.sources' not in pg
+        lite = str(mobile.daily_upsert('sqlite', row, phone, None, now).compile(dialect=sqlite.dialect()))
+        assert 'CAST' not in lite and 'mobile_daily.sources IS NOT excluded.sources' in lite
+
+
 async def test_a_phone_corrects_its_own_day_but_an_older_snapshot_never_wins(client, db_session, test_user):
     account, _ = await paired(client, test_user)
     other, _ = await paired(client, test_user)
