@@ -177,12 +177,15 @@ async def manual_sync(
                     errors.append("Strava : synchronisation incomplète. Réessaie dans un instant.")
         return JSONResponse({"received": received, "errors": errors}, headers={"Cache-Control": "no-store"})
     new_count = 0  # sessions Strava brought, a watch's row taken over included
-    running = False
+    running = failed = False
     if user.has_strava_linked and user.has_strava_app and user.strava_credentials_valid:
+        progress = {"saved": 0}
         try:
-            new_count = await _sync_recent_activities(user, db)
+            new_count = await _sync_recent_activities(user, db, strict=True, progress=progress)
         except SyncRunning:
             running = True
+        except Exception:  # what it saved before failing stays (this request commits it): said as such
+            new_count, failed = progress["saved"], True
 
     if new_count > 0:
         # Show the result, then refresh so the new rows land in their week.
@@ -196,6 +199,8 @@ async def manual_sync(
         msg = "Reconnecte Strava dans les Réglages pour activer la sync."
     elif running:
         msg = "Synchro déjà en cours."
+    elif failed:
+        msg = "Strava : synchronisation incomplète. Réessaie dans un instant."
     else:
         msg = "Déjà à jour — aucune nouvelle activité."
     return HTMLResponse(f"<span>{msg}</span>")
@@ -374,18 +379,20 @@ class SyncRunning(Exception):
     """Another « Synchroniser » of this athlete is running (another tab, a double tap)."""
 
 
-async def _sync_recent_activities(user: User, db: AsyncSession, *, strict: bool = False) -> int:
+async def _sync_recent_activities(user: User, db: AsyncSession, *, strict: bool = False,
+                                  progress: dict | None = None) -> int:
     """« Synchroniser »: the athlete's newest Strava activities until a page is all known (strava_activities).
     Once a minute per athlete at most, from the end of the last one: a click within it asks nothing and reads as
     nothing new; one while a sync of theirs runs raises SyncRunning; a failed one may be tried again at once.
-    Returns how many Strava sessions were saved, those saved before a failure included."""
+    Returns how many Strava sessions were saved, those saved before a failure included (`progress["saved"]` also
+    tells them when it raises)."""
     running = f"manual:{user.id}:running"
     if not strava_state.claim(running, SYNC_RUNNING_S):
         raise SyncRunning()
     try:
         if strava_state.read(f"manual:{user.id}") is not None:
             return 0
-        progress = {"saved": 0}
+        progress = {"saved": 0} if progress is None else progress
         try:
             strava = StravaService.for_user(db, user)
             await import_recent(db, user, strava, SYNC_PAGES, progress)

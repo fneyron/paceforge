@@ -1156,7 +1156,8 @@ async def test_synchroniser_says_what_it_saved_and_when_one_is_running(as_user, 
     """Review D10: (a) a sync that saved page 1 then failed on page 2 answered « Déjà à jour » (the rows were saved;
     the base said « 30 nouvelle(s) activité(s) importée(s). » and reloaded); (b) a click while another sync of the
     athlete runs (another tab) answered « aucune nouvelle activité ». Now (a) counts what was saved, (b) says
-    « Synchro déjà en cours. » (the pull-to-refresh, which only reads errors, gets none)."""
+    « Synchro déjà en cours. » (the pull-to-refresh, which only reads errors, gets none), and a sync that failed
+    before saving anything says so."""
     from sqlalchemy import func
 
     await _own_app(db_session, test_user)
@@ -1172,6 +1173,10 @@ async def test_synchroniser_says_what_it_saved_and_when_one_is_running(as_user, 
         Activity.user_id == test_user.id))).scalar()
     assert "30 nouvelle(s) activité(s) importée(s)." in r.text and "location.reload" in r.text and saved == 30
     assert strava_state.read(f"manual:{test_user.id}") is None  # failed: may be tried again at once
+    # failed before saving anything: said so (the pull-to-refresh's wording), not « Déjà à jour »
+    monkeypatch.setattr(StravaService, "get_recent_activities", AsyncMock(side_effect=httpx.ConnectError("down")))
+    r = await as_user.post("/api/sync")
+    assert r.text == "<span>Strava : synchronisation incomplète. Réessaie dans un instant.</span>"
 
     fetch_mock = AsyncMock(return_value=[])
     monkeypatch.setattr(StravaService, "get_recent_activities", fetch_mock)
