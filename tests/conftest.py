@@ -263,6 +263,17 @@ async def committing_client(committing_session: AsyncSession):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_legacy_estimates():
+    """The older page's estimates read again (routers.simulator._legacy_estimate_s) are kept per worker by route id:
+    never across tests, whose ids repeat."""
+    from app.routers import simulator
+
+    simulator._LEGACY.clear()
+    simulator._LEGACY_MODELS.clear()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _open_meteo_marker_in_memory(monkeypatch):
     """The Open-Meteo outage marker in this process, fresh for each test: no test reaches a real Redis (production
     shares it between the workers there, weather.RedisMarker)."""

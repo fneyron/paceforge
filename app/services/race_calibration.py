@@ -237,6 +237,11 @@ async def build_race_effort_model(db: AsyncSession, user_id: int, months: int = 
     Returns {"a", "b", "n", "fitted", "races": [...]} or None when no race is
     usable (the caller then keeps the training-based prediction).
     """
+    return model_from_points(await collect_race_points(db, user_id, months))
+
+
+async def collect_race_points(db: AsyncSession, user_id: int, months: int = MODEL_MONTHS) -> list[dict]:
+    """The athlete's races and long efforts as the model reads them (race_point; one per duplicate)."""
     result = await db.execute(candidate_query(user_id, months).order_by(Activity.start_date.desc()))
     acts = result.scalars().all()
 
@@ -258,7 +263,7 @@ async def build_race_effort_model(db: AsyncSession, user_id: int, months: int = 
             day=a.start_date.date() if a.start_date else None, id=a.id, dplus_src=src,
             **({"heat": heat} if heat else {}),
         ))
-    return model_from_points(points)
+    return points
 
 
 def race_point(name: str, km: float, dplus: float, hours: float, is_race: bool,

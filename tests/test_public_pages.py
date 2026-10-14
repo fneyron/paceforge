@@ -131,8 +131,9 @@ async def test_landing_numbers_come_from_the_json(client: AsyncClient, stats_fil
     assert html.count(f"98{NNBSP}765") == 1 and html.count(f"1{NNBSP}234") == 1
     # fit.races / fit.finisher_results count the test races too: never shown as the training base
     assert f"23{NNBSP}456" not in html and ">131<" not in html
-    # the real numbers are not hard-coded in the template
-    assert "995" not in html and f"119{NNBSP}512" not in html and "21,5" not in html
+    # the real numbers are not hard-coded in the template (the assets' build hash, ?v=…, aside: any digits)
+    text = re.sub(r"\?v=[0-9a-f]+", "", html)
+    assert "995" not in text and f"119{NNBSP}512" not in text and "21,5" not in text
 
 
 @pytest.mark.asyncio
@@ -153,7 +154,8 @@ async def test_methode_numbers_come_from_the_json(client: AsyncClient, stats_fil
         assert expected in html, expected
     assert "data-transjeju" not in html
     assert ">131<" not in html and f"23{NNBSP}456" not in html
-    assert "995" not in html and "21,5" not in html
+    text = re.sub(r"\?v=[0-9a-f]+", "", html)  # the assets' build hash: any digits
+    assert "995" not in text and "21,5" not in text
     # the held-out events were looked at while some settings were chosen: never « jamais vues »
     assert "sur lesquelles la courbe n'est pas ajustée" in html and "un peu optimiste" in html
     assert "jamais vues" not in html

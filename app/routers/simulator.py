@@ -103,7 +103,7 @@ async def simulator_page(
                         await db.refresh(rt, attribute_names=["course_json"])
                     if profile is None:
                         profile = await build_athlete_gradient_profile(db, user.id)
-                    m = _legacy_estimate_s(rt, profile)
+                    m = _legacy_estimate_s(rt, await _legacy_profile(db, user.id, profile))
                 rt.legacy_estimate_s = m or 0
             except Exception:
                 logger.exception("legacy objective check failed for route %s", rt.id)
@@ -854,7 +854,7 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         _aid_kms_from_checkpoints(ncps),
     )
     estimate_s = _to_minute(est)
-    objective_s = _objective_s(route, profile)
+    objective_s = await _route_objective(db, route, profile)
 
     coords = course.route_coords or []
     geojson = {
@@ -1988,15 +1988,20 @@ def _to_minute(seconds: float) -> int:
 
 
 # Until 2026-10-14 the page saved its objective field at every save: his objective, or its own estimate when he
-# had not moved it — the moving time at his level from the route's start. Today's page saves only a time he set and
-# marks its saves (TARGET_VERSION, params_json): a marked time is his objective, always. An unmarked one is read
-# against what that older page showed: within LEGACY_TARGET_SHARE of it read again today, or of the estimate stored
-# with the course at its import (what the first page showed and kept, by the level law of the day: the law changed
-# with this release, 5-12 % on the owner's courses), that estimate.
+# had not moved it — the moving time at his level from the route's start, his level read with the law of the day.
+# Today's page saves only a time he set and marks its saves (TARGET_VERSION, params_json): a marked time is his
+# objective, always. An unmarked one is that older page's estimate when within LEGACY_TARGET_SHARE of it — read
+# again with that law (race_legacy, frozen for this alone: this release's law moves the owner's estimates 4-10 %)
+# or as stored with the course at its import — else his objective.
 TARGET_VERSION = 2
 LEGACY_TARGET_SHARE = 0.02
 LEGACY_TTL_S = 15 * 60
 _LEGACY: dict[tuple, tuple[float, float | None]] = {}
+_LEGACY_MODELS: dict[int, tuple[float, dict | None]] = {}
+
+
+def _marked(route: Route) -> bool:
+    return (route.params_json or {}).get("target_v") == TARGET_VERSION
 
 
 def _legacy_cached(route: Route) -> tuple[bool, float | None]:
@@ -2005,21 +2010,39 @@ def _legacy_cached(route: Route) -> tuple[bool, float | None]:
     return (True, hit[1]) if hit and time.monotonic() - hit[0] < LEGACY_TTL_S else (False, None)
 
 
-def _legacy_estimate_s(route: Route, profile) -> float | None:
+async def _legacy_profile(db: AsyncSession, user_id: int, profile):
+    """His profile with his race model as the law before 2026-10-14 read it (race_legacy), no heat in it; the
+    model per worker for LEGACY_TTL_S."""
+    from app.services import race_legacy
+
+    now = time.monotonic()
+    hit = _LEGACY_MODELS.get(user_id)
+    if hit and now - hit[0] < LEGACY_TTL_S:
+        model = hit[1]
+    else:
+        model = await race_legacy.legacy_model(db, user_id)
+        for k in [k for k, (at, _) in _LEGACY_MODELS.items() if now - at >= LEGACY_TTL_S]:
+            del _LEGACY_MODELS[k]
+        _LEGACY_MODELS[user_id] = (now, model)
+    return profile.model_copy(update={"race_model": model, "race_calibration": None})
+
+
+def _legacy_estimate_s(route: Route, legacy_profile) -> float | None:
     """What a page before TARGET_VERSION showed, and saved, in the objective field: the moving time at his level
-    from the route's own start (that page's predict_course call), read with today's profile; per worker for
-    LEGACY_TTL_S. None for a bike or triathlon route, or without a course or a profile."""
+    (``legacy_profile``: _legacy_profile) from the route's own start, by today's prediction (that page's
+    predict_course call, without the races' mean heat); per worker for LEGACY_TTL_S. None for a bike or
+    triathlon route, or without a course or a profile."""
     from app.schemas.simulator import CourseProfile
     from app.services.race_simulator import predict_course
 
     known, m = _legacy_cached(route)
     if known:
         return m
-    if profile is None or not route.course_json or (route.sport_type or "trail") in ("bike", "triathlon"):
+    if legacy_profile is None or not route.course_json or (route.sport_type or "trail") in ("bike", "triathlon"):
         return None
     key, now = (route.id, route.user_id, route.start_hour, route.start_minute), time.monotonic()
     try:
-        m = float(predict_course(CourseProfile(**route.course_json), profile.model_copy(),
+        m = float(predict_course(CourseProfile(**route.course_json), legacy_profile.model_copy(),
                                  start_hour=route.start_hour if route.start_hour is not None else 6,
                                  start_minute=route.start_minute or 0).predicted_total_time_s) or None
     except Exception:
@@ -2031,27 +2054,36 @@ def _legacy_estimate_s(route: Route, profile) -> float | None:
     return m
 
 
-def _objective_s(route: Route, profile=None, legacy_s: float | None = None,
-                 imported_s: float | None = None) -> int | None:
+def _objective_s(route: Route, legacy_s: float | None = None, imported_s: float | None = None) -> int | None:
     """The objective he set. Saved by today's page (TARGET_VERSION): typed by him, his objective whatever the
-    estimate says. Saved before: the older page's own estimate when within LEGACY_TARGET_SHARE of it — read today
-    (``legacy_s``, else _legacy_estimate_s with ``profile``) or stored at the course's import (``imported_s``, else
-    read from the course) — else his objective."""
+    estimate says. Saved before: the older page's own estimate when within LEGACY_TARGET_SHARE of it — read again
+    (``legacy_s``: _legacy_estimate_s) or stored at the course's import (``imported_s``, else read from the
+    course) — else his objective."""
     t = route.target_time_s
     if not t:
         return None
-    if (route.params_json or {}).get("target_v") == TARGET_VERSION:
+    if _marked(route):
         return int(t)
-    m = legacy_s if legacy_s is not None else _legacy_estimate_s(route, profile)
     if imported_s is None:
         imported_s = (route.course_json or {}).get("predicted_total_time_s")
-    for ref in (m, imported_s):
+    for ref in (legacy_s, imported_s):
         try:
             if ref and abs(int(t) - float(ref)) <= LEGACY_TARGET_SHARE * float(ref):
                 return None
         except (TypeError, ValueError):
             continue
     return int(t)
+
+
+async def _route_objective(db: AsyncSession, route: Route, profile) -> int | None:
+    """_objective_s, the older page's estimate read again only when the import's does not settle it."""
+    t = _objective_s(route)
+    if t is None or _marked(route) or (route.sport_type or "trail") in ("bike", "triathlon"):
+        return t
+    known, m = _legacy_cached(route)
+    if not known:
+        m = _legacy_estimate_s(route, await _legacy_profile(db, route.user_id, profile))
+    return _objective_s(route, legacy_s=m)
 
 
 # The former fixed Optimiste / Sécurité defaults: saved with the form until 2026-10-14 (it posted both fields),
@@ -2178,7 +2210,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     course, est, _ = _estimate(course, profile, start_hour, start_minute, clock, cps, route.stop_minutes, total_km,
                                own_weather, heat, hourly, aid, fine)
     estimate_s = _to_minute(est)
-    objective_s = _objective_s(route, profile)
+    objective_s = await _route_objective(db, route, profile)
     target = objective_s or estimate_s
     aid_stops = _aid_stops(cps, route.stop_minutes, float(target), total_km)
     course = predict_course(

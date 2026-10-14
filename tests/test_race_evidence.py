@@ -1019,3 +1019,79 @@ async def test_mes_courses_reads_the_objective_by_the_same_rule(as_user: AsyncCl
     db_session.expunge_all()
     html = (await as_user.get("/simulator")).text
     assert "5h00" in html and f"{shown // 3600}h{shown % 3600 // 60:02d}" not in html
+
+
+# the owner's races as Strava gives them (moving hours, Strava D+): the older page read his level with the law of
+# before 2026-10-14 (race_legacy)
+OWNER_RACES = [("UTMB Transjeju 100M - 2eme", "2026-10-02", 148.2, 5513, 16.07),
+               ("Marathon du mont blanc 90km", "2026-06-26", 87.4, 5977, 13.53),
+               ("100k UTMB Chiang Mai", "2025-12-05", 92.3, 4714, 11.16), ("TDS UTMB - 30eme", "2025-08-25", 152.9, 8801, 22.92),
+               ("Marathon du mont blanc 90k", "2025-06-27", 92.2, 6117, 14.26), ("Semi Pollencia", "2025-05-18", 21.1, 29, 1.25),
+               ("Trans Inthanon", "2024-12-06", 91.7, 4865, 15.64), ("Maxi Race", "2024-06-01", 93.1, 5247, 12.27)]
+
+
+def _course_km(n):
+    """n km of the test course's hills (about 32 m of D+ per km)."""
+    from app.schemas.simulator import CourseProfile, CourseSegment
+
+    grades = [0, 1, -1, 0, 6, 8, 10, 22, 24, 6, -8, -10, -9, -7, -2, 0, 1, 0, -1, 0, 5, 7, 6, -6, -8, -4, 0, 1, 0, -1]
+    segs, elev, pts, coords = [], 200.0, [], []
+    for i in range(n):
+        g, s0 = grades[i % len(grades)], elev
+        elev += g * 10
+        segs.append(CourseSegment(index=i, start_km=float(i), end_km=float(i + 1), distance_m=1000.0,
+                                  elevation_gain=max(0.0, elev - s0), elevation_loss=max(0.0, s0 - elev), avg_gradient_pct=float(g),
+                                  min_elevation=min(s0, elev), max_elevation=max(s0, elev)))
+        for k in range(4):
+            km, e = i + k / 4, s0 + (elev - s0) * k / 4
+            pts.append({"distance_km": km, "elevation": e})
+            coords.append([45.0 + km * 0.003, 6.8, km, e])
+    pts.append({"distance_km": float(n), "elevation": elev})
+    coords.append([45.0 + n * 0.003, 6.8, float(n), elev])
+    return CourseProfile(name=f"C{n}", total_distance_km=float(n), total_elevation_gain=sum(s.elevation_gain for s in segs),
+                         total_elevation_loss=sum(s.elevation_loss for s in segs), segments=segs, elevation_points=pts,
+                         route_coords=coords)
+
+
+@pytest.mark.asyncio
+async def test_an_older_pages_estimate_is_read_with_the_law_it_was_made_with(db_session, test_user):
+    """Review: the older page saved its moving-time estimate with the level law of its day; read with this
+    release's law (his estimates 4-10 % slower) it passed for an objective. It is read again with that law, frozen
+    (race_legacy): no objective, even saved after a race the import estimate predates. His Transjeju objective,
+    18h30 against that page's 16-17 h, stays his."""
+    from app.models.route import Route
+    from app.routers import simulator as sim
+    from app.services import race_legacy as rl
+
+    for i, (name, day, km, dp, h) in enumerate(OWNER_RACES):
+        db_session.add(Activity(strava_activity_id=95000 + i, user_id=test_user.id, sport_type="TrailRun", name=name,
+                                start_date=datetime.fromisoformat(day + "T05:00:00+00:00"), distance=km * 1000,
+                                moving_time=int(h * 3600), elapsed_time=int(h * 3600), total_elevation_gain=dp,
+                                raw_data={"workout_type": 1}))
+    await db_session.flush()
+    course = _course_km(148)
+    profile = await rs.build_athlete_gradient_profile(db_session, test_user.id)
+    legacy = await sim._legacy_profile(db_session, test_user.id, profile)
+    assert legacy.race_model and "heat_mean" not in legacy.race_model and legacy.race_model["b"] == pytest.approx(
+        rl.model_from_points(await rc.collect_race_points(db_session, test_user.id))["b"])
+    old_page = rs.predict_course(course.model_copy(deep=True), legacy.model_copy(), start_hour=6).predicted_total_time_s
+    today = rs.predict_course(course.model_copy(deep=True), profile.model_copy(), start_hour=6).predicted_total_time_s
+    assert 15.5 * 3600 < old_page < 17.5 * 3600 and today > old_page * 1.04  # this release's law: slower for him
+    # imported before Transjeju (its estimate stored with the course then), saved by the older page after it
+    before = rl.model_from_points([p for p in await rc.collect_race_points(db_session, test_user.id)
+                                   if not p["name"].startswith("UTMB Transjeju")])
+    imported = rs.predict_course(course.model_copy(deep=True), legacy.model_copy(update={"race_model": before}),
+                                 start_hour=6).predicted_total_time_s
+    cj = json.loads(course.model_dump_json())
+    cj["predicted_total_time_s"] = imported
+    for i, (label, target, his) in enumerate((("the older page's estimate", int((old_page + 30) // 60 * 60), False),
+                                              ("his Transjeju objective", 18 * 3600 + 30 * 60, True))):
+        route = Route(user_id=test_user.id, name=label, total_distance_km=148.0, total_elevation_gain=course.total_elevation_gain,
+                      course_json=cj, sport_type="trail", start_hour=6, start_minute=0, target_time_s=target)
+        db_session.add(route)
+        await db_session.flush()
+        assert (await sim._route_objective(db_session, route, profile) is not None) == his, label
+        b = await sim._plan_bundle(route, db_session, test_user, profile=profile)
+        assert (b["objective_s"] is not None) == his and b["has_objective"] == his, label
+    assert abs(imported / old_page - 1) > 0.02  # the import's estimate alone would not have told it
+    assert abs(int((old_page + 30) // 60 * 60) / today - 1) > 0.02  # nor this release's law (the previous rule)
