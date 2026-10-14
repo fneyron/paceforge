@@ -38,8 +38,27 @@ class VersionedStaticFiles(StaticFiles):
         return response
 
 
+DEFAULT_SECRET_KEYS = {"change-me-to-a-random-secret-key"}  # config.py's and .env.example's
+
+
+def check_secrets() -> None:
+    """No start with a SECRET_KEY anyone can guess (it signs the sessions: a forged one is any account),
+    unless DEBUG, nor with an ENCRYPTION_KEYS entry that is not a Fernet key."""
+    from app.crypto import check_keys
+
+    if not settings.DEBUG and (not settings.SECRET_KEY.strip() or settings.SECRET_KEY in DEFAULT_SECRET_KEYS):
+        raise RuntimeError("SECRET_KEY is empty or a known default: set a long random value.")
+    try:
+        check_keys()
+    except ValueError as e:
+        raise RuntimeError("ENCRYPTION_KEYS: each entry must be a Fernet key (comma-separated).") from e
+    if not settings.ENCRYPTION_KEYS.strip():
+        logger.warning("ENCRYPTION_KEYS is not set: stored tokens are encrypted with a key derived from SECRET_KEY")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
+    check_secrets()
     logger.info("PaceForge starting up")
     yield
     logger.info("PaceForge shutting down")

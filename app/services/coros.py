@@ -54,6 +54,7 @@ from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
+from cryptography.fernet import InvalidToken
 from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -367,29 +368,41 @@ async def _mark_reauth(db: AsyncSession, conn: CorosConnection, message: str) ->
     return CorosAuthError(message)
 
 
+EXPIRED = "La connexion à COROS a expiré : reconnecte-toi."
+
+
+async def _stored(db: AsyncSession, conn: CorosConnection, encrypted: bytes) -> str:
+    """A stored token; one no configured key decrypts any more (app.crypto) is a link to make again."""
+    try:
+        return decrypt_secret(encrypted)
+    except InvalidToken:
+        raise await _mark_reauth(db, conn, EXPIRED) from None
+
+
 async def access_token(db: AsyncSession, conn: CorosConnection, client: httpx.AsyncClient,
                        rejected: str | None = None) -> str:
     """A usable access token, refreshed when it expires within a day or when
     the server just `rejected` it. Commits: a rotated refresh token must never
     be lost to a later rollback."""
     if rejected is None and _fresh(conn):
-        return decrypt_secret(conn.access_token_encrypted)
+        return await _stored(db, conn, conn.access_token_encrypted)
     async with _lock_for(conn.user_id):
         # another worker may have rotated the pair meanwhile: re-read it, locked
         await db.refresh(conn, with_for_update=True)
-        current = decrypt_secret(conn.access_token_encrypted)
         if conn.needs_reauth:
             await db.commit()
             raise CorosAuthError(conn.last_error or "Reconnecte COROS.")
+        current = await _stored(db, conn, conn.access_token_encrypted)
         if (rejected is None and _fresh(conn)) or (rejected is not None and current != rejected):
             await db.commit()  # releases the row lock
             return current
         if not conn.refresh_token_encrypted:
-            raise await _mark_reauth(db, conn, "La connexion à COROS a expiré : reconnecte-toi.")
+            raise await _mark_reauth(db, conn, EXPIRED)
+        refresh = await _stored(db, conn, conn.refresh_token_encrypted)
         try:
             tokens = await _token_request(client, conn.token_endpoint, {
                 "grant_type": "refresh_token",
-                "refresh_token": decrypt_secret(conn.refresh_token_encrypted),
+                "refresh_token": refresh,
                 "client_id": conn.client_id,
                 "resource": conn.resource_url,
             })
@@ -1819,7 +1832,7 @@ async def disconnect(db: AsyncSession, conn: CorosConnection) -> None:
                             "token": decrypt_secret(enc), "token_type_hint": hint, "client_id": conn.client_id})
                         if r.status_code != 200:
                             logger.info("COROS revocation answered %s", r.status_code)
-        except (httpx.HTTPError, ValueError) as e:
+        except (httpx.HTTPError, ValueError, InvalidToken) as e:  # unreadable tokens: nothing to revoke with
             logger.info("COROS revocation failed: %r", e)
     await db.delete(conn)
     await db.flush()

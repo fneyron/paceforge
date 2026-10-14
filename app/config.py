@@ -29,7 +29,11 @@ class Settings(BaseSettings):
 
     # App
     BASE_URL: str = "http://localhost:8000"
+    # signs sessions and email links; the app refuses to start with an empty or default one unless DEBUG
     SECRET_KEY: str = "change-me-to-a-random-secret-key"
+    # Fernet keys for the secrets at rest (provider tokens), comma-separated, newest first: the first encrypts,
+    # all decrypt, and so does the key derived from SECRET_KEY used before them (app.crypto)
+    ENCRYPTION_KEYS: str = ""
     APP_NAME: str = "PaceForge"
     DEBUG: bool = False
     # Fetch each trace's road/track/trail surface from OpenStreetMap (off in tests)

@@ -3,6 +3,7 @@ import json
 import secrets
 from datetime import UTC, datetime, timedelta
 
+from cryptography.fernet import InvalidToken
 from sqlalchemy import delete
 
 from app.crypto import decrypt_secret, encrypt_secret
@@ -44,4 +45,7 @@ async def consume_strava(request, db, user_id: int, state: str | None):
     await db.commit()
     if row is None:
         return None
-    return json.loads(decrypt_secret(row[0])) if row[0] else {}
+    try:
+        return json.loads(decrypt_secret(row[0])) if row[0] else {}
+    except InvalidToken:  # no configured key reads it (app.crypto): as good as expired
+        return None

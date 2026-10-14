@@ -1423,3 +1423,23 @@ async def test_a_rotated_refresh_token_survives_a_later_rollback(committing_sess
     await db.refresh(conn)
     assert conn.last_error is None
     assert decrypt_secret(conn.refresh_token_encrypted) == "rt-2" and decrypt_secret(conn.access_token_encrypted) == "at-2"
+
+
+async def test_tokens_no_key_reads_ask_to_reconnect_and_still_disconnect(as_user: AsyncClient,
+                                                                         db_session: AsyncSession,
+                                                                         test_user: User, fake):
+    """Tokens no configured key decrypts (app.crypto): « reconnecte-toi », never « la synchro a échoué »."""
+    from cryptography.fernet import Fernet
+
+    conn = await _link(db_session, test_user)
+    other = Fernet(Fernet.generate_key())
+    conn.access_token_encrypted, conn.refresh_token_encrypted = other.encrypt(b"at-1"), other.encrypt(b"rt-1")
+    await db_session.flush()
+    outcome = await coros.run_sync(db_session, conn)
+    assert outcome["ok"] is False and conn.needs_reauth and conn.last_error == coros.EXPIRED
+    assert not fake.tool_calls and not fake.token_calls
+    page = (await as_user.get("/settings")).text
+    assert "À reconnecter" in page and "Reconnecter" in page
+    r = await as_user.post("/settings/coros/disconnect")
+    assert r.status_code == 303 and not fake.revoked  # nothing to revoke with: just forgotten
+    assert (await db_session.get(CorosConnection, conn.id)) is None
