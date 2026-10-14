@@ -146,20 +146,15 @@ def int_sum(col, scale=1):
     return func.sum(cast(func.round(case((func.abs(x) < 1e9, x), else_=0)), Integer))
 
 
-UNREAD = object()  # a clock the caller did not read (athlete_clock's None is a clock: none known)
-
-
 async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int = HISTORY_DAYS,
-                        zone=UNREAD) -> list[Session]:
+                        zone=None) -> list[Session]:
     """The sessions of the last `days` days, duplicates and false starts left
     out exactly as on Activités. Kept per worker until a session is added (the
     JSON fields cost a read of every activity's raw_data). A session whose UTC offset is unknown is dated on the
-    athlete's clock (athlete_clock: their zone once set, else their latest known UTC offset; UTC without either, as
-    before); its `offset` stays None (it says nothing of a time zone change). `zone`: athlete_clock's, when the
-    caller read it."""
-    if zone is UNREAD:
+    athlete's clock (athlete_clock); its `offset` stays None (it says nothing of a time zone change). `zone`:
+    athlete_clock's, when the caller read it."""
+    if zone is None:
         zone = await athlete_clock(db, user_id)
-    zone = zone or timezone.utc
     since = datetime.combine(today - timedelta(days=days), datetime.min.time(), tzinfo=timezone.utc)
     where = (Activity.user_id == user_id, Activity.start_date >= since)
     # the sport's family weighs differently, so a re-import from one family to another is seen
@@ -262,52 +257,69 @@ async def load_hr_segments(db: AsyncSession, user_id: int, sessions: list[Sessio
         _SEGS[user_id] = (key, {**memo, **{s.id: (s.segs, s.splits) for s in want}})
 
 
-async def utc_offset(db: AsyncSession, user_id: int, now: datetime | None = None) -> float | None:
-    """Latest known location: an activity offset or a more recent HealthKit night zone."""
-    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-    from app.models.health import HealthMetric
-
+async def _known_offset(db: AsyncSession, user_id: int) -> tuple[float, datetime] | None:
+    """(UTC offset in seconds, start) of the latest of the athlete's 10 latest activities that says its offset."""
     rows = (await db.execute(
         select(Activity.raw_data["utc_offset"].as_string(), Activity.raw_data["startTimeLocal"].as_string(),
                Activity.raw_data["startTimeGMT"].as_string(), Activity.start_date).where(Activity.user_id == user_id)
         .order_by(Activity.start_date.desc()).limit(10))).all()
-    known = next(((o, _utc(at)) for a,b,c,at in rows if (o := _offset(_float(a),b,c)) is not None), None)
-    night = await db.scalar(select(HealthMetric).where(HealthMetric.user_id == user_id,
-        HealthMetric.metric == "sleep", HealthMetric.source.startswith("Apple Santé:"))
-        .order_by(HealthMetric.date.desc(), HealthMetric.updated_at.desc()).limit(1))
-    if night:
-        try:
-            end = _utc(datetime.fromisoformat(night.details["utc_end"]))
-            if not known or end > known[1]:
-                return (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(night.details["timezone"])).utcoffset().total_seconds()
-        except (KeyError, ValueError, TypeError, ZoneInfoNotFoundError):
-            pass
+    return next(((o, _utc(at)) for a, b, c, at in rows if (o := _offset(_float(a), b, c)) is not None), None)
+
+
+async def _phone_night(db: AsyncSession, user_id: int) -> tuple[str | None, datetime | None]:
+    """The IANA zone and the end (UTC) of the athlete's latest phone night (Apple Santé), as it says them."""
+    from app.models.health import HealthMetric
+
+    row = (await db.execute(select(HealthMetric.details["timezone"].as_string(),
+                                   HealthMetric.details["utc_end"].as_string()).where(
+        HealthMetric.user_id == user_id, HealthMetric.metric == "sleep",
+        HealthMetric.source.startswith("Apple Santé:"))
+        .order_by(HealthMetric.date.desc(), HealthMetric.updated_at.desc()).limit(1))).first()
+    if row is None:
+        return None, None
+    try:
+        end = _utc(datetime.fromisoformat(row[1])) if row[1] else None
+    except (TypeError, ValueError):
+        end = None
+    return row[0], end
+
+
+async def utc_offset(db: AsyncSession, user_id: int, now: datetime | None = None) -> float | None:
+    """Latest known location: an activity offset or a more recent HealthKit night zone (the race page's)."""
+    from app.services import timezones
+
+    known = await _known_offset(db, user_id)
+    name, end = await _phone_night(db, user_id)
+    zone = timezones.known_zone(name)
+    if zone is not None and end is not None and (not known or end > known[1]):
+        return (now or datetime.now(timezone.utc)).astimezone(zone).utcoffset().total_seconds()
     return known[0] if known else None
 
 
-async def athlete_clock(db: AsyncSession, user_id: int, now: datetime | None = None, user=None):
-    """The clock the athlete's days are read on: their zone once users.timezone is set (owner, 2026-10-14:
-    scientific basis — a fixed offset is a day off after the 25 October clock change or a trip; Strava's profile and
-    the phone's night packets fill it in); until then (NULL for every athlete who signed up before), the older rule:
-    the UTC offset of their latest activity, or of a more recent phone night (utc_offset), held fixed (review,
-    2026-10-14: Europe/Paris in its place put a Garmin athlete in Martinique 4 to 6 hours ahead); None without
-    either (the caller reads UTC, as before). `user`: the row the caller already holds (one read of it per page)."""
+async def athlete_clock(db: AsyncSession, user_id: int, user=None):
+    """The clock the athlete's days are read on, Santé's and Activités' alike (timezones.clock_of: users.timezone;
+    else their latest phone night's zone; else Europe/Paris when their latest activity's UTC offset is Paris's at
+    that moment, or none is known; else that fixed offset). A tzinfo, never None. One read of each input at most: the
+    user (`user`: the row the caller holds), then the latest phone night, then the latest activities' offsets —
+    none when the zone is set; a page reads it once and passes it down (Activités read it four times)."""
     from app.models.user import User
     from app.services import timezones
 
     if user is None:
         user = await db.get(User, user_id)
     if user is not None and user.timezone:
-        return timezones.athlete_zone(user)
-    offset = await utc_offset(db, user_id, now)
-    return None if offset is None else timezone(timedelta(seconds=offset))
+        return timezones.clock_of(user.timezone)
+    phone = timezones.known_zone((await _phone_night(db, user_id))[0])
+    if phone is not None:
+        return phone
+    return timezones.clock_of(None, None, await _known_offset(db, user_id))
 
 
 async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = None,
-                        latest: date | None = None, zone=UNREAD) -> date:
-    """The athlete's date, the one Santé, Activités and the race page read: the clock on athlete_clock (their zone
-    once set, else their latest known UTC offset, else UTC); the watch's day when it is already on tomorrow (a zone
-    not yet updated after flying east). `zone`: athlete_clock's, when the caller read it."""
+                        latest: date | None = None, zone=None) -> date:
+    """The athlete's date, the one Santé, Activités and the race page read: the clock on athlete_clock; the watch's
+    day when it is already on tomorrow (a zone not yet updated after flying east). `zone`: athlete_clock's, when the
+    caller read it."""
     from app.models.health import HealthMetric
     from app.models.mobile import MobileDaily
     from app.services import timezones
@@ -318,9 +330,9 @@ async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = N
             select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
     mobile_day = await db.scalar(select(func.max(MobileDaily.date)).where(MobileDaily.user_id == user_id))
     latest = max((d for d in (latest, mobile_day) if d is not None), default=None)
-    if zone is UNREAD:
-        zone = await athlete_clock(db, user_id, now)
-    today = timezones.local_date(now, zone or timezone.utc)
+    if zone is None:
+        zone = await athlete_clock(db, user_id)
+    today = timezones.local_date(now, zone)
     if latest and today < latest <= today + timedelta(days=1):  # the watch is already on tomorrow
         today = latest
     return today

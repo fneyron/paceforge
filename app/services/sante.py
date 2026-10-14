@@ -59,7 +59,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     now = now or datetime.now(timezone.utc)
     latest = (await db.execute(select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
     user = await db.get(User, user_id)  # read once, held for the page (every later read of it is this one)
-    zone = await st.athlete_clock(db, user_id, now, user)
+    zone = await st.athlete_clock(db, user_id, user)
     clock = None  # the athlete's wall clock, only for the day the page finds itself (a given day stays as given)
     if today is None:
         today = await athlete_today(db, user_id, now, latest, zone=zone)
@@ -145,14 +145,11 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
 CYCLE_NOON = 12  # (H) from noon, a day whose night never came is that day anyway (the watch was not worn)
 
 
-async def local_clock(db: AsyncSession, user_id: int, now: datetime, zone=st.UNREAD) -> datetime | None:
-    """The athlete's wall-clock time (naive) on sante_training.athlete_clock (their zone once users.timezone is
-    set, else their latest known UTC offset); None without either (a day as the calendar's); a seam the tests
-    move. `zone`: athlete_clock's, when the caller read it."""
-    if zone is st.UNREAD:
-        zone = await st.athlete_clock(db, user_id, now)
+async def local_clock(db: AsyncSession, user_id: int, now: datetime, zone=None) -> datetime | None:
+    """The athlete's wall-clock time (naive) on sante_training.athlete_clock; a seam the tests move (None: no
+    clock, a day as the calendar's). `zone`: athlete_clock's, when the caller read it."""
     if zone is None:
-        return None
+        zone = await st.athlete_clock(db, user_id)
     moment = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
     return moment.astimezone(zone).replace(tzinfo=None)
 
@@ -640,7 +637,7 @@ async def _timeline(db: AsyncSession, user_id: int, nights, d: date) -> dict:
 
 
 async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = None,
-                        latest: date | None = None, zone=st.UNREAD) -> date:
+                        latest: date | None = None, zone=None) -> date:
     """sante_training.athlete_today (a seam the tests move to a fixed day)."""
     return await st.athlete_today(db, user_id, now, latest, zone=zone)
 

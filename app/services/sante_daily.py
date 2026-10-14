@@ -162,7 +162,7 @@ async def _phone_rows(db: AsyncSession, user_id: int, today: date) -> list[Mobil
 
 
 async def daily_context(db: AsyncSession, user_id: int, today: date, now: datetime | None = None,
-                        zone=st.UNREAD) -> list[dict]:
+                        zone=None) -> list[dict]:
     """The « Au quotidien » cards: the 30 days up to `today` (each metric's latest older value still dated), one
     value per day and metric; the weight is the one weight rule's (athlete_weight: the most recent dated value of
     the weigh-ins and the value typed in Réglages, stale after 30 days), the chart its weigh-ins of the 30 days.
@@ -204,7 +204,7 @@ async def daily_context(db: AsyncSession, user_id: int, today: date, now: dateti
 
 
 async def _weight_card(db: AsyncSession, user_id: int, rows: list, today: date, now: datetime | None,
-                       zone=st.UNREAD) -> dict | None:
+                       zone=None) -> dict | None:
     """The single weight Santé prints (owner, 2026-10-14: scientific basis — it showed the latest phone weigh-in
     even when stale, and hid a more recent value typed in Réglages): athlete_weight's value, source and date, « Donnée
     ancienne » after 30 days (never for an undated typed value: its age is unknown); the 30 days' weigh-ins drawn
@@ -219,9 +219,9 @@ async def _weight_card(db: AsyncSession, user_id: int, rows: list, today: date, 
     if reading is None:
         return card
     typed = reading.source == "Saisie manuelle"
-    if zone is st.UNREAD:
-        zone = await st.athlete_clock(db, user_id, now, user)
-    latest = timezones.local_date(reading.at, zone or timezone.utc).strftime("%d/%m/%Y") if reading.at else None
+    if zone is None:
+        zone = await st.athlete_clock(db, user_id, user)
+    latest = timezones.local_date(reading.at, zone).strftime("%d/%m/%Y") if reading.at else None
     row = None if typed else next((r for r in rows if _valid(r) and _measured_at(r) == reading.at), None)
     out = {"key": "weight", "title": "Poids du profil" if typed else "Poids", "value": viz.num(reading.kg, 1, "kg"),
            "source": _source(row) if row else reading.source, "latest": latest, "stale": reading.stale,

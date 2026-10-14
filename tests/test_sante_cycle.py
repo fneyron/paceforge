@@ -2,13 +2,14 @@
 noon (H), while this morning's night has not reached the page and last night's has, the page is still yesterday's;
 from noon, or as soon as the night is in, today's. Owner, 2026-10-09, awake at 1 a.m. on a plane: « J'ai sommeil
 vide »."""
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
+from app.models.health import HealthMetric
 from app.models.user import User
-from app.services import sante
+from app.services import sante, timezones
 from app.services import sante_training as st
 from app.services.sante import local_clock as _local_clock  # the real one (the suite moves sante.local_clock)
 from tests.owner_v4 import D8, seed_owner_v4
@@ -93,10 +94,11 @@ def test_cycle_day_needs_last_nights_sleep():
 async def test_without_a_zone_the_day_is_the_latest_activity_s_clock(db_session: AsyncSession, test_user: User,
                                                                       monkeypatch):
     """users.timezone is NULL for every athlete who signed up before it (Strava's profile and the phone fill it in):
-    until then their day, their cycle and an activity without its own offset read the UTC offset of their latest
-    activity, as before; the zone once it is set (review, 2026-10-14: Europe/Paris in its place moved a Garmin
-    athlete in Martinique, UTC−4, to tomorrow from 18:00 / 19:00 local and dropped the cycle's day). Neither: UTC
-    and no wall clock (the calendar's day)."""
+    until then, an athlete whose latest activity was not on Paris's clock (a Garmin athlete in Martinique, UTC−4)
+    has their day, their cycle and an activity without its own offset on that activity's offset (review,
+    2026-10-14: Europe/Paris in its place moved them to tomorrow from 18:00 / 19:00 local and dropped the cycle's
+    day); the zone once it is set. Neither a zone, a phone night nor an offset: Europe/Paris, with its wall clock
+    (the second back-end review, 2026-10-14: it read UTC, without a clock)."""
     monkeypatch.setattr(sante, "local_clock", _local_clock)
     d15 = date(2026, 10, 15)
     rows = night_rows(range(1, 30), today=d15, start=(22, 30), end=(6, 30))
@@ -128,8 +130,46 @@ async def test_without_a_zone_the_day_is_the_latest_activity_s_clock(db_session:
     assert await sante.local_clock(db_session, test_user.id, evening) == datetime(2026, 10, 15, 3, 30)
     assert {s.name: s.day for s in await st.load_sessions(db_session, test_user.id, d15)}["no offset"] == \
         date(2026, 10, 13)
-    other = User(firstname="Other")  # no zone, no activity: UTC, and no wall clock
+    other = User(firstname="Other")  # no zone, no phone night, no activity: Paris, 03:30 on the 15th (was None)
     db_session.add(other)
     await db_session.flush()
     assert await st.athlete_today(db_session, other.id, evening) == d15
-    assert await sante.local_clock(db_session, other.id, evening) is None
+    assert await sante.local_clock(db_session, other.id, evening) == datetime(2026, 10, 15, 3, 30)
+
+
+async def test_one_clock_aware_of_daylight_saving_time(db_session: AsyncSession, test_user: User, monkeypatch):
+    """One rule for Santé and Activités (timezones.clock_of; the second back-end review, 2026-10-14): a Paris
+    athlete without a zone whose last run was on 24/10 at + 2 h (Paris's summer offset) reads Paris's clock, so the
+    clock change of 25 October is kept (a fixed + 2 h read 26/10 00:30 at 23:30 that evening); the latest phone
+    night's zone comes before the activities' offsets."""
+    monkeypatch.setattr(sante, "local_clock", _local_clock)
+    db_session.add(Activity(user_id=test_user.id, strava_activity_id=7, sport_type="Run", name="r",
+                            start_date=datetime(2026, 10, 24, 6, tzinfo=timezone.utc), distance=8000,
+                            moving_time=2700, elapsed_time=2700, total_elevation_gain=0, average_speed=3,
+                            raw_data={"utc_offset": 7200}))
+    await db_session.flush()
+    after = datetime(2026, 10, 25, 22, 30, tzinfo=timezone.utc)  # 23:30 in Paris (CET) on 25/10
+    assert (await st.athlete_clock(db_session, test_user.id)).key == "Europe/Paris"
+    assert await st.athlete_today(db_session, test_user.id, after) == date(2026, 10, 25)
+    assert await sante.local_clock(db_session, test_user.id, after) == datetime(2026, 10, 25, 23, 30)
+    db_session.add(HealthMetric(user_id=test_user.id, date=date(2026, 10, 24), metric="sleep", value=420,
+                                source="Apple Santé:" + "c" * 64,
+                                details={"utc_end": "2026-10-24T10:00:00+00:00", "timezone": "America/Martinique",
+                                         "main_start": "2026-10-23T23:00", "main_end": "2026-10-24T06:00"}))
+    await db_session.flush()
+    assert (await st.athlete_clock(db_session, test_user.id)).key == "America/Martinique"
+    assert await sante.local_clock(db_session, test_user.id, after) == datetime(2026, 10, 25, 18, 30)
+
+
+def test_the_clock_rule():
+    """users.timezone; else the latest phone night's IANA zone; else Europe/Paris when the latest activity's UTC
+    offset is Paris's at that moment, or none is known; else that fixed offset."""
+    summer, winter = datetime(2026, 7, 1, 6, tzinfo=timezone.utc), datetime(2026, 12, 1, 6, tzinfo=timezone.utc)
+    assert timezones.clock_of("Asia/Tokyo", "America/Martinique", (7200, summer)).key == "Asia/Tokyo"
+    assert timezones.clock_of(None, "America/Martinique", (7200, summer)).key == "America/Martinique"
+    assert timezones.clock_of(None, "Not/AZone", (7200, summer)).key == "Europe/Paris"  # an unknown name: skipped
+    assert timezones.clock_of(None, None, (7200, summer)).key == "Europe/Paris"
+    assert timezones.clock_of(None, None, (3600, winter)).key == "Europe/Paris"
+    assert timezones.clock_of(None, None, None).key == "Europe/Paris"
+    assert timezones.clock_of(None, None, (3600, summer)) == timezone(timedelta(hours=1))  # London in summer
+    assert timezones.clock_of(None, None, (-4 * 3600, winter)) == timezone(timedelta(hours=-4))

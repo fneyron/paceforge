@@ -97,11 +97,13 @@ def spikes(sessions: list[st.Session], since: date) -> list[tuple[st.Session, fl
     return out
 
 
-async def spike_ids(db: AsyncSession, user_id: int, since: date, now: datetime | None = None) -> set[int]:
+async def spike_ids(db: AsyncSession, user_id: int, since: date, now: datetime | None = None,
+                    zone=None) -> set[int]:
     """The activities of the list (since `since`) that are a single-run spike (spikes): their rows say « plus
-    longue que d'habitude » (v4.3: no ▲ on the chart any more). Never fails the list."""
+    longue que d'habitude » (v4.3: no ▲ on the chart any more). Never fails the list. `zone`:
+    sante_training.athlete_clock's, when the caller read it."""
     try:
-        zone = await st.athlete_clock(db, user_id, now)
+        zone = zone if zone is not None else await st.athlete_clock(db, user_id)
         today = await st.athlete_today(db, user_id, now, zone=zone)
         return {s.id for s, _ in spikes(await st.load_sessions(db, user_id, today, zone=zone), since)}
     except Exception:
@@ -119,16 +121,15 @@ def _sport_where(sport: str | None):
 
 
 async def week_totals(db: AsyncSession, user_id: int, sport: str | None,
-                      now: datetime) -> tuple[list[dict], date | None]:
+                      now: datetime, zone=None) -> tuple[list[dict], date | None]:
     """The last 12 weeks, oldest first, exactly as the list's week headings count them (dashboard._week_groups):
-    Monday to Sunday on the athlete's clock (timezones.athlete_zone; 2026-10-14: they were UTC Mondays, so a run
-    at 00:30 on a Monday in Paris fell in the week before), the same sport filter, the duplicates among those
-    activities and the false starts left out, the moving time; {monday, current, count, minutes, km, dplus}. And
-    the Monday of the first activity of that filter ever (the average reads the complete weeks since)."""
-    from app.models.user import User
-    from app.services import timezones
-
-    zone = timezones.athlete_zone(await db.get(User, user_id))
+    Monday to Sunday on the athlete's clock (sante_training.athlete_clock, the list's; 2026-10-14: they were UTC
+    Mondays, so a run at 00:30 on a Monday in Paris fell in the week before), the same sport filter, the duplicates
+    among those activities and the false starts left out, the moving time; {monday, current, count, minutes, km,
+    dplus}. And the Monday of the first activity of that filter ever (the average reads the complete weeks since).
+    `zone`: athlete_clock's, when the caller read it."""
+    if zone is None:
+        zone = await st.athlete_clock(db, user_id)
     this_monday = st.local_monday(now, zone)
     lo = this_monday - timedelta(weeks=WEEKS - 1)
 
@@ -293,16 +294,17 @@ def footing(sessions: list[st.Session], today: date, peak: float) -> dict | None
 # ── the block ───────────────────────────────────────────────────────────────
 
 async def training_top(db: AsyncSession, user_id: int, now: datetime | None = None, sport: str | None = None,
-                       measure: str | None = None) -> dict | None:
+                       measure: str | None = None, zone=None) -> dict | None:
     """What partials/activity_training.html draws for the sport filter `sport` (None: every sport), or None on a
     failure (the list below never blanks for it): « Semaines » (None without an activity in its 12 weeks) and
-    « FC en footing » (under « Tout », « Course » and « Trail »). No planned race is read."""
+    « FC en footing » (under « Tout », « Course » and « Trail »). No planned race is read. `zone`:
+    sante_training.athlete_clock's, when the caller read it."""
     try:
         now = now or datetime.now(timezone.utc)
-        weeks, first = await week_totals(db, user_id, sport, now)
+        zone = zone if zone is not None else await st.athlete_clock(db, user_id)
+        weeks, first = await week_totals(db, user_id, sport, now, zone)
         easy = None
         if sport in FOOTING_SPORTS:
-            zone = await st.athlete_clock(db, user_id, now)
             today = await st.athlete_today(db, user_id, now, zone=zone)
             sessions = await st.load_sessions(db, user_id, today, zone=zone)
             # their km splits: the same steady flat splits Santé › Forme reads (sante_training.comparable)

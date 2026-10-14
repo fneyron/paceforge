@@ -36,11 +36,14 @@ async def calculate_training_load(
     db: AsyncSession,
     user_id: int,
     before_date: datetime,
+    zone=None,
 ) -> TrainingLoad:
-    """The 7 and 28 local days up to the athlete's day of `before_date` (sessions ended by then only)."""
+    """The 7 and 28 local days up to the athlete's day of `before_date` (sessions ended by then only). `zone`:
+    sante_training.athlete_clock's, when the caller read it (Activités reads it once per page)."""
     before = before_date if before_date.tzinfo else before_date.replace(tzinfo=timezone.utc)
-    zone = await st.athlete_clock(db, user_id, before)
-    today = timezones.local_date(before, zone or timezone.utc)
+    if zone is None:
+        zone = await st.athlete_clock(db, user_id)
+    today = timezones.local_date(before, zone)
     sessions = [s for s in await st.load_sessions(db, user_id, today, zone=zone)
                 if st._utc(s.start) + timedelta(minutes=st.effort_minutes(s)) <= before and s.end_day <= today]
     if not sessions:

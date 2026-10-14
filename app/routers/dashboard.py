@@ -1,6 +1,5 @@
 import logging
-from datetime import date, datetime, time, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -108,8 +107,8 @@ async def activities_page(
     counts them."""
     sport = sport if sport in _FILTER_KEYS else None
     m = m if m in {k for k, _, _ in MEASURES} else None
-    now, zone = await _clock(db, user)
-    training_load = await calculate_training_load(db, user.id, now)
+    now, zone = await _clock(db, user)  # the athlete's clock, read once and passed down
+    training_load = await calculate_training_load(db, user.id, now, zone=zone)
     recent = await _recent(db, user.id, depuis, zone) if depuis else None
     if recent is not None:
         return templates.TemplateResponse(request, "activities.html", context={
@@ -118,7 +117,7 @@ async def activities_page(
 
     weeks, has_more, spikes = await _week_groups(db, user.id, page, sport, now, zone)
     # Semaines and FC en footing: on the first page, for the sport chosen
-    training = await training_top(db, user.id, now, sport, m) if page == 1 else None
+    training = await training_top(db, user.id, now, sport, m, zone=zone) if page == 1 else None
 
     return templates.TemplateResponse(
         request, "activities.html",
@@ -211,24 +210,25 @@ async def manual_sync(
 RECENT_MAX_DAYS = 31  # how far back Santé's link may open the list (its 7 days, a cycle's 8 at most)
 
 
-async def _clock(db: AsyncSession, user: User) -> tuple[datetime, ZoneInfo]:
-    """Activités' « now » and the athlete's zone (their weeks run Monday to Sunday there). « now » comes from the
-    source of « today » (st.athlete_today, the day Santé reads, and the one tests pin): the wall clock, unless that
-    day is further from it than a time zone can be (then its noon) — so the weeks, « Semaines », the 7 / 28-day
-    volume and the spikes all read one day."""
-    zone = athlete_zone(user)
+async def _clock(db: AsyncSession, user: User) -> tuple[datetime, tzinfo]:
+    """Activités' « now » and the athlete's clock (sante_training.athlete_clock, Santé's: their weeks run Monday to
+    Sunday there; read once, then passed to every part of the page). « now » comes from the source of « today »
+    (st.athlete_today, the day Santé reads, and the one tests pin): the wall clock, unless that day is further from
+    it than a time zone can be (then its noon) — so the weeks, « Semaines », the 7 / 28-day volume and the spikes
+    all read one day."""
     now = datetime.now(timezone.utc)
     try:
-        today = await st.athlete_today(db, user.id, now)
+        zone = await st.athlete_clock(db, user.id, user)
+        today = await st.athlete_today(db, user.id, now, zone=zone)
     except Exception:
         logger.exception("Activités: the athlete's day failed for user %d", user.id)
-        return now, zone
+        return now, athlete_zone(user)
     if abs((today - local_date(now, zone)).days) > 1:
         now = datetime.combine(today, time(12), tzinfo=zone).astimezone(timezone.utc)
     return now, zone
 
 
-async def _recent(db: AsyncSession, user_id: int, depuis: str, zone: ZoneInfo | None = None) -> dict | None:
+async def _recent(db: AsyncSession, user_id: int, depuis: str, zone: tzinfo | None = None) -> dict | None:
     """What Santé's Entraînement card counts, for its link (owner, 2026-10-09: « Ça ne filtre pas sur la
     semaine ? »): the sessions from `depuis` (the athlete's local day) to now, duplicates and false starts left out
     exactly as Santé reads them, newest first, their moving time summed alike (the card's figure); None for a day
@@ -237,11 +237,12 @@ async def _recent(db: AsyncSession, user_id: int, depuis: str, zone: ZoneInfo | 
         since = date.fromisoformat(depuis)
     except ValueError:
         return None
-    today = await st.athlete_today(db, user_id)
+    zone = zone if zone is not None else await st.athlete_clock(db, user_id)
+    today = await st.athlete_today(db, user_id, zone=zone)
     if not today - timedelta(days=RECENT_MAX_DAYS) <= since <= today:
         return None
     # every session that ended in those days, as Santé counts them (Session.end_day: an overnight race too)
-    sessions = sorted((s for s in await st.load_sessions(db, user_id, today) if s.end_day >= since),
+    sessions = sorted((s for s in await st.load_sessions(db, user_id, today, zone=zone) if s.end_day >= since),
                       key=lambda s: s.start, reverse=True)
     ids = [s.id for s in sessions]
     rows = {a.id: a for a in (await db.execute(select(*_SUMMARY_COLUMNS).where(
@@ -258,12 +259,12 @@ def _monday(day: date) -> date:
     return day - timedelta(days=day.weekday())
 
 
-def _midnight(day: date, zone: ZoneInfo) -> datetime:
+def _midnight(day: date, zone: tzinfo) -> datetime:
     """The day's local 00:00, in UTC (as activities are stored)."""
     return datetime.combine(day, time.min, tzinfo=zone).astimezone(timezone.utc)
 
 
-def _local(moment: datetime, zone: ZoneInfo | None) -> datetime:
+def _local(moment: datetime, zone: tzinfo | None) -> datetime:
     """An activity's start on the athlete's clock (stored in UTC, naive ones too)."""
     if zone is None:
         return moment
@@ -298,7 +299,7 @@ def _week_label(monday: date, this_monday: date) -> str:
 
 
 def _activity_to_summary(activity: Activity | Row, duplicate_ids: frozenset | set = frozenset(),
-                         zone: ZoneInfo | None = None) -> ActivitySummary:
+                         zone: tzinfo | None = None) -> ActivitySummary:
     return ActivitySummary(
         id=activity.id,
         strava_activity_id=activity.strava_activity_id,
@@ -317,7 +318,7 @@ def _activity_to_summary(activity: Activity | Row, duplicate_ids: frozenset | se
 
 async def _week_groups(
     db: AsyncSession, user_id: int, page: int, sport: str | None, now: datetime | None = None,
-    zone: ZoneInfo | None = None,
+    zone: tzinfo | None = None,
 ) -> tuple[list[dict], bool, set[int]]:
     """Activities of a WEEKS_PER_PAGE window, grouped by week (newest first), and the ids of the single-run
     spikes among them (their rows say « plus longue que d'habitude », training_view.spike_ids). The athlete's
@@ -371,7 +372,7 @@ async def _week_groups(
     )
     has_more = ((await db.execute(older)).scalar() or 0) > 0
     shown = {a.id for a in activities}
-    spikes = (await spike_ids(db, user_id, start, now)) & shown if shown else set()
+    spikes = (await spike_ids(db, user_id, start, now, zone=zone)) & shown if shown else set()
     return weeks, has_more, spikes
 
 
