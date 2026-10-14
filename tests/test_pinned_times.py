@@ -106,12 +106,15 @@ def test_pin_past_midnight_and_on_the_last_checkpoint_without_objective():
 
 
 def test_the_estimate_sent_as_target_is_not_an_objective():
-    course = _course()
-    est = course.predicted_total_time_s + 20  # the page sends the estimate, rounded to the minute
-    pinned = _plan(_cps(Col=7200), target=est)
     free = _plan(_cps(Col=7200), target=None)
+    # the page sends its estimate, the finish with its stops in it, rounded to the minute
+    est = free[-1]["clock_time_s"] - START_21 + 20
+    pinned = _plan(_cps(Col=7200), target=est)
     assert pinned[-1]["objective_s"] is None
     assert [s["adjusted_clock_time_s"] for s in pinned] == [s["adjusted_clock_time_s"] for s in free]
+    # the moving time is not the estimate: sent as the target, 22 min of stops short of it, it is an objective
+    moving = _course().predicted_total_time_s
+    assert _plan(_cps(Col=7200), target=moving)[-1]["objective_s"] == moving
 
 
 def test_auto_clock_is_where_the_plan_would_pass_without_the_pin():

@@ -54,8 +54,8 @@
             <div class="flex items-center gap-3 text-[11px] tabular-nums text-gray-500 shrink-0">
                 <span>D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
                 {# pinned times: « Objectif » only when the plan finishes on the objective he chose #}
-                {% set obj_s = (sections[-1].objective_s if sections else none) if pinned else route.target_time_s %}
-                <span class="font-semibold text-gray-900">{% if obj_s and plan_total_s == obj_s %}Objectif {{ fmt_hm(obj_s) }}{% elif pinned and plan_total_s %}Plan {{ fmt_hm(plan_total_s) }}{% elif route.target_time_s %}Objectif {{ fmt_hm(route.target_time_s) }}{% else %}Estimé {{ predicted_total_formatted }}{% endif %}</span>
+                {% set obj_s = (sections[-1].objective_s if sections else none) if pinned else objective_s %}
+                <span class="font-semibold text-gray-900">{% if obj_s and plan_total_s == obj_s %}Objectif {{ fmt_hm(obj_s) }}{% elif pinned and plan_total_s %}Plan {{ fmt_hm(plan_total_s) }}{% elif objective_s %}Objectif {{ fmt_hm(objective_s) }}{% else %}Estimé {{ predicted_total_formatted }}{% endif %}</span>
             </div>
         </div>
 
@@ -67,7 +67,7 @@
             {# the day once, on the first cell past midnight #}
             {% set ns = namespace(day=(start_offset_s // 86400) | int) %}
             {% for s in sections %}
-            {% set use_adj = has_target and s.adjusted_clock_time_s is not none %}
+            {% set use_adj = s.adjusted_clock_time_s is not none %}
             {% set clock_val = s.adjusted_clock_time_s if use_adj else s.clock_time_s %}
             {% set is_finish = loop.last %}
             {% set day = (clock_val // 86400) | int %}{% set new_day = day > ns.day %}{% set ns.day = day %}

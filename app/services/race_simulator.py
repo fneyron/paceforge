@@ -1096,10 +1096,12 @@ def compute_passage_times(
     total_base = sum(r["plan_w"] for r in raw) or 1.0
 
     # Pinned plan: an objective the athlete chose anchors the finish; the
-    # estimate the page sends when he has not moved it does not.
+    # estimate the page sends when he has not moved it does not. The estimate
+    # is the model's finish: each section at its heat, with the planned stops.
     pin_plan = None
     if pins:
-        objective = target_time_s if has_objective(target_time_s, course.predicted_total_time_s) else None
+        estimate_s = sum(r["model"] for r in raw) + sum(r["stop"] for r in raw)
+        objective = target_time_s if has_objective(target_time_s, estimate_s) else None
         pin_plan = _pinned_plan(raw, pins, objective)
 
     # Pass 3: accumulate final times.
@@ -1175,13 +1177,14 @@ def compute_passage_times(
 MIN_PIN_RATIO = 0.7
 
 
-def has_objective(target_time_s: int | None, predicted_total_s: int | None) -> bool:
+def has_objective(target_time_s: int | None, estimate_s: float | None) -> bool:
     """An objective the athlete chose: set, and more than a minute away from the
-    estimate (the page sends the estimate itself until he moves the objective
-    — the same rule as the hero's « ton objectif »)."""
+    estimate, the finish with its planned stops (the page sends the estimate
+    itself until he moves the objective — the same rule as the hero's « ton
+    objectif »)."""
     if not target_time_s:
         return False
-    return not predicted_total_s or abs(int(target_time_s) - int(predicted_total_s)) > 60
+    return not estimate_s or abs(int(target_time_s) - int(round(estimate_s))) > 60
 
 
 def is_pinned(sections: list[dict] | None) -> bool:

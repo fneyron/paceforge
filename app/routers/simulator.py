@@ -377,9 +377,9 @@ async def _passage_table_context(
                 target_time_s, course.total_distance_km, checkpoints, stop_min * 60, aid_kms, aid_stops,
             ), aid_stops=aid_stops, own_weather=own_weather, **clock,
         )
-    else:  # no plan: the stops of the predicted finish (the prediction plus its own stops)
-        course, finish_s, aid_stops = _predict_with_stops(course, profile, start_hour, start_minute, clock, checkpoints,
-                                                          stop_minutes, total_km, own_weather)
+    else:  # no plan: the estimate (the prediction, its heat and its own stops)
+        course, finish_s, aid_stops = _estimate(course, profile, start_hour, start_minute, clock, checkpoints, stop_minutes,
+                                                total_km, own_weather, heat_factor, hourly_weather, aid_kms)
 
     sections = compute_passage_times(
         course, checkpoints, target_time_s, heat_factor,
@@ -424,7 +424,7 @@ async def _passage_table_context(
 
     zones = await estimate_training_zones(db, user_id)
     rc = resolve_hr_caps(params, zones.get("max_hr"))
-    plan_s = plan_total_s(sections, start_offset_s, target_time_s) or int(course.predicted_total_time_s)
+    plan_s = plan_total_s(sections, start_offset_s, target_time_s)  # None: the model's own times
     guide = build_pacing_guide(
         course, plan_s, hr_cap_climb=rc["climb"], hr_cap_flat=rc["flat"], hr_release_descent=rc["descent"],
         walk_grade=rc["walk_grade"], plan_sections=sections,
@@ -808,13 +808,18 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         .order_by(RouteCheckpoint.distance_km)
     )
     cps = [cp.as_dict() for cp in cp_result.scalars().all()]
-    # the estimate reads the night on the clock with its own planned stops, as its table and the printed plan do
-    # (else the estimate the page sends back could read as an objective: race_simulator.has_objective)
-    course, _, _ = _predict_with_stops(
-        course, profile, route.start_hour if route.start_hour is not None else 6, route.start_minute or 0,
-        await _race_clock(db, user_id, route, course), [normalize_checkpoint(c) for c in cps], route.stop_minutes,
-        course.total_distance_km, bool(route.weather_json),
+    ncps = [normalize_checkpoint(c) for c in cps]
+    w = route.weather_json if isinstance(route.weather_json, dict) else {}
+    sh, sm = (route.start_hour if route.start_hour is not None else 6), (route.start_minute or 0)
+    # « Estimation »: the finish with its heat and its planned stops, to the minute, as the printed plan, the
+    # phone's copy and the débrief read it; the objective: the saved time, when more than a minute from it
+    course, est, _ = _estimate(
+        course, profile, sh, sm, await _race_clock(db, user_id, route, course), ncps, route.stop_minutes,
+        course.total_distance_km, bool(route.weather_json), float(w.get("heat_factor") or 1.0), w.get("hourly"),
+        _aid_kms_from_checkpoints(ncps),
     )
+    estimate_s = _to_minute(est)
+    objective_s = _objective_s(route, estimate_s)
 
     coords = course.route_coords or []
     geojson = {
@@ -829,16 +834,14 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
     # The table itself, rendered now: no blank band and no round trip before the plan shows.
     initial_table_html = None
     try:
-        w = route.weather_json or {}
         live = route.live_json or {}
         # No objective: the plan runs on the estimate, to the minute, exactly as the page's own recalculations
         # do (they send the objective field, which then holds the estimate). The first render and the next
         # ones agree, and the hero's « Estimation » plus the start gives the arrival shown under it.
-        table_target = route.target_time_s or (int((course.predicted_total_time_s + 30) // 60) * 60 if course.predicted_total_time_s else None)
         tctx = await _passage_table_context(
-            db, user_id, CourseProfile(**route.course_json), [normalize_checkpoint(c) for c in cps], table_target,
-            float(w.get("heat_factor") or 1.0), route.start_hour if route.start_hour is not None else 6, route.start_minute or 0,
-            w.get("hourly"), route, route.stop_minutes, live.get("anchor_km"), live.get("anchor_clock"), profile=profile, route_id=route.id,
+            db, user_id, CourseProfile(**route.course_json), ncps, objective_s or estimate_s,
+            float(w.get("heat_factor") or 1.0), sh, sm, w.get("hourly"), route, route.stop_minutes,
+            live.get("anchor_km"), live.get("anchor_clock"), profile=profile, route_id=route.id,
         )
         initial_table_html = templates.get_template("partials/passage_times.html").render(tctx)
     except Exception:
@@ -869,6 +872,7 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         "saved_route_id": route.id,
         "saved_route_name": route.name,
         "saved_target_time_s": route.target_time_s,
+        "estimate_s": estimate_s, "objective_s": objective_s,
         "saved_race_date": route.race_date,
         "saved_start_hour": route.start_hour,
         "saved_start_minute": route.start_minute,
@@ -1513,7 +1517,7 @@ async def offline_route_plan(
     ctx = await _print_plan_context(route, db, user)
     points = []
     for section in ctx["sections"]:
-        clock = section.get("adjusted_clock_time_s") if ctx["has_target"] else None
+        clock = section.get("adjusted_clock_time_s")  # the plan: on the objective, else on the estimate
         if clock is None:
             clock = section.get("clock_time_s")
         points.append({
@@ -1549,7 +1553,7 @@ async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dic
         clock_s = _clock_to_s(live["anchor_clock"])
         if clock_s is not None:
             sections, rp = replan_from_passage(
-                sections, start_offset_s, route.target_time_s,
+                sections, start_offset_s, b["plan_target_s"],
                 float(live["anchor_km"]), clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=b.get("aid_stops"),
             )
             live_applied = rp is not None
@@ -1560,18 +1564,19 @@ async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dic
     pp = route.params_json or {}
     sc_set = _scenario_settings(pp, b["profile"], course, await _known_course(db, user.id, route), sport=b["sport"])
     scenarios = None if live_applied else build_scenarios(
-        sections, start_offset_s, route.target_time_s,
+        sections, start_offset_s, b["plan_target_s"],
         fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=pp.get("switch_km"), total_distance_km=course.total_distance_km,
     )
 
-    guide = (await _pacing_guide_for(route, db, user)) if b["sport"] != "bike" else None
+    guide = (await _pacing_guide_for(route, db, user, b)) if b["sport"] != "bike" else None
     legs_guide = None
     if guide:
         from app.services.pacing_guide import leg_instructions
 
         legs_guide = leg_instructions(guide, sections)
-    total_fmt = f"{b['predicted_total_s'] // 3600}h{(b['predicted_total_s'] % 3600) // 60:02d}"
+    est = int(b["estimate_s"])  # « Estimé »: the page's « Estimation », the finish with its stops
+    total_fmt = f"{est // 3600}h{(est % 3600) // 60:02d}"
     # « Consignes »: per leg, the passage row's own words (cardio ceiling + what to do);
     # the pace is the cell's, so no second one here. Consecutive legs with the same
     # instruction print as one row (« → A, B, C »).
@@ -1595,7 +1600,9 @@ async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dic
         "course": course,
         "predicted_total_formatted": total_fmt,
         "sections": sections,
-        "has_target": route.target_time_s is not None or live_applied or b["pinned"],
+        # a plan he set (an objective, pinned times) or a race-day replan; the times are the plan's either way
+        "has_target": b["has_objective"] or live_applied,
+        "objective_s": b["objective_s"],
         "pinned": b["pinned"],
         "plan_total_s": b["plan_total_s"],
         "start_offset_s": start_offset_s,
@@ -1755,7 +1762,7 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
         debrief = leg_debrief(
             act.splits_metric, b["sections"], route.total_distance_km,
             use_target=b["use_target"], stop_s_per_aid=b["stop_min"] * 60,
-            hr_cap=int(hr_cap) if hr_cap else None,
+            hr_cap=int(hr_cap) if hr_cap else None, named_plan=b["has_objective"],
         )
         if not debrief.get("legs"):
             debrief = None
@@ -1778,7 +1785,7 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
         except ValueError:
             day = None
     lead["day"] = _date_fr(day) if day else None
-    ctx.update(result=result, lead=lead, debrief=debrief, basis="plan" if b["use_target"] else "prediction")
+    ctx.update(result=result, lead=lead, debrief=debrief, basis="plan" if b["has_objective"] else "prediction")
     return ctx
 
 
@@ -1907,30 +1914,53 @@ def _aid_stops(cps: list[dict], override_min: int | None = None, finish_s: float
     return out
 
 
-def _predict_with_stops(course, profile, start_hour: int, start_minute: int, clock: dict, cps: list[dict],
-                        override_min: int | None, total_km: float | None, own_weather: bool = False):
-    """Without an objective: (course, finish, stops) — the prediction, the stops of its finish, then the
-    prediction again with the night read on the clock those stops make (the terrain read once)."""
-    from app.services.race_simulator import _fine_terrain, predict_course
+ESTIMATE_PASSES = 4  # the estimate's fixed point: stops a few % of the finish, settled to the second in 2-3
 
-    fine = _fine_terrain(course, profile)
+
+def _estimate(course, profile, start_hour: int, start_minute: int, clock: dict, cps: list[dict],
+              override_min: int | None, total_km: float | None, own_weather: bool = False, heat_factor: float = 1.0,
+              hourly: dict | None = None, aid_kms: set | None = None, fine: list | None = None):
+    """Without an objective: (course, estimate, stops). The estimate is a finish time: the moving time at his
+    level, each section at its heat, plus the planned stops, which the stop model reads at that very finish (a
+    fixed point). The night is read on the clock those stops make; the terrain once (``fine``). The page shows
+    it as « Estimation » (to the minute) and every plan without an objective runs on it: the page's, the
+    printed one, the phone's copy, the exports and the débrief."""
+    from app.services.race_simulator import _fine_terrain, compute_passage_times, predict_course
+
+    fine = fine if fine is not None else _fine_terrain(course, profile)
     course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, fine_terrain=fine,
                             own_weather=own_weather, **clock)
-    finish_s = _finish_with_stops(course.predicted_total_time_s, cps, override_min, total_km)
-    aid_stops = _aid_stops(cps, override_min, finish_s, total_km)
-    if aid_stops:
-        course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, fine_terrain=fine,
-                                aid_stops=aid_stops, own_weather=own_weather, **clock)
-    return course, finish_s, aid_stops
+    finish, stops = float(course.predicted_total_time_s), {}
+    start = start_hour * 3600 + start_minute * 60
+    for _ in range(ESTIMATE_PASSES):
+        now = _aid_stops(cps, override_min, finish, total_km)
+        if now != stops:
+            stops = now
+            course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, fine_terrain=fine,
+                                    aid_stops=stops or None, own_weather=own_weather, **clock)
+        secs = compute_passage_times(course, cps, None, heat_factor, start_hour, start_minute, hourly,
+                                     stop_s_per_aid=(override_min or 0) * 60, aid_kms=aid_kms, aid_stops=stops)
+        new = float(secs[-1]["clock_time_s"] - start) if secs else finish
+        settled, finish = abs(new - finish) < 1.0, new
+        if settled:
+            break
+    return course, finish, stops
 
 
-def _finish_with_stops(moving_s: float | None, cps: list[dict], override_min: int | None,
-                       total_km: float | None) -> float | None:
-    """The finish the stop model reads when no objective is set: the predicted moving time plus the stops it
-    gives (one pass: the stops are a few % of the finish)."""
-    if not moving_s:
+def _to_minute(seconds: float) -> int:
+    """A time as the page shows and plans it: to the minute (fmtHM)."""
+    return int((float(seconds) + 30) // 60) * 60
+
+
+def _objective_s(route: Route, estimate_s: float | None = None) -> int | None:
+    """The objective he set: the route's saved time, unless it is the estimate — within a minute of today's
+    (``estimate_s``, when known: the page's own rule)."""
+    from app.services.race_simulator import has_objective
+
+    t = route.target_time_s
+    if not t or (estimate_s is not None and not has_objective(t, estimate_s)):
         return None
-    return float(moving_s) + sum(_aid_stops(cps, override_min, float(moving_s), total_km).values())
+    return int(t)
 
 
 # The former fixed Optimiste / Sécurité defaults: saved with the form until 2026-10-14 (it posted both fields),
@@ -2004,6 +2034,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     from app.schemas.simulator import CourseProfile
     from app.services.checkpoints import annotate_cutoffs
     from app.services.race_simulator import (
+        _fine_terrain,
         build_athlete_gradient_profile,
         compute_passage_times,
         objective_moving_s,
@@ -2032,6 +2063,8 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
             "checkpoints": cps, "sections": sections, "predicted_total_s": int(cycling.predicted_total_time_s),
             "start_hour": bctx["start_hour"], "start_minute": bctx["start_minute"], "start_offset_s": start_offset_s,
             "stop_min": stop_min, "aid_kms": aid, "use_target": bool(route.target_time_s),
+            "has_objective": bool(route.target_time_s), "objective_s": route.target_time_s,
+            "estimate_s": int(cycling.predicted_total_time_s), "plan_target_s": route.target_time_s,
             "pinned": False, "plan_total_s": route.target_time_s,
             "params": route.params_json or {}, "sport": "bike",
         }
@@ -2045,64 +2078,74 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     total_km = course.total_distance_km
     clock = await _race_clock(db, user.id, route, course)
     own_weather = bool(route.weather_json)  # without: the level at the heat his races were run in (predict_course)
-    if route.target_time_s:
-        finish_s = float(route.target_time_s)
-        aid_stops = _aid_stops(cps, route.stop_minutes, finish_s, total_km)
-        course = predict_course(
-            course, profile, start_hour=start_hour, start_minute=start_minute,
-            plan_moving_s=objective_moving_s(
-                route.target_time_s, course.total_distance_km, cps, stop_min * 60, aid, aid_stops,
-            ), aid_stops=aid_stops, own_weather=own_weather, **clock,
-        )
-    else:  # no objective: the stops of the predicted finish
-        course, finish_s, aid_stops = _predict_with_stops(course, profile, start_hour, start_minute, clock, cps,
-                                                          route.stop_minutes, total_km, own_weather)
+    w = route.weather_json if isinstance(route.weather_json, dict) else {}
+    heat, hourly = float(w.get("heat_factor") or 1.0), w.get("hourly")
+    # the page's two numbers: the estimate (the finish with its heat and stops, to the minute) and the objective
+    # (the saved time, when more than a minute from it); the plan runs on the objective, else on the estimate,
+    # exactly as the page's table does
+    fine = _fine_terrain(course, profile)
+    course, est, _ = _estimate(course, profile, start_hour, start_minute, clock, cps, route.stop_minutes, total_km,
+                               own_weather, heat, hourly, aid, fine)
+    estimate_s = _to_minute(est)
+    objective_s = _objective_s(route, estimate_s)
+    target = objective_s or estimate_s
+    aid_stops = _aid_stops(cps, route.stop_minutes, float(target), total_km)
+    course = predict_course(
+        course, profile, start_hour=start_hour, start_minute=start_minute,
+        plan_moving_s=objective_moving_s(target, course.total_distance_km, cps, stop_min * 60, aid, aid_stops),
+        fine_terrain=fine, aid_stops=aid_stops, own_weather=own_weather, **clock,
+    )
     sections = compute_passage_times(
-        course, cps, route.target_time_s, 1.0, start_hour, start_minute,
-        route.weather_json.get("hourly") if route.weather_json else None,
+        course, cps, target, heat, start_hour, start_minute, hourly,
         stop_s_per_aid=stop_min * 60, aid_kms=aid, aid_stops=aid_stops,
     )
     sections = annotate_cutoffs(sections, cps, start_offset_s)
     from app.services.race_simulator import is_pinned, plan_total_s
 
+    pinned = is_pinned(sections)
     return {
         "course": course, "profile": profile, "checkpoints": cps, "sections": sections, "aid_stops": aid_stops,
-        "predicted_total_s": int(course.predicted_total_time_s),
+        "predicted_total_s": int(course.predicted_total_time_s),  # the moving time at his level
+        "estimate_s": estimate_s, "objective_s": objective_s, "plan_target_s": target,
         "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset_s,
-        # pinned checkpoints make a plan (adjusted_*) even without an objective
-        "stop_min": stop_min, "aid_kms": aid, "use_target": bool(route.target_time_s) or is_pinned(sections),
-        "pinned": is_pinned(sections),
-        # the plan's finish (stops included): the objective, or where the pins lead
-        "plan_total_s": plan_total_s(sections, start_offset_s, route.target_time_s),
+        # the sections' plan (adjusted_*) is the one to follow: on the objective, else on the estimate, as the page
+        "stop_min": stop_min, "aid_kms": aid, "use_target": True,
+        # named a plan (« le plan », « Objectif », the phone's « plan enregistré ») only when he set one: an
+        # objective or pinned times
+        "has_objective": objective_s is not None or pinned,
+        "pinned": pinned,
+        # the plan's finish (stops included): the objective, the estimate, or where the pins lead
+        "plan_total_s": plan_total_s(sections, start_offset_s, target),
         "params": route.params_json or {}, "sport": "trail",
     }
 
 
 # ── Pacing guide (terrain-typed instructions) ──
 
-async def _pacing_guide_for(route: Route, db: AsyncSession, user: User) -> dict:
+async def _pacing_guide_for(route: Route, db: AsyncSession, user: User, b: dict | None = None) -> dict:
     """The terrain guide with the athlete's ceilings (used by the Pilotage tab,
     the watch export and the printed band)."""
-    ctx = await _pacing_context(None, route, db, user)
+    ctx = await _pacing_context(None, route, db, user, b)
     return ctx["guide"]
 
 
-async def _pacing_context(request: Request | None, route: Route, db: AsyncSession, user: User) -> dict:
+async def _pacing_context(request: Request | None, route: Route, db: AsyncSession, user: User,
+                          b: dict | None = None) -> dict:
     from app.services.pacing_guide import build_pacing_guide, default_hr_caps, resolve_hr_caps
     from app.services.training_zones import estimate_training_zones
 
-    b = await _plan_bundle(route, db, user)
+    b = b or await _plan_bundle(route, db, user)  # the caller's own, when it has it: one plan per request
     p = b["params"]
     zones = await estimate_training_zones(db, user.id)
     defaults = default_hr_caps(zones.get("max_hr"))
     rc = resolve_hr_caps(p, zones.get("max_hr"))  # the same ceilings as the passage rows
     caps = {"hr_cap_climb": rc["climb"], "hr_cap_flat": rc["flat"], "hr_release_descent": rc["descent"]}
     walk_grade = rc["walk_grade"]
-    guide = build_pacing_guide(b["course"], b["plan_total_s"] or int(b["course"].predicted_total_time_s), walk_grade=walk_grade, plan_sections=b["sections"], **caps)
+    guide = build_pacing_guide(b["course"], b["plan_total_s"], walk_grade=walk_grade, plan_sections=b["sections"], **caps)
     return {
         "request": request, "route": route, "route_id": route.id, "guide": guide, "caps": caps,
         "walk_grade": walk_grade, "max_hr": zones.get("max_hr"), "defaults": defaults,
-        "has_target": b["use_target"], "total_km": b["course"].total_distance_km,
+        "has_target": b["has_objective"], "total_km": b["course"].total_distance_km,
         "scenario": _scenario_settings(p, b["profile"], b["course"], await _known_course(db, user.id, route), sport=b["sport"]),
         "checkpoints": b["checkpoints"],
     }
@@ -2229,7 +2272,7 @@ async def export_pace_strategy(
     if b["sport"] != "bike":
         from app.services.pacing_guide import leg_instructions
 
-        leg_codes = [li["code"] for li in leg_instructions(await _pacing_guide_for(route, db, user), b["sections"])]
+        leg_codes = [li["code"] for li in leg_instructions(await _pacing_guide_for(route, db, user, b), b["sections"])]
     safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in route.name).strip() or "parcours"
     fmt = (fmt or "gpx").lower()
     if fmt == "csv":

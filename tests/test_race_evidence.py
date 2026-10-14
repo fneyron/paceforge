@@ -711,3 +711,80 @@ async def test_mes_courses_reads_the_courses_without_their_trace(as_user: AsyncC
     assert page.status_code == 200
     assert 'class="pfp-line"' in page.text and 'd="M0.0 ' in page.text  # the next race's profile, from its elevation points
     assert " vs plan<" in page.text  # the pinned race run still gets its plan (its course loaded for it alone)
+
+
+# ── 7. the estimate: a finish time, one number everywhere; the objective: only a time he set ──
+
+def _hhmm(s: int) -> str:
+    return "%02d:%02d" % ((s % 86400) // 3600, (s % 3600) // 60)
+
+
+def test_the_estimate_is_a_finish_its_heat_and_stops_in_it():
+    from app.routers import simulator as sim
+
+    prof = AthleteGradientProfile(flat_pace_s_per_km=360, gradient_factors=dict(rs._DEFAULT_GRADIENT_FACTORS), data_points=0,
+                                  sport_types_used=[])
+    aid = sim._aid_kms_from_checkpoints(CPS)
+    course, finish, stops = sim._estimate(_course(), prof, 6, 0, {}, CPS, None, 30.0, aid_kms=aid)
+    assert stops and finish == pytest.approx(course.predicted_total_time_s + sum(stops.values()), abs=2)
+    assert stops == sim._aid_stops(CPS, None, finish, 30.0)  # the stop model read at that very finish (a fixed point)
+    # with its weather the estimate carries the forecast's heat, as the table does
+    hot, cool = ({"temps": [t] * 48, "humidity": [40] * 48} for t in (30.0, 10.0))
+    _, hot_s, _ = sim._estimate(_course(), prof, 6, 0, {}, CPS, None, 30.0, True, 1.0, hot, aid)
+    _, cool_s, _ = sim._estimate(_course(), prof, 6, 0, {}, CPS, None, 30.0, True, 1.0, cool, aid)
+    assert cool_s == pytest.approx(finish, abs=2) and hot_s > finish * 1.08  # 30 °C: +12 % on the move
+    table = rs.compute_passage_times(course, CPS, None, 1.0, 6, 0, hot, aid_kms=aid, aid_stops=stops)
+    assert table[-1]["clock_time_s"] - 6 * 3600 >= hot_s * 0.99
+
+
+@pytest.mark.asyncio
+async def test_without_an_objective_the_page_print_phone_exports_and_debrief_finish_together(as_user: AsyncClient,
+                                                                                             db_session, test_user):
+    """The page plans its « Estimation » as a finish (stops in it): the printed plan, the phone's copy, the exports
+    and the débrief run the same plan and arrive at the same minute; with an objective, all of them on it."""
+    import re
+
+    from app.models.route import Route
+    from app.routers import simulator as sim
+    from app.services.pace_export import waypoint_rows
+
+    r = await as_user.post("/api/simulator/routes", data={
+        "course_json": _course().model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": "Sans objectif",
+        "start_hour": 6, "start_minute": 0, "sport_type": "trail"})
+    rid = r.json()["id"]
+    route = await db_session.get(Route, rid)
+    assert route.target_time_s is None
+    for objective in (None, 5 * 3600):
+        if objective:
+            await as_user.post("/api/simulator/routes", data={"route_id": rid, "checkpoints_json": json.dumps(CPS),
+                                                              "target_time_s": objective})
+        await db_session.refresh(route)
+        ctx = await sim._build_route_context(route, db_session, test_user.id)
+        est, obj = ctx["estimate_s"], ctx["objective_s"]
+        assert obj == objective and est % 60 == 0
+        finish = 6 * 3600 + (obj or est)
+        page = int(re.findall(r'data-clock="(\d+)"', ctx["initial_table_html"])[-1])
+        assert page == finish  # the page's arrival: the start + its hero number
+        printed = (await as_user.get(f"/simulator/routes/{rid}/print")).text
+        assert re.search(r'Arrivée</p>.*?<p class="t">(\d\d:\d\d)', printed, re.S).group(1) == _hhmm(finish)
+        assert (f"Estimé {est // 3600}h{est % 3600 // 60:02d}" in printed) == (obj is None)
+        phone = (await as_user.get(f"/api/simulator/routes/{rid}/offline")).json()
+        assert phone["points"][-1]["clock_s"] == finish and phone["planned"] == (obj is not None)
+        b = await sim._plan_bundle(route, db_session, test_user)
+        assert sim._plan_finish_s(b) == finish - 6 * 3600 == (obj or est)  # the débrief's and Mes courses' plan
+        assert waypoint_rows(b["sections"], b["use_target"], b["start_offset_s"])[-1]["clock"] == _hhmm(finish)
+        assert b["has_objective"] == (obj is not None)
+        stops = sum(s["stop_s"] for s in b["sections"])
+        assert stops > 0 and (obj or est) - stops == pytest.approx(sum(s["adjusted_time_s"] for s in b["sections"]), abs=2)
+
+
+def test_the_pacing_guide_plans_the_moving_time_of_its_target():
+    from app.services.pacing_guide import build_pacing_guide
+
+    course = rs.predict_course(_course(), AthleteGradientProfile(flat_pace_s_per_km=360, gradient_factors=dict(
+        rs._DEFAULT_GRADIENT_FACTORS), data_points=0, sport_types_used=[]), start_hour=6)
+    stops = {6.0: 120, 10.0: 300, 20.0: 900}
+    secs = rs.compute_passage_times(course, CPS, 5 * 3600, 1.0, 6, 0, None, aid_stops=stops)
+    guide = build_pacing_guide(course, 5 * 3600, plan_sections=secs)
+    moving = sum(sum(x["time_s"] for x in b["rows"]) if "rows" in b else b.get("time_s", 0) for b in guide["blocks"])
+    assert moving == pytest.approx(5 * 3600 - sum(stops.values()), rel=0.002)  # the stops are not run

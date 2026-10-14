@@ -7,10 +7,11 @@
 <div id="glyph-registry-lg" hidden>
     {% for k in ["none","water","full","base","crew","bag","pin"] %}<span data-kind="{{ k }}">{{ gl.glyph(k, "w-6 h-6") }}</span>{% endfor %}
 </div>
-{# every time on this page is rounded to the minute the way the script does it (fmtHM): one estimate, one number #}
-{% set est_s = ((course.predicted_total_time_s + 30) // 60 * 60) | int %}
-{% set tgt = (((saved_target_time_s + 30) // 60 * 60) | int) if saved_target_time_s is defined and saved_target_time_s else est_s %}
-{% set has_obj = saved_target_time_s is defined and saved_target_time_s and ((saved_target_time_s - course.predicted_total_time_s)|abs > 60) %}
+{# every time on this page is rounded to the minute the way the script does it (fmtHM): one estimate, one number.
+   The estimate is a finish time (its heat and its planned stops in it), the objective one he set (simulator._objective_s) #}
+{% set est_s = (estimate_s | int) if estimate_s is defined and estimate_s else ((course.predicted_total_time_s + 30) // 60 * 60) | int %}
+{% set has_obj = objective_s is defined and objective_s %}
+{% set tgt = (((objective_s + 30) // 60 * 60) | int) if has_obj else est_s %}
 {% set hero_s = tgt if has_obj else est_s %}
 {% set has_data = profile is defined and profile and profile.data_points and profile.data_points > 0 %}
 {% set sh = saved_start_hour if saved_start_hour is not none else 6 %}
@@ -163,7 +164,7 @@
                     {% if race_calibration is defined and race_calibration %}
                     {% set rc = race_calibration %}
                     {% set rc_s = ((rc.total_s + 30) // 60 * 60) | int %}{% set rc_t = ((rc.training_total_s + 30) // 60 * 60) | int %}
-                    <p>De tes courses passées{% if rc.races %} ({% for r in rc.races[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} : à ce niveau, ce parcours se boucle en <b class="text-ink">{{ '%dh%02d'|format(rc_s // 3600, (rc_s % 3600) // 60) }}</b>. <span class="text-gray-500">Tes entraînements seuls donneraient {{ '%dh%02d'|format(rc_t // 3600, (rc_t % 3600) // 60) }} : on se fie à tes courses, plus proches de l'effort du jour J.</span></p>
+                    <p>De tes courses passées{% if rc.races %} ({% for r in rc.races[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} : à ce niveau, ce parcours se boucle en <b class="text-ink">{{ '%dh%02d'|format(rc_s // 3600, (rc_s % 3600) // 60) }}</b> en mouvement. <span class="text-gray-500">Tes entraînements seuls donneraient {{ '%dh%02d'|format(rc_t // 3600, (rc_t % 3600) // 60) }} : on se fie à tes courses, plus proches de l'effort du jour J.</span></p>
                     {% set skipped = rc.ignored|default([])|selectattr('why', 'in', ["relais", "course d'un triathlon", "abandon"])|list %}
                     <p class="mt-1 text-gray-500">Tes courses récentes comptent plus que les anciennes.{% if rc.dplus_same_ruler %} Le D+ de tes courses est mesuré comme celui de ce parcours.{% endif %}{% if skipped %} Pas prises en compte : {% for r in skipped[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %} (relais, triathlon ou abandon).{% endif %}</p>
                     {% elif has_data %}
@@ -214,7 +215,7 @@ window._sim = {};
     var routeCoords = course.route_coords || [];
     var elevData = course.elevation_points || [];
     var totalDistKm = course.total_distance_km || 0;
-    var predictedTotalS = course.predicted_total_time_s || 0;
+    var predictedTotalS = {{ est_s }};  // « Estimation »: the finish, its stops in it (not the course's moving time)
 
     var map = null, hoverMarker = null;
     var checkpoints = [], cpMarkerEls = [];

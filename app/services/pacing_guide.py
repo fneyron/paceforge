@@ -117,10 +117,12 @@ def build_pacing_guide(
     """Return {"blocks": [...], "alerts": [...], "caps": {...}, "plan_factor": f}.
 
     Planned times per block are the even-effort plan (segment base_time share
-    of the target) when a target exists, else the model prediction — so the VAM
-    and paces shown are the ones that hit the objective. When checkpoints are
-    pinned (``plan_sections`` from compute_passage_times), each leg's planned
-    time is spread over its km instead: the VAM is the one that hits the pins.
+    of the target's moving time: the target less the stops planned in
+    ``plan_sections``, as the plan's own sections) when a target exists, else
+    the model prediction — so the VAM and paces shown are the ones that hit the
+    objective. When checkpoints are pinned (``plan_sections`` from
+    compute_passage_times), each leg's planned time is spread over its km
+    instead: the VAM is the one that hits the pins.
     """
     segs = course.segments
     total_km = course.total_distance_km or 1.0
@@ -134,8 +136,10 @@ def build_pacing_guide(
         def seg_time(s):
             return pinned_times[id(s)]
     elif target_time_s:
+        moving_s = max(1.0, target_time_s - sum(float(x.get("stop_s") or 0) for x in plan_sections or []))
+
         def seg_time(s):
-            return target_time_s * ((s.base_time_s or s.predicted_time_s) / total_base)
+            return moving_s * ((s.base_time_s or s.predicted_time_s) / total_base)
     else:
         def seg_time(s):
             return s.predicted_time_s
