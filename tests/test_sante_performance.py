@@ -19,6 +19,20 @@ from app.services.sante import local_clock as _local_clock  # the real one (the 
 TODAY = date(2026, 10, 13)
 
 
+def _selects_whole_details(statement: str) -> bool:
+    """Whether the statement selects health_metrics.details as a column, whole (a key extracted from it is not)."""
+    depth, item, items = 0, "", []
+    for ch in statement.split(" FROM ", 1)[0]:
+        depth += (ch == "(") - (ch == ")")
+        if ch == "," and depth == 0:
+            items.append(item)
+            item = ""
+        else:
+            item += ch
+    items.append(item)
+    return any(re.fullmatch(r"(SELECT )?health_metrics\.details( AS \w+)?", i.strip()) for i in items)
+
+
 def nights(hr=48.0, source="COROS"):
     return {TODAY - timedelta(days=i): nt.Night(
         day=TODAY - timedelta(days=i), source=source, asleep=480, hr=hr + i % 3, hr_source=source,
@@ -79,11 +93,12 @@ def test_a_session_load_is_memoized_per_its_bounds():
 async def test_the_page_stays_within_its_budget(db_session, test_user, monkeypatch):
     """500 activities with laps and splits, 400 nights of Garmin rows, Garmin day rows carrying their raw readings:
     the whole page in a few statements (it took 1.5–2.8 s of CPU), on SQLite and on PostgreSQL alike. The
-    statements are counted, not the seconds: a CPU and wall-clock budget failed under coverage and on a loaded
-    machine, and reading the raw readings or a row per day would show in the count first. The first load reads the
-    sessions (their raw data, laps and splits); the next one reuses them, as a worker does until an activity is
-    added. The route's own path: the page finds its day and its wall clock (the athlete's zone unset: their latest
-    activity's UTC offset), the user read once (review, 2026-10-14: three identical reads of it per load)."""
+    statements are counted, not the seconds (a CPU and wall-clock budget failed under coverage and on a loaded
+    machine), and captured: the day's rows carry the raw readings in `details`, read by key, never whole (the
+    count is the same either way). The first load reads the sessions (their raw data, laps and splits); the next
+    one reuses them, as a worker does until an activity is added. The route's own path: the page finds its day
+    and its wall clock (the athlete's zone unset: their latest activity's UTC offset), the user read once (review,
+    2026-10-14: three identical reads of it per load)."""
     monkeypatch.setattr(sante, "local_clock", _local_clock)
     for k in range(400):
         d = TODAY - timedelta(days=k)
@@ -113,11 +128,12 @@ async def test_the_page_stays_within_its_budget(db_session, test_user, monkeypat
     st._CACHE.clear()
     st._SEGS.clear()
     engine = db_session.get_bind()
-    count, users = [0], [0]
+    count, users, statements = [0], [0], []
 
     def counted(conn, cursor, statement, *a):
         count[0] += 1
         users[0] += bool(re.search(r"\bFROM users\b", statement))
+        statements.append(statement)
     event.listen(engine, "before_cursor_execute", counted)
     db_session.expunge(test_user)  # as a request's session holds it: not yet read
     try:
@@ -136,3 +152,6 @@ async def test_the_page_stays_within_its_budget(db_session, test_user, monkeypat
     # and the weight; one statement more is a decision
     assert cold_count <= 19, cold_count
     assert count[0] <= 17, count[0]
+    # the day's rows (the cards: `date = ?`), whose `details` hold the raw readings: read by key, never whole
+    day_rows = [s for s in statements if "FROM health_metrics" in s and "health_metrics.date = " in s]
+    assert day_rows and not [s for s in day_rows if _selects_whole_details(s)], day_rows
