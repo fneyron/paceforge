@@ -25,6 +25,8 @@ from app.services.auth import (
     forget_attempts,
     generate_token,
     hash_password_async,
+    hash_token,
+    over_quota,
     valid_email,
     valid_verification_token,
     verification_token,
@@ -109,11 +111,12 @@ async def register(
         password_hash=await hash_password_async(password),
         firstname=firstname or None,
         lastname=lastname or None,
-        email_verify_token=verify_token,
+        email_verify_token=hash_token(verify_token),  # the email gets the token, the table its hash
     )
     db.add(user)
     await db.flush()
     await db.refresh(user)
+    await over_quota("resend", user=user.id)  # this first email counts for the resend's minute
 
     # Send verification email (SMTP blocks: off the event loop)
     sent = await run_in_threadpool(send_verification_email, email, verify_token)
@@ -137,11 +140,12 @@ async def check_email_page(request: Request):
 async def resend_verification(request: Request, db: AsyncSession = Depends(get_db)):
     user_id = request.session.get("pending_user_id")
     user = await db.get(User, user_id) if user_id else None
-    recent = user and user.email_verify_token and valid_verification_token(user.email_verify_token, max_age=60)
-    if user and user.email and not user.email_verified and not recent:
-        user.email_verify_token = verification_token()
+    # one email a minute per account, the sign-up's own counted (the stored token is a hash: it tells no age)
+    if user and user.email and not user.email_verified and not await over_quota("resend", user=user.id):
+        token = verification_token()
+        user.email_verify_token = hash_token(token)
         await db.flush()
-        sent = await run_in_threadpool(send_verification_email, user.email, user.email_verify_token)
+        sent = await run_in_threadpool(send_verification_email, user.email, token)
         request.session["verification_failed"] = not sent
     return RedirectResponse("/auth/check-email", status_code=303)
 
@@ -153,7 +157,7 @@ async def verify_email(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(User).where(User.email_verify_token == token)
+        select(User).where(User.email_verify_token == hash_token(token))
     )
     user = result.scalar_one_or_none()
 
@@ -278,7 +282,7 @@ async def forgot_password(
     email_task = None
     if user and user.password_hash:
         token = generate_token()
-        user.password_reset_token = token
+        user.password_reset_token = hash_token(token)  # the email gets the token, the table its hash
         user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         # saved before the email goes (get_db commits only after the response and its background work): the
         # link is never dead on arrival, and no row lock is held through SMTP
@@ -315,7 +319,7 @@ async def reset_password(
         )
 
     result = await db.execute(
-        select(User).where(User.password_reset_token == token)
+        select(User).where(User.password_reset_token == hash_token(token))
     )
     user = result.scalar_one_or_none()
 

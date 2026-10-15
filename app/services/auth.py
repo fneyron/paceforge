@@ -240,6 +240,12 @@ def generate_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def hash_token(token: str) -> str:
+    """How an email's token (verification, password reset) is stored: its SHA-256, so a read of the table gives
+    no working link; the email carries the token itself and a lookup hashes what it receives."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def verification_token() -> str:
     signer = TimestampSigner(settings.SECRET_KEY, salt="email-verification")
     return signer.sign(generate_token()).decode()

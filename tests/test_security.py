@@ -328,3 +328,32 @@ async def test_pairing_exchanges_and_webhook_events_have_a_quota_per_address(cli
     for i in range(2):
         assert (await client.post("/webhook/strava", json={**event, "object_id": i})).status_code == 200
     assert (await client.post("/webhook/strava", json={**event, "object_id": 9})).status_code == 429
+
+
+# ── the emails' tokens stored hashed ────────────────────────────────────────
+
+async def test_email_tokens_are_stored_hashed(client: AsyncClient, db_session, no_commit, monkeypatch):
+    """Base code: the verification and reset tokens sat in clear in the users table (a read of it gave a working
+    link into any account). The emails are unchanged; a stored value is no link."""
+    from sqlalchemy import select
+
+    from app.services.auth import hash_token
+
+    sent = []
+    monkeypatch.setattr("app.routers.auth.send_verification_email", lambda *a: sent.append(a) or True)
+    monkeypatch.setattr("app.routers.auth.send_password_reset_email", lambda *a: sent.append(a))
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:
+        assert (await c.post("/auth/register", data={"email": "new@x.fr", "password": "pw-12345678"})).status_code == 302
+        user = (await db_session.execute(select(User).where(User.email == "new@x.fr"))).scalar_one()
+        token = sent[0][1]
+        assert user.email_verify_token == hash_token(token) and len(user.email_verify_token) == 64
+        assert "Lien invalide" in (await c.get("/auth/verify-email", params={"token": user.email_verify_token})).text
+        assert "Email vérifié" in (await c.get("/auth/verify-email", params={"token": token})).text
+        assert user.email_verified and user.email_verify_token is None
+        assert (await c.post("/auth/forgot-password", data={"email": "new@x.fr"})).status_code == 200
+        reset = sent[1][1]
+        assert user.password_reset_token == hash_token(reset) and reset != user.password_reset_token
+        r = await c.post("/auth/reset-password", data={"token": user.password_reset_token, "password": "pw-87654321"})
+        assert "Lien expiré" in r.text
+        r = await c.post("/auth/reset-password", data={"token": reset, "password": "pw-87654321"})
+        assert r.status_code == 302 and user.password_reset_token is None

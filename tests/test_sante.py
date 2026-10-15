@@ -188,10 +188,11 @@ async def test_sante_remains_in_both_navs(as_user: AsyncClient):
 
 
 async def test_the_signed_in_home_is_sante(client: AsyncClient, db_session: AsyncSession, no_commit):
-    from app.services.auth import hash_password, verification_token
+    from app.services.auth import hash_password, hash_token, verification_token
 
+    token = verification_token()  # the email's; the table keeps its hash
     user = User(email="me@x.fr", password_hash=hash_password("pw-12345678"), email_verified=True,
-                email_verify_token=verification_token())
+                email_verify_token=hash_token(token))
     db_session.add(user)
     await db_session.flush()
     async with AsyncClient(transport=client._transport, base_url="https://test") as c:
@@ -200,9 +201,9 @@ async def test_the_signed_in_home_is_sante(client: AsyncClient, db_session: Asyn
         assert r.status_code == 302 and r.headers["location"] == "/sante"
         r = await c.get("/")
         assert r.status_code == 302 and r.headers["location"] == "/sante"
-        r = await c.get("/auth/verify-email", params={"token": user.email_verify_token})
+        r = await c.get("/auth/verify-email", params={"token": token})
         assert r.status_code == 302 and r.headers["location"] == "/sante"
-        user.password_reset_token = "reset-1"
+        user.password_reset_token = hash_token("reset-1")
         user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         await db_session.flush()
         r = await c.post("/auth/reset-password", data={"token": "reset-1", "password": "pw-87654321"})

@@ -227,7 +227,7 @@ async def test_a_password_reset_signs_out_every_other_session(client, db_session
         for c in (other, here):
             assert (await _login(c, user.email, "pw-12345678")).status_code == 302
             assert (await c.get("/settings")).status_code == 200
-        user.password_reset_token = "reset-token"
+        user.password_reset_token = auth_service.hash_token("reset-token")  # stored hashed; the email has the token
         user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         await db_session.flush()
         r = await here.post("/auth/reset-password", data={"token": "reset-token", "password": "pw-87654321"})
@@ -416,7 +416,8 @@ async def test_an_auth_form_posted_from_another_site_is_refused(client, db_sessi
     monkeypatch.setattr("app.routers.auth.send_verification_email", lambda *a: sent.append(a) or True)
     monkeypatch.setattr("app.routers.auth.send_password_reset_email", lambda *a: sent.append(a))
     user = await _member(db_session)
-    user.password_reset_token, user.password_reset_expires_at = "reset-1", datetime.now(timezone.utc) + timedelta(hours=1)
+    user.password_reset_token = auth_service.hash_token("reset-1")
+    user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
     await db_session.flush()
     async with AsyncClient(transport=client._transport, base_url="https://test", headers=headers) as c:
         for path, form in (("/auth/login", {"email": user.email, "password": "pw-12345678"}),
@@ -425,7 +426,8 @@ async def test_an_auth_form_posted_from_another_site_is_refused(client, db_sessi
                            ("/auth/forgot-password", {"email": user.email})):
             assert (await c.post(path, data=form)).status_code == 403, path
         assert (await c.get("/settings")).headers["location"] == "/auth/login"  # not signed in
-    assert user.password_reset_token == "reset-1" and auth_service.verify_password("pw-12345678", user.password_hash)
+    assert user.password_reset_token == auth_service.hash_token("reset-1")
+    assert auth_service.verify_password("pw-12345678", user.password_hash)
     assert not sent and (await db_session.execute(select(User).where(User.email == "new@x.fr"))).first() is None
 
 
