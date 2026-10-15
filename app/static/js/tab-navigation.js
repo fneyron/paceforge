@@ -16,7 +16,8 @@
   function canonical(href) { var u = new URL(href, location.href); u.searchParams.delete('app_nav'); return u.pathname + u.search + u.hash; }
   function path(href) { return new URL(href, location.href).pathname; }
   function invalidate() { saved.clear(); revision++; }
-  function clear() { invalidate(); generation++; controller?.abort(); }
+  function cancel() { generation++; controller?.abort(); progress(false); }
+  function clear() { invalidate(); cancel(); }
   function rememberLocation() {
     if (!loading && eligible(location.href)) {
       mounted = location.href;
@@ -115,6 +116,9 @@
     }
     return ticket === generation;
   }
+  async function beforeLeave() {
+    if (!await waitCheckin(generation)) throw new Error('checkin-save-pending');
+  }
   async function navigate(href, nonce, push) {
     if (!eligible(href) || !eligible(mounted)) return false;
     var target = new URL(href, location.href).href;
@@ -151,7 +155,7 @@
     }
     return true;
   }
-  window.paceforgeTabs = { navigate: navigate, clear: clear, invalidate: invalidate, rememberLocation: rememberLocation, epoch: function () { return generation; } };
+  window.paceforgeTabs = { navigate: navigate, clear: clear, cancel: cancel, beforeLeave: beforeLeave, invalidate: invalidate, rememberLocation: rememberLocation, epoch: function () { return generation; } };
   document.addEventListener('click', function (event) {
     if (event.target.closest('[data-range]')) rememberLocation();
     var a = event.target.closest('a[href]');

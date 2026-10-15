@@ -4,9 +4,9 @@ export type Tab = 'health' | 'activities' | 'courses' | 'devices';
 export const tabs = [['health', 'Santé'], ['activities', 'Activités'], ['courses', 'Courses']] as const;
 export const destinations: Record<Exclude<Tab, 'devices'>, string> = { health: '/sante', activities: '/activities', courses: '/simulator' };
 export function prepareNavigationScript(nonce: string): string {
-  return `Promise.resolve().then(() => window.paceforgeBeforeLeave?.()).then(() => {
+  return `Promise.resolve().then(() => window.paceforgeBeforeLeave?.()).then(() => window.paceforgeTabs?.beforeLeave?.()).then(() => {
     window.paceforgeRememberPage?.();
-    window.ReactNativeWebView.postMessage(JSON.stringify({type:'navigation-ready',nonce:${JSON.stringify(nonce)},page_url:location.href,ok:true}));
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'navigation-ready',nonce:${JSON.stringify(nonce)},page_url:location.href,tabs_ready:typeof window.paceforgeTabs?.navigate==='function' && typeof window.paceforgeTabs?.cancel==='function' && typeof window.paceforgeTabs?.beforeLeave==='function',ok:true}));
   }).catch(() => window.ReactNativeWebView.postMessage(JSON.stringify({type:'navigation-ready',nonce:${JSON.stringify(nonce)},page_url:location.href,ok:false}))); true;`;
 }
 // Older server documents report an explicit fallback. The native save nonce
@@ -14,7 +14,7 @@ export function prepareNavigationScript(nonce: string): string {
 export function tabNavigationScript(destination: string, nonce: string): string {
   return `(async function () {
     const fallback = () => window.ReactNativeWebView.postMessage(JSON.stringify({type:'tab-navigation',nonce:${JSON.stringify(nonce)},url:${JSON.stringify(destination)},page_url:location.href,status:'fallback'}));
-    try { if (!window.paceforgeTabs || !await window.paceforgeTabs.navigate(${JSON.stringify(destination)}, ${JSON.stringify(nonce)})) fallback(); }
+    try { if (typeof window.paceforgeTabs?.navigate !== 'function' || typeof window.paceforgeTabs?.cancel !== 'function' || typeof window.paceforgeTabs?.beforeLeave !== 'function' || !await window.paceforgeTabs.navigate(${JSON.stringify(destination)}, ${JSON.stringify(nonce)})) fallback(); }
     catch (_) { fallback(); }
   })(); true;`;
 }
