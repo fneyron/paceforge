@@ -2,9 +2,9 @@
 the production compose file and of .env.example (every setting wired and documented, one beat, rotated logs)."""
 import re
 import sys
-import types
 from pathlib import Path
 
+import pytest
 import yaml
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -81,45 +81,43 @@ async def test_deep_health_is_503_when_the_database_is_down(client, monkeypatch)
 
 # ── Sentry ───────────────────────────────────────────────────────────────────
 
-def _stub_sentry(monkeypatch) -> list[dict]:
-    """A sentry_sdk stand-in in sys.modules, recording every init call."""
-    calls: list[dict] = []
-    sdk = types.ModuleType("sentry_sdk")
-    sdk.init = lambda **kwargs: calls.append(kwargs)
-    monkeypatch.setitem(sys.modules, "sentry_sdk", sdk)
-    monkeypatch.setitem(sys.modules, "sentry_sdk.integrations", types.ModuleType("sentry_sdk.integrations"))
-    for name, cls in (("celery", "CeleryIntegration"), ("fastapi", "FastApiIntegration"),
-                      ("starlette", "StarletteIntegration")):
-        module = types.ModuleType(f"sentry_sdk.integrations.{name}")
-        setattr(module, cls, type(cls, (), {}))
-        monkeypatch.setitem(sys.modules, f"sentry_sdk.integrations.{name}", module)
-    return calls
-
-
 def test_sentry_does_nothing_without_a_dsn(monkeypatch):
-    from app.sentry import init_sentry
+    from app import sentry
 
-    calls = _stub_sentry(monkeypatch)
     monkeypatch.setattr(settings, "SENTRY_DSN", " ")
-    assert init_sentry() is False and init_sentry(celery=True) is False
-    assert calls == []
+    monkeypatch.setattr(sentry, "_initialised", False)
+    monkeypatch.delitem(sys.modules, "sentry_sdk", raising=False)
+    assert sentry.init_sentry() is False
+    assert "sentry_sdk" not in sys.modules  # not even imported
 
 
-def test_sentry_reports_without_pii_or_traces_when_a_dsn_is_set(monkeypatch):
+def test_sentry_initialises_once_per_process_with_every_integration(monkeypatch):
+    """A web worker imports app.celery_app to queue a task and a Celery worker imports the app's modules: the
+    second call must keep the first client, with the Starlette, FastAPI and Celery integrations all on (a second
+    sentry_sdk.init would replace it with a client missing the first caller's integrations). The real SDK, a
+    DSN nothing listens on."""
+    sentry_sdk = pytest.importorskip("sentry_sdk")
+    from app import sentry
     from app.build import BUILD_ID
-    from app.sentry import init_sentry
 
-    calls = _stub_sentry(monkeypatch)
-    monkeypatch.setattr(settings, "SENTRY_DSN", "https://key@example.invalid/1")
-    assert init_sentry() is True and init_sentry(celery=True) is True
-    web, worker = calls
-    for call in (web, worker):
-        assert call["dsn"] == "https://key@example.invalid/1"
-        assert call["send_default_pii"] is False and call["auto_enabling_integrations"] is False
-        assert "traces_sample_rate" not in call and "profiles_sample_rate" not in call
-        assert BUILD_ID.startswith(call["release"])
-    assert [type(i).__name__ for i in web["integrations"]] == ["StarletteIntegration", "FastApiIntegration"]
-    assert [type(i).__name__ for i in worker["integrations"]] == ["CeleryIntegration"]
+    monkeypatch.setattr(settings, "SENTRY_DSN", "https://0123456789abcdef0123456789abcdef@127.0.0.1:1/1")
+    monkeypatch.setattr(sentry, "_initialised", False)
+    client = None
+    try:
+        assert sentry.init_sentry() is True
+        client = sentry_sdk.get_client()
+        assert client.is_active()
+        assert {"starlette", "fastapi", "celery"} <= set(client.integrations)
+        assert not {"redis", "httpx", "sqlalchemy"} & set(client.integrations)  # no breadcrumbs with URLs or SQL
+        assert client.options["send_default_pii"] is False and client.options["traces_sample_rate"] is None
+        assert BUILD_ID.startswith(client.options["release"])
+        assert sentry.init_sentry() is True  # the other module's turn: a no-op
+        assert sentry_sdk.get_client() is client
+    finally:
+        if client is not None:
+            client.close(timeout=0)
+        sentry_sdk.get_global_scope().set_client(None)
+    assert not sentry_sdk.is_initialized()
 
 
 # ── Celery ───────────────────────────────────────────────────────────────────
