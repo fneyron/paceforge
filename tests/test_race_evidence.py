@@ -1054,7 +1054,7 @@ def _course_km(n):
 
 
 @pytest.mark.asyncio
-async def test_an_older_pages_estimate_is_read_with_the_law_it_was_made_with(db_session, test_user):
+async def test_an_older_pages_estimate_is_read_with_the_law_it_was_made_with(db_session, test_user, time_machine):
     """Review: the older page saved its moving-time estimate with the level law of its day; read with this
     release's law (his estimates 4-10 % slower) it passed for an objective. It is read again with that law, frozen
     (race_legacy): no objective, even saved after a race the import estimate predates. His Transjeju objective,
@@ -1063,6 +1063,9 @@ async def test_an_older_pages_estimate_is_read_with_the_law_it_was_made_with(db_
     from app.routers import simulator as sim
     from app.services import race_legacy as rl
 
+    # the day this was written: both laws read his races by their age (race_calibration.MODEL_MONTHS, the recency
+    # half-life), so the older page's estimate, and how far 18h30 stands from it, moved with the calendar
+    time_machine.move_to(datetime(2026, 10, 14, 12, tzinfo=timezone.utc))
     for i, (name, day, km, dp, h) in enumerate(OWNER_RACES):
         db_session.add(Activity(strava_activity_id=95000 + i, user_id=test_user.id, sport_type="TrailRun", name=name,
                                 start_date=datetime.fromisoformat(day + "T05:00:00+00:00"), distance=km * 1000,

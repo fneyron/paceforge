@@ -883,14 +883,14 @@ async def test_a_crashing_sync_never_stays_en_cours(db_session: AsyncSession, te
 
 
 async def test_a_missing_night_syncs_again_sooner(as_user: AsyncClient, db_session: AsyncSession,
-                                                 test_user: User, monkeypatch):
+                                                 test_user: User, monkeypatch, same_today):
     from app.services import coros as coros_service
 
     conn = await _link(db_session, test_user)
     conn.last_sync_at = datetime.now(timezone.utc) - timedelta(minutes=40)
     started = []
     monkeypatch.setattr(coros_service, "schedule_sync", lambda uid: started.append(uid) or True)
-    today = datetime.now(timezone.utc).date()
+    today = same_today  # the page's day too (Paris is on tomorrow from 22:00 UTC)
     db_session.add(HealthMetric(user_id=test_user.id, date=today - timedelta(days=1), metric="sleep", value=450,
                                 source="COROS", n_samples=1, details={"bedtime": "23:00", "wake": "07:00"}))
     await db_session.flush()
