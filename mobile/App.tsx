@@ -85,7 +85,7 @@ function Companion() {
   // paired ». The read is retried on the first return to the foreground.
   const readStored = useEffectEvent(async () => {
     try {
-      await secure.migrate().catch(e => { if (e instanceof KeychainLocked) throw e; });
+      await secure.prepare().catch(e => { if (e instanceof KeychainLocked) throw e; });
       const [saved, time, auto, receipt, blocked] = await Promise.all([secure.recover(KEYS.pair), secure.get(KEYS.last),
         secure.get(KEYS.auto), secure.get(KEYS.sync), backgroundBlock()]);
       const account = saved ? JSON.parse(saved) as Pair : null;

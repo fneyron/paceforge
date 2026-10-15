@@ -36,7 +36,8 @@ const listeners = new Set<(report: SyncReport) => void>();
 const engine = createEngine({
   id, now: Date.now,
   load: async () => {
-    await secure.settled();
+    // Shared with the app: a locked keychain surfaces on the reads below, as « locked ».
+    await secure.prepare().catch(() => {});
     const [pair, auto, receipt, state] = await Promise.all([secure.recover(KEYS.pair), secure.get(KEYS.auto),
       secure.get(KEYS.sync), secure.get(KEYS.background)]);
     return { pair: readPair(pair), automatic: auto === 'true', receipt: readReceipt(receipt), state: readState(state) };

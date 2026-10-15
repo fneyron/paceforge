@@ -250,7 +250,11 @@ demande de reconnexion dans Réglages).
   sont lisibles après le premier déverrouillage suivant un redémarrage
   (`AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`, migration unique des anciens éléments).
   Un trousseau verrouillé n’est jamais lu comme « non associé », et les plans
-  hors connexion ne sont plus remplacés par une bibliothèque vide.
+  hors connexion ne sont plus remplacés par une bibliothèque vide. iOS conserve
+  ces éléments après une désinstallation : un marqueur dans les documents de
+  l’application (supprimés avec elle) distingue une réinstallation, qui efface
+  l’association, le reçu, l’interrupteur, l’état d’arrière-plan et l’index hors
+  connexion, d’une mise à jour, qui les garde.
 
 Limites, sans contournement possible :
 
