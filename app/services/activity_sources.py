@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
+from app.models.route import Route
 from app.services.activity_dedupe import _DUP_DISTANCE_TOL, _DUP_WINDOW_S, _same_family
 
 WATCH_IDS = ("garmin_activity_id", "coros_activity_id")
@@ -71,10 +72,13 @@ async def adopt_watch_twin(db: AsyncSession, activity: Activity) -> Activity:
     if twin is None:
         db.add(activity)
         return activity
+    revision = (twin.raw_data or {}).get("paceforge_revision", 0)
     for col in Activity.__table__.columns.keys():
         value = getattr(activity, col)
         if col not in KEEP and value is not None:
             setattr(twin, col, value)
+    twin.raw_data = {**twin.raw_data,
+                     "paceforge_revision": (revision if type(revision) is int and revision >= 0 else 0) + 1}
     return twin
 
 
@@ -99,10 +103,20 @@ async def merge_twins(db: AsyncSession, user_id: int, since: datetime) -> int:
         keep = {c: getattr(w, c) for c in Activity.__table__.columns.keys()
                 if c not in KEEP | {"strava_activity_id", "raw_data", "name", "sport_type", "start_date"}
                 and getattr(w, c) is not None and not getattr(s, c)}
+        # Preserve a real race association before deleting its watch copy; a planned route alone proves nothing.
+        routes = (await db.execute(select(Route).where(
+            Route.user_id == user_id, Route.result_activity_id == w.id))).scalars().all()
+        for route in routes:
+            route.result_activity_id = s.id
+            if route.result_json:
+                route.result_json = {**route.result_json, "activity_id": s.id}
+        revisions = [(a.raw_data or {}).get("paceforge_revision", 0) for a in (w, s)]
+        revision = max(v if type(v) is int and v >= 0 else 0 for v in revisions)
         await db.delete(w)  # its ids are unique: free them first
         await db.flush()
         for k, v in {**keep, **ids}.items():
             setattr(s, k, v)
+        s.raw_data = {**(s.raw_data or {}), "paceforge_revision": revision + 1}
         merged += 1
     if merged:
         await db.flush()

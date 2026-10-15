@@ -187,10 +187,12 @@ def test_reasons_are_listed_never_an_added_second_penalty():
     night's, held in the state's range: a second reason never lowers it further."""
     w = {"tone": "warn", "text": "fenêtre indicative jusqu'à J+1"}
     one, both = _example(z_hrv=0.0, window=w), _example(z_hrv=0.0, window=w, tst=300)
-    assert one["score"]["value"] == both["score"]["value"] == 69
-    assert [r["key"] for r in both["score"]["reasons"]] == ["short", "effort"]
+    assert one["score"]["value"] == 100 and one["score"]["reasons"] == []  # effort window is context only
+    assert both["score"]["value"] == 69
+    assert [r["key"] for r in both["score"]["reasons"]] == ["short"]
     low, low_both = _example(z_hrv=-1.5, window=w), _example(z_hrv=-1.5, window=w, tst=300)
     assert low["score"]["value"] == low_both["score"]["value"] == 50
+    assert [r["key"] for r in low_both["score"]["reasons"]] == ["hrv", "short"]
 
 
 def test_same_activity_id_and_import_order_do_not_double_the_effect():

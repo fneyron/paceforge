@@ -14,7 +14,7 @@ from app.services import strava_state as state
 
 logger = logging.getLogger(__name__)
 
-POLL_PAGES = 3  # 90 activities: what an athlete uploads between two rounds, a late upload included
+POLL_PAGES = 3  # one newest page + two pages of the resumable history sweep, within the same request budget
 POLL_CLAIM_S = 2 * 3600  # an athlete's poll queued or running is not queued again (a lost one is, after this)
 SHARED_APP_EVERY = timedelta(minutes=55)  # the shared app's athletes: one poll an hour at most
 
@@ -106,8 +106,7 @@ def poll_strava_user(user_id: int) -> dict:
 
 
 async def _poll_user(user_id: int) -> dict:
-    """One athlete's poll, in its own transaction (a failure rolls back this athlete's import only): their newest
-    activities until a page is all known, whatever their start (one is often uploaded hours after it started), a few
+    """One athlete's poll, in its own transaction: their newest page and a resumed sweep of older activities, a few
     races' D+, the activities' lookups; `last_activity_poll_at` says when (Réglages' « Dernière synchro »)."""
     from app.database import get_task_session
     from app.services.activity_env import enrich
