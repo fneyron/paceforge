@@ -14,7 +14,7 @@
 {# race day: why the finish moved or not #}
 {% macro rp_mode(rp) -%}
 {% set fin_day = (rp.finish_clock_s // 86400) | int %}
-{% set plan_day = ((start_offset_s + (rp.target_time_s or 0)) // 86400) | int %}
+{% set plan_day = ((rp.target_clock_s if rp.target_clock_s else start_offset_s) // 86400) | int %}
 {% if rp.mode == 'pin' %}cap sur {{ rp.pin_name }} {{ hhmm(rp.pin_clock_s) }}{% elif rp.mode == 'target' %}objectif tenable{% else %}à ton rythme · arrivée <span class="text-gray-700">{{ hhmm(rp.finish_clock_s) }}{% if fin_day > plan_day %} <span data-day-of="{{ fin_day }}">+{{ fin_day - plan_day }}j</span>{% endif %}</span>{% endif %}
 {%- endmacro %}
 {% set sc = scenarios if (scenarios is defined and scenarios and not (replan is defined and replan)) else none %}
@@ -48,7 +48,8 @@
     {% set sec_time = s.adjusted_time_s if use_adj else s.predicted_time_s %}
     {% set cum_val = s.adjusted_cumulative_time_s if use_adj else s.cumulative_time_s %}
     {% set clock_val = s.adjusted_clock_time_s if use_adj else s.clock_time_s %}
-    {% set stops_val = clock_val - start_offset_s - cum_val %}
+    {% set el_val = s.get('adjusted_elapsed_s' if use_adj else 'elapsed_s') %}
+    {% set stops_val = (el_val if el_val is not none else clock_val - start_offset_s) - cum_val %}
     {% set is_finish = loop.last %}
     {% set arr_stop = (s.stop_s if s.stop_s is defined and s.stop_s else 0) if not is_finish else 0 %}
     {% set stop_min = (arr_stop / 60) | round | int %}
@@ -105,5 +106,5 @@
 {% set pin_warn = sections | selectattr('pin_clamped') | rejectattr('passed') | list if sections and sections[-1].objective_s is defined else [] %}
 {% if pin_warn %}<div data-pin-warnings class="pt-3 space-y-0.5 text-[13px] leading-snug text-danger">
 {% for s in pin_warn %}{% set clk = s.adjusted_clock_time_s %}
-<p>{% if s.end_checkpoint_index is none %}Arrivée : ton objectif ({{ fmt_time(s.objective_s) }}) est trop court après tes heures fixées · le plan arrive à {{ hhmm(clk) }}.{% else %}{{ s.end_name }} : {{ hhmm(start_offset_s + s.pin_target_s) }} est impossible à tenir depuis le point d'avant (arrêts compris) · le plan vise {{ hhmm(clk) }}.{% endif %}</p>
+<p>{% if s.end_checkpoint_index is none %}Arrivée : ton objectif ({{ fmt_time(s.objective_s) }}) est trop court après tes heures fixées · le plan arrive à {{ hhmm(clk) }}.{% else %}{{ s.end_name }} : {{ hhmm(s.pin_clock_s if (s.pin_clock_s is defined and s.pin_clock_s is not none) else start_offset_s + s.pin_target_s) }} est impossible à tenir depuis le point d'avant (arrêts compris) · le plan vise {{ hhmm(clk) }}.{% endif %}</p>
 {% endfor %}</div>{% endif %}

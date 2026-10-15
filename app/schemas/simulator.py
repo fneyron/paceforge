@@ -187,6 +187,10 @@ class PassageTimeSection(BaseModel):
     end_elevation: float | None = None
     clock_time_s: int | None = None
     adjusted_clock_time_s: int | None = None
+    # seconds after the start at the section's end, stops included: the model's currency (the clocks above are
+    # the race's wall clock, which a daylight-saving change moves — services/plan_clock.py)
+    elapsed_s: int | None = None
+    adjusted_elapsed_s: int | None = None
     end_checkpoint_index: int | None = None
     temperature_c: float | None = None
     heat_factor: float | None = None

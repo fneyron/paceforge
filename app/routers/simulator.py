@@ -13,6 +13,7 @@ from app.dependencies import get_current_user, get_db
 from app.features import cycling_enabled, hidden_sports, require_cycling, sport_hidden
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
+from app.services.plan_clock import PlanClock
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -154,7 +155,7 @@ def _plan_finish_s(b: dict) -> int | None:
     if b.get("plan_total_s"):
         return int(b["plan_total_s"])
     end = b["sections"][-1] if b["sections"] else None
-    return int(end["clock_time_s"]) - int(b["start_offset_s"]) if end and end.get("clock_time_s") is not None else None
+    return b["clock"].elapsed_of(end, plan=False) if end else None
 
 
 async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User, profile=None) -> dict[int, tuple[int | None, int | None]]:
@@ -398,6 +399,8 @@ async def _passage_table_context(
     total_km = course.total_distance_km
     clock = await _race_clock(db, user_id, route_obj, course, race_date=race_date, weather=weather_clock,
                               start_hour=start_hour, start_minute=start_minute)  # night by the sun once dated
+    start_offset_s = start_hour * 3600 + start_minute * 60
+    plan_clock = PlanClock(start_offset_s, clock.get("race_date"), clock.get("tz"))  # the rows' wall clock, a DST change included
     fine = _fine_terrain(course, profile)
     if estimate_s is None:  # the estimate now (these points, stops and weather): the hero and the field follow it
         course, est, _ = _estimate(course, profile, start_hour, start_minute, clock, checkpoints, stop_minutes, total_km,
@@ -414,9 +417,9 @@ async def _passage_table_context(
         course, checkpoints, target, heat_factor,
         start_hour, start_minute, hourly_weather,
         stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=aid_stops, objective=target_time_s is not None,
+        clock=plan_clock,
     )
     has_weather = any(s.get("temperature_c") is not None for s in sections)
-    start_offset_s = start_hour * 3600 + start_minute * 60
 
     # Race day: "I'm at <checkpoint> at <clock>" → re-plan the remainder.
     replan = None
@@ -426,25 +429,25 @@ async def _passage_table_context(
         anchor_clock_s = _clock_to_s(anchor_clock)
         if anchor_clock_s is not None:
             sections, replan = replan_from_passage(
-                sections, start_hour * 3600 + start_minute * 60, target,
+                sections, start_offset_s, target,
                 anchor_km, anchor_clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=aid_stops,
+                clock=plan_clock,
             )
     # Cutoff margins and autonomy legs read the (re)planned clocks, so they
     # come after the replan: on race day the margin is THE number he checks.
-    sections = annotate_cutoffs(sections, checkpoints, start_offset_s)
+    sections = annotate_cutoffs(sections, checkpoints, start_offset_s, clock=plan_clock)
     autonomy = autonomy_legs(checkpoints, course.total_distance_km, sections)
 
     from app.services.checkpoints import KINDS
-    from app.services.race_simulator import build_scenarios, is_pinned, plan_total_s
+    from app.services.race_simulator import build_scenarios, plan_total_s
 
-    # pinned checkpoints make a plan even without an objective
-    pinned = is_pinned(sections)
     sc_set = _scenario_settings(params, profile, course, await _known_course(db, user_id, route_obj))
     scenarios = None if replan else build_scenarios(
         sections, start_offset_s, target,
         fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=params.get("switch_km"),
         total_distance_km=course.total_distance_km,
+        clock=plan_clock,
     )
     # What the profile draws: night, terrain bands, clocks, cutoffs.
     from app.services.pacing_guide import build_pacing_guide, resolve_hr_caps
@@ -453,7 +456,7 @@ async def _passage_table_context(
 
     zones = await estimate_training_zones(db, user_id)
     rc = resolve_hr_caps(params, zones.get("max_hr"))
-    plan_s = plan_total_s(sections, start_offset_s, target)
+    plan_s = plan_total_s(sections, start_offset_s, target, clock=plan_clock)
     guide = build_pacing_guide(
         course, plan_s, hr_cap_climb=rc["climb"], hr_cap_flat=rc["flat"], hr_release_descent=rc["descent"],
         walk_grade=rc["walk_grade"], plan_sections=sections,
@@ -462,7 +465,8 @@ async def _passage_table_context(
 
     sun = sun_clock(course, clock.get("race_date"), start_hour, start_minute, clock.get("utc_offset_s")) if clock else None
     plan_data = build_plan_data(sections, start_offset_s, True, course.total_distance_km,
-                                guide["blocks"], scenarios, autonomy=autonomy, dark=sun.is_dark if sun else None)
+                                guide["blocks"], scenarios, autonomy=autonomy, dark=sun.is_dark if sun else None,
+                                clock=plan_clock)
     plan_data["estimate_s"] = estimate_s  # the page's « Estimation » now: its hero, field and slider follow it
     legs = _leg_details(guide, sections)
     return {
@@ -1601,18 +1605,20 @@ async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dic
             sections, rp = replan_from_passage(
                 sections, start_offset_s, b["plan_target_s"],
                 float(live["anchor_km"]), clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=b.get("aid_stops"),
+                clock=b["clock"],
             )
             live_applied = rp is not None
             if live_applied:  # margins against the recalculated clocks
                 from app.services.checkpoints import annotate_cutoffs
 
-                sections = annotate_cutoffs(sections, cps, start_offset_s)
+                sections = annotate_cutoffs(sections, cps, start_offset_s, clock=b["clock"])
     pp = route.params_json or {}
     sc_set = _scenario_settings(pp, b["profile"], course, await _known_course(db, user.id, route), sport=b["sport"])
     scenarios = None if live_applied else build_scenarios(
         sections, start_offset_s, b["plan_target_s"],
         fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=pp.get("switch_km"), total_distance_km=course.total_distance_km,
+        clock=b["clock"],
     )
 
     guide = (await _pacing_guide_for(route, db, user, b)) if b["sport"] != "bike" else None
@@ -1977,7 +1983,6 @@ def _estimate(course, profile, start_hour: int, start_minute: int, clock: dict, 
     course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, fine_terrain=fine,
                             own_weather=own_weather, **clock)
     finish, stops = float(course.predicted_total_time_s), {}
-    start = start_hour * 3600 + start_minute * 60
     for _ in range(ESTIMATE_PASSES):
         now = _aid_stops(cps, override_min, finish, total_km)
         if now != stops:
@@ -1986,7 +1991,7 @@ def _estimate(course, profile, start_hour: int, start_minute: int, clock: dict, 
                                     aid_stops=stops or None, own_weather=own_weather, **clock)
         secs = compute_passage_times(course, cps, None, heat_factor, start_hour, start_minute, hourly,
                                      stop_s_per_aid=(override_min or 0) * 60, aid_kms=aid_kms, aid_stops=stops)
-        new = float(secs[-1]["clock_time_s"] - start) if secs else finish
+        new = float(secs[-1]["elapsed_s"]) if secs else finish
         settled, finish = abs(new - finish) < 1.0, new
         if settled:
             break
@@ -2196,6 +2201,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
             "course": CourseProfile(**route.course_json), "profile": None, "cycling": cycling, "bike_ctx": bctx,
             "checkpoints": cps, "sections": sections, "predicted_total_s": int(cycling.predicted_total_time_s),
             "start_hour": bctx["start_hour"], "start_minute": bctx["start_minute"], "start_offset_s": start_offset_s,
+            "clock": PlanClock(start_offset_s),  # the bike plan reads the start's offset
             "stop_min": stop_min, "aid_kms": aid, "use_target": bool(route.target_time_s),
             "has_objective": bool(route.target_time_s), "objective_s": route.target_time_s,
             "estimate_s": int(cycling.predicted_total_time_s), "plan_target_s": route.target_time_s,
@@ -2211,6 +2217,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
         profile = await build_athlete_gradient_profile(db, user.id)
     total_km = course.total_distance_km
     clock = await _race_clock(db, user.id, route, course)
+    plan_clock = PlanClock(start_offset_s, clock.get("race_date"), clock.get("tz"))  # the rows' wall clock, a DST change included
     own_weather = bool(route.weather_json)  # without: the level at the heat his races were run in (predict_course)
     w = route.weather_json if isinstance(route.weather_json, dict) else {}
     heat, hourly = float(w.get("heat_factor") or 1.0), w.get("hourly")
@@ -2232,8 +2239,9 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     sections = compute_passage_times(
         course, cps, target, heat, start_hour, start_minute, hourly,
         stop_s_per_aid=stop_min * 60, aid_kms=aid, aid_stops=aid_stops, objective=objective_s is not None,
+        clock=plan_clock,
     )
-    sections = annotate_cutoffs(sections, cps, start_offset_s)
+    sections = annotate_cutoffs(sections, cps, start_offset_s, clock=plan_clock)
     from app.services.race_simulator import is_pinned, plan_total_s
 
     pinned = is_pinned(sections)
@@ -2242,6 +2250,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
         "predicted_total_s": int(course.predicted_total_time_s),  # the moving time at his level
         "estimate_s": estimate_s, "objective_s": objective_s, "plan_target_s": target,
         "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset_s,
+        "clock": plan_clock,  # the race's clock (plan_clock.PlanClock): the rows' wall clock across a DST change
         # the sections' plan (adjusted_*) is the one to follow: on the objective, else on the estimate, as the page
         "stop_min": stop_min, "aid_kms": aid, "use_target": True,
         # named a plan (« le plan », « Objectif », the phone's « plan enregistré ») only when he set one: an
@@ -2249,7 +2258,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
         "has_objective": objective_s is not None or pinned,
         "pinned": pinned,
         # the plan's finish (stops included): the objective, the estimate, or where the pins lead
-        "plan_total_s": plan_total_s(sections, start_offset_s, target),
+        "plan_total_s": plan_total_s(sections, start_offset_s, target, clock=plan_clock),
         "params": route.params_json or {}, "sport": "trail",
     }
 
@@ -2414,14 +2423,16 @@ async def export_pace_strategy(
     safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in route.name).strip() or "parcours"
     fmt = (fmt or "gpx").lower()
     if fmt == "csv":
-        body = build_pace_csv(route.name, b["sections"], b["use_target"], b["start_offset_s"], leg_codes=leg_codes)
+        body = build_pace_csv(route.name, b["sections"], b["use_target"], b["start_offset_s"], leg_codes=leg_codes, clock=b["clock"])
         return Response(content=body, media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.csv"'})
     if fmt == "tcx":
-        body = build_pace_tcx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes)
+        body = build_pace_tcx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes,
+                              clock=b["clock"])
         return Response(content=body, media_type="application/vnd.garmin.tcx+xml",
                         headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.tcx"'})
-    body = build_pace_gpx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes)
+    body = build_pace_gpx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes,
+                          clock=b["clock"])
     return Response(content=body, media_type="application/gpx+xml",
                     headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.gpx"'})
 
