@@ -40,7 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
 from app.services import activity_env as env
-from app.services.activity_dedupe import find_duplicate_ids, is_false_start
+from app.services.activity_dedupe import is_false_start
 
 HISTORY_DAYS = 730
 FOOT = {"Run", "TrailRun", "VirtualRun", "Hike", "Walk", "BackcountrySki", "NordicSki", "Snowshoe"}
@@ -74,6 +74,12 @@ class Session:
     feels: float | None = None  # °C, the apparent temperature at its start (Open-Meteo, looked up in the sync)
     segs: tuple | None = None  # ((minutes, average HR), …) of its laps or splits, once read (nights.read_segments)
     splits: tuple | None = None  # ((minutes, km, average HR, grade), …) of its km splits, once read (nights.km_splits)
+    race_confirmed: bool = False  # a real result linked to this athlete's saved course
+    race_name: str | None = None
+
+    @property
+    def is_race(self) -> bool:
+        return self.race_confirmed or self.workout_type in RACE_TYPES
 
     @property
     def end_day(self) -> date:
@@ -157,6 +163,9 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     if zone is None:
         zone = await athlete_clock(db, user_id)
     since = datetime.combine(today - timedelta(days=days), datetime.min.time(), tzinfo=timezone.utc)
+    from app.services.activity_identity import confirmed_races, revision_sum
+
+    races = await confirmed_races(db, user_id, since=since)
     where = (Activity.user_id == user_id, Activity.start_date >= since)
     # the sport's family weighs differently, so a re-import from one family to another is seen
     family = case((Activity.sport_type.in_(RUNS), 1), (Activity.sport_type.in_(FOOT), 1_000),
@@ -167,14 +176,14 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     stored = func.pg_column_size if pg else func.length
 
     whole = int_sum
-    key = (today, days, str(zone), *(await db.execute(  # what a sync can add or rewrite in place
+    key = (today, days, str(zone), tuple(sorted(races.items())), *(await db.execute(  # what a sync can add or rewrite in place
         select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at),
                func.sum(env.raw_size(db)), func.sum(stored(Activity.laps)), func.sum(stored(Activity.splits_metric)),
                func.max(Activity.start_date), func.sum(Activity.moving_time), func.sum(Activity.elapsed_time),
                whole(Activity.distance), whole(Activity.total_elevation_gain, 10),
                whole(Activity.average_heartrate, 10), whole(Activity.max_heartrate, 10),
                func.sum(family), func.sum(func.length(Activity.sport_type)),
-               func.sum(func.length(func.coalesce(Activity.name, "")))).where(*where))).one())
+               func.sum(func.length(func.coalesce(Activity.name, ""))), revision_sum(db)).where(*where))).one())
     hit = _CACHE.get(user_id)
     if hit and hit[0] == key:
         return [replace(s) for s in hit[1]]
@@ -208,7 +217,12 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
 
     raw = [_Row(r.id, _utc(r.start_date), r.sport_type, r.distance or 0, r.moving_time or 0, split,
                 r.average_heartrate) for r, _, split in rows]
-    skip = find_duplicate_ids(raw) | {a.id for a in raw if is_false_start(a)}
+    from app.services.activity_dedupe import duplicate_representatives
+    from app.services.activity_identity import races_on_retained_copies
+
+    duplicates = duplicate_representatives(raw)
+    races = races_on_retained_copies(races, duplicates)
+    skip = set(duplicates) | {a.id for a in raw if is_false_start(a)}
     out = []
     for r, x, _ in rows:
         if r.id in skip or not r.moving_time:
@@ -227,7 +241,8 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
             elapsed=max(r.elapsed_time or 0, r.moving_time) / 60, offset=known, zone_offset=clock,
             rpe=_rpe(x["perceived_exertion"]),
             indoor=env.is_indoor(r.sport_type, x), located=env.located(x), alt=_float(looked.get("alt")),
-            elev_low=_float(x["elev_low"]), feels=_float(looked.get("feels"))))
+            elev_low=_float(x["elev_low"]), feels=_float(looked.get("feels")),
+            race_confirmed=r.id in races, race_name=races.get(r.id)))
     if len(_CACHE) >= _CACHE_SIZE:
         _CACHE.pop(next(iter(_CACHE)))
     _CACHE[user_id] = (key, out)
@@ -713,8 +728,8 @@ def easy_watch(model: dict | None, today: date) -> dict | None:
             "flag": len(deltas) == 2 and all(v >= EASY_BPM for _, v in deltas)}
 
 
-# ── big efforts: the windows Santé reads, each a reason of the daily state ──────────────────────────────────
-# Santé judges recovery from past activities only: a planned race is never read. Each
+# ── big efforts: the windows Santé shows as context, neither a reason nor a cap of the nightly-signal index ──
+# Past activities only: a planned race is never read. Each
 # activity is sized by its own time, stops included (elapsed), whatever it was. No official body gives a number of
 # days (Kellmann 2018: « a clear categorization based on specific time frames cannot be provided »; Schwellnus 2016;
 # Meeusen 2013): every class, window and modifier below is (H), « fenêtres indicatives » anchored on
@@ -726,9 +741,9 @@ EFFORT_DPLUS = 1500  # (H) m on foot: « long » whatever its time (1 264 m of d
 STOPPED_WATCH = 2  # (H) elapsed over twice the moving time: a watch left running, the moving time counts
 CHAIN_GAP = timedelta(minutes=30)  # (H) an activity starting this soon after the last one ended: the same effort
 DAWN = time(6)  # (H) an effort ending before 06:00 ended in the night: that morning is the first one after it
-# the window is a reason of the daily state, never a cap on a score: orange through D+n, the lengths read from the
-# studies (« fenêtres indicatives », H): a Longue D+1, run like a race D+2 (power still −18 % at D+2 after a
-# marathon: Petersen 2007), a
+# the window is context beside the daily index, never a reason nor a cap of it: orange through D+n, the lengths
+# read from the studies (« fenêtres indicatives », H): a Longue D+1, run like a race D+2 (power still −18 % at D+2
+# after a marathon: Petersen 2007), a
 # Très longue D+3, an Ultra D+5 (fatigue and soreness back by D+5: Fazackerley 2019; 400 m still 12 % slower at D+5:
 # Hoffman 2017), ≥ 24 h D+7; red only on D+0 and D+1 after an Ultra (26 % slower at D+3: Hoffman 2017). The day it
 # ends (D+0, once uploaded) is already in it: a big outing done today is never « pas de grosse sortie ».
@@ -870,7 +885,7 @@ class _Unit:
 
     @property
     def race(self) -> bool:
-        return any(s.workout_type in RACE_TYPES for s in self.sessions)
+        return any(s.is_race for s in self.sessions)
 
     def raced(self, bounds) -> bool:
         """Run like a race (H, R3): marked so on Strava, rated ≥ 8/10 there, or its average HR (by time, over
@@ -968,8 +983,8 @@ def efforts(sessions: list[Session], rest_of=None) -> list[Effort]:
 
 
 def effort_window(efs: list[Effort], d: date) -> dict | None:
-    """The window that holds day `d` (D+0 → D+last) (H), a reason of the daily state (C7, never a cap on a
-    score): red (`tone` danger) on D+0 and D+1 after an Ultra, orange
+    """The window that holds day `d` (D+0 → D+last) (H), shown as context beside the daily index (C7; neither a
+    reason nor a cap of it): red (`tone` danger) on D+0 and D+1 after an Ultra, orange
     (warn) else; the strongest of those open: red first, then the bigger effort (its class), then the latest.
     {effort, days (d − D), ago (d − the day it started: as Activités dates it), tone, last, until, text}; None
     outside any. An effort without a class (M4, 3–6 h) opens none."""

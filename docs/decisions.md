@@ -67,3 +67,13 @@ l’ordre chronologique. Les citations sont celles du propriétaire.
 | Activités 7 / 28 jours : les mêmes séances dédupliquées que Santé, par jour local, jusqu’à l’« aujourd’hui » de l’athlète. | Ils sommaient chaque activité stockée, doublons compris, sur des jours UTC comptés depuis « maintenant ». | Propriétaire, 14 oct. — `training_load.py` |
 | Le pli de méthode ne décrit plus l’ancien indice (besoin adapté, efforts accumulés). | Ces puces disaient quelque chose de faux. | Propriétaire, 14 oct. — `sante_score.METHOD` |
 | Modèle de course : un seul exposant de population k = 1,28 pour tous les niveaux, écart-type du prior 0,08. | Vérifié par niveau (level_benchmark.py k_by_level) sur 48 640 finishers : l’exposant ne baisse pas chez les forts ; 242 coureurs suivis n’ont pas d’exposant propre au-delà du bruit. | 14 oct. — `race_calibration.K_PRIOR`, `K_PRIOR_SD` |
+
+## 15 octobre 2026 (PR #7 : contexte, imports et lecture sur iPhone)
+
+| Décision | Raison | Source |
+|---|---|---|
+| « Signaux nocturnes » est un indice sur 100, descriptif : ni un pourcentage de récupération, ni une autorisation de reprise ; la FC nocturne élevée reste un signal même quand la VFC est habituelle. | Un indice composite n’a pas de validation clinique ; aucun indicateur isolé ne résume la récupération (Kellmann 2018). | docs/health-context-2026-10-15.md — `sante_score.py` |
+| Les fenêtres après effort ne sont plus une raison ni un plafond de l’indice ; l’effort reste un contexte séparé, daté depuis la fin locale réelle, affiché 28 jours (une limite de présentation, pas un délai de guérison). | VFC et symptômes ne suivent pas le même calendrier après un ultra (Fazackerley 2019). | docs/health-context-2026-10-15.md — `sante_score.score_of`, `sante_context.py`, `sante_training.effort_window` |
+| Le repère de 8 h de sommeil est dit comme tel, sans prétendre mesurer le besoin individuel ; l’écart sur 7 jours précise les nuits documentées, les nuits absentes ne valent pas zéro. | Aucune mesure du besoin individuel. | docs/health-context-2026-10-15.md — `sante.py`, `sante_sleep.py` |
+| Le ressenti déclaré (fatigue, douleur, tolérance du dernier effort) est enregistré à part, daté au jour local du compte, et ne change ni l’indice ni les anciens indicateurs. | Mesures, activités et ressenti restent distincts. | docs/health-context-2026-10-15.md — `sante_checkin.py` |
+| Le contexte après-course exige une activité reçue, éventuellement liée comme résultat d’un parcours ; une course seulement prévue ne suffit pas ; l’association suit la copie conservée au dédoublonnage. | Aucun contexte sans mesure. | docs/health-context-2026-10-15.md — `activity_identity.py`, `sante_context.py` |

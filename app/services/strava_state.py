@@ -144,6 +144,42 @@ def polled_recently(user_id: int) -> bool:
     return read(f"polled:{user_id}") is not None
 
 
+# ── bounded reconciliation of older activities ──────────────────────────────
+
+def reconciliation_page(user_id: int, athlete_id: int | None) -> int:
+    """The next older page; page 1 is always refreshed separately. Scoped to the linked Strava athlete."""
+    try:
+        return max(2, int(read(f"history:{user_id}:{athlete_id}") or 2))
+    except (TypeError, ValueError):
+        return 2
+
+
+def reconciliation_after_commit(db, user_id: int, athlete_id: int | None, page: int) -> None:
+    """Never move the Redis cursor past rows a transaction could still roll back.
+
+    Redis loss restarts the sweep safely. A full sweep starts again at page 2, so uploads/deletions shifting page
+    boundaries and activities uploaded late behind the cursor are picked up on the following sweep too.
+    """
+    from sqlalchemy import event
+
+    session = db.sync_session
+    pending_key = "strava_reconciliation_pending"
+    if not session.info.get("strava_reconciliation_listeners"):
+        def committed(session):
+            if session.in_nested_transaction():
+                return  # releasing a savepoint does not make its rows durable
+            for key, value in session.info.pop(pending_key, {}).items():
+                keep(key, str(value))
+
+        def rolled_back(session):
+            session.info.pop(pending_key, None)
+
+        event.listen(session, "after_commit", committed)
+        event.listen(session, "after_rollback", rolled_back)
+        session.info["strava_reconciliation_listeners"] = True
+    session.info.setdefault(pending_key, {})[f"history:{user_id}:{athlete_id}"] = max(2, page)
+
+
 # ── the first import ────────────────────────────────────────────────────────
 
 def initial_lock(user_id: int) -> str:

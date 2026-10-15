@@ -1,26 +1,19 @@
-"""PaceForge's daily state and its « indice nocturne »: a rule-based state on the validated HRV-guided reading
-(Plews 2013; Vesterinen 2016; Javaloyes 2019; Nuuttila 2022), never a weighted 0–100 index with caps (a composite
-score has no validated basis: Doherty 2025).
+"""Daily nightly-signal index: an interpretation of received measurements, not recovery clearance.
 
-Needs: last night measured, a heart series (RMSSD, else night HR; never Apple's SDNN) with a full baseline (14
-nights from day −67 to day −8) and 3 nights at least in the last 7, last night among them (nights.trend). Never a
-state from sleep alone or from activities alone.
+Needs the assessed night, at least three measured nights in seven on a cardiac series, and a usable reference:
+14 nights from day −67 to −8, or a provisional reference from seven nights (including a recent fallback while
+that lagged window builds). Apple's SDNN stays separate and never enters this RMSSD index.
 
-- Primary marker: the VFC (RMSSD), else the FC de nuit.
-- Red (danger): the night-HR illness alert (nights.illness_alert), or D+0 and D+1 after an Ultra.
-- Orange (warn), each reason listed: the primary marker's 7-day trend outside its smallest worthwhile change
-  (z ≤ −T for the VFC, z ≥ +T for the FC de nuit, T: nights.threshold); the breathing flag
-  (nights.resp_up_nights); under 6 h of sleep in the 24 h (Craven 2022); an effort window open (C7).
-  The FC de nuit outside while the VFC is inside shows on its own row, never changes the state.
-- Green (ok): none.
+Each usable cardiac series contributes independently. Red means the existing night-HR illness alert; orange
+means low RMSSD, high night HR, the breathing flag or less than six hours of sleep in the measured 24 h.
+The existing personal thresholds and acute-alert rules are unchanged. No reason means usual signals.
+Recorded efforts and training load remain contextual: their windows neither add reasons nor cap this index.
 
-The number the Récupération dial reads (`value`) is an « indice nocturne », not a recovery percentage: 100 × the
-mean, over the heart series used, of s_VFC = clip((z + 2.5)/2, 0, 1) and s_FC = clip((2.5 − z)/2, 0, 1) — 100 at
-or above the smallest worthwhile change on the good side, 0 at 2.5 SD on the bad one (H) — held to ≤ 69 when
-orange, ≤ 39 when red, ≥ 70 when green (H), so the number and the state never disagree. Insufficient data: a
-reason, never a number (`missing`). Scores are rounded half up. Daily history is recomputed from the stored events
-up to each assessed day, nothing dated after it. No physiological recovery deadline is invented. Details:
-docs/sante-estimates.md and docs/recovery-cumulative.md; the dated decisions behind the rules: docs/decisions.md.
+The displayed /100 is 100 × the mean of s_VFC = clip((z + 2.5)/2, 0, 1) and s_FC = clip((2.5 − z)/2, 0, 1),
+held to ≤ 69 when orange, ≤ 39 when red, ≥ 70 when green (H). This descriptive scale is not clinically
+validated. Missing data give a reason rather than a number. History is computed using events up to each day.
+Details: docs/sante-estimates.md and docs/recovery-cumulative.md; the dated decisions behind the rules:
+docs/decisions.md.
 """
 import math
 import re
@@ -36,25 +29,26 @@ BAD = {"hrv": "below", "hr": "above"}  # the side that matters: VFC under its us
 # the indice nocturne: s = clip((2.5 ± z)/2, 0, 1) (H: 100 from the smallest worthwhile change, 0 at 2.5 SD)
 Z_FLOOR, Z_SPAN = 2.5, 2.0  # (H)
 HOLD = {"ok": (70, 100), "warn": (0, 69), "danger": (0, 39)}  # (H) the number never contradicts the state
-HISTORY_DAYS = 14  # the Récupération card
+HISTORY_DAYS = 14  # the Signaux nocturnes card
 HISTORY_NIGHTS = 160  # days of nights a past day reads: its baseline (days −67 → −8), its alert's, with room
 
 # « Comment je calcule »: one method fold, a few bullets for the three dials in their order, the stages and the
 # margin; plain words, no citation, no « (H) »; sentences of 15 words at most, « tes valeurs habituelles », never
 # « ta normale »; nothing the state no longer does. The references are on /sante/sources.
 METHOD = [
-    "Sommeil compare tes 24 h, siestes comprises, à un besoin de 8 h. "
-    "Le manque des 7 dernières nuits est indiqué à part. Ta journée commence au réveil.",
-    "Récupération compare 7 jours de VFC et de FC de nuit à tes valeurs habituelles. "
-    "Elles couvrent 60 jours, sans la dernière semaine. "
-    "Un effort récent, un sommeil court ou une respiration rapide sont signalés. "
+    "Sommeil compare tes 24 h, siestes comprises, au repère de 8 h. "
+    "Ce repère ne mesure pas ton besoin personnel. L’écart estimé sur 7 jours est indiqué à part.",
+    "Les signaux nocturnes comparent VFC et FC de nuit à tes valeurs habituelles. "
+    "La tendance porte sur 7 jours. La référence couvre 60 jours, sans la dernière semaine. "
+    "Au début, une référence récente reste provisoire. "
+    "Un sommeil court ou une respiration rapide sont signalés. Les efforts récents restent un contexte séparé. "
     "Ce bilan ne prédit pas ta date de récupération.",
     "La VFC mesure les variations entre battements cardiaques. La FC de nuit est ton pouls moyen nocturne. "
     "Les graphiques précisent si les éveils sont exclus.",
     "Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand ton "
     "pouls est haut.",
-    "Ta montre estime tes phases : la forme de ta nuit, pas sa qualité. Mes pourcentages sont des estimations "
-    "aussi : quelques points d'écart ne veulent rien dire.",
+    "Ta montre estime tes phases : la forme de ta nuit, pas sa qualité. L’indice nocturne n’est pas un "
+    "pourcentage de récupération.",
 ]
 
 # the references the method rests on (with sante_sleep.REFS), listed on /sante/sources (label, DOI or URL):
@@ -166,7 +160,7 @@ def missing_reason(day: dict) -> dict:
     under 14 nights (« repères en construction (n/14) »), under 3 nights this week (« pas assez de nuits cette
     semaine (n/3) »), the heart measured last night on another series only (ELSEWHERE: another watch, another
     calculation), the heart not measured last night (« pas de bilan »)."""
-    from app.services.nights import MIN_BAND_NIGHTS, MIN_MEAN_NIGHTS
+    from app.services.nights import MIN_MEAN_NIGHTS, reference_min_nights
 
     if not day.get("night_measured"):
         return {"key": "no_night", "label": "pas de bilan"}
@@ -181,8 +175,9 @@ def missing_reason(day: dict) -> dict:
     t = trends[measured[0]]
     if not t["baseline"]:
         n = t.get("baseline_n", 0)
-        return {"key": "building", "label": f"repères en construction ({n}/{MIN_BAND_NIGHTS})", "n": n,
-                "required": MIN_BAND_NIGHTS, "metric": measured[0]}
+        required = reference_min_nights(measured[0], t.get("source"))
+        return {"key": "building", "label": f"repères en construction ({n}/{required})", "n": n,
+                "required": required, "metric": measured[0]}
     return {"key": "few", "label": f"pas assez de nuits cette semaine ({t['n']}/{MIN_MEAN_NIGHTS})", "n": t["n"],
             "required": MIN_MEAN_NIGHTS, "metric": measured[0]}
 
@@ -209,18 +204,14 @@ def score_of(day: dict) -> dict:
     reasons = []
     if day.get("alert"):
         reasons.append(_reason("ill", "danger"))
-    w = day.get("window")
-    if w and w["tone"] == "danger":
-        reasons.append(_reason("effort", "danger", w["text"]))
-    if trends[primary]["status"] == BAD[primary]:
-        reasons.append(_reason(primary, "warn"))
+    for metric in used:
+        if trends[metric]["status"] == BAD[metric] and not (metric == "hr" and day.get("alert")):
+            reasons.append(_reason(metric, "warn"))
     if day.get("resp"):
         reasons.append(_reason("resp", "warn"))
     tst = day.get("tst24")
     if tst is not None and tst < SHORT_DAY_MIN:
         reasons.append(_reason("short", "warn"))
-    if w and w["tone"] == "warn":
-        reasons.append(_reason("effort", "warn", w["text"]))
     tone = "danger" if any(r["tone"] == "danger" for r in reasons) else "warn" if reasons else "ok"
     lo, hi = HOLD[tone]
     value = min(hi, max(lo, rounded(100 * statistics.fmean(p["s"] for p in parts))))
@@ -247,7 +238,7 @@ def quality(day: dict) -> dict:
     """« Mesures utilisées »: each signal's place in the day's state — availability, not a statistical confidence
     percentage or a validation seal. Respiration is listed once the watch measures it (its flag is a reason of the
     state)."""
-    from app.services.nights import MIN_BAND_NIGHTS, MIN_MEAN_NIGHTS
+    from app.services.nights import MIN_BAND_NIGHTS, MIN_MEAN_NIGHTS, reference_min_nights
 
     score, trends = day["score"], day.get("trends") or {}
     used = {p["key"] for p in score["parts"]}
@@ -264,7 +255,7 @@ def quality(day: dict) -> dict:
         elif key == "hrv" and is_sdnn(t):
             state = "Mesurée, hors bilan (SDNN)"
         elif not t["baseline"]:
-            state = f"Repères en construction ({t.get('baseline_n', 0)}/{MIN_BAND_NIGHTS})"
+            state = f"Repères en construction ({t.get('baseline_n', 0)}/{reference_min_nights(key, t.get('source'))})"
         else:
             state = f"Pas assez de nuits cette semaine ({t['n']}/{MIN_MEAN_NIGHTS})"
         rows.append({"name": label, "state": state})
@@ -283,7 +274,7 @@ def quality(day: dict) -> dict:
 
 # ── what the page draws ─────────────────────────────────────────────────────
 
-DIAL_WORDS = {"ok": "bonne", "warn": "en cours", "danger": "faible"}  # the state's word under « Récupération »
+DIAL_WORDS = {"ok": "habituels", "warn": "à surveiller", "danger": "inhabituels"}
 NO_SCORE = "pas de score"  # the dial's word without a state (the line under the dials says why)
 NO_MEASURE = "pas de mesure ce jour-là"  # a day without a state: no bar, no dot, its readout says it
 
@@ -294,6 +285,10 @@ def pct(v: int) -> str:
     return f"{v}{viz.NBSP}%"
 
 
+def index_label(v: int) -> str:
+    return f"{v}{viz.NBSP}/100"
+
+
 def dial(score: dict, state: dict | None, href: str | None = None) -> dict:
     """The Récupération dial, the middle one of three (like WHOOP's, kept simple): the indice nocturne (« 65 % »,
     the « % » smaller), its arc in its state's colour, its name under it
@@ -302,11 +297,11 @@ def dial(score: dict, state: dict | None, href: str | None = None) -> dict:
     when the page has none (a plain dial)."""
     v = score.get("value")
     if v is None:
-        return viz.ring("recup", None, "—", "Récupération", NO_SCORE, tone="none", href=href,
-                        aria="Récupération : pas de score ce matin.")
+        return viz.ring("recup", None, "—", "Signaux nocturnes", NO_SCORE, tone="none", href=href,
+                        aria="Signaux nocturnes : pas d’indice pour cette nuit.")
     word = DIAL_WORDS[state["tone"]]
-    return viz.ring("recup", v / 100, str(v), "Récupération", word, tone=state["tone"], unit="%", href=href,
-                    note="bilan du jour", aria=f"Récupération {pct(v)}, {word}.")
+    return viz.ring("recup", v / 100, str(v), "Signaux nocturnes", word, tone=state["tone"], unit="/100", href=href,
+                    note="indice nocturne", aria=f"Signaux nocturnes : indice {v} sur 100, {word}.")
 
 
 def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> dict | None:
@@ -330,12 +325,12 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
             r.append(["—", "", f"{viz.d_short(d)} · {NO_MEASURE}"])
             a.append(f"{viz.d_long(d)} : {NO_MEASURE}.")
             continue
-        r.append([pct(v), f"{st['glyph']} {st['word']}", viz.d_short(d)])
-        a.append(f"{viz.d_long(d)} : {pct(v)}, {st['word'].lower()}.")
+        r.append([index_label(v), f"{st['glyph']} {st['word']}", viz.d_short(d)])
+        a.append(f"{viz.d_long(d)} : indice {v} sur 100, {st['word'].lower()}.")
     c = viz.day_bars("recuperation", days, values, readouts=r, arias=a, classes=classes, tones=tones, y_max=100,
-                     lines=((70, pct(70)), (40, pct(40))), today=len(days) - 1 if days and days[-1] == today else None,
-                     summary=f"Historique de récupération : {len(with_score)} scores quotidiens sur {len(days)} jours")
-    title = f"Récupération · {len(days)} jours"
+                     lines=((70, index_label(70)), (40, index_label(40))), today=len(days) - 1 if days and days[-1] == today else None,
+                     summary=f"Historique des signaux nocturnes : {len(with_score)} indices sur {len(days)} jours")
+    title = f"Signaux nocturnes · {len(days)} jours"
     c = viz.rest(c, ["", f"Historique · {len(days)} jours", ""], f"Historique des scores quotidiens sur {len(days)} jours. Choisis un jour pour voir son "
                  "score et son état.", back=len(days) - 1)
     return {**c, "title": title}

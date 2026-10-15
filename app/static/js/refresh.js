@@ -108,7 +108,21 @@
     // Already opened older weeks stay a cached snapshot, with their pagination.
     if (retained && old.querySelector('#load-more') && next.querySelector('#load-more')) next.querySelector('#load-more').replaceWith(old.querySelector('#load-more').cloneNode(true));
   }
+  function keepCheckin(old, next, requested) {
+    var current = old.querySelector('#ressenti'), replacement = next.querySelector('#ressenti');
+    var form = current?.querySelector('.pf-checkin-form'), fresh = replacement?.querySelector('.pf-checkin-form');
+    if (!form || !fresh || old.dataset.account !== next.dataset.account ||
+        form.elements.day?.value !== fresh.elements.day?.value) return;
+    var dirty = Array.from(form.querySelectorAll('input[type="radio"]')).some(function (input) {
+      return input.checked !== input.defaultChecked;
+    });
+    // Keep the live node: an in-flight HTMX save still owns it. A save/clear
+    // completed during the GET is newer than its response. No answers go into
+    // browser storage, and a new account or calendar day never inherits them.
+    if (dirty || form.classList.contains('htmx-request') || current !== requested) replacement.replaceWith(current);
+  }
   async function replacePage() {
+    var requestedCheckin = document.querySelector('#main-content #ressenti');
     var href = location.href, html = await request(href, { headers: { Accept: 'text/html' } });
     var doc = new DOMParser().parseFromString(html, 'text/html');
     var next = doc.getElementById('main-content');
@@ -120,6 +134,7 @@
     if (old.dataset.account !== next.dataset.account) throw new Error('Le compte a changé. Ouvre Réglages puis reviens sur cette page.');
     var saved = snapshot(old);
     keepOlderWeeks(old, next);
+    keepCheckin(old, next, requestedCheckin);
     next.querySelectorAll('details').forEach(function (el) {
       var key = foldKey(el);
       if (key in saved.folds) el.open = saved.folds[key];

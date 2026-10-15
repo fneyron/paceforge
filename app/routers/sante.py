@@ -1,6 +1,7 @@
-"""Santé: one page (v4, WHOOP/Oura-like) from the athlete's COROS or Garmin
-nights and their activities (app.services.sante): no tabs, no check-in, no
-planned race, no sync status.
+"""Santé: one visual page from measured nights and recorded activities.
+
+A dated, optional self-report adds context without changing the night index.
+Only a recorded activity can establish the after-race context.
 
 Opening the page syncs a stale watch in the background and reloads quietly
 when something new arrived (sync-status); Réglages manage the links (status,
@@ -11,6 +12,7 @@ from a page left open since an older version gets a full navigation
 (HX-Redirect, HX-Refresh), never a page pasted inside the old one.
 """
 import logging
+from typing import Literal
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -75,7 +77,13 @@ async def _health_context(db: AsyncSession, user: User, r: str | None = None) ->
                         for name, link in (("COROS", status), ("Garmin", garmin_link)))
     auto_sync = _sync_stale(user.id, ((coros, status), (garmin, garmin_link)),
                             STALE_NIGHT if night_missing else STALE_AFTER)
+    from app.services import sante_checkin
+    from app.services.sante import athlete_today
+
+    day = (page or {}).get("calendar_day") or await athlete_today(db, user.id)
+    checkin = await sante_checkin.read(db, user.id, day)
     return {"user": user, "coros": status, "garmin": garmin_link, "page": page, "auto_sync": auto_sync,
+            "checkin": checkin,
             "sync_v": await data_version(db, user.id) if auto_sync else None, "sync_n": 0}
 
 
@@ -96,16 +104,18 @@ def _link(conn, service, retryable=()) -> dict:
         return {"connected": False}
     claimed = conn.sync_claimed_at
     needs_reauth, error = _flags(conn, service)
+    partial = coros._has_partial(error, *retryable) if service is coros else error in retryable
     return {"connected": True, "needs_reauth": needs_reauth, "last_sync_at": conn.last_sync_at,
             "syncing": bool(claimed and datetime.now(timezone.utc) - _utc(claimed) < service.CLAIM_TTL),
             "last_error": error,
-            "retryable_partial": error in retryable and conn.last_sync_at is not None}
+            "retryable_partial": partial and conn.last_sync_at is not None}
 
 
 async def link_state(db: AsyncSession, user_id: int) -> tuple[dict, dict]:
     """(COROS's, Garmin's) link state from the link rows alone (the full coros_status / garmin_status count every
     stored measurement: Réglages', never needed here, on every load and every 3-s poll)."""
-    retryable = (coros.PARTIAL, coros.HRV_PARTIAL, coros.SLEEP_PARTIAL, coros.PHASES_PARTIAL)
+    retryable = (coros.PARTIAL, coros.HRV_PARTIAL, coros.SLEEP_PARTIAL, coros.PHASES_PARTIAL,
+                 coros.ACTIVITIES_PARTIAL)
     return (_link(await coros.connection_for(db, user_id), coros, retryable),
             _link(await garmin.connection_for(db, user_id), garmin))
 
@@ -153,6 +163,7 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
     from app.models.activity import Activity
     from app.models.health import HealthMetric
     from app.models.mobile import MobileDaily
+    from app.services.activity_identity import confirmed_races, revision_sum
     from app.services.sante_training import int_sum as whole  # a NaN or ±∞ (PostgreSQL cannot cast it) counts as 0
 
     n, last = (await db.execute(select(func.count(HealthMetric.id), func.max(HealthMetric.updated_at)).where(
@@ -165,8 +176,9 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
     counts = (await db.execute(select(func.count(Activity.id), func.max(Activity.id), whole(Activity.moving_time),
                                       whole(Activity.distance), whole(Activity.average_heartrate, 10),
                                       whole(Activity.max_heartrate), whole(Activity.total_elevation_gain),
-                                      whole(Activity.elapsed_time)).where(Activity.user_id == user_id))).one()
+                                      whole(Activity.elapsed_time), revision_sum(db)).where(Activity.user_id == user_id))).one()
     version += "-" + "-".join(str(int(v or 0)) for v in counts)
+    version += "-races:" + repr(sorted((await confirmed_races(db, user_id)).items()))
     for _, service in _WATCHES:
         conn = await service.connection_for(db, user_id)
         if conn is None:
@@ -175,6 +187,43 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
         needs_reauth, error = _flags(conn, service)
         version += f"-{int(bool(needs_reauth))}{int(error is not None)}"
     return sha256(version.encode()).hexdigest()
+
+
+@router.post("/sante/ressenti", response_class=HTMLResponse)
+async def sante_checkin(
+    request: Request,
+    day: str = Form(...),
+    action: Literal["save", "clear"] = Form(default="save"),
+    fatigue: Literal["usual", "high"] | None = Form(default=None),
+    pain: Literal["none", "present"] | None = Form(default=None),
+    effort: Literal["usual", "harder", "not_done"] | None = Form(default=None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services import sante_checkin as checkins
+    from app.services.sante import athlete_today
+
+    today = await athlete_today(db, user.id)
+    answers = {key: value for key, value in (("fatigue", fatigue), ("pain", pain), ("effort", effort))
+               if value is not None}
+    error = None
+    if day != today.isoformat():
+        error = "Le jour a changé. Vérifie tes réponses pour aujourd’hui."
+    elif action == "save" and not answers:
+        error = "Choisis au moins une réponse, ou laisse ce volet fermé."
+    if error:
+        checkin = await checkins.read(db, user.id, today)
+    else:
+        checkin = await checkins.save(db, user.id, today, answers if action == "save" else None)
+        await db.commit()
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(request, "partials/sante_checkin.html",
+                                          context={"checkin": checkin, "checkin_error": error})
+    if error:
+        context = await _health_context(db, user)
+        context["checkin_error"] = error
+        return templates.TemplateResponse(request, "sante.html", context=context, status_code=409)
+    return RedirectResponse("/sante#ressenti", status_code=303)
 
 
 @router.post("/sante/feel")

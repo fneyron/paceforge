@@ -150,9 +150,7 @@ async def _run_webhook_sync(activity_id: int, owner_id: int, aspect_type: str = 
                     # an event naming someone else's (public) activity: not this athlete's
                     logger.warning("Webhook: activity %d is athlete %s's, not %d's", activity_id, owner, owner_id)
                     return {"status": "not_his"}
-                if row is not None:  # edited on Strava: its name and sport, and its detail (read anyway)
-                    row.name = data.get("name") or row.name
-                    row.sport_type = data.get("sport_type") or data.get("type") or row.sport_type
+                if row is not None:  # edited on Strava: authoritative metrics and detail, not just the title
                     apply_detail(row, data)
                     result = {"status": "updated", "name": row.name}
                 else:  # new (an edit of one never received is saved too)
@@ -194,7 +192,7 @@ async def _deleted(db, user: User, strava, row: Activity | None, activity_id: in
     if row.garmin_activity_id or row.coros_activity_id:
         row.strava_activity_id = None
         return {"status": "unlinked"}
-    await db.execute(delete(Activity).where(Activity.id == row.id))  # its analysis goes with it (ON DELETE CASCADE)
+    await db.execute(delete(Activity).where(Activity.id == row.id))
     return {"status": "deleted"}
 
 
