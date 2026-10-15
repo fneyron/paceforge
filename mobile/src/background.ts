@@ -10,7 +10,7 @@ import { api } from './api';
 import { changedMetrics, collect, collectSleep, disableHealthBackground, enableHealthBackground, hasBackgroundAccess,
   protectedDataAvailable, watchHealthChanges } from './health';
 import { isLockedError, KEYS, readNow, secure } from './secure';
-import { Block, BackgroundState, createEngine, emptyState, fileLock, LOCK_MS, readPair, readReceipt, readState,
+import { Block, BackgroundState, createEngine, emptyState, fileLock, LOCK_MS, progressOf, readPair, readReceipt, readState,
   TASK_INTERVAL_MINUTES, TASK_NAME } from './background-engine';
 import type { SyncReport } from './sync';
 
@@ -30,17 +30,32 @@ async function saveState(state: BackgroundState) {
   await secure.set(KEYS.background, JSON.stringify(state));
   enabledHint = state.enabled && !state.blocked;
 }
+// User decisions and native registration are ordered. A slow registration cannot
+// finish after a newer logout and enable delivery again.
+let controlQueue: Promise<unknown> = Promise.resolve(), controlGeneration = 0;
+function control<T>(work: () => Promise<T>): Promise<T> {
+  const job = controlQueue.then(work);
+  controlQueue = job.catch(() => {});
+  return job;
+}
+const generation = () => `${id}:${++controlGeneration}`;
 const listeners = new Set<(report: SyncReport) => void>();
 
 const engine = createEngine({
   id, now: Date.now,
   load: async () => {
+    await controlQueue;
     await secure.settled();
-    const [pair, auto, receipt, state] = await Promise.all([secure.recover(KEYS.pair), secure.get(KEYS.auto),
-      secure.get(KEYS.sync), secure.get(KEYS.background)]);
-    return { pair: readPair(pair), automatic: auto === 'true', receipt: readReceipt(receipt), state: readState(state) };
+    const [rawPair, auto, receipt, rawState, rawProgress] = await Promise.all([secure.recover(KEYS.pair), secure.get(KEYS.auto),
+      secure.get(KEYS.sync), secure.get(KEYS.background), secure.get(KEYS.progress)]);
+    const pair = readPair(rawPair), state = readState(rawState), progress = readState(rawProgress);
+    // Existing installations kept progress in the control entry. It is read until
+    // the first separate progress write; an old account/generation is never merged.
+    if (state.userId === null && pair) state.userId = pair.user_id;
+    if (rawProgress && progress.userId === state.userId && progress.generation === state.generation) Object.assign(state, progressOf(progress));
+    return { pair, automatic: auto === 'true', receipt: readReceipt(receipt), state };
   },
-  saveState,
+  saveProgress: progress => secure.set(KEYS.progress, JSON.stringify(progress)),
   saveReceipt: async report => {
     await secure.set(KEYS.sync, JSON.stringify(report));
     if (report.lastReceivedAt) await secure.set(KEYS.last, report.lastReceivedAt);
@@ -78,18 +93,21 @@ if (Platform.OS === 'ios') watch();
 /** In the foreground, once the account and the toggle allow it. iOS registers the
  * types after the HealthKit permission sheet; Android needs the background permission. */
 export async function enableBackgroundSync(): Promise<boolean> {
-  if (!await hasBackgroundAccess()) return false;
-  if (Platform.OS === 'ios') {
-    await enableHealthBackground();
-    watch(); // through the native background observers now registered
-  }
-  if (await BackgroundTask.getStatusAsync() === BackgroundTask.BackgroundTaskStatus.Available) {
-    // Retries and catch-up: iOS BGProcessingTask (network required), Android WorkManager.
-    await BackgroundTask.registerTaskAsync(TASK_NAME, { minimumInterval: TASK_INTERVAL_MINUTES });
-  }
-  const state = await loadState();
-  await saveState({ ...state, enabled: true });
-  return true;
+  return control(async () => {
+    if (!await hasBackgroundAccess()) return false;
+    const state = await loadState();
+    if (state.blocked) return false;
+    if (Platform.OS === 'ios') {
+      await enableHealthBackground();
+      watch(); // through the native background observers now registered
+    }
+    if (await BackgroundTask.getStatusAsync() === BackgroundTask.BackgroundTaskStatus.Available) {
+      // Retries and catch-up: iOS BGProcessingTask (network required), Android WorkManager.
+      await BackgroundTask.registerTaskAsync(TASK_NAME, { minimumInterval: TASK_INTERVAL_MINUTES });
+    }
+    await saveState({ ...state, enabled: true });
+    return true;
+  });
 }
 async function disableNatively() {
   await Promise.allSettled([
@@ -100,25 +118,36 @@ async function disableNatively() {
 }
 /** Toggle off, disconnection, another account, web logout, refused token. */
 export async function disableBackgroundSync(): Promise<void> {
-  await disableNatively();
-  const state = await loadState().catch(() => emptyState());
-  if (state.enabled) await saveState({ ...state, enabled: false }).catch(() => {});
+  engine.cancel();
+  await control(async () => {
+    const state = await loadState();
+    if (state.enabled) await saveState({ ...state, enabled: false, generation: generation() });
+    await disableNatively();
+  });
 }
 export async function blockBackgroundSync(reason: Block): Promise<void> {
-  const state = await loadState().catch(() => emptyState());
-  if (state.blocked !== reason) await saveState({ ...state, blocked: reason });
+  engine.cancel();
+  await control(async () => {
+    const state = await loadState();
+    if (state.blocked !== reason) await saveState({ ...state, blocked: reason, generation: generation() });
+  });
 }
-export async function backgroundBlock(): Promise<Block> { return (await loadState()).blocked; }
+export async function backgroundBlock(): Promise<Block> { await controlQueue; return (await loadState()).blocked; }
 /** A new pairing starts a new background state (hashes, change tokens, block). */
 export async function resetBackgroundState(userId: number): Promise<void> {
-  const state = await loadState().catch(() => emptyState());
-  await saveState({ ...emptyState(userId), enabled: state.enabled });
+  engine.cancel();
+  await control(async () => {
+    const state = await loadState();
+    await saveState({ ...emptyState(userId), enabled: state.enabled, generation: generation() });
+  });
 }
+export const cancelBackgroundSync = () => engine.cancel();
 
 /** The foreground sync takes the same lock, waiting for a background run (18 s at most). */
 export async function syncExclusively<T>(work: () => Promise<T>): Promise<T> {
   const owner = `${id}:foreground:${Date.now()}`, until = Date.now() + 25000;
-  while (!await syncLock.acquire(owner, Date.now() + LOCK_MS) && Date.now() < until) {
+  while (!await syncLock.acquire(owner, Date.now() + LOCK_MS)) {
+    if (Date.now() >= until) throw new Error('Une synchronisation est encore en cours. Réessaie dans quelques instants.');
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   // Held for its real duration: renewed while the sync runs, gone 60 s after a crash.

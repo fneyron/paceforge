@@ -1,17 +1,17 @@
-"""Strava → Activity, one way for every sync (the first import, the hourly poll, the webhook, « Synchroniser »): the
-row's fields from Strava's list or detail answer, the newest activities imported until a page is all known, and the
-athlete's time zone learnt from them."""
+"""Strava → Activity: authoritative metrics, bounded resumable history reconciliation, and the athlete's zone."""
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer, raiseload
 
 from app.models.activity import Activity
 from app.models.user import User
 from app.services.activity_sources import adopt_watch_twin
+from app.services import strava_state
 from app.services.timezones import zone_from_strava
 
 # what only the detail answer (GET /activities/{id}) carries: the first import reads it after the list
@@ -20,6 +20,10 @@ DETAIL_FIELDS = ("splits_metric", "best_efforts", "laps", "max_watts", "weighted
 PER_PAGE = 30
 DETAIL_BACKLOG = 5  # a poll completes this many activities saved from the list only with their detail
 DETAIL_ASKED = "paceforge_detail_asked"  # in raw_data: its detail was asked once (got, or none shown): not again
+HISTORY_DAYS = 24 * 30  # same history horizon as the first import; each sweep is bounded per poll
+CORE_FIELDS = ("distance", "moving_time", "elapsed_time", "total_elevation_gain", "average_speed", "max_speed",
+               "average_heartrate", "max_heartrate", "average_cadence", "average_watts")
+STRUCTURAL_FIELDS = {"start_date", "sport_type", *CORE_FIELDS}
 # the athlete's zone: held by at least ZONE_MAJORITY of their last ZONE_SAMPLE activities that carry one
 ZONE_SAMPLE, ZONE_MAJORITY = 30, 20
 
@@ -53,15 +57,57 @@ def activity_from_strava(data: dict, user_id: int) -> Activity:
     )
 
 
-def apply_detail(activity: Activity, detail: dict) -> None:
-    """A row saved from the list, completed by the activity's detail: a field the detail has (a field it lacks
-    keeps what is there, a watch's power, calories or laps on a merged row). PaceForge's own entries in raw_data
-    (« paceforge_… »: the lookups, the races' D+) are kept: asked again, they would cost requests again."""
-    for field in DETAIL_FIELDS:
-        if detail.get(field) is not None:
-            setattr(activity, field, detail[field])
-    ours = {k: v for k, v in (activity.raw_data or {}).items() if k.startswith("paceforge")}
-    activity.raw_data = {**detail, **ours}
+def apply_detail(activity: Activity, detail: dict, *, summary: bool = False) -> bool:
+    """Apply fields Strava actually supplies, including corrections to duration, distance and heart rate.
+
+    Missing/null optional measurements keep a watch's contribution. List summaries keep existing detail; a metric
+    correction puts them back in the detail backlog. The revision invalidates Santé in every worker, including
+    same-size metadata or lap edits that an aggregate of JSON lengths cannot detect.
+    """
+    values = {field: detail[field] for field in (*CORE_FIELDS, *DETAIL_FIELDS) if detail.get(field) is not None}
+    if detail.get("name"):
+        values["name"] = detail["name"]
+    if detail.get("sport_type") or detail.get("type"):
+        values["sport_type"] = detail.get("sport_type") or detail["type"]
+    if detail.get("start_date"):
+        values["start_date"] = parse_date(detail["start_date"])
+    changed = set()
+    for field, value in values.items():
+        previous = getattr(activity, field)
+        # SQLite returns naive datetimes; Strava's dates and PostgreSQL's are aware, all describing UTC instants.
+        if field == "start_date" and previous is not None:
+            previous = previous.replace(tzinfo=timezone.utc) if previous.tzinfo is None else previous
+        if previous != value:
+            changed.add(field)
+            setattr(activity, field, value)
+    old = activity.raw_data or {}
+    # Never accept caller/provider changes to PaceForge's cache keys or revision.
+    incoming = {k: v for k, v in detail.items() if not k.startswith("paceforge")}
+    raw = {**old, **incoming}
+    structural = bool(changed & STRUCTURAL_FIELDS)
+    if summary and old.get("resource_state") == 3:
+        raw["resource_state"] = 2 if structural else 3
+    if structural:
+        activity.streams_data = None
+        activity.computed_metrics = None
+        for key in ("paceforge_dplus", "paceforge_heat"):
+            raw.pop(key, None)
+        if summary:
+            raw.pop(DETAIL_ASKED, None)
+    if changed & {"laps", "splits_metric"}:
+        activity.computed_metrics = None
+    if "start_date" in changed or any(k in incoming and incoming[k] != old.get(k)
+                                       for k in ("start_latlng", "end_latlng")):
+        raw.pop("paceforge_env", None)
+        raw.pop("paceforge_heat", None)
+    if "average_temp" in incoming and incoming["average_temp"] != old.get("average_temp"):
+        raw.pop("paceforge_heat", None)
+    if not changed and raw == old:
+        return False
+    revision = old.get("paceforge_revision", 0)
+    raw["paceforge_revision"] = (revision if type(revision) is int and revision >= 0 else 0) + 1
+    activity.raw_data = raw
+    return True
 
 
 async def is_known(db: AsyncSession, strava_id: int) -> bool:
@@ -70,27 +116,44 @@ async def is_known(db: AsyncSession, strava_id: int) -> bool:
 
 
 async def save_new(db: AsyncSession, user: User, data: dict) -> Activity | None:
-    """A Strava activity not saved yet: its row, or the watch's row of the same outing taken over
-    (activity_sources); None when it is already there."""
-    if not data.get("id") or await is_known(db, data["id"]):
+    """Save an unseen activity, or reconcile an existing one's summary without counting it as new."""
+    if not data.get("id"):
+        return None
+    existing = (await db.execute(select(Activity).options(
+        raiseload(Activity.analysis), defer(Activity.streams_data), defer(Activity.computed_metrics)).where(
+        Activity.strava_activity_id == data["id"]))).scalar_one_or_none()
+    if existing is not None:
+        if existing.user_id == user.id:
+            apply_detail(existing, data, summary=True)
         return None
     return await adopt_watch_twin(db, activity_from_strava(data, user.id))
 
 
 async def import_recent(db: AsyncSession, user: User, strava, max_pages: int, progress: dict | None = None) -> int:
-    """The athlete's newest activities (Strava lists them by start, newest first), page after page until one is all
-    known, `max_pages` at most: whatever its start, an activity uploaded late is among them. Returns how many were
-    saved; `progress["saved"]` counts them as they are, for a caller to tell what a later page's failure left."""
+    """Refresh page 1, then resume an older-history sweep, at most `max_pages` requests in total.
+
+    A page of known activities is not the end of the history: late uploads and a previous bounded import can lie
+    behind it. The cursor advances only with committed rows; at the end of the 24-month history it starts over.
+    Each fresh poll still reads the newest page. `progress` reports saves even if a later request fails.
+    """
     progress = {"saved": 0} if progress is None else progress
     progress.setdefault("saved", 0)
-    for page in range(1, max_pages + 1):
+    older = strava_state.reconciliation_page(user.id, user.strava_athlete_id)
+    since = datetime.now(timezone.utc) - timedelta(days=HISTORY_DAYS)
+    for page in ([1] + list(range(older, older + max_pages - 1))) if max_pages > 0 else []:
+        if strava.backing_off():
+            break
         batch = await strava.get_recent_activities(user, per_page=PER_PAGE, page=page)
-        new = 0
         for data in batch:
             if await save_new(db, user, data) is not None:
-                new += 1
                 progress["saved"] += 1
-        if not new or len(batch) < PER_PAGE:
+        await db.flush()
+        dates = [parse_date(data.get("start_date")) for data in batch if data.get("start_date")]
+        exhausted = len(batch) < PER_PAGE or bool(dates and min(dates) < since)
+        if exhausted or page > 1:
+            strava_state.reconciliation_after_commit(db, user.id, user.strava_athlete_id,
+                                                      2 if exhausted else page + 1)
+        if exhausted:
             break
     return progress["saved"]
 

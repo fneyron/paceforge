@@ -119,8 +119,8 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     r = await as_user.get("/sante")
     assert "Connecter COROS" in r.text  # empty state
     today = date.today()
-    # 7 nights at + 7 bpm: every measured night counts in the band (owner, 2026-10-08), so the week's first 5 raise
-    # the alert's median a little (50,0 → 50,3 here): the last two nights stay over its line (55,3) at 56,1 and 56,7
+    # Seven recent nights at +7 bpm remain above the lagged personal reference;
+    # the acute HR alert must stay visible under the new descriptive labels.
     for metric, series in _series(today, 60, 45, 50, 57).items():
         for d, v in series.items():  # PaceForge's nightly HR is what the fitness signal reads as « rhr »
             db_session.add(HealthMetric(user_id=test_user.id, date=d, metric="hr_night" if metric == "rhr" else metric,
@@ -131,11 +131,10 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     assert set(form) >= {"status", "hrv_delta_pct", "rhr_delta_bpm", "sleep_avg_min", "days_of_data"}
     assert form["nights_recent"] == 7 and form["nights_base"] == 60
     r = await as_user.get("/sante")
-    # nightly HR ~7 bpm over the usual two nights running: the HR alert, « Récupération faible » (v4.3), its sentence
-    assert "Récupération faible" in r.text and "À ménager" not in r.text
+    assert "Signaux inhabituels" in r.text and "À ménager" not in r.text
     assert "Ta FC de nuit est nettement plus haute que d&#39;habitude." in r.text
     assert r.text.index('class="pf-dials"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
-    # The alert remains visible once on the nightly chart, alongside the main recovery warning.
+    # The alert remains visible once on the nightly chart, alongside the main signal warning.
     fc = re.search(r'<article id="fc"[^>]*>(.*?)</article>', r.text, re.S).group(1)
     # An alert must remain above the optional reference explanation.
     fc = fc.split('<details', 1)[0]

@@ -33,6 +33,24 @@ test('daily measurements are confirmed before reading sleep; interrupted work st
   assert.equal(report.fullAt, at); assert.equal(report.retryFull, false);
 });
 
+test('a process killed mid-read leaves a pending receipt eligible on the next cold opening', async () => {
+  for (const trigger of ['background', 'auto', 'manual'] as const) {
+    const { deps, saved } = fixture();
+    let release!: (value: HealthResult) => void;
+    const reading = new Promise<HealthResult>(resolve => { release = resolve; });
+    const job = syncHealth({ ...deps, trigger, daily: () => reading });
+    await Promise.resolve();
+    // This is the persisted state a new process sees if the old one is killed now.
+    const interrupted = JSON.parse(JSON.stringify(saved.at(-1))) as SyncReport;
+    assert.equal(interrupted.pending, true);
+    assert.equal(due(interrupted, 0, Date.parse(at) + 1000), true);
+    release({ days: [], complete: true, notices: [] });
+    const finished = await job;
+    assert.equal(finished.pending, false);
+    assert.equal(due(finished, 0, Date.parse(at) + 1000), false);
+  }
+});
+
 test('failed sleep preserves the successful weighing and schedules a full retry', async () => {
   const { deps } = fixture();
   deps.sleep = async () => { throw Error('HealthKit unavailable'); };

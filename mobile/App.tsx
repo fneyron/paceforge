@@ -9,7 +9,7 @@ import { authorize, collect, collectSleep } from './src/health';
 import { Pair } from './src/types';
 import { due, fullDue, reportText, syncIssue, SyncReport, syncHealth, Trigger } from './src/sync';
 import { KEYS, KeychainLocked, secure } from './src/secure';
-import { backgroundBlock, backgroundPending, blockBackgroundSync, disableBackgroundSync, enableBackgroundSync,
+import { backgroundBlock, backgroundPending, blockBackgroundSync, cancelBackgroundSync, disableBackgroundSync, enableBackgroundSync,
   onBackgroundReport, resetBackgroundState, syncExclusively } from './src/background';
 import type { Block } from './src/background-engine';
 import { appShellScript, destinations, isBridgeUrl, prepareNavigationScript, presentationScript, refreshable, sameScreen, screenUrl, Tab, tabForUrl, tabs } from './src/navigation';
@@ -60,6 +60,10 @@ function Companion() {
   const reconciled = useRef(false);
   const rotationRefused = useRef(false);
   const syncTrigger = useRef<Trigger>('manual');
+  const accountEpoch = useRef(0);
+  const stoppedSync = useRef(new Error('sync cancelled'));
+  const seenReceipt = useRef<{ userId: number; at: string } | null>(null);
+  const backgroundRefresh = useRef<{ userId: number; at: string } | null>(null);
   const externalReturn = useRef(false);
   const web = useRef<WebView>(null);
   const offline = useOfflinePlans(script => web.current?.injectJavaScript(script), random);
@@ -92,7 +96,10 @@ function Companion() {
       const previous = receipt ? JSON.parse(receipt) as SyncReport : null;
       stored.current = true;
       setPair(account); setLast(time || ''); setAutomatic(auto === 'true'); setBlock(blocked);
-      if (previous?.userId === account?.user_id) { setReport(previous); setNeedsReconnect(!!previous?.reconnect); }
+      if (previous && previous.userId === account?.user_id) {
+        seenReceipt.current = { userId: previous.userId, at: previous.lastReceivedAt };
+        setReport(previous); setNeedsReconnect(!!previous?.reconnect);
+      } else if (account) seenReceipt.current = { userId: account.user_id, at: '' };
     } catch (e) {
       if (e instanceof KeychainLocked) return;
       stored.current = true;
@@ -108,19 +115,37 @@ function Companion() {
   });
   // Background runs keep the receipt up to date while the app is away.
   const rereadReceipt = useEffectEvent(async () => {
-    if (lock.current || !pair) return;
+    if (lock.current || !pair || block) return;
+    const epoch = accountEpoch.current;
     try {
       const [time, receipt] = await Promise.all([secure.get(KEYS.last), secure.get(KEYS.sync)]);
       const previous = receipt ? JSON.parse(receipt) as SyncReport : null;
-      if (lock.current || previous?.userId !== pair.user_id) return;
-      setReport(previous); setLast(time || '');
-      if (previous.reconnect) setNeedsReconnect(true);
+      if (epoch !== accountEpoch.current || lock.current || previous?.userId !== pair.user_id) return;
+      backgroundReport(previous); setLast(time || '');
+      flushBackgroundRefresh();
     } catch { /* the receipt on screen stays */ }
   });
   const backgroundReport = useEffectEvent((r: SyncReport) => {
-    if (lock.current || !pair || r.userId !== pair.user_id) return;
+    if (lock.current || !pair || block || r.userId !== pair.user_id) return;
+    const seen = seenReceipt.current;
+    if (r.trigger === 'background' && r.lastReceivedAt && seen?.userId === r.userId && seen.at !== r.lastReceivedAt) {
+      backgroundRefresh.current = { userId: r.userId, at: r.lastReceivedAt };
+    }
+    seenReceipt.current = { userId: r.userId, at: r.lastReceivedAt };
     setReport(r); if (r.lastReceivedAt) setLast(r.lastReceivedAt);
     if (r.reconnect) setNeedsReconnect(true);
+    if (!r.pending) flushBackgroundRefresh();
+  });
+  const flushBackgroundRefresh = useEffectEvent(() => {
+    const change = backgroundRefresh.current;
+    if (!change) return;
+    if (!pair || block || change.userId !== pair.user_id) { backgroundRefresh.current = null; return; }
+    if (AppState.currentState !== 'active' || lock.current || cloudRefresh.current || !documentReady.current ||
+      !webVisible || offline.view !== null || !refreshable(documentUrl.current)) return;
+    backgroundRefresh.current = null;
+    // Reuse the page's deferred DOM replacement: no provider sync, navigation,
+    // spinner or reset of its scroll/selected dates after a background import.
+    web.current?.injectJavaScript("if (window.paceforgeRefresh && ['/sante','/activities'].includes(location.pathname)) window.paceforgeRefresh.refresh(false); true;");
   });
   useEffect(() => onBackgroundReport(r => backgroundReport(r)), []);
   useEffect(() => {
@@ -152,6 +177,7 @@ function Companion() {
     setUrl(target.href);
   }
   function refreshPage(sources = false) {
+    backgroundRefresh.current = null;
     web.current?.injectJavaScript(`if (window.paceforgeRefresh && ['/sante','/activities'].includes(location.pathname)) window.paceforgeRefresh.refresh(${sources}); else { const u = new URL(${JSON.stringify(screenUrl(webLocation.current))}); u.searchParams.set('app_nav', Date.now()); location.replace(u.href); } true;`);
   }
   function restoreSync(refresh = false) {
@@ -191,15 +217,29 @@ function Companion() {
     if (watchdog.current) clearTimeout(watchdog.current);
     watchdog.current = setTimeout(() => { if (pending.current) fail(new Error('La connexion au compte prend trop de temps. Vérifie le réseau ou connecte-toi, puis réessaie.')); }, 60000);
   }
+  function cancelAccountWork(release = false) {
+    accountEpoch.current++;
+    backgroundRefresh.current = null;
+    pending.current = null;
+    syncReturn.current = null;
+    inlineSync.current = false;
+    if (watchdog.current) clearTimeout(watchdog.current);
+    if (nextNavigation.current) { clearTimeout(nextNavigation.current.timer); nextNavigation.current = null; setLeaving(false); }
+    cancelBackgroundSync();
+    if (release) { setUserRefreshing(false); finish(); }
+  }
   async function associate() {
     if (!start()) return;
+    cancelAccountWork();
+    const epoch = accountEpoch.current;
     try {
       const verifier = random(); const challenge = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, verifier);
+      if (epoch !== accountEpoch.current) return;
       const target = `${ORIGIN}/mobile/connect?challenge=${challenge}&platform=${Platform.OS}`;
       syncReturn.current = null;
       pending.current = { kind: 'pair', verifier, challenge, url: target };
       setUrl(target); setShowWeb(true); setStatus('Confirme le compte auquel envoyer les mesures.'); guard();
-    } catch (e) { fail(e); }
+    } catch (e) { if (epoch === accountEpoch.current) fail(e); }
   }
   function sync(quiet = false, consent = false, forceSources = false) {
     if (!pair || !start()) return;
@@ -227,46 +267,55 @@ function Companion() {
     }
   }
   async function upload(account: Pair, consent = false) {
+    const epoch = accountEpoch.current;
+    const current = () => { if (epoch !== accountEpoch.current) throw stoppedSync.current; };
     pending.current = null; if (watchdog.current) clearTimeout(watchdog.current);
     if (!inlineSync.current) { setShowWeb(false); setTab('devices'); setDetail('health'); }
     let refresh = false;
     try {
       // One sync at a time, also with a background run (another runtime on Android).
       await syncExclusively(async () => {
+        current();
         if (consent) { setStatus('Choisis les données à partager…'); await authorize(automatic && Platform.OS === 'android'); }
         const full = consent || syncFull.current;
         let credentials: Pair = account;
         const keep = async (next: Credentials) => {
+          current();
           credentials = { ...credentials, token: next.token, prev_token: next.prev_token };
           await secure.rewrite(KEYS.pair, JSON.stringify(credentials)); setPair(credentials);
         };
         const result = await syncHealth({
           userId: account.user_id, full, previous: report, trigger: consent ? 'manual' : syncTrigger.current,
-          daily: () => collect(() => setStatus('Lecture des mesures quotidiennes…'), full ? 30 : 7),
-          sleep: () => collectSleep(() => setStatus('Lecture du sommeil…'), full ? 60 : 7),
+          daily: () => { current(); return collect(() => setStatus('Lecture des mesures quotidiennes…'), full ? 30 : 7); },
+          sleep: () => { current(); return collectSleep(() => setStatus('Lecture du sommeil…'), full ? 60 : 7); },
           send: (path, body, meta) => authorized(credentials,
-            token => api(path, 'POST', body, token, { headers: { 'X-PaceForge-Read-At': meta.readAt } }), keep),
+            token => { current(); return api(path, 'POST', body, token, { headers: { 'X-PaceForge-Read-At': meta.readAt } }); }, keep),
           progress: setStatus,
           save: async receipt => {
+            current();
             await secure.set(KEYS.sync, JSON.stringify(receipt)); setReport(receipt);
+            seenReceipt.current = { userId: receipt.userId, at: receipt.lastReceivedAt };
             if (receipt.lastReceivedAt) {
               await secure.set(KEYS.last, receipt.lastReceivedAt); setLast(receipt.lastReceivedAt);
             }
           },
         });
+        current();
         setNeedsReconnect(result.reconnect); setStatus(reportText(result));
         refresh = result.received > 0 || refreshSources.current;
         setHealthIssue(syncIssue(result, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect'));
         if (!result.reconnect && !rotationRefused.current && rotationDue(credentials.rotated_at)) {
           // Foreground only. The old token stays valid while still used (7 days after its last use),
           // until the new one is first used.
-          await rotateToken(credentials, async next => { await secure.rewrite(KEYS.pair, JSON.stringify(next)); setPair(next); })
+          await rotateToken(credentials, async next => { current(); await secure.rewrite(KEYS.pair, JSON.stringify(next)); setPair(next); })
             .catch(e => { if (e instanceof ApiError && [404, 405].includes(e.status)) rotationRefused.current = true; });
         }
       });
-    } catch (e) { fail(e); } finally {
-      if (!refresh || !refreshable(webLocation.current)) setUserRefreshing(false);
-      restoreSync(refresh); finish();
+    } catch (e) { if (epoch === accountEpoch.current && e !== stoppedSync.current) fail(e); } finally {
+      if (epoch === accountEpoch.current) {
+        if (!refresh || !refreshable(webLocation.current)) setUserRefreshing(false);
+        restoreSync(refresh); finish();
+      }
     }
   }
   async function message(event: WebViewMessageEvent) {
@@ -300,6 +349,8 @@ function Companion() {
     }
     const reply = takeReply(pending, event.nativeEvent.data, event.nativeEvent.url);
     if (!reply) return;
+    const epoch = accountEpoch.current;
+    const current = () => { if (epoch !== accountEpoch.current) throw stoppedSync.current; };
     if (watchdog.current) clearTimeout(watchdog.current);
     web.current?.injectJavaScript(acknowledge(reply.task));
     try {
@@ -329,29 +380,39 @@ function Companion() {
       if (reply.kind === 'pair') {
         const account: Pair = { ...await api('/api/mobile/exchange', 'POST', { code: reply.code, verifier: reply.task.verifier }),
           rotated_at: new Date().toISOString() };
+        current();
         const sameAccount = pair?.user_id === account.user_id;
-        await secure.rewrite(KEYS.pair, JSON.stringify(account)); setPair(account); setShowWeb(false); setTab('devices');
-        await secure.remove(KEYS.last); setLast('');
-        await secure.remove(KEYS.sync); setReport(null);
-        // Reconnecting the same account (refused token) keeps the automatic update choice.
-        if (!sameAccount) { await secure.remove(KEYS.auto); setAutomatic(false); }
-        await resetBackgroundState(account.user_id); setBlock('');
+        await syncExclusively(async () => {
+          current();
+          await secure.rewrite(KEYS.pair, JSON.stringify(account)); current(); setPair(account); setShowWeb(false); setTab('devices');
+          await secure.remove(KEYS.last); current(); setLast('');
+          await secure.remove(KEYS.sync); current(); setReport(null);
+          seenReceipt.current = { userId: account.user_id, at: '' };
+          // Reconnecting the same account (refused token) keeps the automatic update choice.
+          if (!sameAccount) { await secure.remove(KEYS.auto); current(); setAutomatic(false); }
+          await resetBackgroundState(account.user_id); current(); setBlock('');
+        });
+        current();
         setNeedsReconnect(false);
         await upload(account, true);
       } else if (reply.kind === 'check') {
         if (!pair || reply.userId !== pair.user_id) {
           setNeedsReconnect(true); confirmAccount(false);
-          throw new Error('Le compte affiché a changé. Utilise « Connecter » pour confirmer le compte qui recevra tes mesures.');
+          // This mismatch intentionally cancelled the old epoch; show its message
+          // now, while genuinely late failures remain silent in the catch below.
+          fail(new Error('Le compte affiché a changé. Utilise « Connecter » pour confirmer le compte qui recevra tes mesures.'));
+          return;
         }
         confirmAccount(true);
         await upload(pair, reply.task.consent);
       }
-    } catch (e) { fail(e); }
+    } catch (e) { if (epoch === accountEpoch.current && e !== stoppedSync.current) fail(e); }
   }
   /** The web session matches the paired account (or not): background sync follows. */
   function confirmAccount(same: boolean) {
     const next: Block = same ? '' : 'mismatch';
     if (same ? !block : block === 'mismatch') return;
+    if (!same) cancelAccountWork();
     setBlock(next); void blockBackgroundSync(next).catch(() => {});
   }
   function connectHealth() {
@@ -378,17 +439,24 @@ function Companion() {
   }
   async function disconnect() {
     if (!pair || !start()) return;
+    cancelAccountWork();
+    const epoch = accountEpoch.current;
     try {
-      await api('/api/mobile/device', 'DELETE', undefined, pair.token);
-      await secure.erase(KEYS.pair); await secure.remove(KEYS.auto); await secure.remove(KEYS.last); await secure.remove(KEYS.sync);
-      await disableBackgroundSync().catch(() => {}); await secure.remove(KEYS.background).catch(() => {});
+      await syncExclusively(async () => {
+        await api('/api/mobile/device', 'DELETE', undefined, pair.token);
+        await secure.erase(KEYS.pair); await secure.remove(KEYS.auto); await secure.remove(KEYS.last); await secure.remove(KEYS.sync);
+        await disableBackgroundSync().catch(() => {}); await secure.remove(KEYS.background).catch(() => {});
+        await secure.remove(KEYS.progress).catch(() => {});
+      });
+      if (epoch !== accountEpoch.current) return;
       setPair(null); setAutomatic(false); setLast(''); setReport(null); setHealthIssue(''); setNeedsReconnect(false);
       setStatus('Téléphone dissocié. L’historique reçu reste dans ton compte.');
-    } catch (e) { fail(e); } finally { finish(); }
+    } catch (e) { if (epoch === accountEpoch.current) fail(e); } finally { if (epoch === accountEpoch.current) finish(); }
   }
   const onForeground = useEffectEvent(() => {
     // Never during a background launch: the screen is not shown, nothing to verify.
     if (AppState.currentState !== 'active' || lock.current || !ready || offline.view !== null) return;
+    flushBackgroundRefresh();
     if (externalReturn.current) {
       externalReturn.current = false; setTab('devices'); setShowWeb(false); setDetail(null); refreshConnections();
     } else if (tab !== 'devices' && automatic && pair && !needsReconnect && documentReady.current && refreshable(documentUrl.current) &&
@@ -417,6 +485,7 @@ function Companion() {
     return () => subscription.remove();
   }, []);
   useEffect(() => { reconcile(); }, [ready, wantBackground]);
+  useEffect(() => { flushBackgroundRefresh(); }, [tab, showWeb, offline.view, busy, pageRefreshing, ready, block]);
   useEffect(() => {
     if (ready) onForeground();
   }, [ready, tab]);
@@ -494,6 +563,7 @@ function Companion() {
       busy={busy} ready={ready} status={status} error={error || (detail === 'health' ? '' : visibleIssue)} connections={connections} needsReconnect={needsReconnect}
       connectHealth={connectHealth} sync={() => sync()} disconnect={disconnect}
       auto={v => {
+        if (!v) cancelBackgroundSync();
         setAutomatic(v); secure.set(KEYS.auto, String(v)).catch(fail);
         // Android: reading in the background needs its own Health Connect permission.
         if (v && Platform.OS === 'android') void authorize(true).catch(() => {}).finally(() => reconcile());
@@ -552,7 +622,7 @@ function Companion() {
               else { refresh(); return false; }
             }
             const path = new URL(request.url).pathname;
-            if (path === '/auth/logout') { offline.forget(); setBlock('logout'); void blockBackgroundSync('logout').catch(() => {}); }
+            if (path === '/auth/logout') { cancelAccountWork(true); offline.forget(); setBlock('logout'); void blockBackgroundSync('logout').catch(() => {}); }
             if (path === '/settings' && ['#connections', '#coros', '#garmin', '#strava'].includes(new URL(request.url).hash)) { openTab('devices'); return false; }
             if (['/auth/strava', '/coros/connect', '/setup'].includes(path)) {
               // Start AND finish OAuth in the same browser session.
