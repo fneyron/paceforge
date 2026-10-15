@@ -8,6 +8,9 @@ const plan={version:1,user_id:1,route_id:2,name:'Course de montagne',saved_at:'2
 const stored=(extra={})=>({'paceforge.phone.v1':pair,'paceforge.phone.v1.auto':'true',
  'paceforge.phone.v1.bg':JSON.stringify({userId:1,enabled:true,blocked:'',hashes:{},hashedAt:0,tokens:{},retryAt:0}),
  'paceforge.offline.index.v1':JSON.stringify({userId:1,slot:0}),...extra});
+const fresh=()=>stored({'paceforge.phone.v1.sync':JSON.stringify({userId:1,checkedAt:new Date().toISOString(),
+ complete:true,reconnect:false,retryFull:false,received:0,notices:[],fullAt:new Date().toISOString(),
+ lastReceivedAt:'2026-10-12T08:00:00Z',weightRead:null,weightReceived:null})});
 (async()=>{
  const browser=await chromium.launch({headless:true});
  try{
@@ -45,6 +48,60 @@ const stored=(extra={})=>({'paceforge.phone.v1':pair,'paceforge.phone.v1.auto':'
   await woken.evaluate(()=>healthChange());await woken.waitForTimeout(2000);
   assert.equal(await woken.evaluate(()=>writes.filter(u=>u.endsWith('/api/mobile/daily')).length),1,'unchanged data is not sent again');
   assert.deepEqual(woken.errors,[]);await woken.close();
+
+  // A warm return keeps the mounted document, but includes the data imported while away.
+  const warm=await page('',fresh());
+  await warm.waitForFunction(()=>registered.some(r=>r[0]==='register')&&window.actual);
+  const warmNavigations=await warm.evaluate(()=>navigations.slice());
+  await warm.evaluate(()=>{background();healthChange();});
+  await warm.waitForFunction(()=>JSON.parse(JSON.parse(sessionStorage.getItem('secure'))['paceforge.phone.v1.sync']).complete&&writes.length>0);
+  assert.deepEqual(await warm.evaluate(()=>refreshes),[],'no refresh while the app is hidden');
+  await warm.evaluate(()=>foreground());await warm.waitForFunction(()=>refreshes.length===1);
+  assert.deepEqual(await warm.evaluate(()=>refreshes),[false],'data refresh must not resync providers');
+  assert.deepEqual(await warm.evaluate(()=>navigations),warmNavigations,'warm return must preserve the document and scroll');
+  assert.equal(await warm.evaluate(()=>window.nonce),undefined,'no redundant HealthKit sync on warm return');
+  assert.equal(await warm.evaluate(()=>collects),1);
+  const persisted=await warm.evaluate(()=>JSON.parse(sessionStorage.getItem('secure')));
+  assert.deepEqual(JSON.parse(persisted['paceforge.phone.v1.bg']).hashes,{},'progress must not rewrite account/consent state');
+  assert.ok(Object.keys(JSON.parse(persisted['paceforge.phone.v1.bg.progress']).hashes).length>0);
+  assert.equal('blocked' in JSON.parse(persisted['paceforge.phone.v1.bg.progress']),false);
+  assert.ok(await warm.evaluate(()=>scripts.filter(s=>s.includes('window.paceforgeRefresh')).every(s=>!s.includes('location.replace'))));
+  await warm.evaluate(()=>{background();healthChange();});await warm.waitForTimeout(2000);
+  await warm.evaluate(()=>foreground());await warm.waitForTimeout(200);
+  assert.equal(await warm.evaluate(()=>refreshes.length),1,'unchanged data must not refresh again');
+  assert.deepEqual(warm.errors,[]);await warm.close();
+
+  // A background completion cannot replace a course being edited or navigate back to Santé.
+  const editing=await page('',fresh());
+  await editing.waitForFunction(()=>registered.some(r=>r[0]==='register'));
+  await editing.evaluate(()=>{window.holdHealth=true;healthChange();});await editing.waitForFunction(()=>window.releaseHealth);
+  await editing.evaluate(()=>{navigate('https://paceforge.fr/simulator/routes/2');releaseHealth();});
+  await editing.waitForFunction(()=>JSON.parse(JSON.parse(sessionStorage.getItem('secure'))['paceforge.phone.v1.sync']).complete);
+  assert.deepEqual(await editing.evaluate(()=>refreshes),[],'the edited course must not refresh');
+  assert.equal(await editing.evaluate(()=>actual),'https://paceforge.fr/simulator/routes/2');
+  await editing.evaluate(()=>navigate('https://paceforge.fr/sante'));await editing.waitForFunction(()=>refreshes.length===1);
+  assert.deepEqual(await editing.evaluate(()=>refreshes),[false]);
+  assert.deepEqual(editing.errors,[]);await editing.close();
+
+  // Logout while HealthKit reads must stop the upload and keep the user's block on disk.
+  const cancelled=await page('',fresh());
+  await cancelled.waitForFunction(()=>registered.some(r=>r[0]==='register'));
+  await cancelled.evaluate(()=>{window.holdHealth=true;healthChange();});await cancelled.waitForFunction(()=>window.releaseHealth);
+  await cancelled.evaluate(()=>{followLink('https://paceforge.fr/auth/logout');navigate('https://paceforge.fr/auth/login');});
+  await cancelled.waitForFunction(()=>JSON.parse(JSON.parse(sessionStorage.getItem('secure'))['paceforge.phone.v1.bg']).blocked==='logout');
+  await cancelled.evaluate(()=>releaseHealth());await cancelled.waitForTimeout(300);
+  assert.deepEqual(await cancelled.evaluate(()=>writes),[],'a read finishing after logout must not upload');
+  assert.equal(JSON.parse(await cancelled.evaluate(()=>JSON.parse(sessionStorage.getItem('secure'))['paceforge.phone.v1.bg'])).blocked,'logout');
+  assert.deepEqual(await cancelled.evaluate(()=>refreshes),[]);
+  assert.equal(await cancelled.evaluate(()=>actual),'https://paceforge.fr/auth/login');
+  // A progress write finishing late in another runtime cannot undo this block.
+  await cancelled.evaluate(()=>{const data=JSON.parse(sessionStorage.getItem('secure'));
+   data['paceforge.phone.v1.bg.progress']=JSON.stringify({userId:1,generation:'',hashes:{},hashedAt:0,tokens:{},retryAt:0});
+   sessionStorage.setItem('secure',JSON.stringify(data));});
+  await cancelled.reload();await cancelled.waitForFunction(()=>window.healthChange);
+  await cancelled.evaluate(()=>healthChange());await cancelled.waitForTimeout(2000);
+  assert.deepEqual(await cancelled.evaluate(()=>writes),[],'logout must survive restart and a late progress write');
+  assert.deepEqual(cancelled.errors,[]);await cancelled.close();
 
   // A tap during a HealthKit cold launch: active before any listener, without a change event.
   const tapped=await page('?state=background&missed=1',stored());
@@ -108,9 +165,14 @@ const stored=(extra={})=>({'paceforge.phone.v1':pair,'paceforge.phone.v1.auto':'
   await logout.evaluate(()=>followLink('https://paceforge.fr/auth/logout'));
   await logout.waitForFunction(()=>registered.some(r=>r[0]==='unregister'));
   assert.equal(JSON.parse(await logout.evaluate(()=>JSON.parse(sessionStorage.getItem('secure'))['paceforge.phone.v1.bg'])).blocked,'logout');
+  const oldNonce=await logout.evaluate(()=>window.nonce);
+  await logout.evaluate(()=>reply());
+  await logout.waitForTimeout(100);
+  assert.equal(await logout.evaluate(()=>registered.filter(r=>r[0]==='register').length),1,'a pre-logout reply must not re-enable sync');
+  await logout.evaluate(()=>pull());await logout.waitForFunction(n=>window.nonce!==n,oldNonce);
   await logout.evaluate(()=>reply());
   await logout.waitForFunction(()=>registered.filter(r=>r[0]==='register').length===2);
   await logout.close();
-  console.log('Background sync: launch without screen, one run per wake, skip unchanged, tap during a cold launch, locked keychain and offline copies, refused token, logout passed (native APIs mocked).');
+  console.log('Background sync: cold/warm launches, quiet refresh of changed data, course preservation, cancellation during logout, unchanged data, locked keychain/offline copies and refused token passed (native APIs mocked).');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

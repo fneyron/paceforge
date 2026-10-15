@@ -291,12 +291,14 @@ async def test_the_sessions_never_make_the_health_history_count_as_cut_short(db_
     conn = await _link(db_session, test_user)
     for _ in range(2):
         outcome = await coros.run_sync(db_session, conn)
-        assert outcome["ok"] and conn.last_error is None and conn.sessions_synced_at is None
+        assert outcome["ok"] and conn.last_error == coros.ACTIVITIES_PARTIAL and conn.sessions_synced_at is None
+        assert outcome["result"]["activities_incomplete"] and not outcome["result"]["backfill_partial"]
         conn.last_sync_at = datetime.now(timezone.utc) - timedelta(hours=3)
     fake.tool_calls.clear()
     fake.tool_status = {}
     assert (await coros.run_sync(db_session, conn))["ok"]
-    assert len([a for n, a in fake.tool_calls if n == "querySportRecords"]) == 3  # the history, asked again
+    # One reserved recent read, then the three outstanding historical pieces.
+    assert len([a for n, a in fake.tool_calls if n == "querySportRecords"]) == 4
     hrv = [a for n, a in fake.tool_calls if n == "querySleepHrv"]
     assert len(hrv) == 1  # while the nights stay on the last week
     assert conn.sessions_synced_at is not None

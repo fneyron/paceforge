@@ -37,6 +37,9 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
   nightly rows of the days a sync's parsers read that it no longer yields are
   deleted (covered_days: what was read, never what was asked for; a few at
   most, health.store_daily): a value COROS no longer gives never stays shown.
+  Activities cover 180 days initially and weekly, otherwise 7 days. Full
+  responses are split into smaller date windows; committed coverage in Redis
+  lets bounded syncs resume unfinished windows without skipping history.
 
 Times are the athlete's local wall clock (naive), as COROS writes them.
 """
@@ -107,15 +110,19 @@ HRV_PARTIAL = "La lecture de la VFC est incomplète. Les autres données reçues
 HRV_UNREADABLE = "Le format de la VFC renvoyé par COROS n’a pas pu être lu. Les autres données reçues sont conservées."
 SLEEP_PARTIAL = "La lecture du sommeil est incomplète ; elle est nécessaire au calcul de la VFC. Les données déjà reçues sont conservées."
 PHASES_PARTIAL = "Les phases du sommeil n’ont pas pu être entièrement actualisées. Réessaie la synchronisation."
+ACTIVITIES_PARTIAL = "La lecture des activités COROS est incomplète. Les activités reçues sont conservées ; la prochaine synchro reprendra les périodes restantes."
 REFRESH_MARGIN = timedelta(days=1)  # access tokens last ~30 days
 CALL_DELAY_S = 0.5
 MAX_CALLS = 45  # a 60-day backfill takes 15 at most, the sessions 3 + 10 × (detail + laps): 38
 ACTIVITY_BACKFILL_DAYS = 180  # the sessions' history, as Garmin's
 SESSION_CHUNK_DAYS = 60
 SESSION_LIMIT = 200  # records per querySportRecords call
+SESSION_CALLS = 12  # subdivisions share this budget; remaining windows resume after the next committed sync
+SESSION_RECHECK = timedelta(days=7)  # also recover late uploads outside the recent window
 DETAILS_PER_SYNC = 10  # sessions only COROS has whose detail (the D+) or laps (the max HR) are read, newest first
 DETAIL, LAPS = "detail", "lap_data"  # raw_data keys: what was read once for a session only COROS has
-KEPT = (DETAIL, LAPS, activity_env.ENV_KEY)  # kept when the session list rewrites its raw_data
+REVISION = "paceforge_revision"
+KEPT = (DETAIL, LAPS, activity_env.ENV_KEY, REVISION, "paceforge_heat", "paceforge_dplus")
 RECORD_FORMAT = 2  # raw_data["format"]: the session list read with its « Start Coordinates » (Santé v4.4)
 
 # tests swap in an httpx.MockTransport here
@@ -829,6 +836,25 @@ def parse_sport_records(text: str) -> list[dict]:
     return out
 
 
+def _sport_records_count(text: str | None) -> int | None:
+    count = re.search(r"^\s*Sport Records\s+[—–-]\s+[^\n]*\((\d+) records?\)\s*$", text or "", re.M)
+    return int(count.group(1)) if count else None
+
+
+def sport_records_readable(text: str | None, records: list[dict]) -> bool:
+    """Only an explicit, fully parsed record count proves a window was read.
+
+    In particular an unknown answer and a recognised zero-record answer are
+    different. Keep valid rows from a partially understood answer, but retry it.
+    """
+    if _sport_records_count(text) != len(records):
+        return False
+    numbered = re.findall(r"^\s*\d+\.\s+", text or "", re.M)
+    return (len(numbered) == len(records)
+            and len({r["label"] for r in records}) == len(records)
+            and all(session_fields(r, None) is not None for r in records))
+
+
 def parse_activity_detail(text: str) -> dict:
     """getActivityDetail: what the session list lacks (D+, total and moving time, cadence, power)."""
     out = {}
@@ -1307,6 +1333,102 @@ def _ranges(lo: date, hi: date, size: int) -> list[tuple[date, date]]:
     return out
 
 
+def _history_key(conn: CorosConnection) -> str:
+    # A new connection must never inherit an old account's completed history.
+    return f"paceforge:coros:sessions:v1:{conn.id}:{conn.connected_at.isoformat()}"
+
+
+def _history_store(key: str, value: dict | None = None) -> dict | None:
+    """Redis only remembers committed coverage. Losing it safely starts a new read."""
+    try:
+        from app.services.strava_state import _redis
+
+        if value is not None:
+            _redis().set(key, json.dumps(value), ex=30 * 86400)
+            return value
+        raw = _redis().get(key)
+        state = json.loads(raw) if raw else None
+        if not isinstance(state, dict) or not isinstance(state.get("pending"), list):
+            return None
+        date.fromisoformat(state["through"])
+        datetime.fromisoformat(state["checked_at"])
+        for a, b in state["pending"]:
+            if date.fromisoformat(a) > date.fromisoformat(b):
+                return None
+        return state
+    except Exception:
+        logger.warning("COROS activity-history state unavailable; history remains retryable")
+        return None
+
+
+async def _fetch_sessions(call, ranges: list[tuple[date, date]], *,
+                          budget: int | None = None) -> tuple[list[dict], list[tuple[date, date]]]:
+    """Read bounded windows, bisect a full page and retain every unproven window.
+
+    There is no offset pagination on querySportRecords. Even a full single day
+    cannot be advertised as complete; it stays pending while other days progress.
+    """
+    queue, pending, records = list(ranges), [], {}
+    used = 0
+    budget = SESSION_CALLS if budget is None else min(budget, SESSION_CALLS)
+    while queue and used < budget and not call.stopped and call.calls < MAX_CALLS:
+        a, b = queue.pop(0)
+        used += 1
+        text = await call("querySportRecords", {
+            "startDate": _ymd(a), "endDate": _ymd(b), "sportTypeCodes": [65535], "minDistanceKm": 0,
+            "maxDistanceKm": 10000, "minDurationMinutes": 0, "maxDurationMinutes": 100000,
+            "maxAveragePace": "", "locationKeyword": "", "limit": SESSION_LIMIT})
+        got = _parsed(parse_sport_records, text) or []
+        records.update((r["label"], r) for r in got)
+        if max(len(got), _sport_records_count(text) or 0) >= SESSION_LIMIT:
+            if a < b:
+                middle = a + (b - a) // 2
+                queue[:0] = [(middle + timedelta(days=1), b), (a, middle)]
+            else:
+                pending.append((a, b))
+                logger.warning("COROS activity limit reached for one day: %s", a)
+        elif not sport_records_readable(text, got):
+            pending.append((a, b))
+            logger.warning("COROS activity response incomplete for %s to %s", a, b)
+    # A broken window is retried after the as-yet unread ones, so it cannot starve them.
+    return list(records.values()), queue + pending
+
+
+def _without_ranges(ranges: list[tuple[date, date]], covered: list[tuple[date, date]]) -> list[tuple[date, date]]:
+    """Inclusive date windows left after removing already covered dates."""
+    remaining = list(ranges)
+    for lo, hi in covered:
+        out = []
+        for a, b in remaining:
+            if hi < a or lo > b:
+                out.append((a, b))
+            else:
+                if b > hi:
+                    out.append((hi + timedelta(days=1), b))
+                if a < lo:
+                    out.append((a, lo - timedelta(days=1)))
+        remaining = out
+    return remaining
+
+
+async def _resume_sessions(call, ranges: list[tuple[date, date]], hi: date) -> tuple[list[dict], list[tuple[date, date]]]:
+    """One fresh recent read, then the existing backlog gets the remaining budget.
+
+    Previously read dates (including tomorrow) may gain activities later. A
+    permanently unreadable old day must never stop reading today's activities.
+    Recent subdivisions join the end of the queue so they cannot starve history.
+    """
+    recent = [(hi - timedelta(days=RECENT_DAYS - 1), hi)]
+    before = call.calls
+    fresh, owed = await _fetch_sessions(call, recent, budget=1)
+    queue = (list(ranges) + _without_ranges(owed, ranges) if owed
+             else _without_ranges(ranges, recent))
+    older, pending = await _fetch_sessions(call, queue, budget=max(0, SESSION_CALLS - (call.calls - before)))
+    records = {r["label"]: r for r in fresh}
+    records.update((r["label"], r) for r in older)
+    return list(records.values()), pending
+
+
 class _Fetcher:
     """Tool calls with a small pause between them and a cap per sync. A tool
     error, a timeout or a 5xx only loses that piece: the rest of the sync goes
@@ -1373,7 +1495,7 @@ def _parsed(parser, text):
 
 
 async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0,
-                 on_sessions=None) -> tuple[dict, int, int, bool]:
+                 on_sessions=None, activity_ranges: list[tuple[date, date]] | None = None) -> tuple[dict, int, int, bool]:
     """`on_sessions(records, utc_offset)` stores the sessions and returns the
     (labelId, sport code, detail missing, laps missing) of the sessions whose
     detail (D+) and laps (max HR) to read now."""
@@ -1464,19 +1586,14 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
     # failures never make the health history count as cut short
     data["health_stopped"] = call.stopped
     data["sessions"], data["details"], data["laps"], data["sessions_complete"] = [], {}, {}, False
+    data["sessions_pending"] = (activity_ranges if activity_ranges is not None else
+                                _ranges(hi - timedelta(days=activity_days - 1), hi, SESSION_CHUNK_DAYS))
     if activity_days and on_sessions and not call.stopped:
-        data["sessions_complete"] = True
-        for a, b in _ranges(hi - timedelta(days=activity_days - 1), hi, SESSION_CHUNK_DAYS):
-            text = await call("querySportRecords", {
-                "startDate": _ymd(a), "endDate": _ymd(b), "sportTypeCodes": [65535], "minDistanceKm": 0,
-                "maxDistanceKm": 10000, "minDurationMinutes": 0, "maxDurationMinutes": 100000,
-                "maxAveragePace": "", "locationKeyword": "", "limit": SESSION_LIMIT})
-            if text is None:
-                data["sessions_complete"] = False  # that piece is asked again next time
-            got = _parsed(parse_sport_records, text) or []
-            if len(got) >= SESSION_LIMIT:
-                logger.warning("COROS: %d sessions between %s and %s, some may be missing", len(got), a, b)
-            data["sessions"] += got
+        if activity_ranges is not None:
+            data["sessions"], data["sessions_pending"] = await _resume_sessions(call, data["sessions_pending"], hi)
+        else:
+            data["sessions"], data["sessions_pending"] = await _fetch_sessions(call, data["sessions_pending"])
+        data["sessions_complete"] = not data["sessions_pending"]
         for label, code, detail, laps in (await on_sessions(data["sessions"], data.get("utc_offset")))[
                 :DETAILS_PER_SYNC]:
             args = {"labelId": str(label), "sportType": int(code)}
@@ -1523,6 +1640,7 @@ async def import_sessions(db: AsyncSession, user_id: int, records: list[dict],
                 db.add(Activity(user_id=user_id, **f))
                 inserted += 1
         elif _coros_only(act):  # COROS's own row: kept current, what was read once for it kept
+            before = _session_snapshot(act)
             old = act.raw_data or {}
             detail = old.get(DETAIL)
             from_detail = {"total_elevation_gain", "moving_time", "elapsed_time", "average_speed"}
@@ -1531,6 +1649,7 @@ async def import_sessions(db: AsyncSession, user_id: int, records: list[dict],
                     continue
                 setattr(act, k, v)
             act.raw_data = {**f["raw_data"], **{k: old[k] for k in KEPT if k in old}}
+            _revise_session(act, before)
             updated += 1
     await db.flush()
     merged = await merge_twins(db, user_id, min(starts)) if starts else 0
@@ -1564,6 +1683,31 @@ async def sessions_upgraded(db: AsyncSession, user_id: int) -> bool:
 
 def _coros_only(act: Activity) -> bool:
     return act.strava_activity_id is None and act.garmin_activity_id is None
+
+
+def _session_snapshot(act: Activity) -> dict:
+    return {"start_date": _as_utc(act.start_date), **{key: getattr(act, key) for key in (
+        "sport_type", "name", "distance", "moving_time", "elapsed_time", "total_elevation_gain",
+        "average_heartrate", "max_heartrate", "average_speed", "average_cadence", "average_watts", "laps", "raw_data")}}
+
+
+def _revise_session(act: Activity, before: dict) -> None:
+    """A real correction invalidates other workers' cached Santé calculations."""
+    after = _session_snapshot(act)
+    changed = {key for key in after if before[key] != after[key]}
+    if changed:
+        raw = act.raw_data or {}
+        if changed - {"name", "laps", "raw_data"}:
+            act.streams_data = None
+            act.computed_metrics = None
+            raw = {k: v for k, v in raw.items() if k not in ("paceforge_heat", "paceforge_dplus")}
+        elif "laps" in changed:
+            act.computed_metrics = None
+        if "start_date" in changed or raw.get("start_latlng") != (before["raw_data"] or {}).get("start_latlng"):
+            raw = {k: v for k, v in raw.items() if k not in (activity_env.ENV_KEY, "paceforge_heat")}
+        previous = raw.get(REVISION, 0)
+        revision = previous if type(previous) is int and previous >= 0 else 0
+        act.raw_data = {**raw, REVISION: revision + 1}
 
 
 async def _multisport(db: AsyncSession, user_id: int, f: dict, act: Activity | None) -> str | None:
@@ -1604,6 +1748,7 @@ async def apply_details(db: AsyncSession, user_id: int, details: dict[int, dict]
             Activity.coros_activity_id == label, Activity.user_id == user_id))).scalar_one_or_none()
         if act is None or not _coros_only(act):
             continue
+        before = _session_snapshot(act)
         if label in laps:
             lp = laps[label]
             if lp.get("hr_max"):
@@ -1612,6 +1757,7 @@ async def apply_details(db: AsyncSession, user_id: int, details: dict[int, dict]
                 act.laps = lp["laps"]
             act.raw_data = {**(act.raw_data or {}), LAPS: {k: v for k, v in lp.items() if k != "laps"}}
         if label not in details:
+            _revise_session(act, before)
             n += 1
             continue
         d = details[label]
@@ -1636,6 +1782,7 @@ async def apply_details(db: AsyncSession, user_id: int, details: dict[int, dict]
         if act.distance and act.moving_time:
             act.average_speed = act.distance / act.moving_time
         act.raw_data = {**(act.raw_data or {}), DETAIL: d}  # read once, even when it said nothing new
+        _revise_session(act, before)
         n += 1
     await db.flush()
     return n
@@ -1658,17 +1805,33 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
             HealthMetric.metric.in_(("hr_day", "steps", "sleep")))
     )).scalar()
-    owed = (conn.last_sync_at is None or not have or _said(conn.last_error) in (PARTIAL, HRV_UNREADABLE)
+    owed = (conn.last_sync_at is None or not have or _has_partial(conn.last_error, PARTIAL, HRV_UNREADABLE)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=NAPS_FOLDED))
     full = owed and (conn.last_sync_at is None
                      or _as_utc(conn.last_sync_at).date() < datetime.now(timezone.utc).date())
     days = BACKFILL_DAYS if full else RECENT_DAYS
-    # the sessions' history comes once too: until every piece of it was read, and once more when it was read
-    # before their start coordinates were (Santé v4.4)
-    activity_days = (ACTIVITY_BACKFILL_DAYS if conn.sessions_synced_at is None
-                     or not await sessions_upgraded(db, conn.user_id) else RECENT_DAYS)
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    history = await asyncio.to_thread(_history_store, _history_key(conn))
+    # Absence of the versioned coverage proof repairs links marked complete by
+    # the old parser, including accounts with no COROS-only rows to version.
+    activity_full = (conn.sessions_synced_at is None or not history or bool(history["pending"])
+                     or now - _as_utc(datetime.fromisoformat(history["checked_at"])) >= SESSION_RECHECK
+                     or not await sessions_upgraded(db, conn.user_id))
+    activity_days = ACTIVITY_BACKFILL_DAYS if activity_full else RECENT_DAYS
+    activity_ranges = None
+    if activity_full:
+        conn.sessions_synced_at = None
+        if history and history["pending"]:
+            activity_ranges = [(date.fromisoformat(a), date.fromisoformat(b)) for a, b in history["pending"]]
+            hi = today + timedelta(days=1)
+            lo = date.fromisoformat(history["through"]) + timedelta(days=1)
+            # Never add the same dense recent window on every continuation:
+            # it could consume the budget forever and starve older periods.
+            if lo <= hi:
+                activity_ranges = _ranges(lo, hi, SESSION_CHUNK_DAYS) + activity_ranges
     sessions: dict = {}
 
     async def on_sessions(records, utc_offset):
@@ -1676,13 +1839,13 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
         sessions.update(counts)
         return todo
 
-    today = datetime.now(timezone.utc).date()
     async with http_client() as client:
         token = await access_token(db, conn, client)
         for attempt in range(2):
             mcp = McpSession(client, conn.resource_url, token)
             try:
-                data, calls, failed, stopped = await _fetch(mcp, days, today, activity_days, on_sessions)
+                data, calls, failed, stopped = await _fetch(mcp, days, today, activity_days, on_sessions,
+                                                          activity_ranges=activity_ranges)
                 break
             except McpUnauthorized:
                 if attempt:
@@ -1710,8 +1873,16 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     result["activities"] = sessions
     result["inserted"] += sessions.get("inserted", 0)
     result["updated"] += sessions.get("updated", 0) + sessions.get("linked", 0)
-    if activity_days == ACTIVITY_BACKFILL_DAYS and data.get("sessions_complete"):
+    result["activities_incomplete"] = not data.get("sessions_complete", False)
+    if activity_full and not result["activities_incomplete"]:
         conn.sessions_synced_at = datetime.now(timezone.utc)
+    elif result["activities_incomplete"]:
+        conn.sessions_synced_at = None
+    result["_sessions_state"] = {
+        "through": (now.date() + timedelta(days=1)).isoformat(),
+        "checked_at": (now.isoformat() if activity_full or not history else history["checked_at"]),
+        "pending": [[a.isoformat(), b.isoformat()] for a, b in data["sessions_pending"]],
+    }
     # each new outdoor session's altitude and weather (Open-Meteo), the backlog a few at a time; never fails a sync
     result["env"] = await activity_env.enrich(db, conn.user_id)
     # COROS stopped answering halfway through the health history: keep it, but ask for it all again next
@@ -1721,7 +1892,7 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     result["sleep_incomplete"] = bool(data.get("overview_failed_days"))
     result["phases_incomplete"] = bool(data.get("daily_incomplete"))
     # a history cut short (or not understood) earlier, left for the day's whole read: still owed, still said
-    deferred = owed and not full and _said(conn.last_error) in (PARTIAL, HRV_UNREADABLE)
+    deferred = owed and not full and _has_partial(conn.last_error, PARTIAL, HRV_UNREADABLE)
     result["backfill_partial"] = ((bool(data.get("health_stopped")) or result["hrv_incomplete"]
                                    or result["sleep_incomplete"] or result["phases_incomplete"])
                                   and days == BACKFILL_DAYS) or deferred
@@ -1733,6 +1904,10 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
 def _said(error: str | None) -> str | None:
     """A link's last error as said today (the former wording of PARTIAL read as PARTIAL)."""
     return PARTIAL if error == _LEGACY_PARTIAL else error
+
+
+def _has_partial(error: str | None, *messages: str) -> bool:
+    return any(message in (_said(error) or "") for message in messages)
 
 
 async def claim(db: AsyncSession, conn: CorosConnection) -> bool:
@@ -1778,8 +1953,10 @@ async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str |
         if taken.rowcount != 1:
             return None
         set_committed_value(conn, "sync_claimed_at", now)
+    history_update = None
     try:
         result = await sync_connection(db, conn)
+        history_update = result.pop("_sessions_state", None)
         conn.last_sync_at = datetime.now(timezone.utc)
         # a history cut short is not done: said so, and the next sync asks for all of it again
         conn.last_error = (HRV_UNREADABLE if result.get("hrv_unreadable") else
@@ -1787,6 +1964,8 @@ async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str |
                            SLEEP_PARTIAL if result.get("sleep_incomplete") else
                            HRV_PARTIAL if result.get("hrv_incomplete") else
                            PHASES_PARTIAL if result.get("phases_incomplete") else None)
+        if result.get("activities_incomplete"):
+            conn.last_error = " ".join(filter(None, (conn.last_error, ACTIVITIES_PARTIAL)))
         outcome = {"ok": True, "result": result}
     except CorosAuthError as e:
         outcome = {"ok": False, "error": str(e)}
@@ -1808,6 +1987,9 @@ async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str |
         outcome = {"ok": False, "error": conn.last_error}
     conn.sync_claimed_at = None
     await db.commit()
+    if history_update is not None and outcome["ok"]:
+        # Never advance coverage before the activity rows have survived commit.
+        await asyncio.to_thread(_history_store, _history_key(conn), history_update)
     return outcome
 
 
@@ -1931,8 +2113,10 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
         "syncing": bool((claimed := _as_utc(conn.sync_claimed_at))
                         and datetime.now(timezone.utc) - claimed < CLAIM_TTL),
         "last_error": error,
-        "retryable_partial": error in (PARTIAL, HRV_PARTIAL, SLEEP_PARTIAL, PHASES_PARTIAL) and conn.last_sync_at is not None,
-        "partial": error in (PARTIAL, HRV_PARTIAL, HRV_UNREADABLE, SLEEP_PARTIAL, PHASES_PARTIAL),
+        "retryable_partial": _has_partial(error, PARTIAL, HRV_PARTIAL, SLEEP_PARTIAL, PHASES_PARTIAL,
+                                         ACTIVITIES_PARTIAL) and conn.last_sync_at is not None,
+        "partial": _has_partial(error, PARTIAL, HRV_PARTIAL, HRV_UNREADABLE, SLEEP_PARTIAL, PHASES_PARTIAL,
+                                ACTIVITIES_PARTIAL),
         "hrv_note": hrv_note,
         "per_metric": counts,
     }

@@ -153,26 +153,25 @@ async def test_owner_les_houches_two_efforts_from_his_activities(db_session: Asy
     assert st.effort_window(houches, date(2026, 9, 25)) is None
 
 
-async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_session: AsyncSession,
+async def test_the_owner_s_sante_page_names_only_the_recent_recorded_course(as_user: AsyncClient, db_session: AsyncSession,
                                                      test_user: User, on_day):
-    """Owner, 2026-10-08 evening: « Ne mentionne pas les sorties dans la partie Santé, ça complexifie : mets juste
-    les scores. » His page on 08/10 (the Transjeju 6 days ago, Les Houches 3 weeks ago) names no activity and no
-    outing — state line, Détail, history readouts, cards, the nights' table and its readouts. His 10 nights give
-    2 of the 14 a baseline needs from day −67 to −8 (owner, 2026-10-14: scientific basis): the line says so."""
+    """The recent recorded Transjeju is dated context; ordinary older outings are not repeated.
+    Its presence cannot create an index while the actual provisional reference is still building."""
     import html as H
 
     await seed_owner_v4(db_session, test_user)
     main = _main((await as_user.get("/sante")).text)
-    for name in ("Transjeju", "Morning Trail Run", "Les Houches", "100M"):
+    for name in ("Morning Trail Run", "Les Houches"):
         assert name not in main, name
+    assert "Après Transjeju 100M · J+5" in main
     assert 'href="/sante/aide"' in main and "Comment je calcule" not in main
-    # Forme and its compact training progress may describe comparable runs. Recovery still names no outing.
+    # Forme describes comparable runs; only the latest recorded race/ultra is named as context.
     rest = re.sub(r'<section id="forme".*?</section>', "", main, flags=re.S)
     rest = H.unescape(re.sub(r'<div class="pf-fitness-progress".*?</div>', "", rest, flags=re.S))
     for word in ("sortie", "ultra", "course", "il y a", "Plafonné", "Grosse"):
         assert word not in rest, word
     assert "◇ après un gros effort" in rest  # the 06/10 and 07/10 nights
-    assert "Pas de score ce matin : repères en construction (2/14)." in rest  # today
+    assert "repères en construction (5/7)" in rest  # today
 
 
 # ── time zones: from each user's own data (brief §H) ────────────────────────
@@ -247,12 +246,12 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
     await test_coros._link(db_session, test_user)
     await _seed(db_session, test_user, coros_rows(D, range(0, 40), hrv=lambda k: 60.0 + (k % 3) - 1))
     page = await sante.health_page(db_session, test_user.id, today=D)
-    assert page["state"]["word"] == "Bonne récupération" and page["score"]["value"] == 100
+    assert page["state"]["word"] == "Signaux habituels" and page["score"]["value"] == 100
     assert [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr"] and page["score"]["absent"] == []
     # its 7-night means at their usual values to the percent: « comme d'habitude » (« 0 % » said in words)
     assert page["vfc"]["status"]["text"] == page["fc"]["status"]["text"] == "comme d'habitude"
     assert [(d["key"], d["value"], d["unit"], d["sub"], d["tone"]) for d in page["dials"]] == [
-        ("sommeil", "92", "%", "suffisant", "sleep"), ("recup", "100", "%", "bonne", "ok"),
+        ("sommeil", "92", "%", "suffisant", "sleep"), ("recup", "100", "/100", "habituels", "ok"),
         ("entrainement", "0 min", None, "7 derniers jours", "accent")]
     assert [(k, page[k]["status"]["word"], page[k]["status"]["tone"]) for k in ("vfc", "fc")] == [
         ("vfc", "comme d'habitude", "ok"), ("fc", "comme d'habitude", "ok")]
@@ -282,7 +281,7 @@ async def test_a_garmin_only_user(as_user: AsyncClient, db_session: AsyncSession
     assert page["vfc"]["read"][3].endswith("(provisoire)") and page["fc"]["read"][3].endswith("(provisoire)")
     assert page["vfc"]["reference"]["provisional"] and page["vfc"]["band_prov"]
     main = _coherent((await as_user.get("/sante")).text)
-    assert "Récupération" in main and (await as_user.get("/activities")).status_code == 200
+    assert "Signaux nocturnes" in main and (await as_user.get("/activities")).status_code == 200
 
 
 async def test_a_strava_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
@@ -296,15 +295,14 @@ async def test_a_strava_only_user(as_user: AsyncClient, db_session: AsyncSession
     assert page["state"] is None and page["line"] == td.NO_WATCH and "rows" not in page
     assert page["vfc"] is None and page["fc"] is None
     main = _coherent((await as_user.get("/sante")).text)
-    assert td.NO_WATCH in main and 'href="/settings#coros"' in main and "Les chiffres de chaque nuit" not in main
+    assert "Mesures insuffisantes" in main and 'href="/settings#coros"' in main and "Les chiffres de chaque nuit" not in main
     act = _coherent((await as_user.get("/activities")).text)
     assert re.findall(r'data-range="(\w+)"', act) == ["duree", "distance", "dplus"]
 
 
 async def test_a_cyclist(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
-    """Rides only, flat (no D+ recorded): a 7-h ride yesterday is one class lower (M4: a Longue, orange through
-    D+1 — owner, 2026-10-14: scientific basis, it was a cap of 65 to D+3 — its nights following its time);
-    Activités offers Durée and Distance, never D+."""
+    """A seven-hour ride keeps its existing post-effort night tag, but never caps usual signals.
+    An unmarked ride is not presented as a confirmed race. Activities offer Duration and Distance, not D+."""
     await test_garmin._link(db_session, test_user)
     await _seed(db_session, test_user, garmin_rows(D, range(0, 40)))
     for k in range(3, 80, 4):
@@ -315,9 +313,10 @@ async def test_a_cyclist(as_user: AsyncClient, db_session: AsyncSession, test_us
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert {p["key"] for p in page["score"]["parts"]} == {"hrv", "hr"}
-    # the window is a reason: the indice held to the orange range; the load never lifts nor lowers it
-    assert page["score"]["value"] == 69 and [r["key"] for r in page["score"]["reasons"]] == ["effort"]
-    assert page["state"]["word"] == "Récupération en cours" and page["state"]["text"] is None
+    # Neither the effort window nor the load can lift or lower the measured signal index.
+    assert page["score"]["value"] == 100 and page["score"]["reasons"] == []
+    assert page["state"]["word"] == "Signaux habituels" and page["state"]["text"] is None
+    assert page["synthesis"]["context"] == []  # an unmarked seven-hour ride is neither a race nor an ultra
     marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
     assert marks[D.isoformat()] == "◇ après un gros effort"  # 7 h: its nights follow its time (M4), no outing named
     _coherent((await as_user.get("/sante")).text)
