@@ -126,6 +126,8 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         version="1.0.0",
+        # the schema and its docs are for development: in production they listed every route to anyone
+        openapi_url="/openapi.json" if settings.DEBUG else None,
         docs_url="/docs" if settings.DEBUG else None,
         redoc_url=None,
         lifespan=lifespan,

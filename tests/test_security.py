@@ -400,3 +400,35 @@ def test_the_default_webhook_token_is_warned_about_outside_debug(monkeypatch, ca
     monkeypatch.setattr(settings, "STRAVA_WEBHOOK_VERIFY_TOKEN", "something-random-and-long")
     check_secrets()
     assert "STRAVA_WEBHOOK_VERIFY_TOKEN" not in caplog.text
+
+
+# ── the API schema off outside DEBUG, the fonts versioned, immutable and preloaded ──
+
+async def test_the_api_schema_and_docs_are_for_development_only(client: AsyncClient, monkeypatch):
+    """Base code: /openapi.json listed every route (84 paths) to anyone, in production."""
+    from httpx import ASGITransport
+
+    from app.config import settings
+    from app.main import create_app
+
+    assert (await client.get("/openapi.json")).status_code == 404
+    assert (await client.get("/docs")).status_code == 404
+    monkeypatch.setattr(settings, "DEBUG", True)
+    async with AsyncClient(transport=ASGITransport(app=create_app()), base_url="http://test") as dev:
+        assert (await dev.get("/openapi.json")).status_code == 200
+        assert (await dev.get("/docs")).status_code == 200
+
+
+async def test_the_fonts_are_versioned_immutable_and_preloaded(client: AsyncClient):
+    """Base code: the woff2 files were served no-cache, unversioned and not preloaded (ux audit)."""
+    page = (await client.get("/auth/login")).text
+    for family in ("sora", "figtree"):
+        url = f"/static/fonts/{family}-latin-wght-normal.woff2?v={BUILD_ID}"
+        assert f'<link rel="preload" as="font" type="font/woff2" crossorigin href="{url}">' in page
+        assert f'src: url("{url}") format("woff2")' in page  # the same URL: the preload is the one used
+        r = await client.get(url)
+        assert r.status_code == 200 and r.headers["cache-control"] == "private, max-age=31536000, immutable"
+    assert page.count("@font-face") == 4
+    assert "@font-face {" not in (ROOT / "app/static/css/theme.css").read_text(encoding="utf-8")  # declared once
+    print_page = (ROOT / "app/templates/simulator_print.html").read_text(encoding="utf-8")
+    assert '{% include "partials/_fonts.html" %}' in print_page
