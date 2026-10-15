@@ -11,6 +11,16 @@ Cette évolution distingue les mesures nocturnes, les activités enregistrées e
 - Les fenêtres après effort ne plafonnent plus l’indice nocturne. Les informations sur l’effort restent disponibles séparément. Aucun seuil absolu VFC 70/72 ms, FC 43/46 bpm, plafond 135 bpm ou prescription de 30 minutes n’a été ajouté.
 - Le repère de 8 h de sommeil est indiqué comme tel, sans prétendre mesurer le besoin individuel. L’écart sur 7 jours précise les nuits documentées ; les nuits absentes ne valent pas zéro.
 
+## Lecture des indicateurs
+
+« Comprendre mes indicateurs » rassemble les définitions, références personnelles, limites du bilan et provenances. Les sources ne sont plus répétées dans les titres et dates de la lecture principale ; elles restent disponibles dans les détails et la lecture accessible des points des graphiques. Les dates, unités et trous de mesure restent visibles.
+
+Une phrase près du graphique explique une baisse de VFC lorsqu’elle est observée : elle peut accompagner fatigue ou stress, sans en déterminer la cause. Une dernière valeur basse n’est pas assimilée à une tendance basse sur plusieurs nuits. Les repères provisoires, les données anciennes ou insuffisantes et la VFC SDNN restent distingués. Une VFC élevée ne prouve pas davantage une récupération complète.
+
+La respiration nocturne reçue est présentée avec les graphiques de récupération. Garmin et Apple Santé peuvent la fournir ; le connecteur COROS actuel ne la fournit pas. La moyenne respiratoire quotidienne, incluant l’éveil, reste séparée. Le déplacement du graphique et les explications ne changent ni les seuils ni le calcul de l’indice.
+
+Les formulations suivent notamment [Buchheit, 2014](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2014.00073/full) pour la VFC et les limites de son interprétation, et [Miller et al., 2020](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0243693) pour la respiration nocturne. L’association observée avec une infection dans cette dernière étude ne constitue pas un diagnostic individuel ni une validation des seuils de PaceForge.
+
 ## Ressenti et conservation
 
 Le volet facultatif enregistre uniquement les réponses explicites sur fatigue, douleur et tolérance du dernier effort. Il est daté selon le jour local du compte, même lorsque le bilan nocturne affiche encore hier. Une soumission après changement de jour demande de vérifier les réponses avant d’écrire.

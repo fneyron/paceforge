@@ -8,6 +8,7 @@
                             .is-none on it when the selected day has no value in any series)
      [data-i="k"] ......... per-mark elements: the selected one gets .is-sel
      [data-r] ............. readout slots, filled in DOM order from D.r[k]
+     [data-viz-detail-for]  optional context outside the figure, in Santé's shared explanation disclosure
      [data-step="±1"] ..... the 44×44 ‹ › buttons, when the figure has them (aria-disabled at either end, never
                             disabled: they keep focus); Santé's cards have none: a tap selects, a drag scrubs
      data-tone ............ on the figure, D.t[k] (the selected point's tone: its readout's word wears it, by CSS)
@@ -110,6 +111,17 @@
       }
     }
 
+    // Santé keeps sources and reference details in one shared disclosure. Its
+    // selected-point context follows the graph without putting brands back in
+    // the visible date. Re-query so a refreshed disclosure cannot keep old nodes.
+    function detail(text) {
+      var targets = document.querySelectorAll("[data-viz-detail-for]");
+      var key = fig.getAttribute("data-viz-key");
+      for (var j = 0; j < targets.length; j++) {
+        if (targets[j].getAttribute("data-viz-detail-for") === key) targets[j].textContent = text || "";
+      }
+    }
+
     // the readout's tallest line, so that no selection moves the plot: the longest readouts are measured
     // (a dozen at most), with the resting one and « — »; again when the figure's width changes
     var lastW = -1;
@@ -169,6 +181,7 @@
       for (var k = 0; k < slots.length; k++) {
         slots[k].textContent = quiet && k === 2 ? (D.dateLabels || [])[i] || "" : r[k] || "";
       }
+      detail(r[3]);
       tone(i);
       if (input) { input.value = i; input.setAttribute("aria-valuetext", D.a ? D.a[i] : r.join(" ")); }
       link(D.h && D.h[i]);
@@ -184,6 +197,7 @@
       cur = END; pending = null;
       if (cross) cross.style.visibility = "hidden";
       for (var k = 0; k < slots.length; k++) slots[k].textContent = rest[k] || "";
+      detail(rest[3]);
       if (fig.classList.contains("pf-viz-quiet") && slots[2]) slots[2].textContent = "";
       tone(-1);
       if (input) { input.value = END; input.setAttribute("aria-valuetext", D.restA || rest.join(" ")); }
@@ -197,6 +211,7 @@
       cur = -1; pending = date;
       if (cross) cross.style.visibility = "hidden";
       for (var k = 0; k < slots.length; k++) slots[k].textContent = k === 1 ? "—" : "";
+      detail("");
       tone(-1);
       link(null);
       nights(-1);

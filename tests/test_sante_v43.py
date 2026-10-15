@@ -5,6 +5,7 @@ user with none of them), and every feature for every user (§H, owner: « Il fau
 soient utilisables par les utilisateurs, pas juste moi »): a COROS-only user, a Garmin-only user, a Strava-only
 user, a cyclist, a user living in UTC−5 and a brand-new user, each page rendered, its words coherent, no owner
 data. Heuristic numbers read here are (H) where they are set."""
+import html
 import re
 from datetime import date, datetime, time, timedelta, timezone
 
@@ -257,12 +258,19 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
         ("vfc", "comme d'habitude", "ok"), ("fc", "comme d'habitude", "ok")]
     main = _coherent((await as_user.get("/sante")).text)
     assert "Détail du score" not in main and 'class="pf-row is-ok"' not in main
+    assert main.count('id="comprendre-indicateurs"') == 1
     for key, unit in (("vfc", "ms"), ("fc", "bpm")):
         card = re.search(rf'<article id="{key}"[^>]*>(.*?)</article>', main, re.S).group(1)
-        primary, reference = card.split('<details', 1)
+        assert '<details' not in card
+        primary = card.split('<div class="pf-viz-plot">', 1)[0]
+        reference = re.search(rf'aria-labelledby="explain-{key}">(.*?)</section>', main, re.S).group(1)
         assert re.search(rf'<b data-r>\d+ {unit}</b>', primary)
-        assert "Dernière nuit" in primary and "COROS" in primary
-        assert "comme d&#39;habitude" in reference  # retained as explanation, not repeated before the value
+        assert "Dernière nuit" in primary and "COROS" not in primary
+        assert "RMSSD" in primary if key == "vfc" else "RMSSD" not in primary
+        # The complete reference and source remain available in one place and to VoiceOver.
+        assert page[key]["read"][3] in html.unescape(reference)
+        assert f"Référence personnelle : {page[key]['reference']['n']} nuits mesurées." in reference
+        assert "COROS" in re.search(r'aria-valuetext="([^"]*)"', card).group(1)
         assert 'pf-card-status is-ok' not in primary
     act = _coherent((await as_user.get("/activities")).text)
     assert 'id="semaines"' not in act and "Aucune activité pour l" in act

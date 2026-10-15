@@ -84,7 +84,7 @@ def daily_card(metric: str, rows: list[HealthMetric], today: date) -> dict | Non
         name = "Stress"
         meaning = "Estimation de la source indiquée, à lire avec ton ressenti."
     stale = (today - last.date).days > (14 if metric in ("weight", "body_fat") else 2)
-    out = {"key": metric, "title": name, "meaning": meaning, "source": _source(last),
+    out = {"key": metric, "title": name, "meaning": meaning, "source": viz.source_label(_source(last)),
            "latest": last.date.strftime("%d/%m/%Y"), "stale": stale,
            "value": viz.num(last.value, digits, unit), "chart": None, "trend": None}
     days = [today - timedelta(days=29-i) for i in range(30)]
@@ -103,11 +103,12 @@ def daily_card(metric: str, rows: list[HealthMetric], today: date) -> dict | Non
         median = statistics.median(current)
         reference = (median, f"médiane 7 j · {viz.num(median, digits, unit)}")
         out["trend"] = (f"Repère calculé sur les 7 derniers jours écoulés ({len(current)} jours avec des relevés). "
-                        f"Source : {_source(last)}. Le temps de port peut varier.")
+                        f"Source : {viz.source_label(_source(last))}. Le temps de port peut varier.")
     out["chart"] = viz.night_card(
         "daily-" + metric, days, values, band=[None]*30, prov=[False]*30, mean=[None]*30,
         unit=unit, unit_long=unit, name=name, digits=digits, min_span=min_span, sources=sources,
         notes=notes, daytime=metric != "resp_night", zero_base=metric == "steps", reference=reference, compact=True,
+        show_source=False,
     )
     return out
 
@@ -224,7 +225,7 @@ async def _weight_card(db: AsyncSession, user_id: int, rows: list, today: date, 
     latest = timezones.local_date(reading.at, zone).strftime("%d/%m/%Y") if reading.at else None
     row = None if typed else next((r for r in rows if _valid(r) and _measured_at(r) == reading.at), None)
     out = {"key": "weight", "title": "Poids du profil" if typed else "Poids", "value": viz.num(reading.kg, 1, "kg"),
-           "source": _source(row) if row else reading.source, "latest": latest, "stale": reading.stale,
+           "source": viz.source_label(_source(row) if row else reading.source), "latest": latest, "stale": reading.stale,
            "chart": None, "trend": None,
            "meaning": "Poids renseigné dans Réglages, sans date de pesée ni historique." if typed
            else SIGNALS["weight"][4]}
