@@ -133,7 +133,7 @@
    The whole ring is one link to what it sums up; a plain image when there is nothing #}
 {% macro viz_ring(r, show_note=True) %}
 {% set tag = "a" if r.href else "div" %}
-<{{ tag }} class="pf-ring pf-ring-{{ r.key }} is-{{ r.tone }}"{% if r.href %} href="{{ r.href }}"{% else %} role="img"{% endif %} aria-label="{{ r.aria }}">
+<{{ tag }} class="pf-ring pf-ring-{{ r.key }} is-{{ r.tone }}{% if r.unit == '/100' %} pf-ring-index{% endif %}"{% if r.href %} href="{{ r.href }}"{% else %} role="img"{% endif %} aria-label="{{ r.aria }}">
     <span class="pf-ring-dial">
         <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="{{ r.r }}" class="pf-ring-track"/>{% if r.dash %}<circle cx="50" cy="50" r="{{ r.r }}" class="pf-ring-arc" stroke-dasharray="{{ r.dash }} {{ r.c }}" transform="rotate(-90 50 50)" style="--pf-dash: {{ r.dash }}"/>{% endif %}</svg>
         <span class="pf-ring-value{% if r.value|length > 4 %} is-long{% endif %}" aria-hidden="true">{% if r.unit %}<span>{{ r.value }}<span class="pf-ring-unit">{{ r.unit }}</span></span>{% else %}{{ r.value }}{% endif %}</span>
@@ -197,8 +197,8 @@
    colour, the stages bar's); the naps on their own lane #}
 {% macro viz_timeline(t, aria) %}
 <svg class="pf-tl" viewBox="0 0 {{ t.W }} {{ t.H }}" role="img" aria-label="{{ aria }}">
-    {% for k in t.ticks %}<line x1="{{ k.x }}" x2="{{ k.x }}" y1="0" y2="{{ t.base }}" class="pf-tl-grid"/><text x="{{ k.x }}" y="{{ t.H - 2 }}" text-anchor="middle">{{ k.label }}</text>{% endfor %}
-    {% for name, y, h in t.lanes %}<text x="0" y="{{ y + h / 2 + 4 }}" class="pf-tl-lane">{{ name }}</text>{% endfor %}
+    {% for k in t.ticks %}<line x1="{{ k.x }}" x2="{{ k.x }}" y1="0" y2="{{ t.base }}" class="pf-tl-grid"/><text x="{{ k.x }}" y="{{ t.H - 2 }}" text-anchor="middle" class="pf-tl-tick{% if loop.first or loop.last or loop.index0 == (loop.length // 2) %} pf-tl-major-tick{% endif %}">{{ k.label }}</text>{% endfor %}
+    {% for name, y, h in t.lanes %}<text x="0" y="{{ y + h / 2 + 4 }}" class="pf-tl-lane">{% if name == 'Paradoxal' %}<tspan class="pf-tl-label-full">{{ name }}</tspan><tspan class="pf-tl-label-short">REM</tspan>{% else %}{{ name }}{% endif %}</text>{% endfor %}
     {% if t.main %}<rect x="{{ t.main.x }}" y="{{ t.main.y }}" width="{{ t.main.w }}" height="{{ t.main.h }}" rx="7" class="pf-tl-night"/>{% endif %}
     {% for s in t.steps %}<line x1="{{ s.x }}" x2="{{ s.x }}" y1="{{ s.y0 }}" y2="{{ s.y1 }}" class="pf-tl-step"/>{% endfor %}
     {% for s in t.segs %}<rect x="{{ s.x }}" y="{{ s.y }}" width="{{ s.w }}" height="{{ t.lane_h }}" rx="2" class="pf-tl-seg is-{{ s.k }}"/>{% endfor %}
