@@ -320,6 +320,16 @@ def _open_meteo_marker_in_memory(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _cheap_password_hashes(monkeypatch):
+    """Password hashes cost 4 bcrypt rounds under pytest; 12, bcrypt's default, in production (≈ 0.3 s each: the
+    auth tests spent 33 s on them). The application's code is untouched, bcrypt.gensalt itself is swapped."""
+    import bcrypt
+
+    gensalt = bcrypt.gensalt
+    monkeypatch.setattr(bcrypt, "gensalt", lambda rounds=12, prefix=b"2b": gensalt(rounds=4, prefix=prefix))
+
+
+@pytest.fixture(autouse=True)
 def _rate_limits_in_memory(monkeypatch):
     """The login, sign-up and reset counters in this process, fresh for each test (production keeps them in
     Redis, shared by the web workers)."""
