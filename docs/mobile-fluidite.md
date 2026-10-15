@@ -1,5 +1,26 @@
 # Défilement et actualisation — audit du 12 octobre 2026
 
+## Reprise et synchronisation — corrections du 15 octobre 2026
+
+Un import Santé effectué en arrière-plan actualise désormais le document déjà
+monté au retour dans Santé ou Activités. Il utilise le remplacement existant,
+sans navigation ni nouvelle synchronisation des fournisseurs ; une course en
+édition reste intacte. Les reçus sans changement n’ajoutent pas de rafraîchissement.
+
+Déconnexion, changement de compte et désactivation interrompent les nouveaux
+envois du moteur. Les décisions utilisateur sont séparées des empreintes et
+curseurs, avec une génération d’association ; une ancienne exécution ne peut
+plus réécrire un blocage récent. Les modifications de jeton et d’association
+partagent le verrou des synchronisations. Un reçu commencé reste en attente
+jusqu’à une fin contrôlée, pour reprendre après une interruption du processus.
+
+Les tests unitaires et le composant natif simulé couvrent le retour chaud,
+l’absence de rafraîchissement sans nouvelles données, une course ouverte,
+la déconnexion pendant une lecture au premier plan ou en arrière-plan, les
+écritures tardives et la reprise après interruption. Les contrôles Expo,
+les projets générés et les exports iOS/Android complètent ces vérifications ;
+les délais de réveil HealthKit restent à mesurer sur un véritable iPhone.
+
 ## Lenteurs signalées le 13 octobre 2026
 
 PaceForge reste un compagnon hybride : les trois onglets principaux utilisent

@@ -670,6 +670,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-tl { display: block; width: 100%; max-width: 560px; height: auto; margin-top: 14px; overflow: visible; }
 .pf-tl text { font-size: 11px; fill: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
 .pf-tl .pf-tl-lane { fill: rgb(var(--pf-gray-600)); }
+.pf-tl-label-short { display: none; }
 .pf-tl-grid { stroke: rgb(var(--pf-line)); stroke-width: 1; shape-rendering: crispEdges; }
 .pf-tl-night, .pf-tl-seg { fill: rgb(var(--pf-accent)); }
 .pf-tl-step { stroke: rgb(var(--pf-gray-400)); stroke-width: 1; opacity: .6; }
@@ -1303,6 +1304,9 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-large-text .pf-sante4 .pf-row { flex-wrap: wrap; }
 .pf-large-text .pf-sante4 .pf-row-name { white-space: normal; }
 .pf-large-text .pf-sante4 .pf-viz-svg text { font-size: 17px; }
+.pf-large-text .pf-sante4 .pf-tl text { font-size: 17px; }
+.pf-large-text .pf-tl-label-full, .pf-large-text .pf-tl-tick:not(.pf-tl-major-tick) { display: none; }
+.pf-large-text .pf-tl-label-short { display: inline; }
 .pf-large-text .pf-sante4 .pf-viz-date-tick:not(.pf-viz-major-tick) { display: none; }
 .pf-large-text .pf-sante4 .pf-viz-svg .pf-viz-today { font-size: 12px; }
 .pf-large-text .pf-sante4 .pf-ring-usual { display: none; }
@@ -1313,3 +1317,41 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-offline .pf-offline-action { display: inline-flex !important; min-height: 44px; align-items: center; }
 
 .pf-offline #courses-page .pf-head { flex-wrap: wrap; row-gap: 4px; }
+
+/* A measured night, its limits and the race context: no readiness prescription. */
+.pf-ring-index .pf-ring-unit { display: block; margin: 0; font-size: .4em; line-height: 1; font-weight: 500; letter-spacing: 0; }
+.pf-health-synthesis { margin-top: 12px; padding: 14px 16px 4px; border-radius: 16px; background: rgb(var(--pf-surface)); border-inline-start: 3px solid rgb(var(--pf-line)); }
+.pf-health-synthesis.is-warn { border-inline-start-color: rgb(var(--pf-warn-mark)); }
+.pf-health-synthesis.is-danger { border-inline-start-color: rgb(var(--pf-danger)); }
+.pf-synthesis-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.pf-synthesis-heading h2 { display: flex; align-items: baseline; gap: 7px; min-width: 0; font-size: .9375rem; font-weight: 650; line-height: 1.35; letter-spacing: -.015em; }
+.pf-synthesis-heading .pf-dot { width: 7px; height: 7px; background: rgb(var(--pf-gray-500)); }
+.pf-health-synthesis.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }
+.pf-health-synthesis.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
+.pf-synthesis-freshness { font-size: .6875rem; line-height: 1.5; color: rgb(var(--pf-gray-600)); }
+.pf-synthesis-freshness.is-stale { color: rgb(var(--pf-warn)); }
+.pf-synthesis-reasons { display: grid; gap: 7px; margin: 10px 0; padding: 0; list-style: none; font-size: .8125rem; font-weight: 600; line-height: 1.45; }
+.pf-synthesis-context { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 10px; list-style: none; padding: 0; font-size: .75rem; line-height: 1.4; }
+.pf-synthesis-context li { max-width: 100%; padding: 5px 8px; border-radius: 6px; background: rgb(var(--pf-soft)); color: rgb(var(--pf-gray-600)); overflow-wrap: anywhere; }
+.pf-sante4 .pf-synthesis-details { margin: 0; border-top: 1px solid rgb(var(--pf-line)); }
+.pf-sante4 .pf-synthesis-details > summary { min-height: 44px; font-size: .75rem; }
+.pf-health-checkin { margin: 6px 0 0; padding-inline: 16px; }
+.pf-sante4 .pf-health-checkin > summary { justify-content: space-between; gap: 8px; min-height: 44px; width: 100%; font-size: .8125rem; }
+.pf-health-checkin > summary > span { min-width: 0; }
+.pf-checkin-summary { margin-left: auto; font-size: .75rem; color: rgb(var(--pf-gray-600)); }
+.pf-checkin-summary.is-warn, .pf-checkin-error, .pf-checkin-signals { color: rgb(var(--pf-warn)); }
+.pf-checkin-body > p { margin-bottom: 10px; font-size: .75rem; line-height: 1.5; }
+.pf-checkin-form { display: grid; gap: 16px; padding: 8px 0 16px; }
+.pf-checkin-field { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.pf-checkin-field legend { margin-bottom: 8px; font-size: .8125rem; line-height: 1.4; font-weight: 600; }
+.pf-checkin-choices { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+.pf-checkin-choice { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; min-width: 0; max-width: 100%; padding: 10px 12px; border: 1px solid rgb(var(--pf-line)); border-radius: 10px; color: rgb(var(--pf-gray-600)); background: rgb(var(--pf-surface)); font-size: .8125rem; line-height: 1.35; cursor: pointer; }
+.pf-checkin-choice:has(input:checked) { border-color: rgb(var(--pf-accent)); background: rgb(var(--pf-accent) / .07); color: rgb(var(--pf-ink)); }
+.pf-checkin-choice:has(input:focus-visible) { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
+.pf-checkin-choice input { width: 16px; height: 16px; flex: none; accent-color: rgb(var(--pf-accent)); }
+.pf-checkin-form p { color: rgb(var(--pf-gray-600)); font-size: .75rem; line-height: 1.5; }
+.pf-checkin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-large-text .pf-checkin-choices { flex-direction: column; align-items: stretch; }
+.pf-large-text .pf-health-checkin > summary { flex-wrap: wrap; }
+.pf-large-text .pf-checkin-summary { margin-left: 0; }
+@media (min-width: 760px) { .pf-health-synthesis, .pf-health-checkin { max-width: 560px; margin-inline: auto; } }
