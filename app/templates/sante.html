@@ -52,5 +52,3 @@
     {% endif %}
 </div>
 {% endblock content %}
-
-{% block scripts %}<script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>{% endblock scripts %}

@@ -124,15 +124,17 @@
 
     // the readout's tallest line, so that no selection moves the plot: the longest readouts are measured
     // (a dozen at most), with the resting one and « — »; again when the figure's width changes
-    var lastW = -1;
+    var lastW = -1, lastFont = "";
     function reserve() {
       // These cards already have a fixed one-line readout and an overlay date.
       // Measuring every candidate here forces repeated synchronous layouts.
       if (fig.classList.contains("pf-viz-quiet")) return;
       if (!readBox || !slots.length) return;
       var w = readBox.clientWidth;
-      if (!w || w === lastW) return;
-      lastW = w;
+      if (!w) return;
+      var font = getComputedStyle(readBox).fontSize;
+      if (w === lastW && font === lastFont) return;
+      lastW = w; lastFont = font;
       var rows = (D.r || []).map(function (r, i) { return { r: r || [], i: i }; });
       function len(r, k) { return ((r[k] || "") + "").length; }
       var cand = rows.slice().sort(function (a, b) { return (len(b.r, 1) + len(b.r, 2)) - (len(a.r, 1) + len(a.r, 2)); })
@@ -140,15 +142,23 @@
         .map(function (o) { return o.r; });
       if (rest) cand.push(rest);
       cand.push(["", "—", ""]);
-      var keep = [], k;
-      for (k = 0; k < slots.length; k++) keep.push(slots[k].textContent);
-      readBox.style.minHeight = "";
-      var max = 0;
+      // Measure copies together. Updating the visible readout and reading its
+      // height for each candidate forces a complete page layout every time.
+      // These copies inherit the figure's fonts and width, but never participate
+      // in its flow, accessibility tree, focus order or chart interactions.
+      var rail = document.createElement("div"), copies = [];
+      rail.setAttribute("aria-hidden", "true"); rail.setAttribute("inert", "");
+      rail.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;contain:layout style;left:0;top:0;width:" + w + "px";
       for (var c = 0; c < cand.length; c++) {
-        for (k = 0; k < slots.length; k++) slots[k].textContent = cand[c][k] || "";
-        max = Math.max(max, readBox.offsetHeight);
+        var copy = readBox.cloneNode(true), texts = copy.querySelectorAll("[data-r]");
+        copy.style.minHeight = "";
+        for (var k = 0; k < texts.length; k++) texts[k].textContent = cand[c][k] || "";
+        rail.appendChild(copy); copies.push(copy);
       }
-      for (k = 0; k < slots.length; k++) slots[k].textContent = keep[k];
+      fig.appendChild(rail);
+      var max = 0;
+      for (var n = 0; n < copies.length; n++) max = Math.max(max, copies[n].offsetHeight);
+      rail.remove();
       if (max) readBox.style.minHeight = max + "px";
     }
 

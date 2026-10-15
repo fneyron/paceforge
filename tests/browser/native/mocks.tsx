@@ -61,6 +61,16 @@ export const WebView=forwardRef((props:any,ref:any)=>{
    w.offlineReply=()=>w.webMessage({type:'offline-plan',nonce,plan:w.failOffline?null:{version:1,user_id:w.accountId||1,route_id:routeId,name:'Course de montagne',saved_at:'2026-10-12T20:00:00Z',race_date:'2026-10-20',start_s:75600,planned:true,distance_km:30,elevation_m:1100,points:[{name:'Col',km:10,clock_s:86460,kind:'full',crew:true,drop_bag:true,cutoff_clock:'02:00',cutoff_margin_s:7140,pinned:false,passed:false}]}});
    if(!w.holdOffline)queueMicrotask(()=>w.offlineReply());
   }
+  if(s.includes("type:'tab-navigation'")) {
+   const nonce=JSON.parse(s.match(/nonce:("[^\"]+")/)[1]);
+   const target=JSON.parse(s.match(/url:("[^\"]+")/)[1]);
+   w.finishSoft=()=>{
+    if(!w.softTabs)w.webMessage({type:'tab-navigation',nonce,url:target,status:'fallback'});
+    else {w.actual=target;setActual(target);w.webMessage({type:'tab-navigation',nonce,url:target,status:'ready'});}
+   };
+   w.softTasks=(w.softTasks||[]).concat([{nonce,target}]);
+   if(!w.holdSoft)queueMicrotask(()=>w.finishSoft());
+  }
   if(s.includes("type:'navigation-ready'")) {
    const nonce=JSON.parse(s.match(/nonce:("[^"]+")/)[1]);
    w.finishLeave=()=>w.webMessage({type:'navigation-ready',nonce,ok:!w.failLeave});
@@ -75,7 +85,7 @@ export const WebView=forwardRef((props:any,ref:any)=>{
    if(!w.holdCloud)queueMicrotask(()=>w.finishRefresh());
   }
  },stopLoading(){},reload(){w.reloads=(w.reloads||0)+1}}),[]);
- function commit(url:string){w.actual=url;setActual(url);current.current.onNavigationStateChange({url,loading:false});current.current.onLoadEnd({nativeEvent:{url}});}
+ function commit(url:string){w.frameURL=url;w.actual=url;setActual(url);current.current.onNavigationStateChange({url,loading:false});current.current.onLoadEnd({nativeEvent:{url}});}
  useEffect(()=>{
   const url=props.source.uri;w.navigations.push(url);
   current.current.onLoadStart?.({nativeEvent:{url}});
@@ -84,8 +94,8 @@ export const WebView=forwardRef((props:any,ref:any)=>{
   if(!w.holdNavigation)commit(url);
  },[props.source.uri]);
  w.actual=actual;w.source=props.source.uri;w.pullEnabled=props.pullToRefreshEnabled;
- w.webMessage=(data:any)=>current.current.onMessage({nativeEvent:{url:w.actual,data:JSON.stringify(data)}});
- w.reply=(overrides:any={})=>{const url=new URL(actual),inline=!url.pathname.startsWith('/mobile/');return current.current.onMessage({nativeEvent:{url:actual,data:JSON.stringify({type:'session',nonce:inline?w.nonce:url.searchParams.get('nonce'),transport:inline?'inline':undefined,user_id:1,...overrides})}})};
+ w.webMessage=(data:any)=>current.current.onMessage({nativeEvent:{url:w.staleFrame?w.frameURL:w.actual,data:JSON.stringify({page_url:w.actual,...data})}});
+ w.reply=(overrides:any={})=>{const url=new URL(actual),inline=!url.pathname.startsWith('/mobile/');return current.current.onMessage({nativeEvent:{url:w.staleFrame?w.frameURL:actual,data:JSON.stringify({type:'session',page_url:actual,nonce:inline?w.nonce:url.searchParams.get('nonce'),transport:inline?'inline':undefined,user_id:1,...overrides})}})};
  w.navigate=(url:string)=>commit(url);
  w.followLink=(url:string)=>current.current.onShouldStartLoadWithRequest({url,navigationType:'click',isTopFrame:true});
  w.pull=()=>current.current.onShouldStartLoadWithRequest({url:actual,navigationType:'reload',isTopFrame:true});

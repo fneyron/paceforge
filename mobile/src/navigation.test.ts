@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isBridgeUrl, sameScreen, screenUrl, tabForUrl } from './navigation';
+import { isBridgeUrl, messagePageUrl, sameScreen, screenUrl, tabForUrl, tabNavigationScript } from './navigation';
 
 test('internal detail pages keep the right native tab; external URLs cannot change it', () => {
   assert.equal(tabForUrl('https://paceforge.fr/accueil'), 'health');
@@ -30,4 +30,24 @@ test('native screen reuse ignores only its navigation marker, preserving filters
   assert.equal(sameScreen('https://paceforge.fr/activity/1', 'https://paceforge.fr/activity/2'), false);
   assert.equal(sameScreen('https://paceforge.fr/mobile/session', 'https://paceforge.fr/mobile/session'), false);
   assert.equal(sameScreen('https://other.test/sante', 'https://other.test/sante'), false);
+});
+
+test('soft tab navigation includes a separate nonce and an explicit fallback for an older page', () => {
+  const script = tabNavigationScript('https://paceforge.fr/activities?m=distance', 'tab-nonce');
+  assert.match(script, /window\.paceforgeTabs\.navigate/);
+  assert.match(script, /type:'tab-navigation'/);
+  assert.match(script, /status:'fallback'/);
+  assert.match(script, /nonce:"tab-nonce"/);
+  assert.doesNotMatch(script, /navigation-ready/);
+});
+
+test('logical reading URLs remain bound to the original trusted frame after history changes', () => {
+  const frame = 'https://paceforge.fr/sante';
+  const logical = 'https://paceforge.fr/activities?m=distance&app_nav=one';
+  assert.equal(messagePageUrl(frame, logical, frame, { page_url: logical }), logical);
+  assert.equal(messagePageUrl(frame, logical, frame, {}), frame);
+  assert.equal(messagePageUrl(frame, logical, frame, { page_url: frame }), frame);
+  assert.equal(messagePageUrl('https://evil.test/sante', logical, frame, { page_url: logical }), 'https://evil.test/sante');
+  assert.equal(messagePageUrl(frame, 'https://paceforge.fr/mobile/session', frame, { page_url: 'https://paceforge.fr/mobile/session' }), frame);
+  assert.equal(messagePageUrl(frame, logical, 'https://paceforge.fr/settings', { page_url: logical }), frame);
 });

@@ -1461,11 +1461,12 @@ async def test_activites_keep_the_wall_clock_when_the_athletes_day_agrees(db_ses
         async def today(*a, _day=day, **k):
             return _day
         monkeypatch.setattr(st, "athlete_today", today)
-        now, zone = await _clock(db_session, test_user)
-        assert now == frozen.at and zone.key == "Europe/Paris"
+        now, zone, resolved_day = await _clock(db_session, test_user)
+        assert now == frozen.at and zone.key == "Europe/Paris" and resolved_day == day
 
     async def far(*a, **k):
         return date(2026, 10, 1)
     monkeypatch.setattr(st, "athlete_today", far)
-    now, _ = await _clock(db_session, test_user)
+    now, _, resolved_day = await _clock(db_session, test_user)
     assert now == datetime(2026, 10, 1, 10, tzinfo=timezone.utc)  # noon in Paris on that day
+    assert resolved_day == date(2026, 10, 1)
