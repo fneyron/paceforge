@@ -1382,7 +1382,7 @@ window._sim = {};
     function cleanup() { document.removeEventListener('visibilitychange', backgroundSave); window.removeEventListener('pagehide', flushOnHide); if (window.paceforgeBeforeLeave === flushSave) delete window.paceforgeBeforeLeave; if (map) { try { map.remove(); } catch(e) {} map = null; } if (prof.ro) { try { prof.ro.disconnect(); } catch(e) {} prof.ro = null; } prof.svg = null; hoverMarker = null; cpMarkerEls = []; }
 
     // ── INIT ──
-    window.addEventListener('error', function (ev) { try { if (!ev.filename || ev.filename.indexOf(location.origin) !== 0 || /Script error|ResizeObserver/.test(ev.message || '')) return; var el = document.getElementById('page-error'); if (el) { el.textContent = 'Erreur dans la page : ' + ev.message + ' (ligne ' + ev.lineno + ')'; el.classList.remove('hidden'); } } catch (e) {} });
+    window.addEventListener('error', function (ev) { try { if (!ev.filename || ev.filename.indexOf(location.origin) !== 0 || /Script error|ResizeObserver/.test(ev.message || '')) return; console.error('Plan page error: ' + ev.message + ' (' + ev.filename + ':' + ev.lineno + ')'); var el = document.getElementById('page-error'); if (el) { el.textContent = 'Un problème est survenu sur cette page. Recharge-la.'; el.classList.remove('hidden'); } } catch (e) {} });
     try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
     try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) renderWeather(sw); } catch(e) {}
     updateMeta();
