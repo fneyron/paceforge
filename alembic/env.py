@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import settings
 from app.database import Base
-from app.models import Activity, Analysis, User  # noqa: F401
+from app.models import Activity, User  # noqa: F401
 
 config = context.config
 

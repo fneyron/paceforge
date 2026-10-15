@@ -14,7 +14,6 @@ celery_app = Celery(
     backend=settings.REDIS_URL,
     include=["app.tasks.initial_sync", "app.tasks.poll_activities", "app.tasks.webhook_sync",
              "app.tasks.coros_sync", "app.tasks.garmin_sync"],
-    # disabled: "app.tasks.analysis", "app.tasks.weekly_digest"
 )
 
 celery_app.conf.update(
@@ -41,7 +40,6 @@ celery_app.conf.update(
             "task": "paceforge.sync_garmin",
             "schedule": crontab(minute=47),  # hourly; each link is synced every 2 h
         },
-        # disabled: weekly-digest
     },
 )
 

@@ -1,7 +1,7 @@
-"""Activity detail page — light version (metrics, laps, splits).
+"""Activity detail page — light version (laps, splits).
 
-The AI-analysis flow that used to live here is disabled product-wide; this
-page must never promise it. What it does offer: a bridge to the simulator
+The AI-analysis flow that used to live here is gone; this page must never
+promise it. What it does offer: a bridge to the simulator
 ("Comparer à un parcours"), which is what feeds the prediction calibration.
 """
 
@@ -46,7 +46,6 @@ async def activity_detail(
         raise ActivityNotFoundError(activity_id)
 
     detail = ActivityDetail.model_validate(activity)
-    metrics = activity.computed_metrics or {}
 
     # Routes worth comparing against (foot activities only), closest first.
     compare_routes: list[Route] = []
@@ -68,7 +67,6 @@ async def activity_detail(
         context={
             "user": user,
             "activity": detail,
-            "metrics": metrics,
             "compare_routes": compare_routes,
         },
     )

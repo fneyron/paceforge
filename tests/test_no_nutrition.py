@@ -122,7 +122,7 @@ def test_nothing_of_the_tool_is_left_in_the_code():
     # the exports carry no per-point note (they were the plan's « Prends 2 gels »), the dead race-strategy prompt that asked
     # for a « plan nutrition » went with it, and an old deep link (#nutrition, #bags…) opens the plan and drops its hash
     assert not (ROOT / "app/prompts/race_strategy.py").exists()
-    for py in ("app/services/pace_export.py", "app/services/claude.py", "app/schemas/simulator.py"):
+    for py in ("app/services/pace_export.py", "app/schemas/simulator.py"):
         text = (ROOT / py).read_text(encoding="utf-8")
         assert "nutrition" not in text.lower() and "notes_by_km" not in text and "race_strategy" not in text, py
     route = (ROOT / "app/templates/simulator_route.html").read_text(encoding="utf-8")

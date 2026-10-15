@@ -77,7 +77,6 @@ async def test_history_keeps_owner_duplicates_false_starts_and_totals_without_bu
     assert sum(week["dplus"] for week in weeks) == 100
     assert has_more
     _assert_light_summary_query(queries[0], splits=True)
-    assert not any("FROM analyses" in query for query in queries)
 
     filtered, _, _ = await dashboard._week_groups(db_session, test_user.id, 1, "trail")
     assert [row.id for week in filtered for row in week["activities"]] == [phone.id]
@@ -119,7 +118,6 @@ async def test_recent_summaries_match_training_totals_without_fetching_full_acti
     assert recent["dplus_formatted"] == "+100\u202fm"
     _assert_light_summary_query(queries[-1], splits=False)
     assert "activities.user_id =" in queries[-1]
-    assert not any("FROM analyses" in query for query in queries)
 
 
 async def test_gradient_profile_uses_owner_splits_once_without_unrelated_payloads(

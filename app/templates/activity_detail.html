@@ -91,10 +91,8 @@
     {% endif %}
 
     <!-- Laps -->
-    {% set is_structured = metrics and metrics.get('structured_workout') %}
-    {% set has_intervals = metrics and metrics.get('intervals_detected') %}
     {% set is_cycling = activity.sport_group == 'bike' %}
-    {% set show_laps = activity.laps and activity.laps|length > 2 and (is_structured or has_intervals or activity.laps|length != (activity.distance / 1000)|round|int) %}
+    {% set show_laps = activity.laps and activity.laps|length > 2 and activity.laps|length != (activity.distance / 1000)|round|int %}
     {% if show_laps %}
     <div class="rounded-xl border border-gray-200 bg-white shadow-sm" x-data="{ open: true }">
         <button @click="open = !open" class="w-full flex items-center justify-between p-5">
@@ -228,8 +226,5 @@
         </div>
     </div>
     {% endif %}
-
-    <!-- Computed metrics (only when streams were processed) -->
-    {% include "partials/computed_metrics.html" %}
 </div>
 {% endblock %}

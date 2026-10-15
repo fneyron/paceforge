@@ -11,10 +11,6 @@ class Settings(BaseSettings):
     # the shared app's webhook subscription id; optional, discovered when empty
     STRAVA_SUBSCRIPTION_ID: str = ""
 
-    # Anthropic
-    ANTHROPIC_API_KEY: str = ""
-    CLAUDE_MODEL: str = "claude-sonnet-4-6"
-
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://paceforge:paceforge@localhost:5432/paceforge"
     # Connection pools, against PostgreSQL's max_connections (100 by default, 3 of them kept for superusers):
