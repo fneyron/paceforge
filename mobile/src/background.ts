@@ -70,7 +70,9 @@ let unwatch = () => {};
 function watch() {
   try {
     unwatch();
-    unwatch = watchHealthChanges(() => { if (enabledHint !== false) void engine.request('healthkit'); });
+    unwatch = watchHealthChanges(() => { if (enabledHint !== false) void engine.request('healthkit'); },
+      // HealthKit's own message (no health value); the hourly task catches up.
+      (type, message) => console.warn(`HealthKit observer ${type}: ${message}`));
   } catch { unwatch = () => {}; } // no HealthKit here (some iPads): the app must still start
 }
 // iOS: at the top level, before the first render. HealthKit queues the changes that

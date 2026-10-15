@@ -231,7 +231,8 @@ demande de reconnexion dans Réglages).
   `com.apple.developer.healthkit.background-delivery`). iOS réveille alors
   l’application après une nouvelle pesée ou une nuit enregistrée par une montre ;
   les observateurs sont réenregistrés nativement à chaque lancement, avant le
-  JavaScript. Il n’y a pas de JavaScript sans écran sur iOS : un réveil lance
+  JavaScript ; une erreur signalée par un observateur est journalisée, sans
+  lecture (la tâche horaire rattrape). Il n’y a pas de JavaScript sans écran sur iOS : un réveil lance
   l’application entière, mais la WebView ne se charge qu’au premier passage au
   premier plan. HealthKit garde l’application éveillée environ 25 s à partir de
   son signal, démarrage à froid compris : une fois les réveils regroupés (1,5 s),

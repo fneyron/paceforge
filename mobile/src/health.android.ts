@@ -130,4 +130,4 @@ export async function protectedDataAvailable(): Promise<boolean> { return true; 
 // WorkManager (expo-background-task) runs the periodic read; there is no observer.
 export async function enableHealthBackground(): Promise<void> {}
 export async function disableHealthBackground(): Promise<void> {}
-export function watchHealthChanges(_onChange: () => void): () => void { return () => {}; }
+export function watchHealthChanges(_onChange: () => void, _onError?: (type: string, message: string) => void): () => void { return () => {}; }
