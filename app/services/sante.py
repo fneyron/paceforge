@@ -4,8 +4,8 @@ Sommeil compares the measured 24 h (naps included) to the 8-h need; the sleep ow
 (sante_sleep.deficit), never added to it. Récupération is the day's rule-based state (sante_score.score_of: the
 7-day VFC, else FC de nuit, trend against its baseline of days −67 to −8, the illness alert, the breathing flag, a
 short 24 h, an effort window) and its « indice nocturne »; last night must be measured, and a state never comes
-from sleep alone or from activities alone (owner, 2026-10-14: scientific basis — it replaces a weighted index and
-its caps that had no validated basis). Before noon a pending night may retain yesterday's explicitly dated cycle.
+from sleep alone or from activities alone (no weighted index, no caps: none had a validated basis). Before noon a
+pending night may retain yesterday's explicitly dated cycle.
 Entraînement compares the last seven days' load to the usual week: 100 % is a reference, not a target, and the
 full arc is 200 %; the same load (sante_load, one pipeline) draws the Charge accumulée and Activités' 7 / 28 days.
 
@@ -17,7 +17,8 @@ successful syncs are distinct in the source details.
 No check-in, planned race or brand recovery score enters the calculation. Each source is preserved separately;
 nights.read_rows applies the user's watch preference and baselines remain specific to a series (source and method).
 Missing measurements remain gaps, never zeroes. Heuristic choices are marked (H); these readings are not
-validated clinical measures. The page's reads come first; its pure computation runs in a worker thread.
+validated clinical measures; the dated decisions behind the rules are in docs/decisions.md. The page's reads come
+first; its pure computation runs in a worker thread.
 """
 import logging
 import math
@@ -162,8 +163,8 @@ def _slept(nights, d: date) -> bool:
 
 def cycle_day(nights, today: date, clock: datetime | None) -> date:
     """The day Santé reads, like WHOOP's cycle, « from sleep onset to sleep onset » rather than midnight to
-    midnight (WHOOP's engineering blog; owner, 2026-10-09, awake at 1 a.m. on a plane: « J'ai sommeil vide »):
-    before noon (H), while this morning's night has not reached the page and last night's has, it is still
+    midnight (WHOOP's engineering blog): before noon (H), while this morning's night has not reached the page
+    and last night's has, it is still
     yesterday — its night, its state, its 7 days (and the activities since midnight); from noon, or as soon as the
     night is in, today (a night not received then reads « pas de données »). `clock` None (a day given):
     `today`."""
@@ -210,8 +211,8 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
     (nights.resp_up_nights); `window`: the effort window (sante_training.effort_window)."""
     trends = {k: nt.trend(nights, k, d) for k in ("hrv", "hr")}
     # the 24 h before this morning's wake (the Sommeil dial's figure) on the nights known that day only: a nap
-    # after the wake moves to the next morning once that morning exists (owner, 2026-10-14: scientific basis — a
-    # past day of the 14-day card read it from the later nights)
+    # after the wake moves to the next morning once that morning exists (a past day of the 14-day card must not
+    # read it from the later nights)
     tst = nt.day_tst24({x: n for x, n in nights.items() if x <= d}, d)
     night = nights.get(d)
     fresh = [k for k in ("hr", "hrv") if night and night.value(k) is not None]
@@ -290,7 +291,7 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
     return out
 
 
-# ── the top: three dials, like WHOOP's (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple ») ─────
+# ── the top: three dials, like WHOOP's ──────────────────────────────────────────────────────────────────────
 
 # the Sommeil dial's word from this morning's 24 h against the 8-h need: « suffisant » from 7 h (Watson 2015a;
 # Hirshkowitz 2015), « court » under 6 h (Craven 2022), « un peu court » between
@@ -298,7 +299,7 @@ NO_NIGHT_WORD = "pas de données"
 TRAIN_TURN = 2  # the Entraînement dial's full turn: twice the usual week
 NO_HABIT = "pas encore d'habitude"  # the Entraînement dial without a usual week
 NO_USUAL = "pas encore de semaine habituelle"  # its card's row then
-# its card's « Intensité » (owner, 2026-10-09, the approved mockup): the minutes' weight against the usual week's
+# its card's « Intensité »: the minutes' weight against the usual week's
 INTENSITY_SPREAD = 0.1  # (H) within ± 10 %: « comme d'habitude »
 INTENSITY_READ = 0.5  # (H) half of the minutes read from their HR, the 7 days' and the usual weeks', or no row
 INTENSITY_WORDS = ("plus élevée que d'habitude", "comme d'habitude", "plus basse que d'habitude")
@@ -308,8 +309,8 @@ SAME = "comme d'habitude"  # a 7-night mean at its usual value, to the percent: 
 
 
 def sleep_word(tst24: int, need: int = sl.NEED_DEFAULT) -> str:
-    """The Sommeil dial's word: « suffisant » from 7 h (420 min), « court » under 6 h, « un peu court » between
-    (owner, 2026-10-14: scientific basis — the need no longer moves: 7/8 of 8 h is 7 h)."""
+    """The Sommeil dial's word: « suffisant » from 7 h (420 min, 7/8 of the 8-h need), « court » under 6 h, « un peu
+    court » between."""
     if tst24 >= sl.REF_MIN:
         return "suffisant"
     return "court" if tst24 < nt.SHORT_DAY_MIN else "un peu court"
@@ -341,12 +342,12 @@ def usual_week(sessions, since: date, value=None) -> float | None:
 
 def training(sessions, today: date, until: date | None = None, rest: float = 50.0, peak: float = 190.0,
              load: dict | None = None, sex: str | None = None) -> dict:
-    """« Entraînement », the third dial and its card (owner, 2026-10-09: « Oui vas-y », research_ind_train.md): the
+    """« Entraînement », the third dial and its card (research_ind_train.md): the
     heart-rate load of the last 7 days (sante_load: one pipeline, `load` the day's sante_training.loads, else
     computed with `rest` and `peak`, today's bounds for every week, H) against the usual week's (the mean of the
     11 weeks before the 7 days), as a percentage, 100 % as usual, the arc full at twice it, in the accent colour;
     « comme d'habitude » while the 7 days' load lies between the lightest and the heaviest of those 11 weeks that
-    hold an activity (owner, 2026-10-14: scientific basis — it was ± 20 %), else « plus que d'habitude » or
+    hold an activity, else « plus que d'habitude » or
     « moins que d'habitude »; without a usual week (4 active weeks), the measured duration and « 7 derniers jours ».
     The card prints the 7 days' moving time and the usual week's (to 5 min: a typical value; Activités'
     hours), each once, and « Intensité »: the minutes' weight against the usual week's (the load's ratio over the
@@ -355,8 +356,8 @@ def training(sessions, today: date, until: date | None = None, rest: float = 50.
     left out when under half of the minutes, of the 7 days or of the usual weeks, were read from their HR (H): the
     dial is then nearly the hours' ratio. `until`: the calendar day when the page still reads yesterday's cycle
     (cycle_day): the window is always the seven calendar days ending at until. Each activity counts on the day it
-    ended (Session.end_day). `since`: the 7 days' first day, the card's link to them in Activités (owner,
-    2026-10-09: « Ça ne filtre pas sur la semaine ? »). {dial, week, usual, word, intensity, since, ratio}."""
+    ended (Session.end_day). `since`: the 7 days' first day, the card's link to them in Activités (filtered on
+    those days, not on the week). {dial, week, usual, word, intensity, since, ratio}."""
     until = until or today
     since = until - timedelta(days=6)
     sessions = sante_load.valid(sessions)
@@ -392,8 +393,8 @@ def training(sessions, today: date, until: date | None = None, rest: float = 50.
 
 
 def training_context(train: dict) -> dict:
-    """The recovery card's context line (owner, 2026-10-14: scientific basis — the load no longer caps the state,
-    the HRV already reads what it does to the night): « Charge 7 j : x % de l'habitude », the Entraînement dial's
+    """The recovery card's context line (the load never caps the state: the HRV already reads what it does to the
+    night): « Charge 7 j : x % de l'habitude », the Entraînement dial's
     number; the 7 days' time without a usual week. {recorded (sessions in the 7 days), word}."""
     count = train["chart"]["count"] if train.get("chart") else 0
     if train["ratio"] is None:
@@ -444,10 +445,10 @@ def _span(metric: str, values: list, bands: list) -> float:
     return max(14.0, 2 * widest)
 
 
-# each night card's status line (v4.3): its last 7 nights against the usual values the state reads, in words and
-# its colour (sante_score.row_tone); what it often means, only out of them on the side that matters; without usual
-# values yet, how many nights until they exist (v4.4, owner: « les explications en français ne sont pas claires »:
-# « tes valeurs habituelles », « d'habitude », never « ta normale »)
+# each night card's status line: its last 7 nights against the usual values the state reads, in words and its
+# colour (sante_score.row_tone); what it often means, only out of them on the side that matters; without usual
+# values yet, how many nights until they exist (plain words: « tes valeurs habituelles », « d'habitude », never
+# « ta normale »)
 STATUS = {"in": "dans tes valeurs habituelles", "below": "plus basse que d'habitude",
           "above": "plus haute que d'habitude"}
 BAD = sc.BAD  # VFC under its normal, FC de nuit over it: the side that matters
@@ -455,13 +456,11 @@ MEANING = {"hrv": sc.TEXTS["hrv"], "hr": sc.TEXTS["hr"]}
 NO_MEAN = "Trop peu de nuits mesurées ces 7 derniers jours pour comparer."
 FEW = "trop peu de nuits pour comparer"
 BUILDING = "en construction"  # a signal without usual values yet: its card's first words
-# while they build, the chart card says it in words (the reference row says when they will be ready: printed once;
-# owner, 2026-10-09, « Tu ne mets pas les fourchettes pour VFC et FC repos dans les graphiques ? »)
-# owner, 2026-10-14: scientific basis — a night counts in the usual values a week after it: « dès 7 nuits
-# mesurées » alone became false (a minimal fix, the wording is a GUI proposal)
+# while they build, the chart card says it in words (the reference row says when they will be ready: printed once);
+# a night counts in the usual values a week after it (nights.BASELINE_LAG), so « dès 7 nuits mesurées » alone
+# would be false
 BUILDS = "Tes valeurs habituelles s'afficheront ici dès {n} nuits mesurées avant les 7 derniers jours."
-# the cards' legend (v4.4, owner: « comment matérialiser que c'est en cours de construction dans le graphique ? »):
-# every measured night is a filled dot (each one counts: owner, 2026-10-08); the band solid, or dashed while
+# the cards' legend: every measured night is a filled dot (each one counts); the band solid, or dashed while
 # provisional
 LEGEND_DOT = ("is-dot", "nuit")
 LEGEND_MEAN = ("is-mean", "moyenne 7 j")
@@ -473,7 +472,7 @@ def nights_to_normal(nights, metric: str, d: date) -> int:
     """How many nights until the usual values exist on `metric`, every coming night being measured: the first
     j ≥ 1 for which the baseline of day d + j (nights.normal: the nights from d + j − 67 to d + j − 8, on its
     series) reaches its required count: 7 nights for RMSSD/HR, 14 for SDNN — those already slept (a night counts
-    a week after it, owner, 2026-10-14: scientific basis) and the coming ones."""
+    a week after it) and the coming ones."""
     src = nt.mean_source(nights, metric, d)
     required = nt.reference_min_nights(metric, src)
     known = [x for x, n in nights.items() if x <= d and n.value(metric) is not None and n.source_of(metric) == src]
@@ -493,8 +492,8 @@ def signed_pct(value: float, centre: float) -> int:
 
 def card_status(nights, metric: str, day: dict) -> dict:
     """{key, value, word, detail, text, tone, meaning}, the card's status line:
-    the 7-night mean as a signed percentage against the usual value (v4.4, owner: « Mets des pourcentages plutôt
-    que des valeurs (comme WHOOP / Oura) »: « −8 % », « +3 % », « comme d'habitude » at 0 %) and its place against
+    the 7-night mean as a signed percentage against the usual value (as WHOOP and Oura print it: « −8 % », « +3 % »,
+    « comme d'habitude » at 0 %) and its place against
     the usual values (nights.trend: outside from T, nights.threshold), « dans tes valeurs
     habituelles » / « plus basse que d'habitude » / « plus haute que d'habitude » (key: in, below, above) with a dot
     in its colour (sante_score.row_tone: green in them, orange out of them on the side that matters, neutral on the
@@ -512,8 +511,8 @@ def card_status(nights, metric: str, day: dict) -> dict:
                 "meaning": None, "text": BUILDS.format(n=nt.reference_min_nights(
                     metric, nt.mean_source(nights, metric, day["day"])))}
     alert = metric == "hr" and bool(day["alert"])
-    # the illness alert reads its own 2 nights: shown even when the week is too thin for a trend (owner,
-    # 2026-10-14: scientific basis — it was hidden behind « trop peu de nuits pour comparer »)
+    # the illness alert reads its own 2 nights: shown even when the week is too thin for a trend (never hidden
+    # behind « trop peu de nuits pour comparer »)
     if not alert and (s["value"] is None or s["status"] is None):
         return {"key": "few", "value": None, "word": FEW, "text": NO_MEAN, "tone": None, "meaning": None}
     # A trend (or SDNN) remains readable even when it cannot enter today's state; its colour then stays neutral.
@@ -553,7 +552,7 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     younger than that window draws its provisional band from the 60 nights
     before the day, dashed, flagged provisoire: nights.drawn_band), its status
     line opens the card (card_status). Every measured
-    night is a filled dot (each one counts: owner, 2026-10-08), a night
+    night is a filled dot (each one counts), a night
     without a measure draws nothing; the provisional band is dashed; the
     legend names only what is drawn."""
     days = [today - timedelta(days=CARD_NIGHTS - 1 - i) for i in range(CARD_NIGHTS)]
