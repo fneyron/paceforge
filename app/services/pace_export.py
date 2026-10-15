@@ -228,14 +228,20 @@ def build_pace_tcx(name: str, coords: list, course_segments: list[dict], section
     return out.getvalue()
 
 
+def _cell(value):
+    """A text a spreadsheet would run as a formula (= + - @ first) gets an apostrophe: a checkpoint named
+    « =HYPERLINK(…) » stays text."""
+    return f"'{value}" if isinstance(value, str) and value.startswith(("=", "+", "-", "@")) else value
+
+
 def build_pace_csv(name: str, sections: list[dict], use_target: bool, start_offset_s: int, leg_codes: list[str] | None = None,
                    clock: PlanClock | None = None) -> str:
     rows = waypoint_rows(sections, use_target, start_offset_s, leg_codes, clock)
     out = io.StringIO()
     w = csv.writer(out, delimiter=";")
     w.writerow(["point", "km", "altitude_m", "heure_cible", "temps_course", "allure_section_min_km", "type", "barriere", "consigne_jusqu_au_suivant"])
-    w.writerow(["Départ", 0, "", _fmt_clock(start_offset_s), "0h00", "", "", "", (leg_codes or [""])[0] if leg_codes else ""])
+    w.writerow(["Départ", 0, "", _fmt_clock(start_offset_s), "0h00", "", "", "", _cell((leg_codes or [""])[0] if leg_codes else "")])
     for r in rows:
         pace = f"{r['pace_s_per_km'] // 60}:{r['pace_s_per_km'] % 60:02d}" if r["pace_s_per_km"] else ""
-        w.writerow([r["name"], r["km"], int(r["elevation"]) if r["elevation"] is not None else "", r["clock"], r["elapsed"], pace, r.get("kind") or "", r.get("cutoff_clock") or "", r.get("next_code", "")])
+        w.writerow([_cell(v) for v in (r["name"], r["km"], int(r["elevation"]) if r["elevation"] is not None else "", r["clock"], r["elapsed"], pace, r.get("kind") or "", r.get("cutoff_clock") or "", r.get("next_code", ""))])
     return out.getvalue()

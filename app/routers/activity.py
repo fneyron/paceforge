@@ -20,9 +20,11 @@ from app.models.route import Route
 from app.models.user import User
 from app.schemas.activity import ActivityDetail
 from app.services.activity_dedupe import sport_group
+from app.services.viz import fr_num
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
+templates.env.filters["fr_num"] = fr_num
 
 router = APIRouter(tags=["activity"])
 

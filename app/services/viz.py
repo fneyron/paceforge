@@ -66,6 +66,11 @@ def num(v: float, digits: int = 0, unit: str = "") -> str:
     return f"{s}{NNBSP}{unit}" if unit else s
 
 
+def fr_num(v, digits: int | None = None) -> str:
+    """Jinja filter: the number as the page printed it (str(v), or %.{digits}f), its decimal point a comma."""
+    return (str(v) if digits is None else f"{v:.{digits}f}").replace(".", ",")
+
+
 def span(lo: float, hi: float, digits: int = 0) -> str:
     """A usual range as printed: « 46–50 », or « ≈ 48 » when its ends round to one value (a band narrower than
     the last digit: « 48–48 » said nothing of a range)."""

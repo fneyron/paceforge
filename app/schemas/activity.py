@@ -53,7 +53,7 @@ class ActivitySummary(BaseModel):
     def pace_formatted(self) -> str | None:
         if not self.average_speed or self.average_speed == 0:
             return None
-        if self.sport_type in ("Ride", "VirtualRide", "EBikeRide"):
+        if self.sport_group == "bike":  # every bike sport (gravel, VTT, e-bike…): a speed, not a pace
             return f"{self.average_speed * 3.6:.1f} km/h"
         if self.sport_type in ("Swim",):
             pace_per_100m = 100 / self.average_speed

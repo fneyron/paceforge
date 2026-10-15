@@ -1391,7 +1391,7 @@ async def test_synchroniser_says_what_it_saved_and_when_one_is_running(as_user, 
     r = await as_user.post("/api/sync")
     saved = (await db_session.execute(select(func.count(Activity.id)).where(
         Activity.user_id == test_user.id))).scalar()
-    assert "30 nouvelle(s) activité(s) importée(s)." in r.text and "location.reload" in r.text and saved == 30
+    assert "30 nouvelles activités importées." in r.text and "location.reload" in r.text and saved == 30
     assert strava_state.read(f"manual:{test_user.id}") is None  # failed: may be tried again at once
     # failed before saving anything: said so (the pull-to-refresh's wording), not « Déjà à jour »
     monkeypatch.setattr(StravaService, "get_recent_activities", AsyncMock(side_effect=httpx.ConnectError("down")))

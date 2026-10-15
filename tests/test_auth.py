@@ -210,7 +210,7 @@ async def test_a_verification_link_verifies_but_never_signs_the_browser_in(clien
         assert r.status_code == 200 and "Email vérifié" in r.text
         assert (await victim.get("/settings")).headers["location"] == "/auth/login"  # not signed in
     user = (await db_session.execute(select(User).where(User.email == "attacker@x.fr"))).scalar_one()
-    assert user.email_verified and user.email_verify_token is None
+    assert user.email_verified and user.email_verify_token  # the token stays: opened again, the link says verified
 
 
 async def test_a_password_reset_signs_out_every_other_session(client, db_session, no_commit):

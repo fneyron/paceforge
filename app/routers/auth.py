@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
@@ -121,8 +122,18 @@ async def register(
         email_verify_token=verify_token,
     )
     db.add(user)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:  # the form sent twice at once (a double click): the first request made the account
+        await db.rollback()
+        return templates.TemplateResponse(
+            request, "auth/register.html",
+            context={"error": "Un compte existe déjà avec cet email.", "email": email, "firstname": firstname, "lastname": lastname},
+        )
     await db.refresh(user)
+    # committed before the email goes and before the redirect: the link is never dead on arrival, and get_db's
+    # own commit comes only after the response (the browser follows the redirect at once)
+    await db.commit()
 
     # Send verification email (SMTP blocks: off the event loop)
     sent = await run_in_threadpool(send_verification_email, email, verify_token)
@@ -166,16 +177,18 @@ async def verify_email(
     )
     user = result.scalar_one_or_none()
 
-    if not user or not valid_verification_token(token):
+    if not user or (not user.email_verified and not valid_verification_token(token)):
         return templates.TemplateResponse(
             request, "auth/verify_result.html",
             context={"success": False, "error": "Lien invalide ou expiré."},
         )
 
-    user.email_verified = True
-    user.email_verify_token = None
-    await db.flush()
-    logger.info("Email verified for user %d", user.id)
+    if not user.email_verified:
+        user.email_verified = True
+        await db.flush()
+        logger.info("Email verified for user %d", user.id)
+    # the token stays on the account: the link opened again (a double click, an email client that fetched it
+    # first) finds the account verified and says so, not « Lien invalide »
 
     # The link verifies, it never signs in: anyone can send someone the link of an account of their own
     # (login CSRF). A browser already signed in to that account goes on; any other signs in first
@@ -322,7 +335,7 @@ async def reset_password(
     user.password_reset_token = None
     user.password_reset_expires_at = None
     user.session_version = (user.session_version or 0) + 1  # every other session of the account is signed out
-    await db.flush()
+    await db.commit()  # before the redirect: the request that follows it already checks the new session version
 
     request.session.clear()
     if not user.email_verified:

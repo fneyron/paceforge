@@ -21,12 +21,13 @@ from app.services.strava_activities import adopt_zone, import_recent
 from app.services.timezones import athlete_zone, local_date, zone_of
 from app.services.training_load import calculate_training_load
 from app.services.training_view import MEASURES, spike_ids, training_top
-from app.services.viz import d_short, hm
+from app.services.viz import d_short, fr_num, hm
 from app.services.viz import dplus as dplus_fmt
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["cycling_enabled"] = cycling_enabled
+templates.env.filters["fr_num"] = fr_num
 
 router = APIRouter(tags=["dashboard"])
 
@@ -40,6 +41,7 @@ SYNC_COOLDOWN_S = 60  # « Synchroniser » asks Strava once a minute per athlete
 SYNC_RUNNING_S = 120  # « Synchroniser » running (a request lost meanwhile frees it after this)
 FILTERS = [(None, "Tout"), ("run", "Course"), ("trail", "Trail"), ("bike", "Vélo"), ("other", "Autre")]
 _FILTER_KEYS = {"run", "trail", "bike", "other"}
+MAX_PAGE = 5000  # six-week pages: 575 years back, well within what a timedelta holds
 _MONTHS_FR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
 # History rows need only these values. Loading Activity entities also decodes
 # every GPS stream / source payload and eagerly fetches their analyses.
@@ -94,7 +96,7 @@ async def dashboard(user: User = Depends(get_current_user)):
 @router.get("/activities", response_class=HTMLResponse)
 async def activities_page(
     request: Request,
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=MAX_PAGE),
     sport: str | None = None,
     m: str | None = None,
     depuis: str | None = None,
@@ -138,7 +140,7 @@ async def activities_page(
 @router.get("/partials/activities", response_class=HTMLResponse)
 async def activities_partial(
     request: Request,
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=MAX_PAGE),
     sport: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -189,7 +191,7 @@ async def manual_sync(
     if new_count > 0:
         # Show the result, then refresh so the new rows land in their week.
         return HTMLResponse(
-            f'<span class="text-emerald-700">{new_count} nouvelle(s) activité(s) importée(s).</span>'
+            f'<span class="text-emerald-700">{imported_label(new_count)}.</span>'
             "<script>setTimeout(function () { window.location.reload(); }, 700);</script>"
         )
     if not user.has_strava_linked:
@@ -208,6 +210,11 @@ async def manual_sync(
 # ── helpers ─────────────────────────────────────────────────────────────────
 
 RECENT_MAX_DAYS = 31  # how far back Santé's link may open the list (its 7 days, a cycle's 8 at most)
+
+
+def imported_label(n: int) -> str:
+    """« 1 nouvelle activité importée », « 3 nouvelles activités importées »."""
+    return f"{n} nouvelle activité importée" if n == 1 else f"{n} nouvelles activités importées"
 
 
 async def _clock(db: AsyncSession, user: User) -> tuple[datetime, tzinfo]:
