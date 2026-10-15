@@ -45,8 +45,8 @@ HEURISTICS = [
     ("app/services/sante_training.py", "EFFORT_LONG", 180),
     ("app/services/sante_training.py", "EFFORT_DPLUS", 1500),
     ("app/services/sante_training.py", "STOPPED_WATCH", 2),
-    # owner, 2026-10-14: scientific basis — a window is a reason of the state, no cap (EFFORT_RULES' 35/45/65 caps
-    # had no basis): orange through D+1 / D+3 / D+5, red on D+0 and D+1 after an Ultra
+    # Historical effort windows remain available to contextual/race calculations.
+    # Since 2026-10-15 they add neither a reason nor a cap to the nightly-signal index.
     ("app/services/sante_training.py", "EFFORT_WINDOWS", {"ultra": 5, "very_long": 3, "long": 1}),
     ("app/services/sante_training.py", "ULTRA_RED_LAST", 1),
     # v4.2 (research_efforts.md §b): « fenêtres indicatives », no official body gives days (Kellmann 2018);
@@ -176,7 +176,8 @@ def test_the_folds_print_no_h_and_no_citation():
     assert len(sc.METHOD) <= 5 and not hasattr(sl, "METHOD")
     text = sc.flat(sc.METHOD)
     assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text), text
-    assert "quelques points d'écart ne veulent rien dire" in sc.flat(sc.METHOD)
+    assert "n’est pas un pourcentage de récupération" in text
+    assert "ne mesure pas ton besoin personnel" in text
     assert not hasattr(st, "CLIMB_RATIO") and not hasattr(st, "back_to_back") and not hasattr(td, "HR_UP_BPM")
     # every measured night counts (owner, 2026-10-08): no ≥ 20-h tail out of the band any more; no Charge récente
     assert not hasattr(st, "ULTRA_TAIL") and not hasattr(st, "ULTRA_TAIL_MIN") and not hasattr(sc, "load_sub")
@@ -194,6 +195,8 @@ def test_the_late_session_gap_is_marked_h():
 def test_the_heuristics_are_marked_h_where_they_are_explained():
     assert "(H)" in st.easy_runs.__doc__ and "(H)" in st.easy_model.__doc__
     assert "(H" in sl.habits.__doc__ and "(H)" in st.effort_of.__doc__ and "(H)" in st.effort_window.__doc__
-    assert "(H)" in sante.__doc__ and "(H)" in td.__doc__ and "(H)" in sc.__doc__
+    assert "(H)" in sante.__doc__ and "(H)" in sc.__doc__
+    # The wording module delegates to the score; it no longer defines effort-window heuristics.
+    assert "sante_score" in td.__doc__ and "never a race window or a check-in" in td.__doc__
     assert "(H)" in st.hr_readable.__doc__ and "(H)" in st.session_load.__doc__ and "(H)" in st.loads.__doc__
     assert "(H)" in st.load_family.__doc__ and "(H)" in sante.training.__doc__

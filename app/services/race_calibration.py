@@ -245,21 +245,24 @@ async def collect_race_points(db: AsyncSession, user_id: int, months: int = MODE
     result = await db.execute(candidate_query(user_id, months).order_by(Activity.start_date.desc()))
     acts = result.scalars().all()
 
-    from app.services.activity_dedupe import find_duplicate_ids
+    from app.services.activity_dedupe import duplicate_representatives
+    from app.services.activity_identity import confirmed_races, races_on_retained_copies
 
-    dups = find_duplicate_ids(acts)
+    dups = duplicate_representatives(acts)
+    confirmed = await confirmed_races(db, user_id, activity_ids=[a.id for a in acts])
+    confirmed = races_on_retained_copies(confirmed, dups)
     points = []
     for a in acts:
         if a.id in dups or not a.moving_time or a.moving_time < MIN_RACE_H * 3600:
             continue
         km = (a.distance or 0) / 1000
-        is_race = _is_race(a)
+        is_race = _is_race(a) or a.id in confirmed
         if not is_race and km < LONG_EFFORT_KM:
             continue
         dplus, src = activity_dplus(a)
         heat = activity_heat(a)
         points.append(race_point(
-            a.name, km, dplus, a.moving_time / 3600, is_race,
+            confirmed.get(a.id) or a.name, km, dplus, a.moving_time / 3600, is_race,
             day=a.start_date.date() if a.start_date else None, id=a.id, dplus_src=src,
             **({"heat": heat} if heat else {}),
         ))

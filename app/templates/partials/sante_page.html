@@ -3,9 +3,36 @@
 <div class="pf-dials">
     {% for d in p.dials %}{{ viz.viz_ring(d, show_note=d.key != "recup") }}{% endfor %}
 </div>
+{% if p.synthesis %}{% set sy = p.synthesis %}
+<section id="synthese-sante" class="pf-health-synthesis is-{{ sy.signal.tone }}" aria-labelledby="h-synthese-sante">
+    <header class="pf-synthesis-heading">
+        <h2 id="h-synthese-sante"><i class="pf-dot" aria-hidden="true"></i>{{ sy.signal.summary }}</h2>
+        <p class="pf-synthesis-freshness{% if not sy.freshness.current %} is-stale{% endif %}">{{ sy.freshness.label }}</p>
+    </header>
+    {% if sy.reasons %}<ul class="pf-synthesis-reasons">
+        {% for reason in sy.reasons[:2] %}<li class="is-{{ reason.tone }}" data-signal="{{ reason.key }}">{{ reason.label }}</li>{% endfor %}
+    </ul>{% endif %}
+    {% if sy.context %}<ul class="pf-synthesis-context" aria-label="Contexte du bilan">
+        {% for context in sy.context %}<li data-context="{{ context.key }}">{{ context.label }}</li>{% endfor %}
+    </ul>{% endif %}
+    {% if sy.more_reasons or sy.context or sy.methods or sy.detail %}
+    <details class="pf-chart-details pf-synthesis-details" data-transient>
+        <summary>Ce qui est pris en compte</summary>
+        {% if sy.detail %}<p class="pf-card-meaning">{{ sy.detail }}</p>{% endif %}
+        {% for reason in sy.reasons if reason.text %}<p class="pf-card-meaning"><b>{{ reason.label }}</b> · {{ reason.text }}</p>{% endfor %}
+        {% for reason in sy.more_reasons %}<p class="pf-card-meaning"><b>{{ reason.label }}</b>{% if reason.text %} · {{ reason.text }}{% endif %}</p>{% endfor %}
+        {% for context in sy.context if context.detail %}<p class="pf-card-meaning">{{ context.detail }}</p>{% endfor %}
+        {% for method in sy.methods %}<p class="pf-card-meaning"><b>{{ method.label }} · {{ method.source }}</b><br>{{ method.detail }}</p>{% endfor %}
+        {% if sy.freshness.source %}<p class="pf-card-meaning">Mesures reçues · {{ sy.freshness.source }}</p>{% endif %}
+    </details>
+    {% endif %}
+</section>
+{% else %}
 {% if p.state and p.state.text %}<p class="pf-state-text">{{ p.state.text }}</p>{% endif %}
 {% if not p.state %}<p class="pf-state-line">{{ p.line }}</p>{% endif %}
+{% endif %}
 {% if p.connect %}<p class="pf-state-links"><a class="pf-native-only" data-phone-connect href="paceforge://devices">Connecter <span data-phone-health>Apple Santé</span> ›</a><span class="pf-browser-only"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></span></p>{% endif %}
+{% include "partials/sante_checkin.html" %}
 
 <div class="pf-health-panels">
 {% set has_sleep_detail = s and s.state not in ("never", "old") %}
@@ -37,12 +64,18 @@
             {% for key, label in s.ranges %}{% set b = s.bars[key] %}
             <div data-range-panel="{{ key }}"{% if key != s.r %} hidden{% endif %}>
                 {{ viz.viz_day_bars(b, "Sommeil sur 24 heures, " ~ label, "nuit", "Nuit précédente", "Nuit suivante", quiet=True) }}
-                {% if b.trend %}{{ viz.viz_legend([("is-day", "24 h"), ("is-mean", "moyenne sur 7 jours"), ("is-ref", "besoin estimé")]) }}
-                {% elif b.trend is not none %}{{ viz.viz_legend([("is-night", "24 h"), ("is-ref", "besoin estimé")]) }}
-                {% else %}{{ viz.viz_legend([("is-night", "nuit"), ("is-nap", "sieste"), ("is-ref", "besoin estimé")]) }}{% endif %}
+                {% if b.trend %}{{ viz.viz_legend([("is-day", "24 h"), ("is-mean", "moyenne sur 7 jours"), ("is-ref", "repère de 8 h")]) }}
+                {% elif b.trend is not none %}{{ viz.viz_legend([("is-night", "24 h"), ("is-ref", "repère de 8 h")]) }}
+                {% else %}{{ viz.viz_legend([("is-night", "nuit"), ("is-nap", "sieste"), ("is-ref", "repère de 8 h")]) }}{% endif %}
             </div>
             {% endfor %}
         </div>
+        {% if p.synthesis and p.synthesis.sleep_gap %}{% set gap = p.synthesis.sleep_gap %}
+        <details class="pf-chart-details pf-sleep-gap" data-transient>
+            <summary>{{ gap.label|capitalize }}</summary>
+            <p class="pf-card-meaning">{{ gap.detail }}</p>
+        </details>
+        {% endif %}
         {% if s.habits %}
         <details id="sommeil-habitudes" class="pf-chart-details">
             <summary>Mes horaires habituels</summary>
@@ -59,14 +92,14 @@
 {% if p.recup or p.vfc or p.fc or p.score.value is not none %}
 <section id="recuperation" class="pf-health-panel" aria-labelledby="h-recuperation">
     <header class="pf-health-panel-heading">
-        <h2 id="h-recuperation" class="pf-health-panel-title">Récupération</h2>
+        <h2 id="h-recuperation" class="pf-health-panel-title">Signaux nocturnes</h2>
         {% if p.score.value is not none and p.quality and (p.quality.partial or p.quality.provisional) %}
-        <a class="pf-health-status" href="#qualite-bilan" aria-label="Récupération : {{ p.quality.label }}. Voir les mesures utilisées.">{{ 'Indice partiel' if p.quality.partial else 'Détails du score' }} <span aria-hidden="true">›</span></a>
+        <a class="pf-health-status" href="#qualite-bilan" aria-label="Signaux nocturnes : {{ p.quality.label }}. Voir les mesures utilisées.">{{ 'Indice partiel' if p.quality.partial else 'Détails de l’indice' }} <span aria-hidden="true">›</span></a>
         {% endif %}
     </header>
     <div class="pf-panel-body">
         {% if p.recup %}<div id="recuperation-detail" class="pf-card pf-recup14">
-            {{ viz.viz_day_bars(p.recup, "Récupération sur 14 jours", quiet=True) }}
+            {{ viz.viz_day_bars(p.recup, "Signaux nocturnes sur 14 jours", quiet=True) }}
         </div>{% endif %}
         {% if p.vfc or p.fc %}
         <div id="mesures-nocturnes" class="pf-health-nights" role="group" aria-label="Mesures nocturnes">
@@ -84,11 +117,9 @@
         {% endif %}
         {% if p.score.value is not none and p.quality %}
         <details id="qualite-bilan" class="pf-bilan-quality" data-transient>
-            <summary>Mesures utilisées pour la récupération</summary>
+            <summary>Mesures utilisées pour l’indice</summary>
             <dl>{% for row in p.quality.rows %}<div><dt>{{ row.name }}</dt><dd>{{ row.state }}</dd></div>{% endfor %}</dl>
-            {% if p.training_effect and p.training_effect.recorded %}<p>Effort accumulé : {{ p.training_effect.word }}.</p>{% endif %}
-            {% if 'load' in p.score.caps %}<p>L’effort accumulé pèse encore dans ce bilan. Son influence diminue progressivement.</p>{% endif %}
-            <p>Disponibilité des mesures, pas une garantie de précision du score.</p>
+            <p>Disponibilité des mesures, pas une garantie de précision de l’indice.</p>
         </details>
         {% endif %}
     </div>

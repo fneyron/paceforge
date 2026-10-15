@@ -1022,6 +1022,17 @@ def baseline_count(nights: dict[date, Night], metric: str, d: date, source: str 
     return count
 
 
+def reference_count(nights: dict[date, Night], metric: str, d: date, source: str | None = None) -> int:
+    """Progress toward the reference actually available to the trend, including its recent fallback."""
+    source = source or mean_source(nights, metric, d)
+    b = drawn_band(nights, metric, d)
+    if b:
+        return b["n"]
+    recent = sum(1 for x, n in nights.items() if d - timedelta(days=BAND_DAYS - 1) <= x <= d
+                 and n.source_of(metric) == source and n.value(metric) is not None)
+    return max(recent, baseline_count(nights, metric, d, source))
+
+
 def threshold(offsets, nb: int) -> float:
     """T = max(0.5, 1.28·√(Σᵢⱼ ρ^|tᵢ − tⱼ| / n7² + (1 + ρ)/((1 − ρ)·n_b))), ρ = 0.3 (H): 1.28 standard errors of
     the difference between the week's mean and the baseline's, for nights correlated from one to the next (an
@@ -1065,7 +1076,7 @@ def _trend(nights: dict[date, Night], metric: str, d: date) -> dict | None:
     b = drawn_band(nights, metric, d)
     out = {"metric": metric, "source": source, "n": len(vals), "last": last, "baseline": b, "value": None,
            "z": None, "T": None, "status": None,
-           "baseline_n": b["n"] if b else baseline_count(nights, metric, d, source)}
+           "baseline_n": b["n"] if b else reference_count(nights, metric, d, source)}
     if len(vals) < MIN_MEAN_NIGHTS:
         return out
     mean = statistics.fmean(math.log(v) for v in vals) if metric == "hrv" else statistics.fmean(vals)

@@ -1,18 +1,11 @@
-"""Santé v4: the day's state, in words (owner, 2026-10-08: « tu te bases que sur les activités passées pour juger
-de la récupération »; 2026-10-14: scientific basis — the state is the rule-based reading of sante_score.score_of,
-no longer the band of a weighted score).
+"""Short, non-prescriptive interpretation of the nightly signals.
 
-No planned race, no check-in, no training prescription: the state says how the night signals read, never what to
-train. Its tones: « Bonne récupération » (ok, no reason), « Récupération en cours » (warn: an orange reason),
-« Récupération faible » (danger: the night-HR illness alert, or the first days after an ultra) (H). Each reason is
-listed as data (`reasons`: the wording on the page is the owner's to validate); the page prints the state's word
-and its glyph, and the illness alert's one sentence (2 nights in a row with no context tag, each ≥ median + max(2
-robust SD, 5 bpm), on a full 14-night baseline: nights.illness_alert; Altini & Plews 2021, Quer 2021: specific,
-not sensitive), what it can mean.
-No state (the night or the baselines missing) → one line saying why (C8: a reason, never a number).
-A quiet chart is not a clean bill of health (Quer 2021).
+Usual, to watch, or unusual: tones follow sante_score's measured reasons, never a race window or a check-in.
+The synthesis shows at most two reasons and keeps the rest in details. The night-HR acute alert retains its
+specific wording and existing full-reference rules. No eligible night or reference means no index.
+A quiet chart is not a clean bill of health; it cannot establish muscle or tendon recovery.
 """
-WORDS = {"danger": "Récupération faible", "warn": "Récupération en cours", "ok": "Bonne récupération"}
+WORDS = {"danger": "Signaux inhabituels", "warn": "Signaux à surveiller", "ok": "Signaux habituels"}
 # the tone is also a shape next to the state's word (a disc, a half disc, a square), never colour alone
 GLYPHS = {"ok": "●", "warn": "◐", "danger": "■"}
 # v4.4 (owner: « les explications en français ne sont pas claires »): short sentences, « tes valeurs habituelles »
@@ -21,7 +14,7 @@ ILL = ("Ta FC de nuit est nettement plus haute que d'habitude. Ça arrive avant 
        "grosse journée.")
 # the alert's sentence when the breathing rate is up too (nights.illness_alert's resp_up)
 ILL_RESP = "Ta respiration aussi est plus rapide que d'habitude."
-NO_WATCH = "Connecte ta montre pour voir ta récupération."
+NO_WATCH = "Connecte ta montre pour voir tes signaux nocturnes."
 # Missing data cannot tell us whether the watch recorded a night or has yet to send it.
 NO_NIGHT = "Pas de score ce matin : il manque des données de nuit."
 # the baselines or the week too thin (owner, 2026-10-14: scientific basis — a reason, never a number)
@@ -30,8 +23,8 @@ NOT_YET = "Pas de score ce matin : {label}."
 
 def state(score: dict, day: dict | None = None) -> dict | None:
     """{key, tone, word, glyph, text, aria, reasons} from the day's state (sante_score.score_of), or None without
-    one. `key`: the first reason (ill, effort, hrv, hr, resp, short) or « ok », data only; `reasons`: every reason,
-    as data; `text`: the illness alert's sentence, else None (the page prints the word and the glyph only)."""
+    one. `key`: the first reason (ill, hrv, hr, resp, short) or « ok », data only; `reasons`: every reason,
+    as data; `text`: the illness alert's sentence, else None."""
     if score.get("value") is None:
         return None
     tone, key = score["tone"], score["reason"] or "ok"
