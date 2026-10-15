@@ -13,6 +13,7 @@ from starlette.requests import Request
 from app.build import BUILD_ID
 from app.config import settings
 from app.exceptions import register_exception_handlers
+from app.sentry import init_sentry
 
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
@@ -106,6 +107,37 @@ async def _scan_once_per_deploy() -> None:
         await scan_stored_secrets()
 
 
+async def _db_answers() -> bool:
+    """SELECT 1 through the app's pool within 2 s (a pool with no free connection fails it too: worth a page)."""
+    from sqlalchemy import text
+
+    from app import database
+
+    try:
+        async with asyncio.timeout(2), database.engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        logger.warning("Health: the database did not answer", exc_info=True)
+        return False
+
+
+async def _redis_answers() -> bool:
+    """PING within 2 s."""
+    try:
+        import redis.asyncio as aioredis
+
+        r = aioredis.Redis.from_url(settings.REDIS_URL, socket_timeout=2, socket_connect_timeout=2)
+        try:
+            async with asyncio.timeout(2):
+                return bool(await r.ping())
+        finally:
+            await r.aclose()
+    except Exception:
+        logger.warning("Health: Redis did not answer", exc_info=True)
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
     check_secrets()  # configuration only: stored data never stops the start
@@ -167,13 +199,20 @@ def create_app() -> FastAPI:
         return FileResponse("app/static/favicon.ico", media_type="image/x-icon",
                             headers={"Cache-Control": "public, max-age=86400"})
 
-    # Health check
+    # Health check: fast for the container's and the proxy's probes. ?deep=1 (an external monitor) also asks
+    # the database and Redis: 503 with the failing flag when one does not answer within 2 s.
     @app.get("/health")
-    async def health_check():
-        return JSONResponse({"status": "ok", "app": settings.APP_NAME, "build": BUILD_ID},
-                            headers={"Cache-Control": "no-store"})
+    async def health_check(deep: bool = False):
+        body = {"status": "ok", "app": settings.APP_NAME, "build": BUILD_ID}
+        status = 200
+        if deep:
+            body["db"], body["redis"] = await asyncio.gather(_db_answers(), _redis_answers())
+            if not (body["db"] and body["redis"]):
+                body["status"], status = "degraded", 503
+        return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store"})
 
     return app
 
 
+init_sentry()  # nothing while SENTRY_DSN is empty; before the app exists, for Starlette's integration
 app = create_app()
