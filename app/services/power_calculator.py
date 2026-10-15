@@ -1,6 +1,7 @@
 """Cycling power/speed physics calculator."""
 
 import math
+from collections import OrderedDict
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -157,7 +158,15 @@ def ftp_from_mean_max(p5: float | None, p20: float | None, p60: float | None) ->
     return max(cands, key=lambda c: c[0])
 
 
-_FTP_CACHE: dict[int, tuple] = {}  # user_id → (expires_at, estimate): the mean-max crunch is not free
+FTP_CACHE_SIZE = 256  # athletes kept per worker; the least recently read goes first
+_FTP_CACHE: OrderedDict[int, tuple] = OrderedDict()  # user_id → (expires_at, estimate): the mean-max crunch is not free
+
+
+def _remember_ftp(user_id: int, expires_at, estimate) -> None:
+    _FTP_CACHE[user_id] = (expires_at, estimate)
+    _FTP_CACHE.move_to_end(user_id)
+    while len(_FTP_CACHE) > FTP_CACHE_SIZE:
+        _FTP_CACHE.popitem(last=False)
 
 
 def _best_ftp_from_rows(rows) -> tuple:
@@ -243,7 +252,7 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
                 activity_name=name or "", activity_date=start_date, confidence=confidence,
                 is_stale=False, age_months=max(0, (now - sd).days // 30) if sd else 0, method=method, rides_used=n_with_power,
             )
-            _FTP_CACHE[user_id] = (now + timedelta(minutes=10), est)
+            _remember_ftp(user_id, now + timedelta(minutes=10), est)
             return est
 
     # ── tier 2: summary data — power-meter rides ONLY ──
@@ -272,7 +281,7 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
         if activities:
             break
     if not activities:
-        _FTP_CACHE[user_id] = (now + timedelta(minutes=10), None)
+        _remember_ftp(user_id, now + timedelta(minutes=10), None)
         return None
 
     def _scaled(a: Activity) -> float:
@@ -302,5 +311,5 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
         method="puissance normalisée des meilleures sorties",
         rides_used=len(activities),
     )
-    _FTP_CACHE[user_id] = (now + timedelta(minutes=10), est)
+    _remember_ftp(user_id, now + timedelta(minutes=10), est)
     return est

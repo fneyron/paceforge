@@ -48,15 +48,17 @@ async def activity_detail(
     detail = ActivityDetail.model_validate(activity)
     metrics = activity.computed_metrics or {}
 
-    # Routes worth comparing against (foot activities only), closest first.
-    compare_routes: list[Route] = []
+    # Routes worth comparing against (foot activities only), closest first: their id, name and distance (a
+    # course_json weighs up to 300 KiB a route; the link needs none of it).
+    compare_routes: list = []
     if sport_group(activity.sport_type) in ("run", "trail") and activity.distance:
         dist_km = activity.distance / 1000
         routes_q = await db.execute(
-            select(Route).where(Route.user_id == user.id, Route.sport_type.notin_(("bike", "triathlon")))
+            select(Route.id, Route.name, Route.total_distance_km)
+            .where(Route.user_id == user.id, Route.sport_type.notin_(("bike", "triathlon")))
         )
         candidates = [
-            r for r in routes_q.scalars().all()
+            r for r in routes_q.all()
             if r.total_distance_km
             and abs(r.total_distance_km - dist_km) / max(r.total_distance_km, 1.0) <= _COMPARE_DISTANCE_TOL
         ]
