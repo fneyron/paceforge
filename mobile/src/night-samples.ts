@@ -44,10 +44,17 @@ export function episodes(samples: readonly SleepSample[], fallback: string, now 
   }
   const result: Episode[] = [];
   for (const group of groups.values()) {
+    // Sessions of one writer. A writer that records « awake » marks its own wake periods,
+    // so a silence of more than 90 min ends a session (a nap is not the night). A writer
+    // that never records « awake » leaves a silence for each wake period: only a silence of
+    // more than three hours ends one of its sessions, so a long wake in the night does not
+    // turn the first hours of sleep into a nap. The server counts measured sleep only; a
+    // silence inside a session stays unknown, never asleep.
+    const silence = group.parts.some(p => p.stage === 'awake') ? 90*60000 : 180*60000;
     const clusters: Interval[][] = [];
     let end = 0;
     for (const part of group.parts.sort((a,b) => Date.parse(a.start)-Date.parse(b.start))) {
-      if (!clusters.length || Date.parse(part.start)-end > 90*60000) clusters.push([]);
+      if (!clusters.length || Date.parse(part.start)-end > silence) clusters.push([]);
       clusters.at(-1)!.push(part); end = Math.max(end, Date.parse(part.end));
     }
     const days = new Map<string, Interval[][]>();
@@ -69,8 +76,10 @@ export function episodes(samples: readonly SleepSample[], fallback: string, now 
       if (date < cutoff.toISOString().slice(0,10)) continue;
       parts.sort((a,b) => asleepDuration(b)-asleepDuration(a));
       const sleep = asleepDuration(parts[0]) >= 180*60000 ? parts.shift()! : [];
-      const naps = parts.filter(p => Date.parse(p.at(-1)!.end)-Date.parse(p[0].start) <= 6*3600000);
-      if (naps.length > 12 || naps.reduce((n,p) => n+asleepDuration(p),0) > 600*60000) continue;
+      // Implausible naps (more than twelve, or more than ten hours: the server refuses the
+      // packet) are left out; the night of that day is still sent.
+      const shortOnes = parts.filter(p => Date.parse(p.at(-1)!.end)-Date.parse(p[0].start) <= 6*3600000);
+      const naps = shortOnes.length <= 12 && shortOnes.reduce((n,p) => n+asleepDuration(p),0) <= 600*60000 ? shortOnes : [];
       if (sleep.length || naps.length) result.push({ date, key: group.key, timezone: group.timezone, source_name: group.source_name, sleep, naps });
     }
   }

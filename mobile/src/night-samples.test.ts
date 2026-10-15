@@ -31,6 +31,31 @@ test('heart samples require the same device and real sleep, with explicit wake w
     {...reading('2026-10-25T02:00:00Z'),device:{localIdentifier:'other'}},reading('2026-10-25T12:00:00Z'),reading('2026-10-25T03:00:00Z',NaN)];
   assert.deepEqual(nightReadings(data,e,25,230),[{at:'2026-10-25T00:30:00.000Z',value:50}]);
 });
+test('implausible naps are left out, the night of that day is kept', () => {
+  // A writer that marks its wake periods (90-min sessions): two sleeps of five hours in
+  // the day make more than ten hours of naps, which the server refuses with the night.
+  const awake = sample('2026-10-25T02:00:00Z', '2026-10-25T02:05:00Z', 2);
+  const dozes = [sample('2026-10-25T08:00:00Z', '2026-10-25T13:00:00Z'), sample('2026-10-25T15:00:00Z', '2026-10-25T20:30:00Z')];
+  const [night] = episodes([main, awake, ...dozes], 'UTC', now);
+  assert.equal(night.date, '2026-10-25'); assert.equal(night.sleep.length, 2); assert.deepEqual(night.naps, []);
+  // Under ten hours they are naps.
+  const [kept] = episodes([main, awake, dozes[0], sample('2026-10-25T15:00:00Z', '2026-10-25T19:30:00Z')], 'UTC', now);
+  assert.equal(kept.sleep.length, 2); assert.equal(kept.naps.length, 2);
+});
+test('a writer without awake samples keeps a long wake inside its night; one with awake samples splits after 90 min', () => {
+  // Two blocks of « asleep » around a two-hour wake: one night of seven hours, no nap.
+  const silent = [sample('2026-10-24T22:00:00Z', '2026-10-25T01:00:00Z', 1), sample('2026-10-25T03:00:00Z', '2026-10-25T07:00:00Z', 1)];
+  const [night] = episodes(silent, 'UTC', now);
+  assert.equal(night.sleep.length, 2); assert.deepEqual(night.naps, []);
+  // A silence of more than three hours is still a boundary: the afternoon nap stays a nap.
+  const withNap = episodes([...silent, sample('2026-10-25T14:00:00Z', '2026-10-25T14:40:00Z', 1)], 'UTC', now)[0];
+  assert.equal(withNap.sleep.length, 2); assert.equal(withNap.naps.length, 1);
+  // The same gap from a writer that records its wake periods: two sessions, the shorter is a nap.
+  const marking = [sample('2026-10-24T22:00:00Z', '2026-10-25T01:00:00Z'), sample('2026-10-25T00:30:00Z', '2026-10-25T00:40:00Z', 2),
+    sample('2026-10-25T03:00:00Z', '2026-10-25T07:00:00Z')];
+  const [split] = episodes(marking, 'UTC', now);
+  assert.equal(split.sleep.length, 1); assert.equal(split.naps.length, 1);
+});
 test('local wake date follows the night timezone, and a short nap has no main-night summary', () => {
   const s=sample('2026-10-25T14:00:00Z','2026-10-25T22:00:00Z'); s.metadata={HKTimeZone:'Asia/Tokyo'};
   assert.equal(episodes([s],'UTC',now)[0].date,'2026-10-26');

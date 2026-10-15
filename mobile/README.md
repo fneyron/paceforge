@@ -167,6 +167,14 @@ changement de compte et déconnexion. Les API natives y sont simulées : vérifi
 - Sur **iPhone**, lecture du sommeil sur **60 jours**, avec SDNN, FC et respiration
   à l'intérieur des périodes de sommeil mesurées, du même auteur/appareil.
   Les intervalles sont envoyés à `/api/mobile/nights` puis réduits sur le serveur.
+  Règle des sessions (`night-samples.ts`) : les relevés d’un même auteur/appareil
+  sont découpés en sessions ; un silence de plus de 90 min sépare deux sessions
+  quand l’auteur enregistre ses réveils (« awake »), de plus de 3 h sinon, ses
+  réveils étant des silences (un long réveil nocturne ne transforme pas le début
+  de la nuit en sieste ; le serveur ne compte que le sommeil mesuré, jamais un
+  silence). Sur un jour de réveil, la session la plus longue (≥ 3 h) est la nuit,
+  les autres (≤ 6 h) des siestes ; des siestes invraisemblables (plus de 12, ou
+  plus de 10 h) sont écartées sans écarter la nuit.
   Les moyennes quotidiennes restent exclues. SDNN ne devient jamais RMSSD.
   Aucune écriture dans le référentiel santé du téléphone. Android garde ses
   cinq catégories quotidiennes ; les nouvelles nuits sont propres à iOS.
