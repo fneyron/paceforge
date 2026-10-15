@@ -64,6 +64,7 @@ Scénario reproductible, sans compte réel ni appels aux fournisseurs :
 ```sh
 python -m uvicorn tests.browser.loading_preview:app --host 127.0.0.1 --port 8891
 PF_PREVIEW_URL=http://127.0.0.1:8891 node tests/browser/tab-navigation.cjs
+PF_PREVIEW_URL=http://127.0.0.1:8891 node tests/browser/tab-navigation-cancel.cjs
 PF_PREVIEW_URL=http://127.0.0.1:8891 node tests/browser/chart-readouts.cjs
 PF_PREVIEW_URL=http://127.0.0.1:8891 node tests/browser/profile_loading.cjs
 ```

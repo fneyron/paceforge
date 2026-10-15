@@ -82,7 +82,7 @@ const fresh=()=>stored({'paceforge.phone.v1.sync':JSON.stringify({userId:1,check
   await editing.waitForFunction(()=>JSON.parse(JSON.parse(sessionStorage.getItem('secure'))['paceforge.phone.v1.sync']).complete);
   assert.deepEqual(await editing.evaluate(()=>refreshes),[],'the edited course must not refresh');
   assert.equal(await editing.evaluate(()=>actual),'https://paceforge.fr/simulator/routes/2');
-  await editing.evaluate(()=>navigate('https://paceforge.fr/sante'));await editing.waitForFunction(()=>refreshes.length===1);
+  await editing.evaluate(()=>fullNavigate('https://paceforge.fr/sante'));await editing.waitForFunction(()=>refreshes.length===1);
   assert.deepEqual(await editing.evaluate(()=>refreshes),[false]);
   assert.deepEqual(editing.errors,[]);await editing.close();
 
@@ -144,7 +144,7 @@ const fresh=()=>stored({'paceforge.phone.v1.sync':JSON.stringify({userId:1,check
   await interrupted.waitForFunction(()=>window.actual);
   await interrupted.evaluate(()=>followLink('paceforge://offline'));
   await interrupted.getByRole('button',{name:/Course de montagne/}).waitFor();
-  await interrupted.evaluate(()=>{window.accountId=2;navigate('https://paceforge.fr/sante');});
+  await interrupted.evaluate(()=>{window.accountId=2;fullNavigate('https://paceforge.fr/sante');});
   await interrupted.waitForFunction(()=>{const d=JSON.parse(sessionStorage.getItem('secure'));
    return !d['paceforge.offline.index.v1.migrating']&&JSON.parse(d['paceforge.offline.index.v1']||'{}').userId===2;});
   await interrupted.close();
