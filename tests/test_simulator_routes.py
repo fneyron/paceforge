@@ -105,7 +105,7 @@ async def test_pace_exports(as_user: AsyncClient):
     assert gpx.status_code == 200 and gpx.text.count("<wpt") >= 4 and "<time>2026-10-02T21:00:00Z</time>" in gpx.text
     assert "ARR " in gpx.text and "CP2 " in gpx.text
     tcx = await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=tcx")
-    assert tcx.status_code == 200 and "<CoursePoint>" in tcx.text and tcx.headers["content-disposition"].endswith('plan.tcx"')
+    assert tcx.status_code == 200 and "<CoursePoint>" in tcx.text and 'filename="Jeju test-plan.tcx"' in tcx.headers["content-disposition"]
 
 
 @pytest.mark.asyncio

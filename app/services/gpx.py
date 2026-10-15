@@ -1,13 +1,38 @@
 """GPX file parsing and course profile building."""
 
+import codecs
 import logging
 import math
+import re
+from dataclasses import dataclass
 
 import gpxpy
+from gpxpy.gpx import GPXException, GPXXMLSyntaxException
 
 from app.schemas.simulator import CourseProfile, CourseSegment, GpxPoint
 
 logger = logging.getLogger(__name__)
+
+# a file past this many <trkpt> / <rtept> is refused before the XML is parsed (the parse is what costs)
+MAX_POINTS = 150_000
+# a waypoint further than this from the track is not one of its checkpoints
+SNAP_MAX_M = 500.0
+_CELL = 0.01  # degrees: 1.1 km of latitude, so a cell and its neighbours hold every point within SNAP_MAX_M
+_CANNOT_READ = "Ce fichier GPX n’a pas pu être lu : "
+_ENCODING = re.compile(rb"^\s*<\?xml[^>]*?encoding=[\"']([A-Za-z0-9._-]+)[\"']")
+_CP_PREFIX = re.compile(r"^CP\d+\s*[—–-]\s*")  # what the GPX export writes before a checkpoint's name
+
+
+class GpxError(ValueError):
+    """A GPX import refused, with the French sentence to show."""
+
+
+@dataclass
+class ParsedGpx:
+    points: list[GpxPoint]
+    waypoints: list[dict]  # [{name, lat, lon, elevation}, ...] from the named <wpt> elements
+    name: str | None  # <metadata><name>, else the kept track's (route's)
+    notice: str | None = None  # the file had several tracks: only the longest is kept, said so
 
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -20,79 +45,160 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def parse_gpx(file_content: bytes) -> tuple[list[GpxPoint], list[dict]]:
-    """Parse a GPX file. Returns (track_points, waypoints).
+def _thousands(n: int) -> str:
+    return f"{n:,}".replace(",", " ")
 
-    Waypoints are [{name, lat, lon, elevation}, ...] from <wpt> elements.
-    """
-    gpx = gpxpy.parse(file_content.decode("utf-8"))
 
-    points: list[GpxPoint] = []
-    cumulative_distance = 0.0
+def decode_gpx(content: bytes) -> str:
+    """The file's text, read by its BOM or its XML declaration (UTF-8 without either)."""
+    for bom, enc in ((codecs.BOM_UTF8, "utf-8"), (codecs.BOM_UTF16_LE, "utf-16-le"),
+                     (codecs.BOM_UTF16_BE, "utf-16-be")):
+        if content.startswith(bom):
+            content, declared = content[len(bom):], enc
+            break
+    else:
+        if content.startswith(b"<\x00?\x00"):
+            declared = "utf-16-le"
+        elif content.startswith(b"\x00<\x00?"):
+            declared = "utf-16-be"
+        else:
+            m = _ENCODING.match(content)
+            declared = m.group(1).decode("ascii") if m else "utf-8"
+    try:
+        return content.decode(declared)
+    except LookupError:
+        raise GpxError(f"{_CANNOT_READ}son encodage « {declared} » est inconnu.") from None
+    except UnicodeDecodeError:
+        raise GpxError(f"{_CANNOT_READ}son texte ne correspond pas à l’encodage annoncé ({declared}).") from None
 
-    for track in gpx.tracks:
-        for segment in track.segments:
-            for i, point in enumerate(segment.points):
-                if i > 0 or points:
-                    prev = points[-1] if points else None
-                    if prev:
-                        d = _haversine(prev.lat, prev.lon, point.latitude, point.longitude)
-                        cumulative_distance += d
 
-                points.append(
-                    GpxPoint(
-                        lat=point.latitude,
-                        lon=point.longitude,
-                        elevation=point.elevation or 0.0,
-                        distance_from_start=cumulative_distance,
-                    )
-                )
+def _fill_elevations(ele: list[float | None], dist: list[float]) -> list[float]:
+    """Missing <ele> values interpolated along the distance between their known neighbours (the nearest known
+    one before the first and after the last); none known at all → 0. A real 0 m is a value, kept."""
+    known = [i for i, e in enumerate(ele) if e is not None]
+    if not known:
+        return [0.0] * len(ele)
+    out = list(ele)
+    for i in range(known[0]):
+        out[i] = ele[known[0]]
+    for i in range(known[-1] + 1, len(ele)):
+        out[i] = ele[known[-1]]
+    for a, b in zip(known, known[1:], strict=False):
+        span = dist[b] - dist[a]
+        for i in range(a + 1, b):
+            f = (dist[i] - dist[a]) / span if span > 0 else 0.0
+            out[i] = ele[a] + f * (ele[b] - ele[a])
+    return out  # type: ignore[return-value]
 
-    if not points:
-        raise ValueError("Le fichier GPX ne contient aucun point de trace.")
 
-    # Parse waypoints (<wpt> elements). Only keep genuinely named waypoints —
-    # official race GPX files carry dozens of unnamed/auto-numbered points that
-    # would otherwise flood the checkpoint list.
+def _track(name: str | None, raw: list) -> tuple[str | None, list[GpxPoint]] | None:
+    """One track's (or route's) points with their cumulative distance and every elevation filled in."""
+    if not raw:
+        return None
+    lat: list[float] = []
+    lon: list[float] = []
+    ele: list[float | None] = []
+    dist: list[float] = []
+    for p in raw:
+        la, lo = p.latitude, p.longitude
+        if la is None or lo is None or not (-90 <= la <= 90 and -180 <= lo <= 180):  # NaN and ±inf fail too
+            raise GpxError(f"{_CANNOT_READ}il contient des coordonnées invalides.")
+        dist.append(dist[-1] + _haversine(lat[-1], lon[-1], la, lo) if lat else 0.0)
+        lat.append(la)
+        lon.append(lo)
+        ele.append(float(p.elevation) if p.elevation is not None and math.isfinite(p.elevation) else None)
+    filled = _fill_elevations(ele, dist)
+    return name, [GpxPoint(lat=a, lon=b, elevation=c, distance_from_start=d)
+                  for a, b, c, d in zip(lat, lon, filled, dist, strict=True)]
+
+
+def read_gpx(content: bytes) -> ParsedGpx:
+    """The usable track of a GPX file (<trk>, else <rte>), its named waypoints and its name. Several tracks:
+    the longest is kept (each measured from its own start), the others left out and said so."""
+    text = decode_gpx(content)
+    n = text.count("<trkpt") + text.count("<rtept")
+    if n > MAX_POINTS:
+        raise GpxError(f"Ce fichier GPX contient trop de points ({_thousands(n)} ; "
+                       f"{_thousands(MAX_POINTS)} au plus).")
+    try:
+        gpx = gpxpy.parse(text)
+    except GPXXMLSyntaxException:
+        raise GpxError(f"{_CANNOT_READ}ce n’est pas un fichier XML valide.") from None
+    except (GPXException, ValueError, OverflowError):
+        raise GpxError(f"{_CANNOT_READ}il contient des valeurs invalides.") from None
+
+    tracks = [t for t in (_track(trk.name, [p for s in trk.segments for p in s.points]) for trk in gpx.tracks) if t]
+    if not tracks:
+        tracks = [t for t in (_track(rte.name, rte.points) for rte in gpx.routes) if t]
+    if not tracks:
+        raise GpxError("Le fichier GPX ne contient aucun point de trace.")
+    name, points = max(tracks, key=lambda t: t[1][-1].distance_from_start)
+    notice = None
+    if len(tracks) > 1:
+        km = f"{points[-1].distance_from_start / 1000:.1f}".replace(".", ",")
+        notice = f"Ce fichier contient {len(tracks)} traces : la plus longue ({km} km) a été gardée."
+
+    # Only the genuinely named waypoints: official race GPX files carry dozens of unnamed / auto-numbered
+    # points that would otherwise flood the checkpoint list. A re-import of PaceForge's own export loses the
+    # « CP1 — » its names were given, so they never stack.
     waypoints = []
     for wpt in gpx.waypoints:
-        name = (wpt.name or "").strip()
-        if not name:
+        wname = _CP_PREFIX.sub("", (wpt.name or "").strip())
+        if not wname or wpt.latitude is None or wpt.longitude is None:
             continue
-        waypoints.append({
-            "name": name,
-            "lat": wpt.latitude,
-            "lon": wpt.longitude,
-            "elevation": wpt.elevation or 0.0,
-        })
+        waypoints.append({"name": wname, "lat": wpt.latitude, "lon": wpt.longitude, "elevation": wpt.elevation or 0.0})
 
-    return points, waypoints
+    title = (gpx.name or name or "").strip()[:120]
+    return ParsedGpx(points, waypoints, title or None, notice)
+
+
+def parse_gpx(file_content: bytes) -> tuple[list[GpxPoint], list[dict]]:
+    """(track points, waypoints) of a GPX file: read_gpx's, for the migration that imports a trace."""
+    parsed = read_gpx(file_content)
+    return parsed.points, parsed.waypoints
 
 
 def snap_waypoints_to_route(
     waypoints: list[dict], points: list[GpxPoint]
 ) -> list[dict]:
-    """Snap waypoints to the nearest point on the route and compute distance_km."""
+    """Snap waypoints to the nearest point on the route and compute distance_km. The points are bucketed on a
+    coarse grid first: a waypoint is compared with the cells around it, not with the whole track."""
+    cells: dict[tuple[int, int], list[GpxPoint]] = {}
+    for pt in points:
+        cells.setdefault((int(pt.lat // _CELL), int(pt.lon // _CELL)), []).append(pt)
     result = []
     for wpt in waypoints:
-        best_dist = float("inf")
-        best_km = 0.0
-        best_elev = 0.0
-        for pt in points:
-            d = _haversine(wpt["lat"], wpt["lon"], pt.lat, pt.lon)
-            if d < best_dist:
-                best_dist = d
-                best_km = pt.distance_from_start / 1000
-                best_elev = pt.elevation
-        # Only include if reasonably close to the route (< 500m)
-        if best_dist < 500:
+        lat, lon = wpt["lat"], wpt["lon"]
+        if not (math.isfinite(lat) and math.isfinite(lon)):
+            continue
+        ci, cj = int(lat // _CELL), int(lon // _CELL)
+        # longitude cells narrow towards the poles: as many of them as SNAP_MAX_M spans
+        reach = 1 + int(SNAP_MAX_M / (_CELL * 111_320 * max(math.cos(math.radians(lat)), 0.01)))
+        best_dist, best = float("inf"), None
+        for di in (-1, 0, 1):
+            for dj in range(-reach, reach + 1):
+                for pt in cells.get((ci + di, cj + dj), ()):
+                    d = _haversine(lat, lon, pt.lat, pt.lon)
+                    if d < best_dist:
+                        best_dist, best = d, pt
+        if best is not None and best_dist < SNAP_MAX_M:
             result.append({
                 "name": wpt["name"],
-                "distance_km": round(best_km, 1),
-                "elevation": round(best_elev, 0),
+                "distance_km": round(best.distance_from_start / 1000, 1),
+                "elevation": round(best.elevation, 0),
             })
     result.sort(key=lambda w: w["distance_km"])
     return result
+
+
+def import_course(content: bytes, name: str | None = None, fallback: str = "Course",
+                  ) -> tuple[CourseProfile, list[dict], ParsedGpx]:
+    """An import's CPU work in one call, to run off the event loop: the file read, its profile built, its
+    waypoints snapped. ``name``: the course's (a re-import keeps the route's), else the file's own, else
+    ``fallback``."""
+    parsed = read_gpx(content)
+    course = build_course_profile(parsed.points, name=name or parsed.name or fallback)
+    return course, snap_waypoints_to_route(parsed.waypoints, parsed.points), parsed
 
 
 def _gain_loss_hysteresis(elevations: list[float], threshold: float = 3.0) -> tuple[float, float]:
@@ -194,7 +300,7 @@ def build_course_profile(
 ) -> CourseProfile:
     """Split a GPX track into segments and compute elevation stats."""
     if not points:
-        raise ValueError("Aucun point GPS.")
+        raise GpxError("Aucun point GPS.")
 
     smoothed = _smooth_elevations(points)
     total_distance = points[-1].distance_from_start

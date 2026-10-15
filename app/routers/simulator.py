@@ -1,11 +1,15 @@
+import asyncio
+import html
 import json
 import logging
 import re
 import time
+import unicodedata
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
-from sqlalchemy import inspect, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
@@ -13,6 +17,7 @@ from app.dependencies import get_current_user, get_db
 from app.features import cycling_enabled, hidden_sports, require_cycling, sport_hidden
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
+from app.services.gpx import GpxError, ParsedGpx, import_course
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -247,20 +252,14 @@ async def gpx_upload(
 ):
     """Parse an uploaded GPX, persist it as a new Route, then redirect (via
     HX-Redirect) to its own detail page — so refresh/share/back work natively."""
-    from app.services.gpx import (
-        build_course_profile,
-        parse_gpx,
-        snap_waypoints_to_route,
-    )
     from app.services.race_simulator import build_athlete_gradient_profile, predict_course
 
     try:
-        content = await gpx_file.read()
-        points, gpx_waypoints = parse_gpx(content)
-        course = build_course_profile(points, name=_gpx_title(content, gpx_file.filename, "Course"))
-
-        # Snap GPX waypoints to route
-        snapped_wpts = snap_waypoints_to_route(gpx_waypoints, points)
+        await _room_for_a_route(db, user)
+        content = await _read_gpx_upload(gpx_file)
+        # the parse, the profile and the snapping are CPU-bound: off the event loop
+        course, snapped_wpts, parsed = await asyncio.to_thread(
+            import_course, content, None, _file_title(gpx_file.filename, "Course"))
 
         # Build athlete profile and predict
         profile = await build_athlete_gradient_profile(db, user.id)
@@ -287,24 +286,15 @@ async def gpx_upload(
                 elevation=wpt.get("elevation"),
             ))
         await db.flush()
+        await _commit(db)
 
         logger.info("Route %d created from GPX for user %d", route.id, user.id)
-        # HTMX swaps nothing; it follows the redirect to the new detail page.
-        return HTMLResponse(
-            status_code=204,
-            headers={"HX-Redirect": f"/simulator/routes/{route.id}"},
-        )
-    except ValueError as e:
-        return HTMLResponse(
-            f'<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{e}</div>'
-        )
+        return _imported(route, parsed)
+    except GpxError as exc:
+        return _gpx_error(str(exc))
     except Exception:
         logger.exception("GPX upload failed")
-        return HTMLResponse(
-            '<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
-            "Erreur lors de l'analyse du fichier GPX. Vérifiez le format du fichier."
-            "</div>"
-        )
+        return _gpx_error("Erreur lors de l'analyse du fichier GPX. Vérifiez le format du fichier.")
 
 
 def _script_json(obj) -> str:
@@ -554,16 +544,13 @@ async def bike_gpx_upload(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.cycling_simulator import estimate_cda, predict_cycling_course
-    from app.services.gpx import build_course_profile, parse_gpx
     from app.services.power_calculator import ftp_for_user
 
     try:
-        from app.services.gpx import snap_waypoints_to_route
-
-        content = await gpx_file.read()
-        points, gpx_waypoints = parse_gpx(content)
-        course = build_course_profile(points, name=_gpx_title(content, gpx_file.filename, "Parcours vélo"))
-        snapped_wpts = snap_waypoints_to_route(gpx_waypoints, points)
+        await _room_for_a_route(db, user)
+        content = await _read_gpx_upload(gpx_file)
+        course, snapped_wpts, parsed = await asyncio.to_thread(
+            import_course, content, None, _file_title(gpx_file.filename, "Parcours vélo"))
 
         ftp = await ftp_for_user(db, user)
         rider_weight = await _rider_weight(db, user)
@@ -596,22 +583,14 @@ async def bike_gpx_upload(
         for wpt in snapped_wpts:
             db.add(RouteCheckpoint(route_id=route.id, name=wpt.get("name", ""), distance_km=wpt.get("distance_km", 0), elevation=wpt.get("elevation")))
         await db.flush()
+        await _commit(db)
         logger.info("Bike route %d created from GPX for user %d", route.id, user.id)
-        return HTMLResponse(
-            status_code=204,
-            headers={"HX-Redirect": f"/simulator/routes/{route.id}"},
-        )
-    except ValueError as e:
-        return HTMLResponse(
-            f'<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{e}</div>'
-        )
+        return _imported(route, parsed)
+    except GpxError as exc:
+        return _gpx_error(str(exc))
     except Exception:
         logger.exception("Bike GPX upload failed")
-        return HTMLResponse(
-            '<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
-            "Erreur lors de l'analyse du fichier GPX velo."
-            "</div>"
-        )
+        return _gpx_error("Erreur lors de l'analyse du fichier GPX velo.")
 
 
 # ── Save / Load routes ──
@@ -672,6 +651,8 @@ async def save_route(
                 return JSONResponse({"error": "Parcours introuvable"}, status_code=404)
         if route is None and not course_data:  # a new route needs its course before its points are checked
             return JSONResponse({"error": "Parcours manquant"}, status_code=400)
+        if route is None:
+            await _room_for_a_route(db, user)
         total = course_data["total_distance_km"] if course_data else route.total_distance_km
         if any(cp["distance_km"] > total + 0.1 for cp in cps):
             return JSONResponse({"error": "Un passage dépasse la distance du parcours"}, status_code=422)
@@ -739,13 +720,11 @@ async def save_route(
         # A successful response must mean the plan is visible to the next
         # request (in particular an immediate export). Yield dependencies may
         # otherwise commit only after sending that response.
-        try:
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            raise
+        await _commit(db)
         logger.info("Route %d saved for user %d: %s", route.id, user.id, route.name)
         return JSONResponse({"id": route.id, "name": route.name})
+    except GpxError as exc:  # the account's routes are at their cap
+        return JSONResponse({"error": str(exc)}, status_code=422)
     except Exception:
         logger.exception("Failed to save route")
         return JSONResponse({"error": "Erreur lors de la sauvegarde"}, status_code=500)
@@ -765,16 +744,13 @@ async def reimport_route_gpx(
     Lets users fix routes imported before the full-resolution export fix without
     losing the checkpoints/aid-stations they already set up.
     """
-    from app.services.gpx import build_course_profile, parse_gpx
-
     route = await _get_owned_route(route_id, user, db)
     if not route:
         return HTMLResponse("Parcours non trouvé", status_code=404)
 
     try:
-        content = await gpx_file.read()
-        points, _ = parse_gpx(content)
-        course = build_course_profile(points, name=route.name)
+        content = await _read_gpx_upload(gpx_file)
+        course, _, parsed = await asyncio.to_thread(import_course, content, route.name)
         course_data = json.loads(course.model_dump_json())
 
         # Update only the geometry/elevation; leave everything else as-is.
@@ -783,20 +759,15 @@ async def reimport_route_gpx(
         route.total_elevation_gain = course.total_elevation_gain
         route.total_elevation_loss = course.total_elevation_loss
         await db.flush()
+        await _commit(db)
 
         logger.info("Route %d trace re-imported for user %d", route.id, user.id)
-        return HTMLResponse(status_code=204, headers={"HX-Redirect": f"/simulator/routes/{route.id}"})
-    except ValueError as e:
-        return HTMLResponse(
-            f'<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{e}</div>'
-        )
+        return _imported(route, parsed, "p-3")
+    except GpxError as exc:
+        return _gpx_error(str(exc), "p-3")
     except Exception:
         logger.exception("Route re-import failed")
-        return HTMLResponse(
-            '<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">'
-            "Erreur lors de la mise à jour de la trace."
-            "</div>"
-        )
+        return _gpx_error("Erreur lors de la mise à jour de la trace.", "p-3")
 
 
 _FR_WEEKDAYS = ("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim.")
@@ -1025,7 +996,7 @@ async def rename_route(
     route = _visible(result.scalar_one_or_none())
     if not route:
         return JSONResponse({"error": "Parcours non trouve"}, status_code=404)
-    route.name = name.strip() or route.name
+    route.name = name.strip()[:200] or route.name  # capped as save_route caps it
     await db.flush()
     return JSONResponse({"id": route.id, "name": route.name})
 
@@ -1090,12 +1061,7 @@ async def export_route_gpx(
             description=f"km {cp.distance_km}",
         ))
 
-    safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in route.name).strip() or "parcours"
-    return Response(
-        content=gpx.to_xml(),
-        media_type="application/gpx+xml",
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}.gpx"'},
-    )
+    return Response(content=gpx.to_xml(), media_type="application/gpx+xml", headers=_attachment(route.name, ".gpx"))
 
 
 @router.post("/api/simulator/routes/{route_id}/live")
@@ -1322,12 +1288,9 @@ async def save_bike_plan(
 # ── Triathlon: swim + T1 + bike + T2 + run, one timeline, one fuel plan ──
 
 async def _create_run_route_from_gpx(content: bytes, filename: str, user: User, db: AsyncSession) -> Route:
-    from app.services.gpx import build_course_profile, parse_gpx, snap_waypoints_to_route
     from app.services.race_simulator import build_athlete_gradient_profile, predict_course
 
-    points, gpx_waypoints = parse_gpx(content)
-    course = build_course_profile(points, name=filename or "Course")
-    snapped = snap_waypoints_to_route(gpx_waypoints, points)
+    course, snapped, _ = await asyncio.to_thread(import_course, content, None, _file_title(filename, "Course"))
     profile = await build_athlete_gradient_profile(db, user.id)
     course = predict_course(course, profile)
     route = Route(
@@ -1344,10 +1307,7 @@ async def _create_run_route_from_gpx(content: bytes, filename: str, user: User, 
 
 
 async def _create_bike_route_from_gpx(content: bytes, filename: str, user: User, db: AsyncSession) -> Route:
-    from app.services.gpx import build_course_profile, parse_gpx
-
-    points, _ = parse_gpx(content)
-    course = build_course_profile(points, name=filename or "Parcours vélo")
+    course, _, _ = await asyncio.to_thread(import_course, content, None, _file_title(filename, "Parcours vélo"))
     route = Route(
         user_id=user.id, name=course.name, total_distance_km=course.total_distance_km,
         total_elevation_gain=course.total_elevation_gain, total_elevation_loss=course.total_elevation_loss,
@@ -1389,12 +1349,13 @@ async def create_triathlon(
 
     try:
         bike = run = None
+        await _room_for_a_route(db, user)
         if bike_gpx is not None and bike_gpx.filename:
-            bike = await _create_bike_route_from_gpx(await bike_gpx.read(), bike_gpx.filename, user, db)
+            bike = await _create_bike_route_from_gpx(await _read_gpx_upload(bike_gpx), bike_gpx.filename, user, db)
         elif bike_route_id.strip():
             bike = await _get_owned_route(int(bike_route_id), user, db)
         if run_gpx is not None and run_gpx.filename:
-            run = await _create_run_route_from_gpx(await run_gpx.read(), run_gpx.filename, user, db)
+            run = await _create_run_route_from_gpx(await _read_gpx_upload(run_gpx), run_gpx.filename, user, db)
         elif run_route_id.strip():
             run = await _get_owned_route(int(run_route_id), user, db)
         if not bike or bike.sport_type != "bike":
@@ -1423,6 +1384,7 @@ async def create_triathlon(
         )
         db.add(tri)
         await db.flush()
+        await _commit(db)
         logger.info("Triathlon %d created for user %d (bike %d, run %d)", tri.id, user.id, bike.id, run.id)
         return HTMLResponse(status_code=204, headers={"HX-Redirect": f"/simulator/routes/{tri.id}"})
     except ValueError as e:
@@ -1695,19 +1657,63 @@ def _iso_date(value: str | None) -> str | None:
         return None
 
 
-def _gpx_title(content: bytes, filename: str | None, fallback: str) -> str:
-    """The GPX's own name (<metadata><name> or <trk><name>), else the file name without .gpx."""
-    try:
-        import gpxpy
+MAX_GPX_BYTES = 12 * 1024 * 1024  # an upload past this is refused unread
+MAX_ROUTES = 200  # routes stored per account
 
-        g = gpxpy.parse(content.decode("utf-8", "ignore"))
-        for cand in [g.name] + [t.name for t in g.tracks]:
-            if cand and cand.strip():
-                return cand.strip()[:120]
-    except Exception:
-        pass
+
+def _file_title(filename: str | None, fallback: str) -> str:
+    """A course name from the file's name without .gpx, for a GPX that carries none of its own."""
     base = (filename or "").rsplit("/", 1)[-1]
     return (re.sub(r"\.gpx$", "", base, flags=re.I).replace("_", " ").replace("-", " ").strip() or fallback)[:120]
+
+
+async def _read_gpx_upload(gpx_file: UploadFile) -> bytes:
+    """The upload's bytes, refused past MAX_GPX_BYTES without reading further."""
+    content = await gpx_file.read(MAX_GPX_BYTES + 1)
+    if len(content) > MAX_GPX_BYTES:
+        raise GpxError(f"Ce fichier GPX est trop lourd ({MAX_GPX_BYTES // 2**20} Mo au plus).")
+    return content
+
+
+async def _room_for_a_route(db: AsyncSession, user: User) -> None:
+    """An account stores MAX_ROUTES routes at most."""
+    n = (await db.execute(select(func.count(Route.id)).where(Route.user_id == user.id))).scalar() or 0
+    if n >= MAX_ROUTES:
+        raise GpxError(f"Tu as déjà {MAX_ROUTES} parcours enregistrés : supprime-en un avant d’en importer un autre.")
+
+
+async def _commit(db: AsyncSession) -> None:
+    """Explicit, before a redirect: the browser follows it at once, and the dependency's own commit comes
+    only after the response has been sent."""
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+
+def _gpx_error(text: str, padding: str = "p-4") -> HTMLResponse:
+    """The import's refusal, in the form's message box."""
+    return HTMLResponse(f'<div class="rounded-lg border border-red-200 bg-red-50 {padding} text-sm text-red-600">'
+                        f"{html.escape(text)}</div>")
+
+
+def _imported(route: Route, parsed: ParsedGpx, padding: str = "p-4") -> HTMLResponse:
+    """HTMX follows the redirect to the route's page — unless the file had other tracks: then the form says
+    so, with the link (a redirect would lose the message)."""
+    url = f"/simulator/routes/{route.id}"
+    if not parsed.notice:
+        return HTMLResponse(status_code=204, headers={"HX-Redirect": url})
+    return HTMLResponse(f'<div class="rounded-lg border border-amber-200 bg-amber-50 {padding} text-sm text-amber-700">'
+                        f'{html.escape(parsed.notice)} <a href="{url}" class="underline">Voir le parcours</a></div>')
+
+
+def _attachment(name: str, suffix: str) -> dict[str, str]:
+    """Content-Disposition for « name + suffix »: an ASCII name (the header goes out latin-1) and, RFC 5987,
+    the full one for the browsers that read it."""
+    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    safe = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in plain).strip() or "parcours"
+    return {"Content-Disposition": f"attachment; filename=\"{safe}{suffix}\"; filename*=UTF-8''{quote(name + suffix, safe='')}"}
 
 
 # ── Weather ──
@@ -2411,19 +2417,18 @@ async def export_pace_strategy(
         from app.services.pacing_guide import leg_instructions
 
         leg_codes = [li["code"] for li in leg_instructions(await _pacing_guide_for(route, db, user, b), b["sections"])]
-    safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in route.name).strip() or "parcours"
     fmt = (fmt or "gpx").lower()
     if fmt == "csv":
         body = build_pace_csv(route.name, b["sections"], b["use_target"], b["start_offset_s"], leg_codes=leg_codes)
-        return Response(content=body, media_type="text/csv; charset=utf-8",
-                        headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.csv"'})
+        # the BOM: Excel reads a CSV as UTF-8 only with it (« Départ », not « DÃ©part »)
+        return Response(content="﻿" + body, media_type="text/csv; charset=utf-8",
+                        headers=_attachment(route.name, "-plan.csv"))
     if fmt == "tcx":
         body = build_pace_tcx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes)
         return Response(content=body, media_type="application/vnd.garmin.tcx+xml",
-                        headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.tcx"'})
+                        headers=_attachment(route.name, "-plan.tcx"))
     body = build_pace_gpx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes)
-    return Response(content=body, media_type="application/gpx+xml",
-                    headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.gpx"'})
+    return Response(content=body, media_type="application/gpx+xml", headers=_attachment(route.name, "-plan.gpx"))
 
 
 # ── Bike checkpoints (aid stations): server-side editing, plan re-rendered ──
