@@ -66,7 +66,7 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   assert.ok(await p.getByRole('button',{name:/Course de montagne/}).isVisible());
   // Changing account removes the old library, including after another relaunch.
   await p.getByRole('tab',{name:'Santé',exact:true}).click();
-  await p.evaluate(()=>{window.accountId=2;navigate('https://paceforge.fr/sante');});
+  await p.evaluate(()=>{window.accountId=2;fullNavigate('https://paceforge.fr/sante');});
   await p.waitForTimeout(100);
   await p.evaluate(()=>followLink('paceforge://offline'));
   await p.getByText(/Ouvre une course avec une connexion/).waitFor();
