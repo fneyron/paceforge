@@ -752,7 +752,9 @@ def test_long_syncs_have_their_queue_and_are_never_redelivered_while_running():
     one queue, a long sync holding the 2 slots while the 5-min poll waited."""
     from app.celery_app import celery_app
 
-    assert celery_app.conf.broker_transport_options["visibility_timeout"] >= 4 * 3600
+    # no task outlives the hard time limit: twice it, and a task lost with its worker runs again within 2 h, not 6
+    assert celery_app.conf.task_soft_time_limit < celery_app.conf.task_time_limit
+    assert celery_app.conf.broker_transport_options["visibility_timeout"] >= 2 * celery_app.conf.task_time_limit
     route = celery_app.amqp.router.route
     for name in ("paceforge.initial_sync", "paceforge.sync_coros", "paceforge.sync_garmin"):
         assert route({}, name)["queue"].name == "long", name
