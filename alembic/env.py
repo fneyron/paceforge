@@ -42,7 +42,10 @@ def do_run_migrations(connection):
 
 # Two containers of a deploy may start together, each running `alembic upgrade head`: the second waits on this
 # lock until the first's connection closes (its migrations committed), then finds nothing left to run. A
-# session-level lock: released with the connection, whatever happens to the process. Any fixed bigint.
+# session-level lock: it covers the whole run whatever transaction_per_migration says, and goes with the
+# connection. The wait has no lock_timeout or statement_timeout, by design (a big migration may take minutes):
+# a holder whose process died half-open keeps the next container waiting until TCP keepalive ends its
+# session. Any fixed bigint.
 MIGRATION_LOCK_KEY = 7_364_720_914
 
 

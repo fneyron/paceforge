@@ -128,7 +128,10 @@ async def test_the_race_model_reads_columns_and_the_streams_of_uncached_races_on
                    streams_data={"distance": [0, 1000], "altitude": [0, 999]})
     streamed = _race(test_user.id, "Trail B", 200, 40, 4, streams_data={"distance": [0, 1000, 2000], "altitude": [0, 300, 0]})
     training = _race(test_user.id, "Footing", 5, 12, 1.2, raw_data={"workout_type": 0})
-    db_session.add_all([cached, streamed, training])
+    # a provider's odd tag in one row (read as JSON, never cast in SQL): a 1.0 is the race tag, a « 1 » is not
+    odd_float = _race(test_user.id, "Tag 1.0", 300, 60, 8, raw_data={"workout_type": 1.0})
+    odd_text = _race(test_user.id, "Tag texte", 400, 60, 8, raw_data={"workout_type": "1 "})
+    db_session.add_all([cached, streamed, training, odd_float, odd_text])
     await db_session.flush()
 
     keys = set(rc.candidate_columns(test_user.id).selected_columns.keys())
@@ -143,6 +146,7 @@ async def test_the_race_model_reads_columns_and_the_streams_of_uncached_races_on
     assert points["Ultra A"]["heat"] == 1.05
     assert 280 <= points["Trail B"]["dplus"] <= 300 and points["Trail B"]["dplus_src"] == "stream"  # smoothed
     assert "Footing" not in points
+    assert points["Tag 1.0"]["is_race"] is True and points["Tag texte"]["is_race"] is False  # a long effort still
 
 
 async def test_the_fitted_model_is_kept_per_worker_while_the_races_are_unchanged(db_session, test_user, queries, monkeypatch):

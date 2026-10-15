@@ -90,7 +90,9 @@ DPLUS_CACHE_VERSION = 1
 # included (594 ms a call, 36 MB decoded, on the audit's dataset; 2026-10-14). The candidates are read as columns
 # (candidate_columns) and the fitted model is kept per worker for RACE_MODEL_TTL_S, keyed on the candidate set's
 # count and last write: a sync that adds a race or rewrites one (its D+, its heat) replaces it at once; the TTL
-# bounds what that key cannot see (the day's recency weights, a write outside the ORM).
+# bounds what that key cannot see: the day's recency weights, a write outside the ORM, and a long sync
+# transaction (its rows carry its start time, onupdate now()) that commits after a page read without moving
+# the maximum, whose fit is served until the TTL.
 RACE_MODEL_TTL_S = 300
 RACE_MODEL_CACHE_SIZE = 256  # athletes kept per worker; the least recently read goes first
 _RACE_MODELS: OrderedDict[int, tuple[float, tuple, dict | None]] = OrderedDict()  # user_id → (expires, key, model)
@@ -263,7 +265,7 @@ def candidate_columns(user_id: int, months: int = MODEL_MONTHS):
         .with_only_columns(
             Activity.id, Activity.name, Activity.sport_type, Activity.start_date, Activity.distance,
             Activity.moving_time, Activity.elapsed_time, Activity.total_elevation_gain, Activity.average_heartrate,
-            raw["workout_type"].as_integer().label("workout_type"),
+            raw["workout_type"].label("workout_type"),  # as JSON, no SQL cast: one odd value must not fail the page
             raw[DPLUS_CACHE_KEY].label("dplus_cache"),
             raw[HEAT_CACHE_KEY].label("heat_cache"),
             Activity.splits_metric.is_not(None).label("has_splits"),  # the duplicate ranking's tie-breaker

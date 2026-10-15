@@ -13,7 +13,13 @@ statements are skipped on another dialect (the tests build their schema from the
 features switched off (analyses, chat_messages, weekly_digests, generated_plans, simulations) are left as they
 are: unmapped at the next release, dropped after.
 
-The downgrade restores the schema; the orphans deleted and the JSON nulls are not brought back.
+Every DDL waits 10 s at most for its lock (lock_timeout): under contention the migration fails and the
+container start is retried, the expected outcome.
+
+Rollback: `alembic downgrade -1` with this image before redeploying the previous one (it does not know this
+revision); the schema comes back, the orphans deleted and the JSON nulls do not. During a mixed deploy the old
+containers still write JSON nulls: once they are gone, running step 4 again (_json_nulls_to_sql_nulls, one
+UPDATE per table) re-seals the invariant.
 """
 
 import logging
@@ -65,6 +71,23 @@ def _fk_name(table: str, column: str) -> str:
     return f"{table}_{column}_fkey"
 
 
+def _alter_json_columns(target: str) -> None:
+    """json ⇄ jsonb, one ALTER TABLE per table: one rewrite of routes, not six."""
+    for table in dict.fromkeys(t for t, _c in JSON_TO_JSONB):
+        clauses = ", ".join(f"ALTER COLUMN {c} TYPE {target} USING {c}::{target}" for t, c in JSON_TO_JSONB if t == table)
+        op.execute(f"ALTER TABLE {table} {clauses}")
+
+
+def _json_nulls_to_sql_nulls(bind) -> None:
+    """One UPDATE per table, every nullable JSON column in the pass (one rewrite of each row concerned); safe to
+    run again (the rollback note above)."""
+    for table, columns in NULLABLE_JSON:
+        sets = ", ".join(f"{c} = CASE WHEN jsonb_typeof({c}) = 'null' THEN NULL ELSE {c} END" for c in columns)
+        where = " OR ".join(f"jsonb_typeof({c}) = 'null'" for c in columns)
+        n = bind.execute(sa.text(f"UPDATE {table} SET {sets} WHERE {where}")).rowcount
+        log.info("%s: %d rows held JSON nulls, SQL NULLs now", table, n)
+
+
 def _set_compression(bind, method: str) -> None:
     """lz4 reads back 2,5× faster than pglz (measured on the audit's dataset); a server built without lz4 keeps
     pglz: each statement runs in a savepoint, the first refusal ends the step."""
@@ -80,6 +103,8 @@ def _set_compression(bind, method: str) -> None:
 def upgrade():
     bind = op.get_bind()
     pg = bind.dialect.name == "postgresql"
+    if pg:
+        op.execute("SET lock_timeout = '10s'")
 
     # 1. orphans and dangling links (user_id is NOT NULL everywhere: NOT IN is safe)
     for table in OWNED:
@@ -100,14 +125,9 @@ def upgrade():
 
     if pg:
         # 3. json → jsonb (json has no equality and no operators, and is parsed at every read)
-        for table, column in JSON_TO_JSONB:
-            op.execute(f"ALTER TABLE {table} ALTER COLUMN {column} TYPE jsonb USING {column}::jsonb")
+        _alter_json_columns("jsonb")
         # 4. a JSON null stored for « nothing » is a SQL NULL: IS NOT NULL means « has a value » again
-        for table, columns in NULLABLE_JSON:
-            for column in columns:
-                n = bind.execute(sa.text(f"UPDATE {table} SET {column} = NULL WHERE jsonb_typeof({column}) = 'null'")).rowcount
-                if n:
-                    log.info("%s.%s: %d JSON nulls are SQL NULLs now", table, column, n)
+        _json_nulls_to_sql_nulls(bind)
 
     # 5. an epoch past 2038
     with op.batch_alter_table("users") as batch:
@@ -137,6 +157,8 @@ def upgrade():
 def downgrade():
     bind = op.get_bind()
     pg = bind.dialect.name == "postgresql"
+    if pg:
+        op.execute("SET lock_timeout = '10s'")
 
     with op.batch_alter_table("mobile_devices") as batch:
         batch.drop_constraint("uq_mobile_devices_prev_token_hash", type_="unique")
@@ -152,8 +174,7 @@ def downgrade():
         batch.alter_column("strava_token_expires_at", type_=sa.Integer(), existing_type=sa.BigInteger(),
                            existing_nullable=True)
     if pg:
-        for table, column in JSON_TO_JSONB:
-            op.execute(f"ALTER TABLE {table} ALTER COLUMN {column} TYPE json USING {column}::json")
+        _alter_json_columns("json")
     for table, column, _ref, _rule in reversed(FOREIGN_KEYS):
         with op.batch_alter_table(table) as batch:
             batch.drop_constraint(_fk_name(table, column), type_="foreignkey")

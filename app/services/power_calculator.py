@@ -222,6 +222,7 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
     # ── tier 1: streams of power-meter rides (max_watts only exists with a meter) ──
     cached = _FTP_CACHE.get(user_id)
     if cached and cached[0] > now:
+        _FTP_CACHE.move_to_end(user_id)  # the least recently read goes first
         return cached[1]
     q = (
         select(Activity.id, Activity.name, Activity.start_date, Activity.streams_data)
