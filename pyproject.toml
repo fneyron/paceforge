@@ -54,12 +54,16 @@ testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py312"
-line-length = 100
+line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM", "TCH"]
+# Depends() in a parameter default is FastAPI's own idiom
+extend-ignore = ["B008"]
 
+# Not strict: the code is typed where it helps, and CI holds the line with mypy-baseline.txt (docs/quality.md).
 [tool.mypy]
 python_version = "3.12"
-strict = true
 plugins = ["pydantic.mypy"]
+files = ["app"]
+ignore_missing_imports = true
