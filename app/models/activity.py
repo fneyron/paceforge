@@ -86,9 +86,8 @@ class Activity(Base):
 
     # Relationships
     user = relationship("User", back_populates="activities")
-    # the analysis feature is off: never loaded with the activity (a select per row otherwise)
     analysis = relationship(
-        "Analysis", back_populates="activity", uselist=False, lazy="noload"
+        "Analysis", back_populates="activity", uselist=False, lazy="selectin"
     )
 
     def __repr__(self) -> str:

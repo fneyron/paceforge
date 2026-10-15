@@ -16,11 +16,6 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# Two containers of a deploy may start together, each running `alembic upgrade head`: the second waits on this
-# lock for the first's migrations to be committed, then finds nothing left to run. Transaction-scoped: released
-# with the transaction, whatever happens to the process. Any fixed bigint, PaceForge's own.
-MIGRATION_LOCK_KEY = 7_364_720_914
-
 # Override sqlalchemy.url with our async DATABASE_URL
 # Convert asyncpg URL to psycopg2 for sync operations if needed
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
@@ -42,9 +37,13 @@ def run_migrations_offline() -> None:
 def do_run_migrations(connection):
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
-        if connection.dialect.name == "postgresql":
-            connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": MIGRATION_LOCK_KEY})
         context.run_migrations()
+
+
+# Two containers of a deploy may start together, each running `alembic upgrade head`: the second waits on this
+# lock until the first's connection closes (its migrations committed), then finds nothing left to run. A
+# session-level lock: released with the connection, whatever happens to the process. Any fixed bigint.
+MIGRATION_LOCK_KEY = 7_364_720_914
 
 
 async def run_async_migrations() -> None:
@@ -55,6 +54,9 @@ async def run_async_migrations() -> None:
     )
 
     async with connectable.connect() as connection:
+        if connection.dialect.name == "postgresql":
+            await connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": MIGRATION_LOCK_KEY})
+            await connection.commit()  # the lock outlives this transaction; the migrations open their own
         await connection.run_sync(do_run_migrations)
 
     await connectable.dispose()

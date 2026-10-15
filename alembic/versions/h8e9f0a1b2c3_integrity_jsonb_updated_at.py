@@ -3,13 +3,15 @@
 
 In this order, safe on live data: the rows of accounts deleted before their table had a foreign key go, and the
 links to an activity or a phone gone are cleared (counts in the migration log); the missing foreign keys come
-(routes, simulations, nutrition_products and generated_plans to users ON DELETE CASCADE; routes.result_activity_id
-to activities and mobile_daily.device_id to mobile_devices ON DELETE SET NULL); the seven json columns become
+(routes and nutrition_products to users ON DELETE CASCADE; routes.result_activity_id to activities and
+mobile_daily.device_id to mobile_devices ON DELETE SET NULL); the seven json columns become
 jsonb; a JSON null stored for « nothing » becomes a SQL NULL (the models write SQL NULLs from now on: JSONType
 none_as_null); users.strava_token_expires_at grows to BIGINT; activities, routes and route_checkpoints get
 updated_at; four indexes a wider one covers go; the big activity columns compress with lz4 from now on (the old
 rows stay as they are); mobile_devices.prev_token_hash is unique by constraint, as the model says. PostgreSQL-only
-statements are skipped on another dialect (the tests build their schema from the models).
+statements are skipped on another dialect (the tests build their schema from the models). The tables of the
+features switched off (analyses, chat_messages, weekly_digests, generated_plans, simulations) are left as they
+are: unmapped at the next release, dropped after.
 
 The downgrade restores the schema; the orphans deleted and the JSON nulls are not brought back.
 """
@@ -28,15 +30,13 @@ depends_on = None
 log = logging.getLogger("alembic.runtime.migration")
 
 # tables whose user_id had no foreign key: their rows of accounts gone are orphans
-OWNED = ("routes", "simulations", "nutrition_products", "generated_plans")
+OWNED = ("routes", "nutrition_products")
 # links to a row that may be gone: cleared before the key SET NULLs them from now on
 LINKS = (("routes", "result_activity_id", "activities"), ("mobile_daily", "device_id", "mobile_devices"))
 # (table, column, referred table, ON DELETE), named as PostgreSQL names the earlier keys
 FOREIGN_KEYS = (
     ("routes", "user_id", "users", "CASCADE"),
-    ("simulations", "user_id", "users", "CASCADE"),
     ("nutrition_products", "user_id", "users", "CASCADE"),
-    ("generated_plans", "user_id", "users", "CASCADE"),
     ("routes", "result_activity_id", "activities", "SET NULL"),
     ("mobile_daily", "device_id", "mobile_devices", "SET NULL"),
 )
@@ -47,19 +47,16 @@ NULLABLE_JSON = (
     ("activities", ("laps", "splits_metric", "best_efforts", "streams_data", "computed_metrics")),
     ("routes", ("course_json", "live_json", "params_json", "weather_json", "nutrition_json", "result_json",
                 "reference_json")),
-    ("simulations", ("config_json", "results_json", "weather_json")),
     ("health_metrics", ("details",)),
     ("users", ("preferred_sports",)),
-    ("weekly_digests", ("training_load_summary",)),
 )
 DATED = ("activities", "routes", "route_checkpoints")
-# (index, table, columns): covered by ix_activities_user_start_date, uq_mobile_daily and uq_user_week (user_id
-# first), or read by nothing (ix_activities_start_date: every read is per athlete)
+# (index, table, columns): covered by ix_activities_user_start_date and uq_mobile_daily (user_id first), or read
+# by nothing (ix_activities_start_date: every read is per athlete)
 REDUNDANT_INDEXES = (
     ("ix_activities_user_id", "activities", ["user_id"]),
     ("ix_activities_start_date", "activities", ["start_date"]),
     ("ix_mobile_daily_user_id", "mobile_daily", ["user_id"]),
-    ("ix_weekly_digests_user_id", "weekly_digests", ["user_id"]),
 )
 COMPRESSED = ("raw_data", "laps", "splits_metric", "streams_data")
 

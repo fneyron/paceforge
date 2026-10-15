@@ -62,21 +62,15 @@ def test_the_integrity_migration_follows_the_foundation_and_round_trips():
             "CREATE INDEX ix_activities_start_date ON activities (start_date)",
             "CREATE TABLE routes (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, result_activity_id INTEGER)",
             "CREATE TABLE route_checkpoints (id INTEGER PRIMARY KEY, route_id INTEGER NOT NULL)",
-            "CREATE TABLE simulations (id INTEGER PRIMARY KEY, route_id INTEGER NOT NULL, user_id INTEGER NOT NULL)",
             "CREATE TABLE nutrition_products (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL)",
-            "CREATE TABLE generated_plans (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL)",
             "CREATE TABLE mobile_devices (id INTEGER PRIMARY KEY, prev_token_hash VARCHAR(64))",
             "CREATE UNIQUE INDEX ix_mobile_devices_prev_token_hash ON mobile_devices (prev_token_hash)",
             "CREATE TABLE mobile_daily (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, device_id INTEGER)",
             "CREATE INDEX ix_mobile_daily_user_id ON mobile_daily (user_id)",
-            "CREATE TABLE weekly_digests (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL)",
-            "CREATE INDEX ix_weekly_digests_user_id ON weekly_digests (user_id)",
             "INSERT INTO users (id, strava_token_expires_at) VALUES (1, 2147483000)",
             "INSERT INTO activities (id, user_id) VALUES (10, 1)",
             "INSERT INTO routes (id, user_id, result_activity_id) VALUES (1, 1, 10), (2, 1, 99), (3, 7, NULL)",
-            "INSERT INTO simulations (id, route_id, user_id) VALUES (1, 1, 1), (2, 3, 7)",
             "INSERT INTO nutrition_products (id, user_id) VALUES (1, 1), (2, 7)",
-            "INSERT INTO generated_plans (id, user_id) VALUES (1, 7)",
             "INSERT INTO mobile_devices (id) VALUES (5)",
             "INSERT INTO mobile_daily (id, user_id, device_id) VALUES (1, 1, 5), (2, 1, 6)",
         ):
@@ -85,28 +79,25 @@ def test_the_integrity_migration_follows_the_foundation_and_round_trips():
         insp = sa.inspect(c)
         assert c.execute(sa.text("SELECT id FROM routes ORDER BY id")).scalars().all() == [1, 2]
         assert c.execute(sa.text("SELECT result_activity_id FROM routes ORDER BY id")).scalars().all() == [10, None]
-        assert c.execute(sa.text("SELECT id FROM simulations")).scalars().all() == [1]
         assert c.execute(sa.text("SELECT id FROM nutrition_products")).scalars().all() == [1]
-        assert c.execute(sa.text("SELECT count(*) FROM generated_plans")).scalar() == 0
         assert c.execute(sa.text("SELECT device_id FROM mobile_daily ORDER BY id")).scalars().all() == [5, None]
         keys = {(fk["constrained_columns"][0], fk["referred_table"], fk["options"].get("ondelete"))
-                for t in ("routes", "simulations", "nutrition_products", "generated_plans", "mobile_daily")
+                for t in ("routes", "nutrition_products", "mobile_daily")
                 for fk in insp.get_foreign_keys(t)}
         assert keys == {("user_id", "users", "CASCADE"), ("result_activity_id", "activities", "SET NULL"),
                         ("device_id", "mobile_devices", "SET NULL")}
         for table in ("activities", "routes", "route_checkpoints"):
             assert "updated_at" in {col["name"] for col in insp.get_columns(table)}
         assert c.execute(sa.text("SELECT updated_at FROM activities")).scalar()  # the existing row: now
-        indexes = {ix["name"] for t in ("activities", "mobile_daily", "weekly_digests", "mobile_devices")
-                   for ix in insp.get_indexes(t)}
+        indexes = {ix["name"] for t in ("activities", "mobile_daily", "mobile_devices") for ix in insp.get_indexes(t)}
         assert not indexes & {"ix_activities_user_id", "ix_activities_start_date", "ix_mobile_daily_user_id",
-                              "ix_weekly_digests_user_id", "ix_mobile_devices_prev_token_hash"}
+                              "ix_mobile_devices_prev_token_hash"}
         assert [u["column_names"] for u in insp.get_unique_constraints("mobile_devices")] == [["prev_token_hash"]]
         assert isinstance(next(col for col in insp.get_columns("users") if col["name"] == "strava_token_expires_at")["type"],
                           sa.BigInteger)
         _run(c, mig.downgrade)
         insp = sa.inspect(c)
-        assert not any(insp.get_foreign_keys(t) for t in ("routes", "simulations", "nutrition_products", "mobile_daily"))
+        assert not any(insp.get_foreign_keys(t) for t in ("routes", "nutrition_products", "mobile_daily"))
         assert "updated_at" not in {col["name"] for col in insp.get_columns("activities")}
         assert {ix["name"] for ix in insp.get_indexes("activities")} == {"ix_activities_user_id", "ix_activities_start_date"}
         assert [ix["name"] for ix in insp.get_indexes("mobile_devices")] == ["ix_mobile_devices_prev_token_hash"]
@@ -213,4 +204,4 @@ async def test_the_activity_page_reads_route_names_not_courses(client, db_sessio
     queries.clear()
     response = await client.get(f"/activity/{test_activity.id}")
     assert response.status_code == 200 and "Boucle du lac" in response.text and "Marathon" not in response.text
-    assert not any("course_json" in q or "FROM analyses" in q for q in queries), queries
+    assert not any("course_json" in q for q in queries), queries

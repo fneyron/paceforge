@@ -103,9 +103,7 @@ class Simulation(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     route_id: Mapped[int] = mapped_column(Integer, ForeignKey("routes.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     target_time_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
     config_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
