@@ -86,10 +86,12 @@ def test_the_texts_are_french_and_strava_details_are_stored_once():
     assert (row.name, row.sport_type) == ("Sans titre", "Workout")
     assert (row.laps, row.splits_metric, row.best_efforts) == ([{"lap_index": 1}], [{"split": 1}], [{"name": "5k"}])
     assert not {"laps", "splits_metric", "best_efforts"} & set(row.raw_data)
-    row.raw_data = {**row.raw_data, "paceforge_dplus": {"gain": 10}}
+    # a row saved before this change holds a copy of its laps in raw_data: the next detail takes it away
+    row.raw_data = {**row.raw_data, "paceforge_dplus": {"gain": 10}, "laps": [{"old": True}]}
     apply_detail(row, {"id": 1, "name": "Footing", "resource_state": 3, "laps": [{"lap_index": 2}], "calories": 500})
     assert row.laps == [{"lap_index": 2}] and row.calories == 500 and row.splits_metric == [{"split": 1}]
-    assert row.raw_data == {"id": 1, "name": "Footing", "resource_state": 3, "calories": 500, "paceforge_dplus": {"gain": 10}}
+    assert not {"laps", "splits_metric", "best_efforts"} & set(row.raw_data)
+    assert row.raw_data["paceforge_dplus"] == {"gain": 10} and row.raw_data["name"] == "Footing"
 
 
 def test_fr_num_keeps_the_digits_and_changes_the_separator():

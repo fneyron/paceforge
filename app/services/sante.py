@@ -1,15 +1,15 @@
 """Santé: three visual rings, with explanations available on demand.
 
-Sommeil compares the measured 24 h (naps included) to the 8-h need; the sleep owed over 7 nights is said apart
-(sante_sleep.deficit), never added to it. Récupération is the day's rule-based state (sante_score.score_of: the
-7-day VFC, else FC de nuit, trend against its baseline of days −67 to −8, the illness alert, the breathing flag, a
-short 24 h, an effort window) and its « indice nocturne »; last night must be measured, and a state never comes
-from sleep alone or from activities alone (owner, 2026-10-14: scientific basis — it replaces a weighted index and
-its caps that had no validated basis). Before noon a pending night may retain yesterday's explicitly dated cycle.
+Sommeil compares the measured 24 h (naps included) to an 8-h reference, not a personal physiological need.
+The estimated seven-night gap is shown separately (sante_sleep.deficit). Signaux nocturnes combines the usable
+VFC and night-HR trends with the existing acute-alert, breathing and short-sleep rules (sante_score.score_of).
+It is a descriptive /100 index, never a percentage of recovery or a training clearance. Recorded race/ultra
+context is dated separately, without score caps or a physiological recovery deadline. Before noon a pending
+night may retain yesterday's explicitly dated cycle.
 Entraînement compares the last seven days' load to the usual week: 100 % is a reference, not a target, and the
 full arc is 200 %; the same load (sante_load, one pipeline) draws the Charge accumulée and Activités' 7 / 28 days.
 
-The rings open native disclosures with sleep details, recovery factors and history, or training context. The
+The rings open native disclosures with sleep details, nightly signals and history, or training context. The
 nightly VFC/FC charts remain visible: rolling trends, measured points and provisional references are labelled
 separately. Extra daytime measurements stay visible with recent median references. Measurement dates and
 successful syncs are distinct in the source details.
@@ -103,6 +103,7 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
              sex=None) -> dict:
     """The page's pure computation (no database): the day's state, its 14 days, the cards, the dials, the load."""
     from app.services import training_view
+    from app.services import sante_context
 
     # a Longue run like a race (R3): its HR against the athlete's bounds as of its day (the nights' resting HR)
     rest_of = partial(nt.rest_hr, nights)
@@ -125,6 +126,8 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
         rest = nt.rest_hr(nights, until)
         load = st.loads(sessions, until, rest, peak, sex)
         out.update(_top(day, sessions, has_watch, out, until, load))
+        out["synthesis"] = sante_context.synthesis(day, nights, until, efforts, sessions,
+                                                   sl.deficit(nights, today, raced))
     done = [s for s in sessions if s.end_day <= until]
     out["load"] = sante_load.card(sessions, until, load)
     out["fitness"] = training_view.footing(done, until, peak)
@@ -328,7 +331,7 @@ def sleep_dial(tst24: int | None, need: int, href: str | None) -> dict:
     p = min(100, sc.rounded(100 * tst24 / need))
     return viz.ring("sommeil", tst24 / need, str(p), "Sommeil", word, unit="%", href=href,
                     tone="warn" if tst24 < nt.SHORT_DAY_MIN else "sleep",
-                    aria=f"Sommeil {sc.pct(p)} de ton besoin estimé de {viz.hm_long(need)}, {word}.")
+                    aria=f"Sommeil {sc.pct(p)} du repère de {viz.hm_long(need)}, {word}.")
 
 
 def usual_week(sessions, since: date, value=None) -> float | None:
@@ -459,7 +462,7 @@ BUILDING = "en construction"  # a signal without usual values yet: its card's fi
 # owner, 2026-10-09, « Tu ne mets pas les fourchettes pour VFC et FC repos dans les graphiques ? »)
 # owner, 2026-10-14: scientific basis — a night counts in the usual values a week after it: « dès 7 nuits
 # mesurées » alone became false (a minimal fix, the wording is a GUI proposal)
-BUILDS = "Tes valeurs habituelles s'afficheront ici dès {n} nuits mesurées avant les 7 derniers jours."
+BUILDS = "Une référence apparaît dès {n} nuits mesurées avec la même source et le même calcul."
 # the cards' legend (v4.4, owner: « comment matérialiser que c'est en cours de construction dans le graphique ? »):
 # every measured night is a filled dot (each one counts: owner, 2026-10-08); the band solid, or dashed while
 # provisional
@@ -470,17 +473,18 @@ LEGEND_PROV = ("is-band-prov", "repère provisoire")
 
 
 def nights_to_normal(nights, metric: str, d: date) -> int:
-    """How many nights until the usual values exist on `metric`, every coming night being measured: the first
-    j ≥ 1 for which the baseline of day d + j (nights.normal: the nights from d + j − 67 to d + j − 8, on its
-    series) reaches its required count: 7 nights for RMSSD/HR, 14 for SDNN — those already slept (a night counts
-    a week after it, owner, 2026-10-14: scientific basis) and the coming ones."""
+    """Nights needed for either the lagged reference or its recent provisional fallback, on this series.
+    Assumes each coming night is measured; expired observations never count toward that future window."""
     src = nt.mean_source(nights, metric, d)
     required = nt.reference_min_nights(metric, src)
     known = [x for x, n in nights.items() if x <= d and n.value(metric) is not None and n.source_of(metric) == src]
     lag = nt.BASELINE_LAG + 1
     for j in range(1, required + lag + 1):
         lo, hi = d + timedelta(days=j - nt.BAND_DAYS - nt.BASELINE_LAG), d + timedelta(days=j - lag)
-        if sum(1 for x in known if lo <= x <= hi) + max(0, j - lag) >= required:
+        lagged = sum(1 for x in known if lo <= x <= hi) + max(0, j - lag)
+        recent_lo = d + timedelta(days=j - nt.BAND_DAYS + 1)
+        recent = sum(1 for x in known if x >= recent_lo) + j
+        if max(lagged, recent) >= required:
             return j
     return required + lag
 
@@ -598,7 +602,7 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     required = nt.reference_min_nights(metric, source)
     # the nights the reference holds (a young series' provisional one: the nights up to last night), else those
     # of the lagged window so far
-    count = reference["n"] if reference else nt.baseline_count(nights, metric, today, source)
+    count = reference["n"] if reference else nt.reference_count(nights, metric, today, source)
     label = f"Référence · {count} nuits" if reference else f"Référence · {count}/{required} nuits"
     reference_detail = f"Référence provisoire : {count} nuits mesurées." if provisional else None
     c["reference"] = {"n": count, "required": required, "provisional": provisional, "ready": bool(reference),

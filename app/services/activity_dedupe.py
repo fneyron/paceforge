@@ -24,6 +24,9 @@ _DUP_DISTANCE_TOL = 0.15
 # Tiny recordings (pressed start, stopped right away).
 _FALSE_START_MAX_M = 1000
 _FALSE_START_MAX_S = 300
+# Missing distance is expected for mobility, yoga, strength and other stationary sessions. A short duration alone
+# cannot distinguish them from accidental recordings. Apply the distance heuristic only to travelling sports.
+_DISTANCE_SPORTS = {sport for types in SPORT_GROUPS.values() for sport in types} | {"Walk", "Hike"}
 
 
 def sport_group(sport_type: str | None) -> str:
@@ -41,7 +44,9 @@ def _same_family(a: str, b: str) -> bool:
 
 
 def is_false_start(activity) -> bool:
-    return (activity.distance or 0) < _FALSE_START_MAX_M and (activity.moving_time or 0) < _FALSE_START_MAX_S
+    return (activity.sport_type in _DISTANCE_SPORTS
+            and (activity.distance or 0) < _FALSE_START_MAX_M
+            and (activity.moving_time or 0) < _FALSE_START_MAX_S)
 
 
 def _richness(activity) -> tuple:
@@ -52,13 +57,14 @@ def _richness(activity) -> tuple:
     return (has_hr, has_splits, activity.moving_time or 0, -activity.id)
 
 
-def find_duplicate_ids(activities: Iterable) -> set[int]:
-    """Return ids of activities that duplicate a richer one (same outing)."""
+def duplicate_representatives(activities: Iterable) -> dict[int, int]:
+    """Map discarded copies to the final retained recording of the same outing."""
     acts = sorted(
         (a for a in activities if a.start_date is not None),
         key=lambda a: a.start_date,
     )
     duplicates: set[int] = set()
+    representatives = {}
     for i, a in enumerate(acts):
         if a.id in duplicates:
             continue
@@ -78,6 +84,16 @@ def find_duplicate_ids(activities: Iterable) -> set[int]:
                     continue
             loser = a if _richness(a) < _richness(b) else b
             duplicates.add(loser.id)
+            representatives[loser.id] = b.id if loser is a else a.id
             if loser is a:
                 break
-    return duplicates
+    for loser, keeper in representatives.items():
+        while keeper in representatives:
+            keeper = representatives[keeper]
+        representatives[loser] = keeper
+    return representatives
+
+
+def find_duplicate_ids(activities: Iterable) -> set[int]:
+    """Return ids of activities that duplicate a richer one (same outing)."""
+    return set(duplicate_representatives(activities))
