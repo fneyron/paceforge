@@ -71,6 +71,7 @@ def read(name: str) -> str | None:
     try:
         return _redis().get(PREFIX + name)
     except Exception:
+        logger.warning("Strava state unavailable: %s not read", name, exc_info=True)
         return None
 
 

@@ -1704,8 +1704,8 @@ def _gpx_title(content: bytes, filename: str | None, fallback: str) -> str:
         for cand in [g.name] + [t.name for t in g.tracks]:
             if cand and cand.strip():
                 return cand.strip()[:120]
-    except Exception:
-        pass
+    except Exception:  # the trace itself was parsed before this: its name is a bonus
+        logger.warning("GPX name not read", exc_info=True)
     base = (filename or "").rsplit("/", 1)[-1]
     return (re.sub(r"\.gpx$", "", base, flags=re.I).replace("_", " ").replace("-", " ").strip() or fallback)[:120]
 
@@ -1750,7 +1750,8 @@ async def get_weather(
             points = None
     try:
         weather = await cached_forecast(lat, lon, date, points=points)
-    except Exception:  # the service already logs; the page shows a retry chip either way
+    except Exception:  # the page shows a retry chip either way
+        logger.warning("Weather lookup failed", exc_info=True)
         weather = None
     if not weather:
         # 503, not 500: the upstream is unreachable, nothing is broken here — the client reads the error field

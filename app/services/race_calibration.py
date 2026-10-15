@@ -115,8 +115,8 @@ def course_dplus_src(course) -> tuple[float, str]:
     if gain is not None:
         try:
             course.dplus_effort = gain
-        except Exception:  # an object without the field: just don't cache
-            pass
+        except (AttributeError, TypeError, ValueError):  # an object without the field: just don't cache
+            logger.warning("Course D+ not cached on a %s", type(course).__name__, exc_info=True)
         return gain, "effort"
     return float(course.total_elevation_gain or 0), "total"
 
@@ -154,6 +154,7 @@ def activity_dplus(a: Activity) -> tuple[float, str]:
         try:
             g = dplus_from_streams(a.streams_data, a.distance)
         except Exception:
+            logger.warning("Race D+ not read from the streams of activity %d", a.id, exc_info=True)
             g = None
         if g is not None:
             return g, "stream"
@@ -676,6 +677,7 @@ async def _backfill_dplus(db: AsyncSession, user, strava, limit: int) -> int:
         try:
             gain = dplus_from_streams(streams, a.distance)
         except Exception:
+            logger.warning("Race D+ backfill: streams of activity %d not read", a.id, exc_info=True)
             gain = None
         entry = {"v": DPLUS_CACHE_VERSION, "gain": round(gain, 1) if gain is not None else None,
                  "src": "stream" if gain is not None else "none"}
