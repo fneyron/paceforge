@@ -54,10 +54,13 @@ async def simulator_page(
         rt.profile_points = pts if isinstance(pts, list) else []
         rt.imported_estimate_s = imp if isinstance(imp, (int, float)) else 0  # the course's import estimate (_objective_s)
         rt.has_course = bool(rt.profile_points)  # every course has its elevation points (a triathlon has none)
-    # upcoming races first (soonest), then past ones (most recent first), then undated
+    # upcoming races first (soonest), then past ones (most recent first), then undated: on the athlete's day
+    # (sante_training.athlete_today, the day Santé reads), not the server's UTC one
     from datetime import date as _date
 
-    today = _date.today()
+    from app.services import sante_training as st
+
+    today = await st.athlete_today(db, user.id)
     for rt in saved_routes:
         try:
             rt.days_to = (_date.fromisoformat(str(rt.race_date)[:10]) - today).days if rt.race_date else None
@@ -110,7 +113,7 @@ async def simulator_page(
                 logger.exception("legacy objective check failed for route %s", rt.id)
     run = await _races_vs_plan([rt for rt in saved_routes if rt.result_json], db, user, profile=profile)
     for rt in saved_routes:
-        rt.card = _route_card(rt, *run.get(rt.id, (None, None)))
+        rt.card = _route_card(rt, *run.get(rt.id, (None, None)), today=today)
 
     return templates.TemplateResponse(
         request,
@@ -194,13 +197,15 @@ async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User, prof
     return out
 
 
-def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None) -> dict:
+def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None, today=None) -> dict:
     """What « Mes courses » shows for a race: the date in words, the objective, the real
-    time against the plan once run (the débrief's numbers: ``_races_vs_plan``), and a mini profile."""
+    time against the plan once run (the débrief's numbers: ``_races_vs_plan``), and a mini profile.
+    ``today``: the athlete's day (the year shows for another year, the past carries it)."""
     from datetime import date as _date
 
     from app.services.debrief import close_to_plan
 
+    today = today or _date.today()
     out: dict = {"date": None, "when": None, "objective": None, "real": None, "diff": None, "good": None, "profile": None}
     d = None
     try:
@@ -208,7 +213,7 @@ def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None)
     except ValueError:
         d = None
     if d:  # past races carry their year
-        out["date"] = _date_fr(d, d.year != _date.today().year or d < _date.today())
+        out["date"] = _date_fr(d, d.year != today.year or d < today)
     days = getattr(rt, "days_to", None)
     if days is not None and days >= 0:
         out["when"] = ("aujourd'hui" if days == 0 else "demain" if days == 1 else f"J-{days}" if days <= 14
@@ -898,8 +903,11 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         logger.exception("Initial passage table failed; the page will ask for it")
 
     p = route.params_json or {}
-    mode = debrief_mode(route.race_date, bool(route.result_json))
+    from app.services import sante_training as st
     from app.services.training_zones import estimate_training_zones
+
+    today = await st.athlete_today(db, user_id)  # the athlete's day: race day in Seoul is the 15th at 20:54 UTC on the 14th
+    mode = debrief_mode(route.race_date, bool(route.result_json), today=today)
 
     max_hr = (await estimate_training_zones(db, user_id)).get("max_hr")
     try:
@@ -913,7 +921,7 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         # the debrief is reachable (primary button or menu) in every mode but "before a dated race"
         "debrief_mode": mode,
         "show_debrief": mode is not None,
-        "race_date_label": fr_date_label(route.race_date),
+        "race_date_label": fr_date_label(route.race_date, today=today),
         "start_label": "%02d:%02d" % (route.start_hour if route.start_hour is not None else 6, route.start_minute or 0),
         "scenario": _scenario_settings(p, profile, course, await _known_course(db, user_id, route)),
         "course_json": course.model_dump_json(),
