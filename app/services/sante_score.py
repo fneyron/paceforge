@@ -142,9 +142,11 @@ def sub(metric: str, z: float) -> float:
 LABELS = {"ill": "FC de nuit nettement plus haute depuis 2 nuits", "effort": "Effort récent",
           "hrv": "VFC plus basse que d'habitude", "hr": "FC de nuit plus haute que d'habitude",
           "resp": "Respiration plus rapide depuis 2 nuits", "short": "Sommeil court"}
-TEXTS = {"hrv": "Ça arrive avec la fatigue, le stress, l'alcool ou un début de maladie.",
+TEXTS = {"hrv": "Une VFC plus basse que tes habitudes sur plusieurs nuits peut accompagner une fatigue ou un stress accru. "
+                "À lire avec ton sommeil, ta FC nocturne et ton ressenti.",
          "hr": "Ça arrive avec la fatigue, la chaleur, l'alcool ou un début de maladie.",
-         "resp": "Ta respiration nocturne est plus rapide que d'habitude. Ça arrive au début d'une infection.",
+         "resp": "Une respiration nocturne plus rapide que d’habitude est un signal à croiser avec ta FC et ton ressenti. "
+                 "Elle ne permet pas, à elle seule, d’en identifier la cause.",
          "short": "Moins de 6 h de sommeil sur 24 h."}
 
 

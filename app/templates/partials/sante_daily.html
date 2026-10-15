@@ -10,10 +10,10 @@
             {% if c.chart %}
             {{ viz.viz_night_card(c.chart, c.title, daytime=c.key != 'resp_night',
                 legend=[("is-ref", c.chart.ref.label)] if c.chart.ref else [],
-                legend_details=True, explanations=[c.meaning, c.trend]) }}
+                central_details=True) }}
             {% else %}
             <p class="pf-daily-value">{{ c.value }}</p>
-            <p class="pf-measurement-meta">{{ c.latest or 'Valeur du profil' }}{% if c.source %} · {{ c.source }}{% endif %}</p>
+            <p class="pf-measurement-meta">{{ c.latest or 'Valeur du profil' }}</p>
             {% endif %}
         </article>
         {% endfor %}
