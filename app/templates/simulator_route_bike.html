@@ -3,8 +3,8 @@
 {% block title %}{{ route.name }} — PaceForge{% endblock title %}
 
 {% block head %}
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link rel="stylesheet" href="/static/vendor/maplibre-gl/maplibre-gl.css?v={{ request.app.state.build_id }}" />
+<script src="/static/vendor/maplibre-gl/maplibre-gl.js?v={{ request.app.state.build_id }}"></script>
 <script src="/static/js/elevation_profile.js?v=2"></script>
 <style>
 .maplibregl-popup-content { font-family: Inter, system-ui, sans-serif; border-radius: 10px; padding: 12px; }
