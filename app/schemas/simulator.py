@@ -68,30 +68,6 @@ class AthleteGradientProfile(BaseModel):
     race_calibration: dict | None = None
 
 
-class PowerCalcInput(BaseModel):
-    gradient_pct: float
-    length_km: float
-    rider_weight_kg: float
-    bike_weight_kg: float = 9.0
-    target_time_s: int | None = None
-    target_watts: float | None = None
-    cda: float = 0.35
-    crr: float = 0.005
-    rho: float = 1.225
-
-
-class PowerCalcResult(BaseModel):
-    gradient_pct: float
-    length_km: float
-    total_weight_kg: float
-    speed_kmh: float
-    power_watts: float
-    time_s: int
-    time_formatted: str
-    vam: float  # vertical ascent m/h
-    watts_per_kg: float
-
-
 class FtpEstimate(BaseModel):
     estimated_ftp: float
     best_20min_power: float
@@ -164,11 +140,6 @@ class CyclingProfile(BaseModel):
     intensity_factor: float | None = None  # NP / FTP if FTP known
     work_kj: float = 0
     tss: float | None = None
-
-
-class CheckpointInput(BaseModel):
-    name: str
-    distance_km: float
 
 
 class PassageTimeSection(BaseModel):

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
-from app.schemas.simulator import FtpEstimate, PowerCalcInput, PowerCalcResult
+from app.schemas.simulator import FtpEstimate
 
 
 def calculate_power(
@@ -48,56 +48,6 @@ def solve_speed_for_power(
             hi = mid
 
     return (lo + hi) / 2
-
-
-def calculate_from_input(input: PowerCalcInput) -> PowerCalcResult:
-    """Calculate power or time from input parameters."""
-    total_weight = input.rider_weight_kg + input.bike_weight_kg
-    length_m = input.length_km * 1000
-
-    if input.target_time_s:
-        # Given time, compute required power
-        speed_ms = length_m / input.target_time_s
-        watts = calculate_power(
-            speed_ms, total_weight, input.gradient_pct,
-            input.cda, input.crr, input.rho,
-        )
-        time_s = input.target_time_s
-    elif input.target_watts:
-        # Given power, compute time
-        speed_ms = solve_speed_for_power(
-            input.target_watts, total_weight, input.gradient_pct,
-            input.cda, input.crr, input.rho,
-        )
-        watts = input.target_watts
-        time_s = int(length_m / speed_ms) if speed_ms > 0 else 0
-    else:
-        raise ValueError("Spécifiez un temps cible ou une puissance cible.")
-
-    speed_kmh = speed_ms * 3.6
-
-    # VAM (vertical ascent meters per hour)
-    elevation_gain = length_m * (input.gradient_pct / 100)
-    vam = (elevation_gain / time_s * 3600) if time_s > 0 and elevation_gain > 0 else 0
-
-    hours, remainder = divmod(time_s, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if hours > 0:
-        time_fmt = f"{hours}h{minutes:02d}'{secs:02d}\""
-    else:
-        time_fmt = f"{minutes}'{secs:02d}\""
-
-    return PowerCalcResult(
-        gradient_pct=input.gradient_pct,
-        length_km=input.length_km,
-        total_weight_kg=total_weight,
-        speed_kmh=round(speed_kmh, 1),
-        power_watts=round(watts, 0),
-        time_s=time_s,
-        time_formatted=time_fmt,
-        vam=round(vam, 0),
-        watts_per_kg=round(watts / input.rider_weight_kg, 2) if input.rider_weight_kg > 0 else 0,
-    )
 
 
 def mean_max_power(streams: dict, window_s: int) -> float | None:

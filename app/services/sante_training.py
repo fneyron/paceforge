@@ -933,15 +933,10 @@ def effort_of(s: Session) -> Effort | None:
     return _effort(_Unit([s], local_start(s), local_end(s)))
 
 
-def chains(sessions: list[Session]) -> list[list[Session]]:
-    """The sessions in runs that are one effort: each starts at most 30 min (H)
-    after the previous one ended (a watch restarted at an aid station, a
-    battery swapped: one ultra saved as two activities), by start."""
-    return [run for run, _, _ in _chains(sessions)]
-
-
 def _chains(sessions: list[Session]) -> list[tuple[list[Session], datetime, datetime]]:
-    """chains, each with its first start and last end (local), every span computed once."""
+    """The sessions in runs that are one effort, each with its first start and last end (local), every span
+    computed once: a session starts at most 30 min (H) after the previous one ended (a watch restarted at an
+    aid station, a battery swapped: one ultra saved as two activities), by start."""
     out: list[tuple[list[Session], datetime, datetime]] = []
     for start, end, s in sorted(((*_span(s), s) for s in sessions), key=lambda t: t[0]):
         if out and start - out[-1][2] <= CHAIN_GAP:
