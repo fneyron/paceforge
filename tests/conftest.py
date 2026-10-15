@@ -1,5 +1,7 @@
 import asyncio
+import itertools
 import os
+import shutil
 
 # no OpenStreetMap calls from the tests (read when app.config loads)
 os.environ.setdefault("SURFACE_FETCH", "false")
@@ -11,11 +13,13 @@ os.environ.setdefault("ACTIVITY_ENV_FETCH", "false")
 # bike/triathlon off, whatever .env or the shell says (the cycling_on fixture turns it on)
 os.environ["CYCLING_ENABLED"] = "false"
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -27,28 +31,65 @@ from app.models.analysis import Analysis
 from app.models.user import User
 
 # PostgreSQL, as in production, when TEST_DATABASE_URL names one: build its schema with `alembic upgrade head`
-# first (the models say JSONB where the migrated columns are json). Test values stay within int32 for it.
-TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+aiosqlite:///./test.db")
+# first (the models say JSONB where the migrated columns are json). Test values stay within int32 for it. Without
+# it, every test gets a temporary SQLite file of its own: nothing is written in the repository (two suites once
+# shared ./test.db, one dropping the tables the other was reading) and nothing outlives a test, not a commit, not
+# a dropped table.
+SERVER_URL = os.getenv("TEST_DATABASE_URL", "")
+assert not SERVER_URL.startswith("sqlite"), "TEST_DATABASE_URL names a PostgreSQL database: unset it for SQLite"
+_databases = itertools.count()
 
 
 @pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+def database_template(tmp_path_factory) -> Path | None:
+    """SQLite: the empty schema in one file per process (pytest's temporary directory), copied for each test
+    rather than built again (the DDL costs ≈ 50 ms a test, a minute over the suite). PostgreSQL: the server's
+    tables, built from the models when no migration did, emptied once per run."""
+    if SERVER_URL:
+        async def prepare():
+            eng = create_async_engine(SERVER_URL, poolclass=NullPool)
+            async with eng.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
+                await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+            await eng.dispose()
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(prepare())
+        finally:
+            loop.close()
+        return None
+    path = tmp_path_factory.mktemp("db") / "template.db"
+    eng = create_engine(f"sqlite:///{path}")
+    Base.metadata.create_all(eng)
+    eng.dispose()
+    return path
 
 
-@pytest.fixture(scope="session")
-async def engine():
-    # asyncpg connections belong to the loop that opened them: none kept between tests on PostgreSQL
-    pool = {"poolclass": NullPool} if TEST_DATABASE_URL.startswith("postgresql") else {}
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False, **pool)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+@asynccontextmanager
+async def _own_database(template: Path | None, foreign_keys: bool = False):
+    """An engine on a database of the test's own: the server's, through connections of its own (asyncpg's belong
+    to the loop that opened them: none pooled), else a copy of the SQLite template, deleted afterwards."""
+    if SERVER_URL:
+        eng, path = create_async_engine(SERVER_URL, poolclass=NullPool), None
+    else:
+        path = template.with_name(f"test-{next(_databases)}.db")
+        shutil.copyfile(template, path)
+        eng = create_async_engine(f"sqlite+aiosqlite:///{path}")
+        if foreign_keys:
+            _enforce_foreign_keys(eng)
+    try:
+        yield eng
+    finally:
+        await eng.dispose()
+        if path is not None:
+            path.unlink(missing_ok=True)
+
+
+@pytest.fixture
+async def engine(database_template):
+    async with _own_database(database_template) as eng:
+        yield eng
 
 
 @pytest.fixture
@@ -203,18 +244,13 @@ def same_today(monkeypatch):
 # really commit (a rotated token kept through a later rollback, an account
 # deletion) is tested with these: every commit releases a SAVEPOINT inside one
 # outer transaction, which is rolled back when the test ends. Foreign keys are
-# enforced, as on PostgreSQL (the shared test.db leaves them off).
+# enforced, as on PostgreSQL (the SQLite engine above leaves them off).
 
-@pytest.fixture(scope="session")
-async def savepoint_engine():
-    from sqlalchemy import event
-    from sqlalchemy.pool import StaticPool
-
-    eng = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
-
+def _enforce_foreign_keys(eng) -> None:
+    """SQLite with its foreign keys on, its transactions SQLAlchemy's (BEGIN and SAVEPOINT emitted itself: the
+    driver's own transaction handling breaks savepoints)."""
     @event.listens_for(eng.sync_engine, "connect")
     def _connect(dbapi_connection, _record):
-        # SQLAlchemy emits BEGIN and SAVEPOINT itself (the driver's own transaction handling breaks savepoints)
         dbapi_connection.isolation_level = None
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
@@ -224,10 +260,11 @@ async def savepoint_engine():
     def _begin(conn):
         conn.exec_driver_sql("BEGIN")
 
-    async with eng.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield eng
-    await eng.dispose()
+
+@pytest.fixture
+async def savepoint_engine(database_template):
+    async with _own_database(database_template, foreign_keys=True) as eng:
+        yield eng
 
 
 @pytest.fixture
