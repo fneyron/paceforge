@@ -11,7 +11,9 @@ class Route(Base):
     __tablename__ = "routes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     total_distance_km: Mapped[float] = mapped_column(Float, nullable=False)
     total_elevation_gain: Mapped[float] = mapped_column(Float, nullable=False, default=0)
@@ -41,7 +43,10 @@ class Route(Base):
     # actual calibration: {"activity_id", "activity_name", "activity_date",
     # "total_actual_s" (moving), "total_elapsed_s" (stops included: the real time shown),
     # "actual": [{"name", "km", "time_s"}]}.
-    result_activity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # the activity goes (a Strava delete): the link goes with it, the stored result stays
+    result_activity_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("activities.id", ondelete="SET NULL"), nullable=True
+    )
     result_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     # Reference finisher aligned on this route: {"label", "source", "total_s",
     # "points": [{"km", "time_s"}]} — their passage time next to yours at each CP.
@@ -51,6 +56,9 @@ class Route(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     checkpoints = relationship("RouteCheckpoint", back_populates="route", cascade="all, delete-orphan", order_by="RouteCheckpoint.distance_km")
@@ -76,6 +84,9 @@ class RouteCheckpoint(Base):
     # Passage time the athlete pinned here, in seconds after the start (shown
     # as a clock time); null = the plan decides.
     target_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
     route = relationship("Route", back_populates="checkpoints")
 
@@ -92,7 +103,9 @@ class Simulation(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     route_id: Mapped[int] = mapped_column(Integer, ForeignKey("routes.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     target_time_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
     config_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)

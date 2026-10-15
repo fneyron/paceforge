@@ -2,7 +2,7 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import settings
@@ -15,6 +15,11 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+
+# Two containers of a deploy may start together, each running `alembic upgrade head`: the second waits on this
+# lock for the first's migrations to be committed, then finds nothing left to run. Transaction-scoped: released
+# with the transaction, whatever happens to the process. Any fixed bigint, PaceForge's own.
+MIGRATION_LOCK_KEY = 7_364_720_914
 
 # Override sqlalchemy.url with our async DATABASE_URL
 # Convert asyncpg URL to psycopg2 for sync operations if needed
@@ -37,6 +42,8 @@ def run_migrations_offline() -> None:
 def do_run_migrations(connection):
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
+        if connection.dialect.name == "postgresql":
+            connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": MIGRATION_LOCK_KEY})
         context.run_migrations()
 
 

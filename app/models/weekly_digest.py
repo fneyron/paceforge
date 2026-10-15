@@ -14,8 +14,9 @@ class WeeklyDigest(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # uq_user_week (user_id first) is also the per-athlete index
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
 
     week_start: Mapped[date] = mapped_column(Date, nullable=False)
@@ -34,7 +35,7 @@ class WeeklyDigest(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    user = relationship("User", lazy="selectin")
+    user = relationship("User", lazy="noload")  # the digest feature is off: never loaded with the row
 
     def __repr__(self) -> str:
         return f"<WeeklyDigest {self.id} user={self.user_id} week={self.week_start}>"
