@@ -1,5 +1,77 @@
 # Défilement et actualisation — audit du 12 octobre 2026
 
+## Chargements — mesures et corrections du 15 octobre 2026
+
+Les visites répétées de Santé et d’Activités ne recréent plus tout le document.
+Ces deux écrans partagent la WebView et ses cookies. Le dernier écran consulté
+est conservé uniquement en mémoire, au plus cinq minutes, puis réaffiché avant
+une vérification réseau silencieuse. Une nouvelle visite, un filtre non encore
+ouvert, une activité en détail ou Courses utilise encore le réseau. Le premier
+chargement n’est donc pas instantané.
+
+Deux vues au maximum sont conservées, chacune limitée à deux millions de
+caractères ; aucune mesure n’est ajoutée au stockage navigateur ou au service
+worker. Actualisation, import confirmé, changement de compte, session expirée,
+changement de jour et départ du document invalident ces vues. Les réponses
+tardives sont liées à la navigation qui les a demandées. Une sauvegarde du
+ressenti en cours termine avant le départ ; une réponse plus ancienne ne peut
+pas remplacer une sauvegarde ou un effacement plus récent. Courses conserve
+son contrôle de sauvegarde et son chargement complet. Une réponse d’une nouvelle
+version du serveur recharge le document complet pour garder ses fichiers CSS/JS
+compatibles avec le HTML.
+
+Le dimensionnement des libellés des graphiques mesurait les textes possibles
+en les remplaçant un par un dans la page visible. Il utilise maintenant des
+copies invisibles mesurées ensemble, sans modifier le libellé affiché. La
+hauteur reste réservée au texte le plus haut, y compris après un changement de
+taille de caractères. Le retour à la position attend le document prêt, plutôt
+que la fin des images distantes ; l’avatar est chargé de façon différée.
+
+Le serveur lit le jour et les séances une fois par requête Activités. Le détail
+d’une activité ne charge plus les séries GPS, gros objets fournisseur,
+anciennes analyses ni les données complètes des parcours utilisés pour ses
+liens de comparaison. Sur le même scénario SQLite synthétique, avec templates
+identiques, les médianes chaudes passent de 44,92 à 29,45 ms pour Activités
+(15 à 10 requêtes SQL) et de 8,07 à 4,03 ms pour son détail. Le HTML est identique
+après normalisation du numéro de build. Santé reste à environ 115 ms dans ce
+scénario : ces corrections serveur ne lui attribuent aucun gain artificiel.
+
+Les réponses des pages portent désormais `Server-Timing: app;dur=…`, pour
+distinguer la préparation serveur du réseau et du rendu dans Web Inspector.
+Il contient une durée seule, aucune mesure ni identité. Les réponses préparées
+en plus d’une seconde sont journalisées par nom de route, sans paramètres.
+
+Les scénarios navigateur utilisent trois ans de données synthétiques :
+939 activités et 9 855 mesures. Ils couvrent les retours avant réception du GET,
+la revalidation, les dates et positions, la pagination, les filtres, les
+sauvegardes concurrentes, les comptes et la session. Les libellés sont parcourus
+à 320/393 pixels et 100/200 % de texte. Les captures et traces ne sont pas des
+mesures sur un iPhone physique ; les temps iOS en production restent à vérifier
+avec une version signée, Safari Web Inspector ou Instruments.
+
+Sur cette même fixture, les retours d’onglets visités passent de 214–381 à
+41–50 ms dans Chromium local. Avec un ralentissement artificiel de 150 ms,
+1,6 Mb/s et CPU ×4, ils passent de 411–865 à 122–197 ms. Ce sont les bornes
+observées sur deux retours par écran, pas des percentiles ni un modèle d’iPhone.
+Le premier accès à Activités prend encore 409 ms dans cette simulation. Le
+chargement complet de Santé ne montre pas de gain constant de premier affichage
+(844 puis 916 ms à froid) ; les recalculs de mise en page de la trace passent en
+revanche de 163 à 34. L’amélioration mesurée concerne surtout les retours et le
+travail de rendu, sans prétendre résoudre toute latence de première ouverture.
+
+Scénario reproductible, sans compte réel ni appels aux fournisseurs :
+
+```sh
+python -m uvicorn tests.browser.loading_preview:app --host 127.0.0.1 --port 8891
+PF_PREVIEW_URL=http://127.0.0.1:8891 node tests/browser/tab-navigation.cjs
+PF_PREVIEW_URL=http://127.0.0.1:8891 node tests/browser/chart-readouts.cjs
+PF_PREVIEW_URL=http://127.0.0.1:8891 node tests/browser/profile_loading.cjs
+```
+
+Les commandes navigateur demandent Playwright installé et accessible par Node.
+Le profil accepte `PF_PREVIEW_OUTPUT` pour enregistrer mesures et captures ; les
+comparaisons doivent se faire sur la même fixture, sans tâches CPU concurrentes.
+
 ## Reprise et synchronisation — corrections du 15 octobre 2026
 
 Un import Santé effectué en arrière-plan actualise désormais le document déjà
@@ -24,9 +96,11 @@ les délais de réveil HealthKit restent à mesurer sur un véritable iPhone.
 ## Lenteurs signalées le 13 octobre 2026
 
 PaceForge reste un compagnon hybride : les trois onglets principaux utilisent
-des documents web dans une seule WebView. Les changements entre onglets distincts
-dépendent encore du réseau. La fluidité d'une application entièrement native
-n'est pas acquise et n'a pas été mesurée sur l'iPhone du propriétaire.
+des écrans web dans une seule WebView. Les corrections de chargement ci-dessus
+permettent de réutiliser Santé et Activités déjà consultés ; les premiers accès,
+Courses et les détails dépendent encore du réseau. La fluidité d'une application
+entièrement native n'est pas acquise et n'a pas été mesurée sur l'iPhone du
+propriétaire.
 
 Les corrections visent quatre coûts observés :
 

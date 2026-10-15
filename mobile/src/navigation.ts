@@ -6,8 +6,24 @@ export const destinations: Record<Exclude<Tab, 'devices'>, string> = { health: '
 export function prepareNavigationScript(nonce: string): string {
   return `Promise.resolve().then(() => window.paceforgeBeforeLeave?.()).then(() => {
     window.paceforgeRememberPage?.();
-    window.ReactNativeWebView.postMessage(JSON.stringify({type:'navigation-ready',nonce:${JSON.stringify(nonce)},ok:true}));
-  }).catch(() => window.ReactNativeWebView.postMessage(JSON.stringify({type:'navigation-ready',nonce:${JSON.stringify(nonce)},ok:false}))); true;`;
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'navigation-ready',nonce:${JSON.stringify(nonce)},page_url:location.href,ok:true}));
+  }).catch(() => window.ReactNativeWebView.postMessage(JSON.stringify({type:'navigation-ready',nonce:${JSON.stringify(nonce)},page_url:location.href,ok:false}))); true;`;
+}
+// Older server documents report an explicit fallback. The native save nonce
+// remains separate from the web navigation nonce and is still checked first.
+export function tabNavigationScript(destination: string, nonce: string): string {
+  return `(async function () {
+    const fallback = () => window.ReactNativeWebView.postMessage(JSON.stringify({type:'tab-navigation',nonce:${JSON.stringify(nonce)},url:${JSON.stringify(destination)},page_url:location.href,status:'fallback'}));
+    try { if (!window.paceforgeTabs || !await window.paceforgeTabs.navigate(${JSON.stringify(destination)}, ${JSON.stringify(nonce)})) fallback(); }
+    catch (_) { fallback(); }
+  })(); true;`;
+}
+// WKWebView may report the frame's original full-load request URL after a
+// history change. Only this same trusted reading frame can carry its current
+// logical URL; routed pairing, plan and authentication guards remain exact.
+export function messagePageUrl(transport: string, logical: string, frame: string, data: { page_url?: unknown }): string {
+  return refreshable(transport) && refreshable(logical) && sameScreen(transport, frame) && data?.page_url === logical
+    ? logical : transport;
 }
 export function presentationScript(fontScale: number, healthName: string): string {
   return `window.paceforgeConfigurePage = () => {

@@ -52,6 +52,9 @@ const fresh=()=>stored({'paceforge.phone.v1.sync':JSON.stringify({userId:1,check
   // A warm return keeps the mounted document, but includes the data imported while away.
   const warm=await page('',fresh());
   await warm.waitForFunction(()=>registered.some(r=>r[0]==='register')&&window.actual);
+  await warm.evaluate(()=>{window.softTabs=true;window.staleFrame=true;});
+  await warm.getByRole('tab',{name:'Activités',exact:true}).click();
+  await warm.waitForFunction(()=>new URL(actual).pathname==='/activities');
   const warmNavigations=await warm.evaluate(()=>navigations.slice());
   await warm.evaluate(()=>{background();healthChange();});
   await warm.waitForFunction(()=>JSON.parse(JSON.parse(sessionStorage.getItem('secure'))['paceforge.phone.v1.sync']).complete&&writes.length>0);

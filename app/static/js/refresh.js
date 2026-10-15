@@ -121,17 +121,18 @@
     // browser storage, and a new account or calendar day never inherits them.
     if (dirty || form.classList.contains('htmx-request') || current !== requested) replacement.replaceWith(current);
   }
-  async function replacePage() {
-    var requestedCheckin = document.querySelector('#main-content #ressenti');
-    var href = location.href, html = await request(href, { headers: { Accept: 'text/html' } });
-    var doc = new DOMParser().parseFromString(html, 'text/html');
+  async function applyDocument(doc, href, requestedCheckin, valid) {
+    if (requestedCheckin === undefined) requestedCheckin = document.querySelector('#main-content #ressenti');
     var next = doc.getElementById('main-content');
     if (!next) throw new Error('Reconnecte-toi dans Réglages pour actualiser.');
     // Never swap under a moving finger or during momentum scrolling.
     while (touched || Date.now() - movedAt < 180) await pause(100);
-    if (href !== location.href) return;
+    if (href !== location.href || (valid && !valid())) return;
     var old = document.getElementById('main-content');
     if (old.dataset.account !== next.dataset.account) throw new Error('Le compte a changé. Ouvre Réglages puis reviens sur cette page.');
+    if (old.dataset.build && next.dataset.build && old.dataset.build !== next.dataset.build) {
+      window.paceforgeTabs?.clear(); location.replace(href); return;
+    }
     var saved = snapshot(old);
     keepOlderWeeks(old, next);
     keepCheckin(old, next, requestedCheckin);
@@ -161,8 +162,16 @@
     window.scrollTo({ top: y, behavior: 'instant' });
     document.dispatchEvent(new CustomEvent('pf:refreshed'));
   }
+  async function replacePage() {
+    var requestedCheckin = document.querySelector('#main-content #ressenti');
+    var href = location.href, epoch = window.paceforgeTabs?.epoch();
+    var html = await request(href, { headers: { Accept: 'text/html' } });
+    await applyDocument(new DOMParser().parseFromString(html, 'text/html'), href, requestedCheckin,
+      function () { return epoch === window.paceforgeTabs?.epoch(); });
+  }
   function refresh(sources) {
     if (running) return running;
+    window.paceforgeTabs?.invalidate();
     nativeState(true);
     if (sources) status('Actualisation…', false, true);
     running = (async function () {
@@ -171,6 +180,7 @@
         var results = await Promise.allSettled([watches(), json('/api/sync', 'POST').then(function (r) { return r.errors || []; })]);
         results.forEach(function (r) { errors = errors.concat(r.status === 'fulfilled' ? r.value : [r.reason.message]); });
       }
+      if (sources) window.paceforgeTabs?.invalidate();
       try { await replacePage(); }
       catch (error) { errors.push(error.message); }
       var issue = document.querySelector('[data-sync-issue]');
@@ -180,10 +190,13 @@
     })().finally(function () { running = null; nativeState(false); });
     return running;
   }
-  window.paceforgeRefresh = { refresh: refresh };
-  var existingIssue = document.querySelector('[data-sync-issue]');
-  if (existingIssue && window.paceforgeNativeRefresh >= 2) status(existingIssue.dataset.syncIssue, true, false);
-  else if (window.paceforgeNativeRefresh >= 2) clearStatus();
+  function loaded() {
+    var existingIssue = document.querySelector('[data-sync-issue]');
+    if (existingIssue && window.paceforgeNativeRefresh >= 2) status(existingIssue.dataset.syncIssue, true, false);
+    else if (window.paceforgeNativeRefresh >= 2) clearStatus();
+  }
+  window.paceforgeRefresh = { refresh: refresh, applyDocument: applyDocument, loaded: loaded };
+  loaded();
   document.addEventListener('htmx:beforeOnLoad', function (event) {
     var detail = event.detail;
     if (detail?.elt?.id === 'sante-sync' && detail.xhr.getResponseHeader('HX-Refresh') === 'true') {

@@ -19,6 +19,16 @@ anciennes restent signalées. Le thème et le compte sont accessibles dans Régl
 Les données absentes restent absentes ; une synchronisation récente n’est pas
 présentée comme la preuve d’un relevé récent.
 
+Santé et Activités partagent aussi leur document : revenir à un écran déjà
+consulté le réaffiche depuis la mémoire de cette WebView, puis vérifie ses
+données en arrière-plan. Ces deux vues sont limitées en taille et à cinq minutes,
+effacées lors d’une actualisation, d’un changement de jour, de compte ou d’une
+session expirée. Les mesures ne sont copiées dans aucun stockage persistant.
+Les premiers accès, les détails et Courses gardent leur chargement réseau ;
+les sauvegardes du plan restent attendues avant le départ. Les anciennes versions
+du serveur déclenchent le chargement complet habituel. Voir les mesures et
+limites dans [l’audit de fluidité](../docs/mobile-fluidite.md).
+
 ## Connexions par service
 
 L’écran Connexions regroupe les comptes COROS, Garmin et Strava, ainsi que

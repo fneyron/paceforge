@@ -33,16 +33,3 @@
 {% else %}
 {% set keep_m, carry = none, false %}{% include "partials/activity_filters.html" %}
 {% endif %}
-
-<script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
-<script>
-// #fc-facile (old #forme) opens its fold
-(function () {
-    function show() {
-        var h = (location.hash || "").slice(1), el = document.getElementById(h === "forme" ? "fc-facile" : h);
-        if (el && el.tagName === "DETAILS" && el.classList.contains("pf-train-fold")) { el.open = true; el.scrollIntoView({ block: "start" }); }
-    }
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", show); else show();
-    window.addEventListener("hashchange", show);
-})();
-</script>
