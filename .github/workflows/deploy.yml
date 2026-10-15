@@ -33,6 +33,19 @@ jobs:
       - name: Install the locked dependencies
         run: pip install --require-hashes -r requirements-dev.lock
 
+      # uv.lock must match pyproject.toml, and the three hashed requirements files must be its exports: a bump
+      # of uv.lock alone (Dependabot) would otherwise leave what CI and the image install stale.
+      - name: Check the lock files agree with pyproject.toml
+        run: |
+          pip install uv==0.8.17
+          uv lock --check
+          for extra in "" dev research; do
+            file="requirements${extra:+-$extra}.lock"
+            uv export --frozen --format requirements-txt --no-emit-project ${extra:+--extra "$extra"} \
+              | grep -v '^#' | diff - <(grep -v '^#' "$file") \
+              || { echo "::error::$file is stale: run make lock and commit the result"; exit 1; }
+          done
+
       - name: Run tests
         run: pytest tests/ -q
 

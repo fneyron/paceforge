@@ -19,7 +19,7 @@ test-pg:  ## the suite on PostgreSQL, as in production: TEST_DATABASE_URL=postgr
 lint:  ## ruff on the application and the tests
 	$(PYTHON) -m ruff check app tests
 
-lock:  ## resolve pyproject.toml into uv.lock and export the hashed requirements the Dockerfile and CI install
+lock:  ## resolve pyproject.toml into uv.lock and export the hashed requirements the Dockerfile and CI install (uv 0.8.17, as CI checks them)
 	$(UV) lock
 	$(UV) export --format requirements-txt --no-emit-project -o requirements.lock
 	$(UV) export --format requirements-txt --no-emit-project --extra dev -o requirements-dev.lock

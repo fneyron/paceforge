@@ -10,7 +10,8 @@ SQLAlchemy async, Celery) servie sur https://paceforge.fr ; une application iPho
 
 ### Avec Docker Compose
 
-    cp .env.example .env      # SECRET_KEY, mails… ; les hôtes « db » et « redis » sont ceux de compose
+    cp .env.example .env      # d’abord un SECRET_KEY aléatoire : l’app refuse de démarrer avec celui de l’exemple ;
+                              # puis les mails… ; les hôtes « db » et « redis » sont ceux de compose
     docker compose up --build  # l’app sur http://localhost:8000, PostgreSQL publié sur 5433, Redis sur 6380
 
 Les migrations s’exécutent au démarrage du conteneur `app`.
