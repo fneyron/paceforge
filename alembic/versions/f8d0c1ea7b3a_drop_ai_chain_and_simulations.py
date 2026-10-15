@@ -24,7 +24,7 @@ def _json():
 
 
 def _now():
-    return sa.text("now()")
+    return sa.func.now()  # now() on PostgreSQL, CURRENT_TIMESTAMP on SQLite
 
 
 def upgrade():
