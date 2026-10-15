@@ -575,7 +575,7 @@ function Companion() {
     {webVisible && loadError ? <View style={styles.unavailable}>
       <Text accessibilityRole="header" style={[styles.brand, night && styles.darkInk]}>Écran indisponible</Text>
       <Text style={[styles.syncText, night && styles.darkMuted]}>{loadError}</Text>
-      <Button text="Plans hors connexion" secondary onPress={() => { setTab('courses'); offline.setView('list'); }} />
+      {tab === 'courses' && <Button text="Plans hors connexion" secondary onPress={() => offline.setView('list')} />}
       <Button text="Réessayer" onPress={() => { setLoadError(''); recoveringProcess.current = true; web.current?.reload(); }} />
     </View> : webVisible && concealBridge ? <View style={styles.returning} accessibilityLabel="Chargement de PaceForge"><ActivityIndicator color="#0b5f6e" /></View> : null}
     <View style={[styles.web, (!webVisible || concealBridge || !!loadError) && styles.hidden]} pointerEvents={webVisible && !concealBridge && !loadError ? 'auto' : 'none'} accessibilityElementsHidden={!webVisible || concealBridge || !!loadError} importantForAccessibility={webVisible && !concealBridge && !loadError ? 'auto' : 'no-hide-descendants'}>

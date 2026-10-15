@@ -2,6 +2,7 @@
 the app's quota, a failed first import tried again, one Strava → Activity builder, Activités in the athlete's
 weeks and on one clock, the « Synchroniser » cooldown."""
 import asyncio
+import json
 import logging
 import os
 import re
@@ -1443,7 +1444,10 @@ async def test_activites_take_now_from_the_athletes_today(as_user, db_session, t
     html = (await as_user.get("/activities")).text
     assert re.findall(r'data-range="(\w+)"', html) == ["duree", "distance", "dplus"]
     assert _weeks(html)[0][:2] == ("2026-10-05", "Cette semaine")
-    assert "7 j : 21 km · 28 j : 98 km" in html  # the volume of the days before D
+    chart = json.loads(re.search(r'data-viz-key="semaines-distance".*?class="pf-viz-data">(.*?)</script>',
+                                 html, re.S).group(1))
+    assert chart["d"][-1] == "2026-10-05"
+    assert chart["r"][-1][1] == "14\u00a0km"  # the two outings of the athlete's current week
 
 
 async def test_activites_keep_the_wall_clock_when_the_athletes_day_agrees(db_session, test_user, monkeypatch,

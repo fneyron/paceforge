@@ -7,12 +7,12 @@
     fond et fatigue model, no taper line). Expects `training` = training_view.training_top(...), `filters`,
     `sport`. -#}
 {% import "partials/_viz.html" as vz %}
-{% set w = training.weeks %}{% set e = training.easy %}
+{% set w = training.weeks %}
 {% if w %}
     {% set keep_m = w.m if w.m != "duree" else none %}{% set carry = w.measures|length > 1 %}
     {% include "partials/activity_filters.html" %}
-<details id="semaines" class="pf-train pf-train-fold" data-viz-scope>
-    <summary id="semaines-h">Tendances sur 12 semaines</summary>
+<section id="semaines" class="pf-train pf-activity-chart" aria-labelledby="semaines-h" data-viz-scope>
+    <h2 id="semaines-h" class="pf-h2">12 semaines</h2>
     {% if w.measures|length > 1 %}{{ vz.viz_ranges(w.measures, w.m, label="Mesure", action="/activities#semaines", param="m", hidden={"sport": sport} if sport else none) }}{% endif %}
     {% for key, label in w.measures %}{% set c = w.charts[key] %}
     <div data-range-panel="{{ key }}"{% if key != w.m %} hidden{% endif %}>
@@ -29,21 +29,11 @@
         {% if c.cur %}{{ vz.viz_legend([("is-cur", "semaine en cours")]) }}{% endif %}
     </div>
     {% endfor %}
-</details>
+</section>
 {% else %}
 {% set keep_m, carry = none, false %}{% include "partials/activity_filters.html" %}
 {% endif %}
 
-{% if e %}
-<details id="fc-facile" class="pf-train-fold"{% if e.flagged %} open{% endif %}>
-    <summary>FC en footing{% if e.flagged %} <span class="pf-train-warn">· à surveiller</span>{% elif e.after_ultra %} <span class="pf-train-soft">· après ultra</span>{% endif %}</summary>
-    <span id="forme"></span>
-    {% if e.line %}<p class="pf-train-note">{{ e.line }}</p>{% endif %}
-    {{ vz.viz_dots(e, "FC en footing", "footing") }}
-    {{ vz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "tes valeurs habituelles")] if e.band else [])) }}
-    <p class="pf-viz-cap">Sorties faciles et plates, FC ramenée à {{ e.pace }}.</p>
-</details>
-{% endif %}
 <script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
 <script>
 // #fc-facile (old #forme) opens its fold

@@ -65,9 +65,11 @@ comportement. Aucun essai simulé ne remplace une mesure sur appareil réel.
 ## Suite de l’audit UX iPhone
 
 Les trois cadrans Santé gardent la même importance. La dernière nuit et la
-récupération restent visibles ; les mesures nocturnes et quotidiennes se
-déplient. Dans Activités, le filtre reste visible et les tendances sur douze
-semaines se déplient, pour accéder directement aux dernières sorties. L’état
+récupération restent visibles, avec les graphiques des mesures nocturnes et
+quotidiennes ; les explications sont regroupées dans un seul volet. Dans
+Activités, le filtre et les tendances sur douze semaines restent visibles.
+Les séances utilisent des cartes par sport ; la durée prend la place de la
+distance pour les activités sans déplacement. L’état
 vide Santé mène à Apple Santé ; les anciens compagnons utilisent le lien
 Connexions qu’ils connaissent déjà. Android nomme Health Connect.
 
@@ -91,8 +93,9 @@ coordonnées ; leurs valeurs restent accessibles par les contrôles et libellés
 Les boutons et liens principaux ont une cible d’au moins 44 points CSS.
 
 L’export affiche d’abord le GPX conseillé, puis les autres formats sur demande.
-Une page impossible à charger propose une nouvelle tentative sur place et l’accès
-aux plans enregistrés hors connexion. Dans le menu d’une course, « Garder hors
+Une page impossible à charger propose une nouvelle tentative sur place. L’accès
+aux plans enregistrés hors connexion reste réservé à Courses, y compris sur
+son écran d’erreur réseau. Dans le menu d’une course, « Garder hors
 connexion » attend la sauvegarde des modifications puis conserve une copie
 native datée des passages, ravitaillements et barrières horaires. La copie reste
 lisible après fermeture et redémarrage sans réseau. Elle ne se met pas à jour
