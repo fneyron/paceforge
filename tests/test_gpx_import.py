@@ -201,6 +201,16 @@ async def test_an_account_stores_a_bounded_number_of_routes(as_user, monkeypatch
     assert r.status_code == 422 and r.json()["error"] == refusal
 
 
+async def test_a_multi_track_reimport_says_so_and_offers_to_reload(as_user, db_session):
+    """The form sits on the route's page, which still shows the old trace: the notice's link reloads it."""
+    rid = created(await upload(as_user, gpx_bytes(line())))
+    r = await as_user.post(f"/api/simulator/routes/{rid}/reimport", files={"gpx_file": (
+        "v2.gpx", gpx_bytes(line(km=20.0), extra_tracks=[line(km=50.0, lat0=46.0, lon0=7.0)]), "application/gpx+xml")})
+    assert r.status_code == 200 and "la plus longue (49,9 km) a été gardée." in r.text
+    assert f'href="/simulator/routes/{rid}"' in r.text and "window.location.reload()" in r.text
+    assert 49.8 <= (await db_session.get(Route, rid)).total_distance_km <= 50.0
+
+
 async def test_the_route_is_committed_before_the_redirect(client, test_user, db_session, monkeypatch):
     """get_db commits after the response has gone, and the browser follows the redirect at once: the upload and
     the re-import commit themselves first."""

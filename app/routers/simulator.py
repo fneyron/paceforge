@@ -17,7 +17,7 @@ from app.dependencies import get_current_user, get_db
 from app.features import cycling_enabled, hidden_sports, require_cycling, sport_hidden
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
-from app.services.gpx import GpxError, ParsedGpx, import_course
+from app.services.gpx import GpxError, import_course
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -289,7 +289,7 @@ async def gpx_upload(
         await _commit(db)
 
         logger.info("Route %d created from GPX for user %d", route.id, user.id)
-        return _imported(route, parsed)
+        return _imported(route, parsed.notice)
     except GpxError as exc:
         return _gpx_error(str(exc))
     except Exception:
@@ -585,7 +585,7 @@ async def bike_gpx_upload(
         await db.flush()
         await _commit(db)
         logger.info("Bike route %d created from GPX for user %d", route.id, user.id)
-        return _imported(route, parsed)
+        return _imported(route, parsed.notice)
     except GpxError as exc:
         return _gpx_error(str(exc))
     except Exception:
@@ -762,7 +762,7 @@ async def reimport_route_gpx(
         await _commit(db)
 
         logger.info("Route %d trace re-imported for user %d", route.id, user.id)
-        return _imported(route, parsed, "p-3")
+        return _imported(route, parsed.notice, "p-3", reload=True)
     except GpxError as exc:
         return _gpx_error(str(exc), "p-3")
     except Exception:
@@ -1287,10 +1287,11 @@ async def save_bike_plan(
 
 # ── Triathlon: swim + T1 + bike + T2 + run, one timeline, one fuel plan ──
 
-async def _create_run_route_from_gpx(content: bytes, filename: str, user: User, db: AsyncSession) -> Route:
+async def _create_run_route_from_gpx(content: bytes, filename: str, user: User, db: AsyncSession) -> tuple[Route, str | None]:
+    """The route, and the import's notice when the file held several tracks."""
     from app.services.race_simulator import build_athlete_gradient_profile, predict_course
 
-    course, snapped, _ = await asyncio.to_thread(import_course, content, None, _file_title(filename, "Course"))
+    course, snapped, parsed = await asyncio.to_thread(import_course, content, None, _file_title(filename, "Course"))
     profile = await build_athlete_gradient_profile(db, user.id)
     course = predict_course(course, profile)
     route = Route(
@@ -1303,11 +1304,11 @@ async def _create_run_route_from_gpx(content: bytes, filename: str, user: User, 
     for wpt in snapped:
         db.add(RouteCheckpoint(route_id=route.id, name=wpt.get("name", ""), distance_km=wpt.get("distance_km", 0), elevation=wpt.get("elevation")))
     await db.flush()
-    return route
+    return route, parsed.notice
 
 
-async def _create_bike_route_from_gpx(content: bytes, filename: str, user: User, db: AsyncSession) -> Route:
-    course, _, _ = await asyncio.to_thread(import_course, content, None, _file_title(filename, "Parcours vélo"))
+async def _create_bike_route_from_gpx(content: bytes, filename: str, user: User, db: AsyncSession) -> tuple[Route, str | None]:
+    course, _, parsed = await asyncio.to_thread(import_course, content, None, _file_title(filename, "Parcours vélo"))
     route = Route(
         user_id=user.id, name=course.name, total_distance_km=course.total_distance_km,
         total_elevation_gain=course.total_elevation_gain, total_elevation_loss=course.total_elevation_loss,
@@ -1315,7 +1316,7 @@ async def _create_bike_route_from_gpx(content: bytes, filename: str, user: User,
     )
     db.add(route)
     await db.flush()
-    return route
+    return route, parsed.notice
 
 
 _TRI_IF_BY_FORMAT = {"S": (0.90, 1.00), "M": (0.80, 0.90), "half": (0.75, 0.85), "full": (0.65, 0.75)}
@@ -1348,14 +1349,14 @@ async def create_triathlon(
         return HTMLResponse(f'<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{msg}</div>')
 
     try:
-        bike = run = None
+        bike = run = bike_note = run_note = None
         await _room_for_a_route(db, user)
         if bike_gpx is not None and bike_gpx.filename:
-            bike = await _create_bike_route_from_gpx(await _read_gpx_upload(bike_gpx), bike_gpx.filename, user, db)
+            bike, bike_note = await _create_bike_route_from_gpx(await _read_gpx_upload(bike_gpx), bike_gpx.filename, user, db)
         elif bike_route_id.strip():
             bike = await _get_owned_route(int(bike_route_id), user, db)
         if run_gpx is not None and run_gpx.filename:
-            run = await _create_run_route_from_gpx(await _read_gpx_upload(run_gpx), run_gpx.filename, user, db)
+            run, run_note = await _create_run_route_from_gpx(await _read_gpx_upload(run_gpx), run_gpx.filename, user, db)
         elif run_route_id.strip():
             run = await _get_owned_route(int(run_route_id), user, db)
         if not bike or bike.sport_type != "bike":
@@ -1386,7 +1387,7 @@ async def create_triathlon(
         await db.flush()
         await _commit(db)
         logger.info("Triathlon %d created for user %d (bike %d, run %d)", tri.id, user.id, bike.id, run.id)
-        return HTMLResponse(status_code=204, headers={"HX-Redirect": f"/simulator/routes/{tri.id}"})
+        return _imported(tri, " ".join(n for n in (bike_note, run_note) if n), "p-3")
     except ValueError as e:
         return err(str(e))
     except Exception:
@@ -1698,14 +1699,17 @@ def _gpx_error(text: str, padding: str = "p-4") -> HTMLResponse:
                         f"{html.escape(text)}</div>")
 
 
-def _imported(route: Route, parsed: ParsedGpx, padding: str = "p-4") -> HTMLResponse:
+def _imported(route: Route, notice: str | None, padding: str = "p-4", reload: bool = False) -> HTMLResponse:
     """HTMX follows the redirect to the route's page — unless the file had other tracks: then the form says
-    so, with the link (a redirect would lose the message)."""
+    so, with the link (a redirect would lose the message). On the route's own page (a re-import), the link
+    reloads it so the new trace shows."""
     url = f"/simulator/routes/{route.id}"
-    if not parsed.notice:
+    if not notice:
         return HTMLResponse(status_code=204, headers={"HX-Redirect": url})
+    link = (f'<a href="{url}" class="underline" onclick="window.location.reload(); return false;">Voir la nouvelle trace</a>'
+            if reload else f'<a href="{url}" class="underline">Voir le parcours</a>')
     return HTMLResponse(f'<div class="rounded-lg border border-amber-200 bg-amber-50 {padding} text-sm text-amber-700">'
-                        f'{html.escape(parsed.notice)} <a href="{url}" class="underline">Voir le parcours</a></div>')
+                        f"{html.escape(notice)} {link}</div>")
 
 
 def _attachment(name: str, suffix: str) -> dict[str, str]:
