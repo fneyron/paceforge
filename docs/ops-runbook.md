@@ -29,9 +29,12 @@ Pas d’environnement de préproduction : les tests et la vérification de `/hea
 - La base : **les migrations ne reviennent jamais en arrière en production**. Une migration est additive
   (ajouter la colonne, la remplir, et seulement un déploiement plus tard retirer l’ancienne) ; un défaut se
   corrige par une nouvelle migration poussée sur `main`. Si une migration casse le démarrage, `app` redémarre
-  en boucle et le site est indisponible : corriger et pousser, ou, si des données ont été altérées, remettre
-  le code précédent puis restaurer la dernière sauvegarde (ci-dessous). Ne jamais lancer `alembic downgrade`
-  sur la base de production.
+  en boucle et le site est indisponible : corriger et pousser. Si des données ont été altérées, dans cet
+  ordre : arrêter `app` et les workers, restaurer la sauvegarde prise avant la migration (ci-dessous ; la
+  restauration recrée le schéma, les objets ajoutés depuis ne la bloquent pas), puis déployer le code qui
+  correspond à cette sauvegarde (Coolify, « Deploy » sur ce commit) — pas l’inverse : un `app` ancien démarré
+  sur une base plus récente ne reconnaît pas sa révision Alembic et boucle. Ne jamais lancer
+  `alembic downgrade` sur la base de production.
 
 ## Sauvegardes
 
@@ -67,7 +70,8 @@ dans les journaux de `db-backup` (« FAILED: the copy »).
 
         docker compose -f docker-compose.prod.yml stop app celery-worker celery-worker-default
 
-2. Restaurer — les tables sont supprimées et recréées depuis l’archive, en une transaction :
+2. Restaurer — le schéma est supprimé et recréé, puis rempli depuis l’archive en une transaction ; le script
+   refuse de s’exécuter tant qu’une autre connexion est ouverte :
 
         docker compose -f docker-compose.prod.yml exec db-backup restore.sh /backups/daily/paceforge-2026-10-15.dump
 
@@ -75,16 +79,17 @@ dans les journaux de `db-backup` (« FAILED: the copy »).
 
         docker compose -f docker-compose.prod.yml exec db-backup aws s3 cp s3://mon-bucket/paceforge/daily/paceforge-2026-10-15.dump /backups/daily/
 
-3. Redémarrer :
+3. Redémarrer avec le code qui correspond à la sauvegarde : le code en place s’il n’a pas changé depuis
+   (`app` rejoue au démarrage les migrations que la sauvegarde précède), sinon un « Deploy » Coolify du
+   commit de cette date (voir « Revenir en arrière ») :
 
         docker compose -f docker-compose.prod.yml start app celery-worker celery-worker-default
 
-   `app` rejoue au démarrage les migrations que la sauvegarde précède.
-
 ### La répétition
 
-`scripts/backup/drill.sh` sauvegarde une base, la restaure dans une base neuve et compare les tables, le
-nombre de lignes de chacune et la révision Alembic. La CI l’exécute à chaque run (job *Backup and restore
+`scripts/backup/drill.sh` sauvegarde une base, la restaure dans une base neuve, y ajoute une table, une clé
+étrangère et une colonne (un schéma qui a avancé depuis la sauvegarde), restaure de nouveau par-dessus et
+compare les tables, les colonnes, le nombre de lignes de chacune et la révision Alembic. La CI l’exécute à chaque run (job *Backup and restore
 drill*) ; à la main, contre un PostgreSQL local dont le schéma a été construit par `alembic upgrade head` :
 
     PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=paceforge_test scripts/backup/drill.sh
@@ -113,7 +118,10 @@ Coolify → l’application → *Logs*, par conteneur ; ou sur le serveur :
 Repères : `Strava round:`, `COROS sync round:`, `Garmin sync round:` (chaque ronde), `… round failed` (une
 ronde en échec, remontée aussi à Sentry), `Strava quota of app` (les synchros attendent la prochaine
 fenêtre), `Garmin sync budget reached`, `SoftTimeLimitExceeded` (une tâche a dépassé 55 min : la ronde
-reprend à l’heure suivante), `backup: FAILED` dans `db-backup`.
+reprend à l’heure suivante), `backup: FAILED` dans `db-backup`. Les rondes synchronisent les liens l’un
+après l’autre : sous la limite de 55 min, environ 27 liens COROS (2 min chacun) ou 5 liens Garmin (budget de
+10 min) par ronde horaire ; avant d’atteindre ce nombre d’athlètes, découper les rondes en une tâche par
+lien.
 
 ## Dépendances
 

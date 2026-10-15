@@ -68,7 +68,7 @@ run_backup() {
     fi
     prune "$BACKUP_DIR/daily" "$BACKUP_KEEP_DAILY"
     prune "$BACKUP_DIR/weekly" "$BACKUP_KEEP_WEEKLY"
-    offsite "$dump"
+    offsite "$dump" || log "the dump is kept locally; the off-site copy is tried again with tomorrow's"
 }
 
 seconds_until_next() {  # until the next $BACKUP_AT, UTC
