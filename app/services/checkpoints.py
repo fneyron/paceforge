@@ -8,6 +8,8 @@ carry), so it is computed here, not eyeballed.
 
 from __future__ import annotations
 
+from app.services.plan_clock import PlanClock
+
 KINDS: dict[str, str] = {
     "none": "Point",
     "water": "Eau",
@@ -80,20 +82,29 @@ def normalize_checkpoint(cp: dict) -> dict:
     }
 
 
-def cutoff_elapsed_s(cutoff_clock: str | None, start_offset_s: int, min_elapsed_s: int = 0) -> int | None:
+def cutoff_elapsed_s(cutoff_clock: str | None, start_offset_s: int, min_elapsed_s: int = 0,
+                     clock: PlanClock | None = None) -> int | None:
     """Seconds after the race start at which the cutoff falls.
 
     Cutoffs are published as clock times; a 100-miler crosses midnight (often
-    twice), so the day is inferred: the first occurrence of that clock time
-    that is not before ``min_elapsed_s`` (the earliest plausible passage).
+    twice), so the day is inferred: the first day on which that clock time
+    is not before ``min_elapsed_s`` (the earliest plausible passage), read on
+    the race's clock (``clock``, plan_clock.PlanClock: past a daylight-saving
+    change the cutoff is the wall clock's; without a zone, the start's offset).
+    On the repeated autumn hour the cutoff is the occurrence closest to the
+    planned passage — the one the athlete reads next to his row, the same rule
+    as a passage typed on race day —, the first when no passage is known.
     """
     c = _clock_to_s(cutoff_clock)
     if c is None:
         return None
-    elapsed = c - int(start_offset_s)
-    while elapsed < 0 or elapsed < min_elapsed_s - 6 * 3600:
-        elapsed += 86400
-    return int(elapsed)
+    clock = clock or PlanClock(start_offset_s)
+    day = 0
+    while True:
+        fits = [e for e in clock.occurrences(day * 86400 + c) if e >= 0 and e >= min_elapsed_s - 6 * 3600]
+        if fits:
+            return int(min(fits, key=lambda e: abs(e - min_elapsed_s)))
+        day += 1
 
 
 def is_resupply(cp: dict) -> bool:
@@ -145,23 +156,26 @@ def autonomy_legs(checkpoints: list[dict], total_km: float, sections: list[dict]
     return legs
 
 
-def annotate_cutoffs(sections: list[dict], checkpoints: list[dict], start_offset_s: int) -> list[dict]:
+def annotate_cutoffs(sections: list[dict], checkpoints: list[dict], start_offset_s: int,
+                     clock: PlanClock | None = None) -> list[dict]:
     """Add ``cutoff_elapsed_s`` / ``cutoff_margin_s`` to each section whose end
-    checkpoint has a cutoff. Margin = cutoff − planned clock (negative = late)."""
+    checkpoint has a cutoff. Margin = cutoff − planned passage (negative = late),
+    both in seconds after the start (``clock``: the race's clock, cutoff_elapsed_s)."""
+    clock = clock or PlanClock(start_offset_s)
     by_index = {i: normalize_checkpoint(cp) for i, cp in enumerate(checkpoints)}
     out = []
     for s in sections:
         s = dict(s)
         idx = s.get("end_checkpoint_index")
         cp = by_index.get(idx) if idx is not None else None
-        planned_clock = s.get("adjusted_clock_time_s")
-        if planned_clock is None:
-            planned_clock = s.get("clock_time_s")
-        if cp and cp.get("cutoff_clock") and planned_clock is not None:
+        planned = clock.elapsed_of(s, plan=True)
+        if planned is None:
+            planned = clock.elapsed_of(s, plan=False)
+        if cp and cp.get("cutoff_clock") and planned is not None:
             # the clock is printed floored to the minute: the margin is computed on
             # that same minute so "barrier 00:10, passage 23:25" reads +0h45
-            planned_elapsed = int(planned_clock) // 60 * 60 - int(start_offset_s)
-            cut = cutoff_elapsed_s(cp["cutoff_clock"], start_offset_s, min_elapsed_s=planned_elapsed)
+            planned_elapsed = int(planned) // 60 * 60
+            cut = cutoff_elapsed_s(cp["cutoff_clock"], start_offset_s, min_elapsed_s=planned_elapsed, clock=clock)
             s["cutoff_elapsed_s"] = cut
             s["cutoff_margin_s"] = (cut - planned_elapsed) if cut is not None else None
         for key in ("kind", "crew", "drop_bag", "cutoff_clock"):

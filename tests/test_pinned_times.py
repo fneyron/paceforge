@@ -55,12 +55,14 @@ HOURLY = {"temps": [12 + (h % 24) * 0.5 for h in range(48)], "humidity": [70] * 
 # elapsed time at the switch point (switch_late_s 900 → 540 / 660 s, switch_late_pct added), Optimiste / Sécurité
 # scaling the elapsed time, stops included (target_stops_night), and, with an hourly forecast, the objective plan
 # weighted by each section's heat and humidity counted in the heat from 15 °C only, phased in to 20 °C
-# (target_hourly: two sections at 15-17 °C and 70 % lose 0.3-0.5 %, the plan moves 4-12 s).
+# (target_hourly: two sections at 15-17 °C and 70 % lose 0.3-0.5 %, the plan moves 4-12 s). Re-taken on
+# 2026-10-15 for new keys alone, every value byte-identical: the rows' seconds after the start (elapsed_s,
+# adjusted_elapsed_s), the scenarios' (target / fast / safe_elapsed_s) and the replan's target_clock_s (plan_clock).
 LEGACY = {
-    "no_target": (dict(target=None, sh=6, stops=None, hourly=None), "6fe0b2dd1ba80cf8595745a3e3a2142128a7741989514fb82a98e9ff6956c851"),
-    "target": (dict(target=5 * 3600, sh=6, stops=None, hourly=None), "11eed93b9c769356005409659bcca443b2f183a7fb51f8741f9f9b596fd4fe4a"),
-    "target_stops_night": (dict(target=5 * 3600 + 600, sh=21, stops=STOPS, hourly=None), "3bccdb316f94a8791a20aab92d46766221e45caa5e41b665e84eba57129b4122"),
-    "target_hourly": (dict(target=4 * 3600, sh=9, stops={10.0: 300}, hourly=HOURLY), "c58e276dd66cd137fcc41c19086e404ad651c314162874c59687200f88ae5beb"),
+    "no_target": (dict(target=None, sh=6, stops=None, hourly=None), "59d543cb2b0cc064c8e53a98056d0a8ded67206e8a73635e6a231974cc80431e"),
+    "target": (dict(target=5 * 3600, sh=6, stops=None, hourly=None), "ff56d72d529a26bf36d885b5d4fc48218711781da6368c679e775169f3bd8246"),
+    "target_stops_night": (dict(target=5 * 3600 + 600, sh=21, stops=STOPS, hourly=None), "c5d1f7ef0ae4b1dabb22dea8e31f26c991d470633d19c6d16d3382d467a28e95"),
+    "target_hourly": (dict(target=4 * 3600, sh=9, stops={10.0: 300}, hourly=HOURLY), "640c7ebdf7540308b0bce53e7e40c8bf336069b53f6b45e914eaf29a6c90ac12"),
 }
 
 

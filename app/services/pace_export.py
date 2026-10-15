@@ -21,6 +21,8 @@ import io
 from datetime import datetime, timedelta, timezone
 from xml.sax.saxutils import escape
 
+from app.services.plan_clock import PlanClock
+
 
 def _fmt_clock(seconds: int) -> str:
     rem = int(seconds) % 86400
@@ -32,22 +34,25 @@ def _fmt_elapsed(seconds: int) -> str:
     return f"{s // 3600}h{(s % 3600) // 60:02d}"
 
 
-def time_curve(course_segments: list[dict], sections: list[dict], use_target: bool) -> list[tuple[float, float]]:
+def time_curve(course_segments: list[dict], sections: list[dict], use_target: bool,
+               clock: PlanClock | None = None) -> list[tuple[float, float]]:
     """(km, elapsed_s) breakpoints — one per course segment boundary, with the
     aid-station stop expressed as a jump at the checkpoint km.
 
     Inside a section, time is spread over the km segments proportionally to
     their terrain difficulty (base_time_s), so a climb inside a long section
-    gets its share of the section's time rather than a flat average.
+    gets its share of the section's time rather than a flat average. The
+    stops are read from the rows' seconds after the start (``clock``, the
+    race's clock: rows without them give their clocks' differences).
     """
     pts: list[tuple[float, float]] = [(0.0, 0.0)]
     if not sections:
         return pts
+    clock = clock or PlanClock(0)
     elapsed_at_section_start = 0.0
     for s in sections:
         start_km, end_km = float(s["start_km"]), float(s["end_km"])
         sec_time = float(s["adjusted_time_s"] if (use_target and s.get("adjusted_time_s") is not None) else s["predicted_time_s"])
-        clock_end = int(s["adjusted_clock_time_s"] if (use_target and s.get("adjusted_clock_time_s") is not None) else s["clock_time_s"])
         segs = [g for g in course_segments if g["end_km"] > start_km + 1e-6 and g["start_km"] < end_km - 1e-6]
         weights = []
         for g in segs:
@@ -68,25 +73,25 @@ def time_curve(course_segments: list[dict], sections: list[dict], use_target: bo
             pts[-1] = (end_km, planned_end)
         # aid stop → time jumps at the same km (clock times carry the stops)
         elapsed_at_section_start = planned_end
-        stop_here = _stop_at(s, sections, use_target)
+        stop_here = _stop_at(s, sections, use_target, clock)
         if stop_here > 0:
             elapsed_at_section_start += stop_here
             pts.append((end_km, elapsed_at_section_start))
     return pts
 
 
-def _stop_at(s: dict, sections: list[dict], use_target: bool) -> int:
-    """Stop duration at the end of section ``s`` = next section's clock start
-    minus this section's clock end (clock times carry the stops)."""
+def _stop_at(s: dict, sections: list[dict], use_target: bool, clock: PlanClock) -> int:
+    """Stop duration at the end of section ``s`` = the next section's start (its
+    end minus its time) minus this section's end, in seconds after the start
+    (the rows' elapsed carries the stops)."""
     i = sections.index(s)
     if i + 1 >= len(sections):
         return 0
     nxt = sections[i + 1]
-    key_c = "adjusted_clock_time_s" if (use_target and s.get("adjusted_clock_time_s") is not None) else "clock_time_s"
+    plan = use_target and s.get("adjusted_clock_time_s") is not None
     key_t = "adjusted_time_s" if (use_target and s.get("adjusted_time_s") is not None) else "predicted_time_s"
-    # next.clock_end - next.time = clock at which the next section starts
-    next_start_clock = int(nxt[key_c]) - int(round(float(nxt[key_t])))
-    return max(0, next_start_clock - int(s[key_c]))
+    next_start = clock.elapsed_of(nxt, plan) - int(round(float(nxt[key_t])))
+    return max(0, next_start - clock.elapsed_of(s, plan))
 
 
 def elapsed_at(curve: list[tuple[float, float]], km: float) -> float:
@@ -109,22 +114,27 @@ def _race_start(race_date: str | None, start_offset_s: int) -> datetime:
     return datetime(d.year, d.month, d.day, tzinfo=timezone.utc) + timedelta(seconds=int(start_offset_s))
 
 
-def waypoint_rows(sections: list[dict], use_target: bool, start_offset_s: int, leg_codes: list[str] | None = None) -> list[dict]:
+def waypoint_rows(sections: list[dict], use_target: bool, start_offset_s: int, leg_codes: list[str] | None = None,
+                  clock: PlanClock | None = None) -> list[dict]:
     """One row per checkpoint (and the finish). ``leg_codes[i]`` is the pacing
     instruction for leg i (from checkpoint i-1 to i): it is attached to the
-    point where that leg STARTS, so the watch shows it as you leave."""
+    point where that leg STARTS, so the watch shows it as you leave. ``clock``:
+    the race's clock (plan_clock.PlanClock), the start's offset without one."""
     rows = []
     codes = leg_codes or []
+    clock = clock or PlanClock(start_offset_s)
     for i, s in enumerate(sections, start=1):
-        clock = int(s["adjusted_clock_time_s"] if (use_target and s.get("adjusted_clock_time_s") is not None) else s["clock_time_s"])
+        plan = use_target and s.get("adjusted_clock_time_s") is not None
+        clock_s = int(s["adjusted_clock_time_s" if plan else "clock_time_s"])
+        elapsed = clock.elapsed_of(s, plan)
         sec_time = float(s["adjusted_time_s"] if (use_target and s.get("adjusted_time_s") is not None) else s["predicted_time_s"])
         dist = float(s.get("distance_km") or 0)
         pace = sec_time / dist if dist > 0 else 0
         is_finish = i == len(sections)
         rows.append({
             "index": i, "name": "Arrivée" if is_finish else s["end_name"], "km": float(s["end_km"]),
-            "elevation": s.get("end_elevation"), "clock_s": clock, "elapsed_s": clock - int(start_offset_s),
-            "clock": _fmt_clock(clock), "elapsed": _fmt_elapsed(clock - int(start_offset_s)),
+            "elevation": s.get("end_elevation"), "clock_s": clock_s, "elapsed_s": elapsed,
+            "clock": _fmt_clock(clock_s), "elapsed": _fmt_elapsed(elapsed),
             "pace_s_per_km": int(round(pace)), "kind": s.get("kind"), "cutoff_clock": s.get("cutoff_clock"),
             "is_finish": is_finish,
             "next_code": codes[i] if (not is_finish and i < len(codes)) else "",
@@ -145,10 +155,10 @@ def _coord_at_km(coords: list, km: float):
 
 def build_pace_gpx(name: str, coords: list, course_segments: list[dict], sections: list[dict],
                    use_target: bool, race_date: str | None, start_offset_s: int,
-                   leg_codes: list[str] | None = None) -> str:
+                   leg_codes: list[str] | None = None, clock: PlanClock | None = None) -> str:
     start = _race_start(race_date, start_offset_s)
-    curve = time_curve(course_segments, sections, use_target)
-    rows = waypoint_rows(sections, use_target, start_offset_s, leg_codes)
+    curve = time_curve(course_segments, sections, use_target, clock)
+    rows = waypoint_rows(sections, use_target, start_offset_s, leg_codes, clock)
     out = io.StringIO()
     out.write('<?xml version="1.0" encoding="UTF-8"?>\n')
     out.write('<gpx version="1.1" creator="PaceForge" xmlns="http://www.topografix.com/GPX/1/1">\n')
@@ -178,10 +188,10 @@ def build_pace_gpx(name: str, coords: list, course_segments: list[dict], section
 
 def build_pace_tcx(name: str, coords: list, course_segments: list[dict], sections: list[dict],
                    use_target: bool, race_date: str | None, start_offset_s: int,
-                   leg_codes: list[str] | None = None) -> str:
+                   leg_codes: list[str] | None = None, clock: PlanClock | None = None) -> str:
     start = _race_start(race_date, start_offset_s)
-    curve = time_curve(course_segments, sections, use_target)
-    rows = waypoint_rows(sections, use_target, start_offset_s, leg_codes)
+    curve = time_curve(course_segments, sections, use_target, clock)
+    rows = waypoint_rows(sections, use_target, start_offset_s, leg_codes, clock)
     total_s = int(curve[-1][1]) if curve else 0
     total_m = float(coords[-1][2]) * 1000 if coords else 0
     out = io.StringIO()
@@ -218,8 +228,9 @@ def build_pace_tcx(name: str, coords: list, course_segments: list[dict], section
     return out.getvalue()
 
 
-def build_pace_csv(name: str, sections: list[dict], use_target: bool, start_offset_s: int, leg_codes: list[str] | None = None) -> str:
-    rows = waypoint_rows(sections, use_target, start_offset_s, leg_codes)
+def build_pace_csv(name: str, sections: list[dict], use_target: bool, start_offset_s: int, leg_codes: list[str] | None = None,
+                   clock: PlanClock | None = None) -> str:
+    rows = waypoint_rows(sections, use_target, start_offset_s, leg_codes, clock)
     out = io.StringIO()
     w = csv.writer(out, delimiter=";")
     w.writerow(["point", "km", "altitude_m", "heure_cible", "temps_course", "allure_section_min_km", "type", "barriere", "consigne_jusqu_au_suivant"])

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
 from app.schemas.simulator import AthleteGradientProfile, CourseProfile
+from app.services.plan_clock import PlanClock
 
 logger = logging.getLogger(__name__)
 
@@ -649,23 +650,26 @@ def sun_clock(course: CourseProfile, race_date, start_hour: int, start_minute: i
 ZONE_BAND_H = 2.0  # the athlete's zone serves a course whose lon / 15 lies within this of its standard offset
 
 
-def race_utc_offset_s(race_date, lon: float | None, weather_offset_s=None, zone=None, start_zone: str | None = None,
-                      start_hour: int | None = None, start_minute: int = 0) -> int | None:
-    """The UTC offset of the race's clock at its start: the start point's own
-    time zone when known (``start_zone``, its IANA name: daylight saving read
-    on the race date, at the start's local time), else the forecast's (the
-    same zone, read on the forecast's day), else the athlete's zone when the
-    course lies in its band (its standard offset within 2 h of lon / 15: the
-    west of France and Spain run 1.1-1.4 h ahead of the sun, Réunion is 2.7 h
-    off Paris), else lon / 15 to the hour. None without a date or a place."""
+def race_clock_at(race_date, lon: float | None, weather_offset_s=None, zone=None, start_zone: str | None = None,
+                  start_hour: int | None = None, start_minute: int = 0) -> tuple[int | None, str | None]:
+    """(The UTC offset of the race's clock at its start, the IANA name of its
+    zone when that clock is a zone's): the start point's own time zone when
+    known (``start_zone``, its IANA name: daylight saving read on the race
+    date, at the start's local time), else the forecast's offset (the same
+    zone, read on the forecast's day; no name), else the athlete's zone when
+    the course lies in its band (its standard offset within 2 h of lon / 15:
+    the west of France and Spain run 1.1-1.4 h ahead of the sun, Réunion is
+    2.7 h off Paris), else lon / 15 to the hour (no name). (None, None)
+    without a date or a place. The name serves the plan's clock across a
+    daylight-saving change (plan_clock.PlanClock)."""
     if race_date is None or lon is None:
-        return None
+        return None, None
     from datetime import date as _date
 
     try:
         d = _date.fromisoformat(str(race_date)[:10])
     except (ValueError, TypeError):
-        return None
+        return None, None
     local = datetime(d.year, d.month, d.day, int(start_hour) if start_hour is not None else 12, int(start_minute or 0))
     if start_zone:
         from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -673,12 +677,12 @@ def race_utc_offset_s(race_date, lon: float | None, weather_offset_s=None, zone=
         try:
             off = local.replace(tzinfo=ZoneInfo(start_zone)).utcoffset()
             if off is not None:
-                return int(off.total_seconds())
+                return int(off.total_seconds()), start_zone
         except (ZoneInfoNotFoundError, ValueError):
             pass
     if weather_offset_s is not None:
         try:
-            return int(weather_offset_s)
+            return int(weather_offset_s), None
         except (TypeError, ValueError):
             pass
     solar_h = float(lon) / 15
@@ -686,8 +690,14 @@ def race_utc_offset_s(race_date, lon: float | None, weather_offset_s=None, zone=
         at = local.replace(tzinfo=zone)
         off, dst = at.utcoffset(), at.dst()
         if off is not None and abs((off - (dst or timedelta(0))).total_seconds() / 3600 - solar_h) <= ZONE_BAND_H:
-            return int(off.total_seconds())
-    return int(round(solar_h)) * 3600
+            return int(off.total_seconds()), getattr(zone, "key", None)
+    return int(round(solar_h)) * 3600, None
+
+
+def race_utc_offset_s(race_date, lon: float | None, weather_offset_s=None, zone=None, start_zone: str | None = None,
+                      start_hour: int | None = None, start_minute: int = 0) -> int | None:
+    """The UTC offset of the race's clock at its start (race_clock_at). None without a date or a place."""
+    return race_clock_at(race_date, lon, weather_offset_s, zone, start_zone, start_hour, start_minute)[0]
 
 
 def _segment_times(
@@ -781,6 +791,7 @@ def predict_course(
     fine_terrain: list[float] | None = None,
     race_date=None,
     utc_offset_s: int | None = None,
+    tz: str | None = None,
     aid_stops: dict | None = None,
     own_weather: bool = False,
 ) -> CourseProfile:
@@ -798,9 +809,11 @@ def predict_course(
 
     ``race_date`` and ``utc_offset_s`` (the race's clock, see
     race_utc_offset_s): night by the sun at each segment's place and time;
-    without them, the fixed 21:00-06:00 window. ``aid_stops`` ({km: s}, the
-    plan's): night read on the clock with the stops made before each segment,
-    as the plan's night bands are drawn.
+    without them, the fixed 21:00-06:00 window; ``tz`` (the zone's name,
+    race_clock's third value) is accepted for the plan's clock (plan_clock),
+    the sun needs the offset alone. ``aid_stops`` ({km: s}, the plan's): night
+    read on the clock with the stops made before each segment, as the plan's
+    night bands are drawn.
 
     ``own_weather``: the course has its race day's weather (forecast or season
     normals, applied by compute_passage_times), and the race level is read
@@ -933,6 +946,7 @@ def compute_passage_times(
     aid_kms: set | None = None,
     aid_stops: dict | None = None,
     objective: bool | None = None,
+    clock: PlanClock | None = None,
 ) -> list[dict]:
     """Compute passage times between checkpoints.
 
@@ -941,7 +955,11 @@ def compute_passage_times(
 
     Checkpoints are [{name, distance_km}]. Start (0km) and finish are added
     automatically. Clock passage times are derived from the race start time of
-    day (``start_hour``:``start_minute``). Returns PassageTimeSection dicts.
+    day (``start_hour``:``start_minute``) on the race's clock (``clock``,
+    plan_clock.PlanClock: the wall clock across a daylight-saving change;
+    without it the start's offset plus the elapsed seconds); each section also
+    carries its seconds after the start, stops included (``elapsed_s`` /
+    ``adjusted_elapsed_s``). Returns PassageTimeSection dicts.
 
     When ``hourly_weather`` ({"temps": [24], "humidity": [24]}) is provided, a
     per-section heat factor is computed from each section's estimated time of day
@@ -965,8 +983,9 @@ def compute_passage_times(
     last pin without an objective the model's own pace carries on. A pin that
     would need a leg faster than MIN_PIN_RATIO of the model is moved later and
     flagged (``pin_clamped``). Sections of a pinned plan carry ``pinned``,
-    ``pin_target_s``, ``pin_clamped`` and ``auto_clock_s`` (the clock the plan
-    would give there without that pin); the finish carries ``objective_s``.
+    ``pin_target_s``, ``pin_clock_s`` (that time on the plan's clock),
+    ``pin_clamped`` and ``auto_clock_s`` (the clock the plan would give there
+    without that pin); the finish carries ``objective_s``.
     Without pins the output is unchanged (no extra keys). ``objective``: the
     target is his objective (True) or the estimate the plan runs on (False);
     None (unsaid): an objective when more than a minute from the estimate.
@@ -975,6 +994,7 @@ def compute_passage_times(
     from app.services.weather import compute_heat_factor
 
     start_offset_s = start_hour * 3600 + (start_minute or 0) * 60
+    clock = clock or PlanClock(start_offset_s)
 
     # Build full checkpoint list with start and finish. Track the original index
     # of each checkpoint so the UI can map a row back to its checkpoint.
@@ -1134,6 +1154,9 @@ def compute_passage_times(
             adj_cumulative += adjusted_time
 
         arrival_stop = r["stop"]
+        # seconds after the start, stops included, cut to the second as the clocks always were
+        elapsed = int(start_offset_s + cumulative + stops_acc) - start_offset_s
+        adj_elapsed = int(start_offset_s + adj_cumulative + stops_acc) - start_offset_s
 
         sections.append(PassageTimeSection(
             start_name=r["start_name"],
@@ -1150,8 +1173,10 @@ def compute_passage_times(
             adjusted_cumulative_time_s=round(adj_cumulative, 0) if plan_on else None,
             # the checkpoint's own altitude (the roadbook's) when it has one
             end_elevation=round(float(r["end_cp_elevation"])) if r.get("end_cp_elevation") is not None else _elevation_at_km(course, r["end_km"]),
-            clock_time_s=int(start_offset_s + cumulative + stops_acc),
-            adjusted_clock_time_s=int(start_offset_s + adj_cumulative + stops_acc) if plan_on else None,
+            clock_time_s=clock.clock_s(elapsed),
+            adjusted_clock_time_s=clock.clock_s(adj_elapsed) if plan_on else None,
+            elapsed_s=elapsed,
+            adjusted_elapsed_s=adj_elapsed if plan_on else None,
             end_checkpoint_index=r["cp_index"],
             temperature_c=temperature_c,
             heat_factor=round(sec_heat, 3) if use_hourly else None,
@@ -1166,7 +1191,8 @@ def compute_passage_times(
             s["pin_target_s"] = pins.get(idx)
             s["pin_clamped"] = idx in pin_plan["clamped"]
             auto = pin_plan["auto"].get(idx)
-            s["auto_clock_s"] = int(start_offset_s + auto) if auto is not None else None
+            s["auto_clock_s"] = clock.clock_s(int(start_offset_s + auto) - start_offset_s) if auto is not None else None
+            s["pin_clock_s"] = clock.clock_s(pins[idx]) if idx in pins else None  # the time he fixed, on the plan's clock
 
         stops_acc += arrival_stop
 
@@ -1199,13 +1225,14 @@ def is_pinned(sections: list[dict] | None) -> bool:
     return any(s.get("pinned") for s in (sections or []))
 
 
-def plan_total_s(sections: list[dict], start_offset_s: int, target_time_s: int | None) -> int | None:
+def plan_total_s(sections: list[dict], start_offset_s: int, target_time_s: int | None,
+                 clock: PlanClock | None = None) -> int | None:
     """The plan's finish in seconds after the start, stops included: where the
     pinned plan arrives once a checkpoint is pinned, else the objective."""
     if is_pinned(sections):
-        clock = sections[-1].get("adjusted_clock_time_s")
-        if clock is not None:
-            return int(clock) - int(start_offset_s)
+        end = (clock or PlanClock(start_offset_s)).elapsed_of(sections[-1], plan=True)
+        if end is not None:
+            return end
     return target_time_s
 
 
@@ -1361,6 +1388,7 @@ def replan_from_passage(
     aid_kms: set | None = None,
     min_feasible_ratio: float = 0.85,
     aid_stops: dict | None = None,
+    clock: PlanClock | None = None,
 ) -> tuple[list[dict], dict | None]:
     """Race-day re-plan: "I'm at <checkpoint> at <clock>, now what?"
 
@@ -1382,10 +1410,11 @@ def replan_from_passage(
     Pins without an objective leave the finish free (no "target" mode).
 
     Rows up to the anchor are flagged ``passed``; the anchor row shows the
-    real clock. Returns (new_sections, replan_summary) or (sections, None)
-    when the anchor doesn't match a checkpoint.
+    real clock. ``clock`` (plan_clock.PlanClock): the race's clock, the typed
+    passage read on it (its first occurrence on the repeated autumn hour).
+    Returns (new_sections, replan_summary) or (sections, None) when the
+    anchor doesn't match a checkpoint.
     """
-    aid_set = {round(float(k), 1) for k in (aid_kms or set())}
     idx = next(
         (i for i, s in enumerate(sections)
          if s.get("end_checkpoint_index") is not None and abs(float(s["end_km"]) - float(anchor_km)) < 0.15),
@@ -1394,22 +1423,23 @@ def replan_from_passage(
     if idx is None:
         return sections, None
 
+    clock = clock or PlanClock(start_offset_s)
     a = sections[idx]
     pinned_plan = any(s.get("pinned") for s in sections)
     if pinned_plan and sections[-1].get("objective_s") is None:
         target_time_s = None  # the estimate the page sends is not an objective
     use_plan = (bool(target_time_s) or pinned_plan) and a.get("adjusted_clock_time_s") is not None
-    # The plan's clock floored to the minute, as the table prints it, so the
-    # delta the athlete reads matches the two clocks he compares.
-    plan_clock = int(a["adjusted_clock_time_s"] if use_plan else a["clock_time_s"]) // 60 * 60
-    plan_elapsed = plan_clock - int(start_offset_s)
-    anchor_elapsed = int(anchor_clock_s) - int(start_offset_s)
-    while anchor_elapsed < 0:  # passage after midnight
-        anchor_elapsed += 86400
-    # A clock alone does not say which day: take the occurrence closest to the
-    # plan (a 100-miler crosses midnight twice).
-    while abs(anchor_elapsed + 86400 - plan_elapsed) < abs(anchor_elapsed - plan_elapsed):
-        anchor_elapsed += 86400
+    # The plan's time floored to the minute, as the table prints its clock, so
+    # the delta the athlete reads matches the two clocks he compares.
+    plan_elapsed = clock.elapsed_of(a, plan=use_plan) // 60 * 60
+    # A clock alone does not say which day, and reads twice on the repeated autumn
+    # hour: the occurrence after the start closest to the plan (a 100-miler crosses
+    # midnight twice), on the race's clock.
+    anchor_elapsed = None
+    for day in range(8):
+        for e in clock.occurrences(day * 86400 + int(anchor_clock_s)):
+            if e >= 0 and (anchor_elapsed is None or abs(e - plan_elapsed) < abs(anchor_elapsed - plan_elapsed)):
+                anchor_elapsed = e
     delta_s = anchor_elapsed - plan_elapsed
     # Rhythm is measured against the PLAN (even effort is deliberately slower
     # than the prediction early on): 1.05 = 5 % slower than planned so far.
@@ -1430,14 +1460,14 @@ def replan_from_passage(
     total_share = sum(shares) or 1.0  # = the plan's remaining moving time
 
     projected_moving = total_share * rhythm
-    projected_finish = start_offset_s + anchor_elapsed + projected_moving + stops_remaining
+    projected_finish = clock.clock_s(int(start_offset_s + anchor_elapsed + projected_moving + stops_remaining) - int(start_offset_s))
 
     mode, feasible, required_ratio, budget = "rhythm", None, None, projected_moving
     # the next pin ahead, if it can still be held
     nxt = next((j for j, s in enumerate(remaining) if s.get("pinned")), None) if use_plan else None
     pin_budget = pin_share = None
     if nxt is not None:
-        pin_elapsed = int(remaining[nxt]["adjusted_clock_time_s"]) - int(start_offset_s)
+        pin_elapsed = clock.elapsed_of(remaining[nxt], plan=True)
         pin_budget = pin_elapsed - anchor_elapsed - anchor_stop - sum(stop_of(s) for s in remaining[:nxt])
         pin_share = sum(shares[:nxt + 1]) or 1.0
         required_ratio = pin_budget / pin_share
@@ -1456,7 +1486,8 @@ def replan_from_passage(
         out[i]["passed"] = True
     out[idx]["is_anchor"] = True
     # stored with its day so day separators, cutoffs and the profile agree
-    out[idx]["adjusted_clock_time_s"] = int(start_offset_s + anchor_elapsed)
+    out[idx]["adjusted_clock_time_s"] = clock.clock_s(anchor_elapsed)
+    out[idx]["adjusted_elapsed_s"] = int(anchor_elapsed)
     out[idx]["adjusted_cumulative_time_s"] = int(anchor_elapsed)
     if pinned_plan:  # the real passage wins over a pin there
         out[idx]["pinned"] = False
@@ -1473,7 +1504,8 @@ def replan_from_passage(
             o = out[idx + 1 + j]
             o["adjusted_time_s"] = round(t)
             o["adjusted_cumulative_time_s"] = round(anchor_elapsed + cum)
-            o["adjusted_clock_time_s"] = int(start_offset_s + anchor_elapsed + cum + stops_acc)
+            o["adjusted_elapsed_s"] = int(start_offset_s + anchor_elapsed + cum + stops_acc) - int(start_offset_s)
+            o["adjusted_clock_time_s"] = clock.clock_s(o["adjusted_elapsed_s"])
             stops_acc += stop_of(s)
         # same convention as above (elapsed at the anchor + moving since) for the rows after
         shift = out[idx + 1 + nxt]["adjusted_cumulative_time_s"] - float(remaining[nxt]["adjusted_cumulative_time_s"])
@@ -1486,7 +1518,8 @@ def replan_from_passage(
             o = out[idx + 1 + j]
             o["adjusted_time_s"] = round(t)
             o["adjusted_cumulative_time_s"] = round(anchor_elapsed + cum)
-            o["adjusted_clock_time_s"] = int(start_offset_s + anchor_elapsed + cum + stops_acc)
+            o["adjusted_elapsed_s"] = int(start_offset_s + anchor_elapsed + cum + stops_acc) - int(start_offset_s)
+            o["adjusted_clock_time_s"] = clock.clock_s(o["adjusted_elapsed_s"])
             if stop_of(s) and j < len(remaining) - 1:
                 stops_acc += stop_of(s)
             if pinned_plan:  # the pins ahead are no longer held
@@ -1507,6 +1540,7 @@ def replan_from_passage(
         "projected_finish_clock_s": int(projected_finish),
         "finish_clock_s": out[-1]["adjusted_clock_time_s"] if out else None,
         "target_time_s": target_time_s,
+        "target_clock_s": clock.clock_s(int(target_time_s)) if target_time_s else None,  # the objective's finish, on the plan's clock
     }
     if mode == "pin":
         replan["pin_name"] = remaining[nxt]["end_name"]
@@ -1534,9 +1568,11 @@ def build_scenarios(
     safe_pct: float = 10.0,
     switch_km: float | None = None,
     total_distance_km: float | None = None,
+    clock: PlanClock | None = None,
 ) -> dict | None:
     """Target / optimistic / safety columns for every checkpoint, plus the
-    rule that decides which column you are running.
+    rule that decides which column you are running (``clock``: the race's
+    clock, plan_clock.PlanClock, for the columns' clock times).
 
     The three plans share the SAME shape (even effort): cible = the plan (or
     the prediction when no target is set), optimiste = its elapsed time (on
@@ -1558,38 +1594,41 @@ def build_scenarios(
         return None
     pinned = any(s.get("pinned") for s in sections)
     use_target = (bool(target_time_s) or pinned) and sections[0].get("adjusted_clock_time_s") is not None
+    clock = clock or PlanClock(start_offset_s)
+    so = clock.start_offset_s
     f_fast = max(0.0, fast_pct) / 100.0
     f_safe = max(0.0, safe_pct) / 100.0
     rows = []
     for s in sections:
         cum = float(s["adjusted_cumulative_time_s"] if use_target else s["cumulative_time_s"])
-        clock = int(s["adjusted_clock_time_s"] if use_target else s["clock_time_s"])
-        stops = clock - int(start_offset_s) - cum  # aid stops accumulated so far
+        stops = clock.elapsed_of(s, plan=use_target) - cum  # aid stops accumulated so far
+        # the three plans in seconds after the start (to the second, as before), then on the race's clock
+        target_e = int(round(so + cum + stops)) - so
+        fast_e = int(round(so + (cum + stops) * (1 - f_fast))) - so
+        safe_e = int(round(so + (cum + stops) * (1 + f_safe))) - so
         rows.append({
             "name": s["end_name"], "km": s["end_km"], "cp_index": s.get("end_checkpoint_index"),
-            "target_s": int(round(start_offset_s + cum + stops)),
-            "fast_s": int(round(start_offset_s + (cum + stops) * (1 - f_fast))),
-            "safe_s": int(round(start_offset_s + (cum + stops) * (1 + f_safe))),
+            "target_s": clock.clock_s(target_e), "fast_s": clock.clock_s(fast_e), "safe_s": clock.clock_s(safe_e),
+            "target_elapsed_s": target_e, "fast_elapsed_s": fast_e, "safe_elapsed_s": safe_e,
             "cutoff_elapsed_s": s.get("cutoff_elapsed_s"),
             "kind": s.get("kind"),
         })
         cut = s.get("cutoff_elapsed_s")
-        if cut is not None:
-            cut_clock = int(start_offset_s) + int(cut)
-            rows[-1]["safe_ok"] = rows[-1]["safe_s"] <= cut_clock
-            rows[-1]["target_ok"] = rows[-1]["target_s"] <= cut_clock
-            rows[-1]["cutoff_clock_s"] = cut_clock
+        if cut is not None:  # compared in seconds after the start: a wall clock may go back an hour mid-race
+            rows[-1]["safe_ok"] = safe_e <= int(cut)
+            rows[-1]["target_ok"] = target_e <= int(cut)
+            rows[-1]["cutoff_clock_s"] = clock.clock_s(int(cut))
 
     total_km = float(total_distance_km or sections[-1]["end_km"] or 1)
     want = float(switch_km) if switch_km else total_km * 0.6
     cps = [r for r in rows if r["cp_index"] is not None]
     switch = min(cps, key=lambda r: abs(float(r["km"]) - want)) if cps else None
     # late by ≥ 5 % of the plan's elapsed time there → safety column (to the minute, at least 1)
-    late_s = max(60, int(round((switch["target_s"] - start_offset_s) * (SWITCH_LATE_RATIO - 1) / 60)) * 60) if switch else None
+    late_s = max(60, int(round(switch["target_elapsed_s"] * (SWITCH_LATE_RATIO - 1) / 60)) * 60) if switch else None
 
-    total_target = rows[-1]["target_s"] - start_offset_s
-    total_fast = rows[-1]["fast_s"] - start_offset_s
-    total_safe = rows[-1]["safe_s"] - start_offset_s
+    total_target = rows[-1]["target_elapsed_s"]
+    total_fast = rows[-1]["fast_elapsed_s"]
+    total_safe = rows[-1]["safe_elapsed_s"]
     return {
         "rows": rows,
         "switch": switch,
