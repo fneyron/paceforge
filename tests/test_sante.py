@@ -308,10 +308,10 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     page = await sante.health_page(db_session, test_user.id, today=D8)
     assert [(d["key"], d["value"], d["unit"], d["label"], d["sub"], d["tone"], d["href"]) for d in page["dials"]] == [
         ("sommeil", "100", "%", "Sommeil", "suffisant", "sleep", "#sommeil"),
-        ("recup", "—", None, "Signaux nocturnes", "pas de score", "none", "#recuperation"),
+        ("recup", "—", None, "Récupération", "pas de score", "none", "#recuperation"),
         ("entrainement", "15h35", None, "Entraînement", "7 derniers jours", "accent", "#entrainement")]
     assert [d["aria"] for d in page["dials"]] == [
-        "Sommeil 100\u00a0% du repère de 8 heures, suffisant.", "Signaux nocturnes : pas d’indice pour cette nuit.",
+        "Sommeil 100\u00a0% du repère de 8 heures, suffisant.", "Récupération : pas d’indice nocturne pour cette nuit.",
         "Entraînement : 15 heures 35 d'activité ces 7 derniers jours, pas encore d'habitude."]
     assert [d["dash"] for d in page["dials"]][2] == 0 and "ring" not in page and "facts" not in page
     assert "rows" not in page and page["line"] == "Pas de score ce matin : repères en construction (5/7)."

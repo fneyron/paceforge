@@ -4,7 +4,7 @@
 {% include "partials/garmin_sync_state.html" %}
 {% else %}
 <p class="pf-label"{% if w.syncing %} hx-get="/settings/{{ key }}/sync" hx-trigger="every 3s" hx-target="#{{ key }}-sync-state" hx-swap="innerHTML"{% endif %}><span class="inline-block w-1.5 h-1.5 rounded-full {{ 'bg-warn' if w.last_error else 'bg-ok' }} mr-1 align-middle" aria-hidden="true"></span>{% if w.last_sync_at %}Dernière synchro <b class="text-gray-700">{{ w.last_sync_ago }}</b>{% else %}Première synchro en cours…{% endif %}</p>
-{% if w.last_error %}<p class="text-[12px] text-warn">{{ 'Synchro incomplète' if w.partial else 'Dernière synchro échouée' }} : {{ w.last_error }}</p>{% endif %}
+{% if w.last_error %}<p class="text-[12px] text-warn">{{ w.sync_notice.label if w.sync_notice else ('Synchro incomplète' if w.partial else 'Dernière synchro échouée') }} : {{ w.last_error }}</p>{% endif %}
 {% if w.hrv_note %}<p class="text-xs text-gray-500">{{ w.hrv_note }}</p>{% endif %}
 {% if msg is defined and msg %}<p class="pf-sync-msg">{{ msg }}</p>{% endif %}
 {% endif %}

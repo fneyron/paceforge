@@ -846,8 +846,8 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 /* A single inline status; native builds provide their own shared surface. */
 .pf-refresh-status { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 4px 20px; min-height: 36px; background: rgb(var(--pf-soft)); color: rgb(var(--pf-gray-600)); font-size: 0.75rem; line-height: 1.4; }
 .pf-refresh-status[hidden] { display: none; }
-.pf-health-sync-issue { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; font-size: 0.75rem; color: rgb(var(--pf-gray-600)); }
-.pf-health-sync-issue a { display: inline-flex; align-items: center; min-height: 44px; color: rgb(var(--pf-accent-strong)); font-weight: 600; }
+.pf-health-sync-issue, .pf-health-sync-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; font-size: 0.75rem; color: rgb(var(--pf-gray-600)); }
+.pf-health-sync-issue a, .pf-health-sync-note a { display: inline-flex; align-items: center; min-height: 44px; color: rgb(var(--pf-accent-strong)); font-weight: 600; }
 .pf-health-sync-issue[hidden], .pf-native-refresh .pf-health-sync-issue { display: none; }
 .pf-refresh-status button, .pf-refresh-status a { flex: none; min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; }
 .pf-refresh-status.is-loading::before { content: ''; flex: none; width: 14px; height: 14px; border: 2px solid rgb(var(--pf-line)); border-top-color: rgb(var(--pf-accent)); border-radius: 50%; animation: pf-refresh-spin .8s linear infinite; }

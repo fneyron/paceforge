@@ -79,17 +79,17 @@ def test_the_recuperation_dial():
         return sc.dial(score, td.state(score), "#recuperation")
     dials = (dial(85, "ok"), dial(65, "warn"), dial(35, "danger"))
     assert [(d["value"], d["unit"], d["label"], d["sub"], d["tone"], _fill(d)) for d in dials] == [
-        ("85", "/100", "Signaux nocturnes", "habituels", "ok", 0.85), ("65", "/100", "Signaux nocturnes", "à surveiller", "warn", 0.65),
-        ("35", "/100", "Signaux nocturnes", "inhabituels", "danger", 0.35)]
-    assert dial(65, "warn")["aria"] == "Signaux nocturnes : indice 65 sur 100, à surveiller."
+        ("85", "/100", "Récupération", "habituels", "ok", 0.85), ("65", "/100", "Récupération", "à surveiller", "warn", 0.65),
+        ("35", "/100", "Récupération", "inhabituels", "danger", 0.35)]
+    assert dial(65, "warn")["aria"] == "Récupération : indice nocturne 65 sur 100, à surveiller."
     none = sc.dial({"value": None}, None, None)
     assert (none["value"], none["sub"], none["tone"], none["href"], none["dash"]) == ("—", "pas de score", "none",
                                                                                       None, 0)
     html = render("{{ v.viz_ring(r) }}", r=dial(65, "warn"))
-    assert '<a class="pf-ring pf-ring-recup is-warn pf-ring-index" href="#recuperation" aria-label="Signaux nocturnes : indice 65 sur 100, à surveiller.">' \
+    assert '<a class="pf-ring pf-ring-recup is-warn pf-ring-index" href="#recuperation" aria-label="Récupération : indice nocturne 65 sur 100, à surveiller.">' \
         in html
     assert '<span>65<span class="pf-ring-unit">/100</span></span>' in html
-    assert '<span class="pf-ring-label" aria-hidden="true">Signaux nocturnes</span>' in html
+    assert '<span class="pf-ring-label" aria-hidden="true">Récupération</span>' in html
     assert '<span class="pf-ring-sub" aria-hidden="true">à surveiller</span>' in html
 
 

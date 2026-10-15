@@ -204,7 +204,7 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     # need); the night missing 4 days ago held the cycle's highest VFC, so the 7-night mean is 0.61 SD under the
     # baseline: inside T (0.74 for these 6 nights, 1.28 standard errors of a week's mean: it was orange under the
     # 0.5 of max(0.5, 1.28/√n7)), green; (0.95 + 1)/2 → 97
-    assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "97 /100 Signaux nocturnes habituels", dials
+    assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "97 /100 Récupération habituels", dials
     # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 4 active weeks,
     # under the 8 the word needs, so the dial says the 7 days' time, as without a usual week (it read « 100 % comme
     # d'habitude »: at 4 active weeks the word came with 40 % of ordinary weeks; the second statistics review)
@@ -249,7 +249,7 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
     sleep, recup = page["dials"][:2]
     assert (sleep["value"], sleep["sub"]) == ("—", "pas de données") and "ring" not in page
     assert (recup["value"], recup["unit"], recup["sub"], recup["tone"]) == ("—", None, "pas de score", "none")
-    assert recup["aria"] == "Signaux nocturnes : pas d’indice pour cette nuit."
+    assert recup["aria"] == "Récupération : pas d’indice nocturne pour cette nuit."
     assert score["missing"] == {"key": "no_night", "label": "pas de bilan"} and "rows" not in page
     assert [(page[k]["status"]["word"], page[k]["status"]["detail"]) for k in ("vfc", "fc")] == [
         ("en construction", "prête dans 4\u00a0nuits"), ("en construction", "prête dans 4\u00a0nuits")]

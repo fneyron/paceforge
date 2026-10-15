@@ -299,11 +299,11 @@ def dial(score: dict, state: dict | None, href: str | None = None) -> dict:
     when the page has none (a plain dial)."""
     v = score.get("value")
     if v is None:
-        return viz.ring("recup", None, "—", "Signaux nocturnes", NO_SCORE, tone="none", href=href,
-                        aria="Signaux nocturnes : pas d’indice pour cette nuit.")
+        return viz.ring("recup", None, "—", "Récupération", NO_SCORE, tone="none", href=href,
+                        aria="Récupération : pas d’indice nocturne pour cette nuit.")
     word = DIAL_WORDS[state["tone"]]
-    return viz.ring("recup", v / 100, str(v), "Signaux nocturnes", word, tone=state["tone"], unit="/100", href=href,
-                    note="indice nocturne", aria=f"Signaux nocturnes : indice {v} sur 100, {word}.")
+    return viz.ring("recup", v / 100, str(v), "Récupération", word, tone=state["tone"], unit="/100", href=href,
+                    note="indice nocturne", aria=f"Récupération : indice nocturne {v} sur 100, {word}.")
 
 
 def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> dict | None:

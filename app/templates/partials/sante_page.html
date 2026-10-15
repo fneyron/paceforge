@@ -92,7 +92,7 @@
 {% if p.recup or p.vfc or p.fc or p.score.value is not none %}
 <section id="recuperation" class="pf-health-panel" aria-labelledby="h-recuperation">
     <header class="pf-health-panel-heading">
-        <h2 id="h-recuperation" class="pf-health-panel-title">Signaux nocturnes</h2>
+        <h2 id="h-recuperation" class="pf-health-panel-title">Récupération</h2>
         {% if p.score.value is not none and p.quality and (p.quality.partial or p.quality.provisional) %}
         <a class="pf-health-status" href="#qualite-bilan" aria-label="Signaux nocturnes : {{ p.quality.label }}. Voir les mesures utilisées.">{{ 'Indice partiel' if p.quality.partial else 'Détails de l’indice' }} <span aria-hidden="true">›</span></a>
         {% endif %}

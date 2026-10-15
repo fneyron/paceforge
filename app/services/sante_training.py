@@ -73,12 +73,11 @@ class Session:
     feels: float | None = None  # °C, the apparent temperature at its start (Open-Meteo, looked up in the sync)
     segs: tuple | None = None  # ((minutes, average HR), …) of its laps or splits, once read (nights.read_segments)
     splits: tuple | None = None  # ((minutes, km, average HR, grade), …) of its km splits, once read (nights.km_splits)
-    race_confirmed: bool = False  # a real result linked to this athlete's saved course
-    race_name: str | None = None
+    race_recorded: bool = False  # a provider race tag on this outing, including another imported copy
 
     @property
     def is_race(self) -> bool:
-        return self.race_confirmed or self.workout_type in RACE_TYPES
+        return self.race_recorded or self.workout_type in RACE_TYPES
 
     @property
     def end_day(self) -> date:
@@ -162,9 +161,8 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     if zone is None:
         zone = await athlete_clock(db, user_id)
     since = datetime.combine(today - timedelta(days=days), datetime.min.time(), tzinfo=timezone.utc)
-    from app.services.activity_identity import confirmed_races, revision_sum
+    from app.services.activity_identity import revision_sum
 
-    races = await confirmed_races(db, user_id, since=since)
     where = (Activity.user_id == user_id, Activity.start_date >= since)
     # the sport's family weighs differently, so a re-import from one family to another is seen
     family = case((Activity.sport_type.in_(RUNS), 1), (Activity.sport_type.in_(FOOT), 1_000),
@@ -175,7 +173,7 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     stored = func.pg_column_size if pg else func.length
 
     whole = int_sum
-    key = (today, days, str(zone), tuple(sorted(races.items())), *(await db.execute(  # what a sync can add or rewrite in place
+    key = (today, days, str(zone), *(await db.execute(  # what a sync can add or rewrite in place
         select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at),
                func.sum(env.raw_size(db)), func.sum(stored(Activity.laps)), func.sum(stored(Activity.splits_metric)),
                func.max(Activity.start_date), func.sum(Activity.moving_time), func.sum(Activity.elapsed_time),
@@ -217,10 +215,11 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     raw = [_Row(r.id, _utc(r.start_date), r.sport_type, r.distance or 0, r.moving_time or 0, split,
                 r.average_heartrate) for r, _, split in rows]
     from app.services.activity_dedupe import duplicate_representatives
-    from app.services.activity_identity import races_on_retained_copies
 
     duplicates = duplicate_representatives(raw)
-    races = races_on_retained_copies(races, duplicates)
+    # A provider's race tag follows its actual outing when another recording is richer.
+    # No planner/result link or planned name enters Santé, even when a result was matched there.
+    recorded_races = {duplicates.get(r.id, r.id) for r, x, _ in rows if _int(x["workout_type"]) in RACE_TYPES}
     skip = set(duplicates) | {a.id for a in raw if is_false_start(a)}
     out = []
     for r, x, _ in rows:
@@ -241,7 +240,7 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
             rpe=_rpe(x["perceived_exertion"]),
             indoor=env.is_indoor(r.sport_type, x), located=env.located(x), alt=_float(looked.get("alt")),
             elev_low=_float(x["elev_low"]), feels=_float(looked.get("feels")),
-            race_confirmed=r.id in races, race_name=races.get(r.id)))
+            race_recorded=r.id in recorded_races))
     if len(_CACHE) >= _CACHE_SIZE:
         _CACHE.pop(next(iter(_CACHE)))
     _CACHE[user_id] = (key, out)
