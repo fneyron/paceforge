@@ -12,6 +12,7 @@ from app.dependencies import get_db
 from app.models.user import User
 from app.schemas.strava import StravaWebhookEvent
 from app.services import strava_state
+from app.services.auth import client_ip, over_quota
 from app.services.strava import refresh_shared_subscription, shared_subscription_check
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,8 @@ async def strava_webhook_event(request: Request, db: AsyncSession = Depends(get_
     """Receive Strava webhook events. Must respond within 2 seconds: the work is queued. Anyone can post here, so an
     event is only queued when it comes through a subscription PaceForge knows for that athlete's app, and the task
     checks it with Strava before changing anything (tasks/webhook_sync)."""
+    if await over_quota("webhook", ip=client_ip(request)):  # Strava sends a few a day; a flood is someone else
+        return JSONResponse(status_code=429, content={"status": "ignored"})
     try:
         event = StravaWebhookEvent(**(await request.json()))
     except Exception:

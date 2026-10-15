@@ -20,6 +20,7 @@ from app.services.auth import (
     DUMMY_HASH,
     PASSWORD_PREFIX,
     TOO_MANY,
+    client_ip,
     count_attempt,
     forget_attempts,
     generate_token,
@@ -52,17 +53,6 @@ def _same_site(request: Request) -> None:
         ours = {host for host in (urlsplit(settings.BASE_URL).netloc, request.headers.get("host")) if host}
         if urlsplit(origin).netloc not in ours:  # another site's, or « null » (a sandboxed frame)
             raise HTTPException(status_code=403)
-
-
-def _client_ip(request: Request) -> str:
-    """The client's address for the attempt limits. Deployed behind exactly one proxy (Traefik), which appends
-    the address it saw as the last X-Forwarded-For hop: that hop is used. uvicorn's --proxy-headers with
-    --forwarded-allow-ips='*' takes the first hop instead, which the client writes itself. Another proxy in
-    front (a CDN) would make its own address the last hop: then trust its header instead."""
-    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
-    if hops:
-        return hops[-1]
-    return request.client.host if request.client else ""
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +89,7 @@ async def register(
             context={"error": "Le mot de passe doit contenir entre 8 et 1 024 caractères.", "email": email, "firstname": firstname, "lastname": lastname},
         )
 
-    if await count_attempt("register", _client_ip(request), email):
+    if await count_attempt("register", client_ip(request), email):
         return templates.TemplateResponse(
             request, "auth/register.html", status_code=429,
             context={"error": TOO_MANY, "email": email, "firstname": firstname, "lastname": lastname},
@@ -205,7 +195,7 @@ async def login(
 ):
     email = email.strip().lower()
     next = next if next in ("coros", "garmin", "strava") else ""
-    ip = _client_ip(request)
+    ip = client_ip(request)
     # counted before anything else: parallel attempts cannot slip past the limit, and a refused one costs
     # neither a database connection nor a password check
     if await count_attempt("login", ip, email):
@@ -278,7 +268,7 @@ async def forgot_password(
     email: str = Form(...),
 ):
     email = email.strip().lower()
-    if await count_attempt("forgot", _client_ip(request), email):  # no more emails for now; nothing revealed
+    if await count_attempt("forgot", client_ip(request), email):  # no more emails for now; nothing revealed
         return templates.TemplateResponse(request, "auth/forgot_password.html", context={"sent": True},
                                           status_code=429)
 

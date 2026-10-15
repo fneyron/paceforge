@@ -32,6 +32,7 @@ from app.models.user import User
 from app.models.health import HealthMetric
 from app.services import apple_nights
 from app.services.apple_nights import AppleNight
+from app.services.auth import RETRY_AFTER, TOO_MANY, client_ip, over_quota
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["mobile"])
@@ -222,7 +223,10 @@ class Exchange(BaseModel):
 
 
 @router.post("/api/mobile/exchange")
-async def exchange(body: Exchange, db: AsyncSession = Depends(get_db)):
+async def exchange(body: Exchange, request: Request, db: AsyncSession = Depends(get_db)):
+    # each exchange is a guess at a pairing code: a few an hour per address are plenty for the phones behind it
+    if await over_quota("exchange", ip=client_ip(request)):
+        raise HTTPException(429, TOO_MANY, headers={"Retry-After": RETRY_AFTER})
     now = datetime.now(timezone.utc)
     token = secrets.token_urlsafe(48)
     # Atomic consume: two concurrent exchanges cannot create two valid credentials.

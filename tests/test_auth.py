@@ -186,16 +186,21 @@ async def test_a_reset_email_is_sent_after_the_answer(client, db_session, no_com
     assert r.status_code == 200 and order == ["email"] and user.password_reset_token
 
 
-async def test_without_redis_nobody_is_held_back(client, db_session, no_commit, monkeypatch):
+async def test_without_redis_the_limits_hold_on_each_worker(client, db_session, no_commit, monkeypatch):
+    """Base code: with Redis down nobody was held back (40 wrong logins, 40 answers). Each worker now counts
+    alone meanwhile: N workers give at most N times the allowance, never an open door."""
     from app.config import settings
 
     monkeypatch.setattr(settings, "REDIS_URL", "redis://127.0.0.1:1/0")  # nothing listens there
     monkeypatch.setattr(auth_service, "_counter", None)  # the production counters, unreachable
     user = await _member(db_session)
     async with AsyncClient(transport=client._transport, base_url="https://test") as c:
-        for _ in range(12):
+        for _ in range(10):
             assert (await _login(c, user.email)).status_code == 200
-        assert (await _login(c, user.email, "pw-12345678")).status_code == 302
+        assert (await _login(c, user.email)).status_code == 429
+        assert (await _login(c, user.email, "pw-12345678")).status_code == 429
+    assert isinstance(auth_service.counter(), auth_service.FallbackCounter)
+    assert auth_service.counter().down_until > 0  # Redis left alone for a minute, then tried again
 
 
 async def test_a_verification_link_verifies_but_never_signs_the_browser_in(client, db_session, no_commit, monkeypatch):

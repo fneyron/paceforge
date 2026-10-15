@@ -13,6 +13,7 @@ from app.dependencies import get_current_user, get_db
 from app.features import cycling_enabled, hidden_sports, require_cycling, sport_hidden
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
+from app.services.auth import RETRY_AFTER, client_ip, over_quota
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -238,6 +239,21 @@ def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None)
     return out
 
 
+# A GPX import is parsed on the web worker: a few an hour per account are plenty (QUOTAS); the answer goes in the
+# form's own error box (app.js swaps a 429 in). An export is cheap but is a file of the athlete's data.
+TOO_MANY_IMPORTS = "Trop d’imports pour l’instant. Réessaie dans une heure."
+TOO_MANY_EXPORTS = "Trop d’exports pour l’instant. Réessaie dans une heure."
+
+
+def _too_many_imports() -> HTMLResponse:
+    return HTMLResponse(f'<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{TOO_MANY_IMPORTS}</div>',
+                        status_code=429, headers={"Retry-After": RETRY_AFTER})
+
+
+def _too_many_exports() -> JSONResponse:
+    return JSONResponse({"error": TOO_MANY_EXPORTS}, status_code=429, headers={"Retry-After": RETRY_AFTER})
+
+
 @router.post("/partials/simulator/gpx-upload", response_class=HTMLResponse)
 async def gpx_upload(
     request: Request,
@@ -254,6 +270,8 @@ async def gpx_upload(
     )
     from app.services.race_simulator import build_athlete_gradient_profile, predict_course
 
+    if await over_quota("gpx", user=user.id):
+        return _too_many_imports()
     try:
         content = await gpx_file.read()
         points, gpx_waypoints = parse_gpx(content)
@@ -557,6 +575,8 @@ async def bike_gpx_upload(
     from app.services.gpx import build_course_profile, parse_gpx
     from app.services.power_calculator import ftp_for_user
 
+    if await over_quota("gpx", user=user.id):
+        return _too_many_imports()
     try:
         from app.services.gpx import snap_waypoints_to_route
 
@@ -767,6 +787,8 @@ async def reimport_route_gpx(
     """
     from app.services.gpx import build_course_profile, parse_gpx
 
+    if await over_quota("gpx", user=user.id):
+        return _too_many_imports()
     route = await _get_owned_route(route_id, user, db)
     if not route:
         return HTMLResponse("Parcours non trouvé", status_code=404)
@@ -1040,6 +1062,8 @@ async def export_route_gpx(
     import gpxpy
     import gpxpy.gpx
 
+    if await over_quota("export", user=user.id):
+        return _too_many_exports()
     result = await db.execute(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
     )
@@ -1387,6 +1411,8 @@ async def create_triathlon(
     def err(msg: str) -> HTMLResponse:
         return HTMLResponse(f'<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{msg}</div>')
 
+    if (bike_gpx or run_gpx) and await over_quota("gpx", user=user.id):
+        return _too_many_imports()
     try:
         bike = run = None
         if bike_gpx is not None and bike_gpx.filename:
@@ -1557,6 +1583,8 @@ async def offline_route_plan(
     """A bounded, read-only snapshot. No HTML, map tiles, health readings or credentials."""
     from datetime import datetime, timezone
 
+    if await over_quota("export", user=user.id):
+        return _too_many_exports()
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json or route.sport_type == "triathlon":
         raise HTTPException(status_code=404)
@@ -1730,6 +1758,7 @@ def _route_sample_points(route: Route, cps: list[dict]) -> list[list[float]]:
 
 @router.post("/api/simulator/weather")
 async def get_weather(
+    request: Request,
     lat: float = Form(...),
     lon: float = Form(...),
     date: str = Form(...),
@@ -1737,11 +1766,14 @@ async def get_weather(
     user: User = Depends(get_current_user),
 ):
     """The race-day forecast (or climate normals) for a signed-in athlete: never an open proxy to Open-Meteo,
-    and one upstream call per place, day and points for a while (weather.cached_forecast)."""
+    and one upstream call per place, day and points for a while (weather.cached_forecast); a quota per account
+    and per address besides (varying places would bypass the cache)."""
     from app.services.weather import cached_forecast
 
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return JSONResponse({"error": "position invalide"}, status_code=422)
+    if await over_quota("weather", user=user.id, ip=client_ip(request)):
+        return JSONResponse({"error": "trop de demandes"}, status_code=429, headers={"Retry-After": RETRY_AFTER})
     points = None
     if points_json:
         try:
@@ -2398,6 +2430,8 @@ async def export_pace_strategy(
     (Garmin Virtual Partner) or CSV (COROS pace strategy / spreadsheet)."""
     from app.services.pace_export import build_pace_csv, build_pace_gpx, build_pace_tcx
 
+    if await over_quota("export", user=user.id):
+        return _too_many_exports()
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json:
         return JSONResponse({"error": "Parcours non trouvé"}, status_code=404)

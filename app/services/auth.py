@@ -65,14 +65,16 @@ async def verify_password_async(password: str, password_hash: str) -> bool:
 DUMMY_HASH = PASSWORD_PREFIX + "$2b$12$edK.6ioJQ40/cwK4VO7A7eRiNpHRI8.fMNhHacQFbhNT4wJymKTie"
 
 
-# ── attempts per address: logins, sign-ups, reset emails ────────────────────
+# ── attempts per address: logins, sign-ups, reset emails; quotas per account or address ──
 # Counted per client address and email, and per address alone (one address
-# trying many emails), in Redis so every web worker shares them; when Redis
-# does not answer, nobody is held back (fail open). Emails and addresses are
-# only stored hashed. Each attempt is counted first, atomically, before any
-# other work: parallel attempts cannot slip past the limit, and a refused one
-# costs neither a database connection nor a password check. A login that works
-# is then taken back (logins count failures only).
+# trying many emails), in Redis so every web worker shares them. When Redis
+# does not answer, each worker counts alone for a minute at a time and the
+# limits still hold, with this leniency: N web workers (4 in the Dockerfile)
+# give at most N times the allowance, never an unlimited one. Emails and
+# addresses are only stored hashed. Each attempt is counted first, atomically,
+# before any other work: parallel attempts cannot slip past the limit, and a
+# refused one costs neither a database connection nor a password check. A
+# login that works is then taken back (logins count failures only).
 
 LIMITS = {  # action: (per address and email, per address, window in seconds)
     "login": (10, 50, 15 * 60),  # failed logins (each counted when it starts, taken back if it works)
@@ -80,6 +82,29 @@ LIMITS = {  # action: (per address and email, per address, window in seconds)
     "forgot": (5, 20, 60 * 60),  # reset emails asked for
 }
 TOO_MANY = "Trop de tentatives. Réessaie plus tard."  # windows of 15 minutes to an hour
+
+# Quotas on the costly or sensitive requests (over_quota): one window each, counted per signed-in account
+# (user=) and/or per client address (ip=), each on its own key.
+QUOTAS = {  # action: (window in seconds, {scope: allowed in the window})
+    "exchange": (60 * 60, {"ip": 30}),  # phone pairing code exchanges (each a guess at a code)
+    "weather": (60 * 60, {"user": 60, "ip": 120}),  # forecasts (an Open-Meteo call each, when not cached)
+    "gpx": (60 * 60, {"user": 20}),  # GPX imports (parsed on the web worker)
+    "export": (60 * 60, {"user": 60}),  # plan exports: GPX, TCX, CSV, the phone's offline copy
+    "webhook": (10 * 60, {"ip": 300}),  # Strava's events (a forged one costs a lookup; Strava sends a few a day)
+    "resend": (60, {"user": 1}),  # verification emails: one a minute per account
+}
+RETRY_AFTER = "3600"
+
+
+def client_ip(request) -> str:
+    """The client's address for the limits. Deployed behind exactly one proxy (Traefik), which appends the address
+    it saw as the last X-Forwarded-For hop: that hop is used. uvicorn's --proxy-headers with
+    --forwarded-allow-ips='*' takes the first hop instead, which the client writes itself. Another proxy in front
+    (a CDN) would make its own address the last hop: then trust its header instead."""
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    if hops:
+        return hops[-1]
+    return request.client.host if request.client else ""
 
 
 class MemoryCounter:
@@ -133,41 +158,82 @@ class _RedisCounter:
         await self.r.eval(_DECR, 1, key)
 
 
+RETRY_REDIS_AFTER_S = 60
+
+
+class FallbackCounter:
+    """Redis, shared by the workers; this process alone while Redis does not answer (a minute at a time), so a
+    limit always holds: never open, at worst N times as lenient as there are web workers."""
+
+    def __init__(self):
+        self.shared = None
+        self.memory = MemoryCounter()
+        self.down_until = 0.0
+
+    def _redis(self):
+        if self.shared is None:
+            self.shared = _RedisCounter()
+        return self.shared
+
+    async def _call(self, name: str, *args):
+        if time.monotonic() >= self.down_until:
+            try:
+                return await getattr(self._redis(), name)(*args)
+            except Exception:
+                self.shared, self.down_until = None, time.monotonic() + RETRY_REDIS_AFTER_S
+                logger.warning("Rate limit counters unavailable: this worker counts alone for a minute")
+        return await getattr(self.memory, name)(*args)
+
+    async def incr(self, keys: list[str], window: int) -> list[int]:
+        return await self._call("incr", keys, window)
+
+    async def delete(self, key: str) -> None:
+        await self._call("delete", key)
+
+    async def decr(self, key: str) -> None:
+        await self._call("decr", key)
+
+
 _counter = None
 
 
 def counter():
     global _counter
     if _counter is None:
-        _counter = _RedisCounter()
+        _counter = FallbackCounter()
     return _counter
 
 
+def _digest(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()[:32]
+
+
 def _keys(action: str, ip: str, email: str) -> list[str]:
-    def digest(value: str) -> str:
-        return hashlib.sha256(value.encode()).hexdigest()[:32]
-    return [f"rl:{action}:{digest(f'{ip}|{email}')}", f"rl:{action}:ip:{digest(ip)}"]
+    return [f"rl:{action}:{_digest(f'{ip}|{email}')}", f"rl:{action}:ip:{_digest(ip)}"]
 
 
 async def count_attempt(action: str, ip: str, email: str) -> bool:
     """Count one attempt, before any other work; True when it is over the limit (it must then be refused)."""
     per_email, per_address, window = LIMITS[action]
-    try:
-        counts = await counter().incr(_keys(action, ip, email), window)
-    except Exception:
-        logger.warning("Rate limit counters unavailable: %s not limited", action)
-        return False
+    counts = await counter().incr(_keys(action, ip, email), window)
     return counts[0] > per_email or counts[1] > per_address
 
 
 async def forget_attempts(action: str, ip: str, email: str) -> None:
     """A login that worked: this address and email start afresh, and the address is not charged for it."""
     key, address = _keys(action, ip, email)
-    try:
-        await counter().delete(key)
-        await counter().decr(address)
-    except Exception:
-        logger.warning("Rate limit counters unavailable: %s not reset", action)
+    await counter().delete(key)
+    await counter().decr(address)
+
+
+async def over_quota(action: str, **subjects) -> bool:
+    """Count one `action` for each subject given (user=the account's id, ip=the client's address) and tell whether
+    any of them is over its quota for the window: the request must then be refused (429)."""
+    window, allowed = QUOTAS[action]
+    scopes = [scope for scope in allowed if scope in subjects]
+    keys = [f"rl:{action}:{scope}:{_digest(str(subjects[scope]))}" for scope in scopes]
+    counts = await counter().incr(keys, window)
+    return any(count > allowed[scope] for scope, count in zip(scopes, counts, strict=True))
 
 
 def generate_token() -> str:

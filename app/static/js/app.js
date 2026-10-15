@@ -19,6 +19,10 @@ document.addEventListener("DOMContentLoaded", function () {
     document.body.addEventListener("htmx:beforeSwap", function (event) {
         if (event.detail.xhr.status === 404) {
             event.detail.shouldSwap = false;
+        } else if (event.detail.xhr.status === 429) {
+            // too many of a request for now: the answer says so, in the form's own error box
+            event.detail.shouldSwap = true;
+            event.detail.isError = false;
         }
     });
 

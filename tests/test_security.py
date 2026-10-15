@@ -263,3 +263,68 @@ async def test_revocations_hold_in_this_process_when_redis_is_down(monkeypatch):
     assert store.down_until > time.monotonic()  # Redis left alone for a minute, then tried again
     assert 89 * 86400 - 2 <= sessions.remaining_s(time.time() - 86400) <= 89 * 86400
     assert sessions.remaining_s(None) == 90 * 86400 and sessions.alive(time.time() - 10) and not sessions.alive("x")
+
+
+# ── quotas on the costly or sensitive requests ──────────────────────────────
+
+def _gpx(n: int = 60) -> bytes:
+    points = "".join(f'<trkpt lat="{45 + i * 0.0005:.6f}" lon="{6 + i * 0.0005:.6f}"><ele>{1000 + i}</ele></trkpt>'
+                     for i in range(n))
+    return (f'<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="t" xmlns="http://www.topografix.com/GPX/1/1">'
+            f'<trk><name>T</name><trkseg>{points}</trkseg></trk></gpx>').encode()
+
+
+async def test_gpx_imports_and_exports_have_a_quota_per_account(as_user: AsyncClient, monkeypatch):
+    from app.services import auth as auth_service
+
+    monkeypatch.setitem(auth_service.QUOTAS, "gpx", (3600, {"user": 2}))
+    monkeypatch.setitem(auth_service.QUOTAS, "export", (3600, {"user": 2}))
+    for _ in range(2):
+        r = await as_user.post("/partials/simulator/gpx-upload", files={"gpx_file": ("t.gpx", _gpx(), "application/gpx+xml")})
+        assert r.status_code == 204 and r.headers["hx-redirect"].startswith("/simulator/routes/")
+    r = await as_user.post("/partials/simulator/gpx-upload", files={"gpx_file": ("t.gpx", _gpx(), "application/gpx+xml")})
+    assert r.status_code == 429 and "Trop d’imports" in r.text and r.headers["retry-after"] == "3600"
+    route_id = int(r.headers.get("hx-redirect", "/x/0").rsplit("/", 1)[1]) or await _route(as_user)
+    r = await as_user.post(f"/api/simulator/routes/{route_id}/reimport", files={"gpx_file": ("t.gpx", _gpx(), "application/gpx+xml")})
+    assert r.status_code == 429  # the same quota, whichever way a GPX comes in
+    assert (await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=csv")).status_code == 200
+    assert (await as_user.get(f"/api/simulator/routes/{route_id}/gpx")).status_code == 200
+    r = await as_user.get(f"/api/simulator/routes/{route_id}/offline")
+    assert r.status_code == 429 and r.json()["error"].startswith("Trop d’exports")
+    assert (await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=gpx")).status_code == 429
+
+
+async def test_the_weather_proxy_has_a_quota_per_account_and_address(as_user: AsyncClient, monkeypatch):
+    from app.services import auth as auth_service
+    from app.services import weather
+
+    async def forecast(*a, **k):
+        return {"source": "prevision", "heat_factor": 1.0, "hourly": None, "date": "2026-10-02"}
+    monkeypatch.setattr(weather, "cached_forecast", forecast)
+    monkeypatch.setitem(auth_service.QUOTAS, "weather", (3600, {"user": 4, "ip": 2}))
+    form = {"lat": "45.0", "lon": "6.0", "date": "2026-10-02"}
+    for _ in range(2):
+        assert (await as_user.post("/api/simulator/weather", data=form)).status_code == 200
+    r = await as_user.post("/api/simulator/weather", data=form)  # the address's quota first (the third request)
+    assert r.status_code == 429 and r.json() == {"error": "trop de demandes"}
+    other = {"X-Forwarded-For": "203.0.113.8"}  # another address: the account's quota (the fifth request)
+    assert (await as_user.post("/api/simulator/weather", data=form, headers=other)).status_code == 200
+    assert (await as_user.post("/api/simulator/weather", data=form, headers=other)).status_code == 429
+
+
+async def test_pairing_exchanges_and_webhook_events_have_a_quota_per_address(client: AsyncClient, monkeypatch):
+    from app.services import auth as auth_service
+
+    monkeypatch.setitem(auth_service.QUOTAS, "exchange", (3600, {"ip": 2}))
+    monkeypatch.setitem(auth_service.QUOTAS, "webhook", (600, {"ip": 2}))
+    body = {"code": "c" * 43, "verifier": "v" * 43}
+    for _ in range(2):
+        assert (await client.post("/api/mobile/exchange", json=body)).status_code == 401
+    r = await client.post("/api/mobile/exchange", json=body)
+    assert r.status_code == 429 and r.headers["retry-after"] == "3600"
+    assert (await client.post("/api/mobile/exchange", json=body, headers={"X-Forwarded-For": "203.0.113.8"})).status_code == 401
+    event = {"object_type": "activity", "object_id": 1, "aspect_type": "create", "owner_id": 1, "subscription_id": 1,
+             "event_time": 1}
+    for i in range(2):
+        assert (await client.post("/webhook/strava", json={**event, "object_id": i})).status_code == 200
+    assert (await client.post("/webhook/strava", json={**event, "object_id": 9})).status_code == 429
