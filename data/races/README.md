@@ -18,13 +18,13 @@ Mont-Blanc 2022-2025 with its CCC and OCC, UTA, Translantau and Whistler,
 still hold an even sample of 150-450 by rank), LiveTrail up to 80, sampled
 evenly by rank.
 
-## What is in it (committed, 2026-10-05)
+## What is in it (committed, 2026-10-15)
 
 | | stored | solo running races kept | finishers | checkpoint passages |
 |---|---|---|---|---|
-| UTMB Live | 175 races | 169 (124 with a GPS track) | 60 981 | 578 348 |
-| LiveTrail | 821 courses | 601 | 44 762 | 341 138 |
-| total | 996 | 770 races, 162 events (342 editions) | 105 743 | 919 486 |
+| UTMB Live | 192 races | 183 (138 with a GPS track) | 64 763 | 606 549 |
+| LiveTrail | 827 courses | 604 | 45 002 | 343 138 |
+| total | 1 019 | 787 races, 168 events (350 editions) | 109 765 | 949 687 |
 
 Left out of every count and fit (`scripts/race_data/dataset_stats.py --list`
 names each one):
@@ -34,9 +34,10 @@ names each one):
   relevos, staffel…), duos, couples and teams, walks, hikes and marches (Oxfam
   Trailwalker / OTW), stage races (MDS, Saharan, "2 days", "3 días"),
   time-limited formats (backyard, 3 h / 6 h), everesting, PTL (team, 300 km) —
-  4 UTMB Live races, 212 LiveTrail courses;
+  4 UTMB Live races, 215 LiveTrail courses;
 - a median finisher effort speed (km + D+/100 per hour) above 12.5, which no
-  running field reaches (bikes, broken timings): 3 LiveTrail courses;
+  running field reaches (bikes, broken timings): 3 LiveTrail courses and
+  3 UTMB Live races;
 - fewer than 10 finishers (5 LiveTrail courses) or no checkpoint distances
   (Whistler 2025, 2 races).
 
