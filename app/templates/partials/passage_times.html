@@ -79,7 +79,7 @@
                 <span class="pf-prow-sub tabular-nums">km <span data-km-text>{{ fr(s.end_km) }}</span>{% if bar_close %}<span class="pf-bar-m {{ margin_cls(cm) }}">barrière {{ s.cutoff_clock }} · marge {{ margin_txt(cm) }}</span>{% endif %}</span>
             </span>
             {% if sc %}<span class="pf-prow-alt tabular-nums"><span data-fast>{{ hhmm(row.fast_s) }}</span><span data-safe class="{% if row.safe_ok is defined and row.safe_ok == false %}text-danger{% endif %}">{{ hhmm(row.safe_s) }}</span></span>{% endif %}
-            <svg class="pf-prow-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+            <svg width="18" height="18" class="pf-prow-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
         </div>
         <div data-detail="{{ key }}" id="cp-det-{{ key }}" class="pf-det hidden">
             <p class="pf-legline tabular-nums" data-leg-time="{{ fmt_leg(sec_time) }}{% if arr_stop > 0 %} + {{ stop_min }}'{% endif %}" title="{{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km">{{ fmt_leg(sec_time) }} · {{ km1(dist) }} km · +{{ thousands(s.elevation_gain) }} m −{{ thousands(s.elevation_loss) }} m</p>
