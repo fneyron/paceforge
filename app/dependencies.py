@@ -1,6 +1,6 @@
 from collections.abc import AsyncGenerator
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,7 +46,6 @@ async def get_current_user(
         raise _redirect_to_login()
 
     if user.email and not user.email_verified:
-        from fastapi import HTTPException
         request.session.pop("user_id", None)
         request.session["pending_user_id"] = user.id
         raise HTTPException(status_code=303, headers={"Location": "/auth/check-email"})
@@ -69,10 +68,5 @@ async def get_optional_user(
     return user if not user.email or user.email_verified else None
 
 
-def _redirect_to_login() -> Exception:
-    from fastapi import HTTPException
-
-    raise HTTPException(
-        status_code=303,
-        headers={"Location": "/auth/login"},
-    )
+def _redirect_to_login() -> HTTPException:
+    return HTTPException(status_code=303, headers={"Location": "/auth/login"})

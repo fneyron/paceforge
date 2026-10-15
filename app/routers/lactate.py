@@ -4,10 +4,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
+from app.csrf import check_csrf, csrf
 from app.dependencies import get_current_user, get_db
 from app.models.lactate import LactateTest
 from app.models.user import User
-from app.routers.mobile import check_csrf, csrf
 from app.services import lactate
 
 router = APIRouter(prefix='/sante/lactate', tags=['lactate'])
