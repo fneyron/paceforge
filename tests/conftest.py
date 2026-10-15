@@ -1,5 +1,7 @@
 import asyncio
+import itertools
 import os
+import shutil
 
 # no OpenStreetMap calls from the tests (read when app.config loads)
 os.environ.setdefault("SURFACE_FETCH", "false")
@@ -11,10 +13,13 @@ os.environ.setdefault("ACTIVITY_ENV_FETCH", "false")
 # bike/triathlon off, whatever .env or the shell says (the cycling_on fixture turns it on)
 os.environ["CYCLING_ENABLED"] = "false"
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -24,36 +29,115 @@ from app.main import create_app
 from app.models.activity import Activity
 from app.models.user import User
 
-# PostgreSQL, as in production, when TEST_DATABASE_URL names one: build its schema with `alembic upgrade head`
-# first (the models say JSONB where the migrated columns are json). Test values stay within int32 for it.
-TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+aiosqlite:///./test.db")
+# PostgreSQL, as in production, when TEST_DATABASE_URL names one (never the application's DATABASE_URL: the suite
+# empties its tables; one suite at a time on it): build its schema with `alembic upgrade head` first (the models
+# say JSONB where the migrated columns are json). Test values stay within int32 for it. There, each test runs in
+# one transaction rolled back at its end: a commit, a route's included, never reaches the next test (a table
+# dropped for real, or rows written through another engine, would). Without it, every test gets a temporary
+# SQLite file of its own: nothing is written in the repository (two suites once shared ./test.db, one dropping
+# the tables the other was reading) and nothing outlives the test.
+SERVER_URL = os.getenv("TEST_DATABASE_URL", "")
+assert not SERVER_URL.startswith("sqlite"), "TEST_DATABASE_URL names a PostgreSQL database: unset it for SQLite"
+_databases = itertools.count()
+
+
+def _same_database(a: str, b: str) -> bool:
+    from sqlalchemy.engine import make_url
+
+    x, y = make_url(a), make_url(b)
+    return (x.host, x.port or 5432, x.database) == (y.host, y.port or 5432, y.database)
+
+
+def pytest_sessionstart(session):
+    """On the server: never the application's database (the suite empties the tables), and say which one."""
+    if not SERVER_URL:
+        return
+    from sqlalchemy.engine import make_url
+
+    from app.config import settings
+
+    if any(url and _same_database(SERVER_URL, url) for url in (os.getenv("DATABASE_URL", ""), settings.DATABASE_URL)):
+        pytest.exit("TEST_DATABASE_URL is the application's DATABASE_URL: the suite empties its tables", returncode=3)
+    session.config.pluginmanager.get_plugin("terminalreporter").write_line(
+        f"tests on PostgreSQL {make_url(SERVER_URL).render_as_string(hide_password=True)}, its tables emptied first")
 
 
 @pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+def database_template(tmp_path_factory) -> Path | None:
+    """SQLite: the empty schema in one file per process (pytest's temporary directory), copied for each test
+    rather than built again (the DDL costs ≈ 50 ms a test, a minute over the suite). PostgreSQL: the server's
+    tables, built from the models when no migration did, emptied once per run."""
+    if SERVER_URL:
+        async def prepare():
+            eng = create_async_engine(SERVER_URL, poolclass=NullPool)
+            async with eng.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
+                await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+            await eng.dispose()
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(prepare())
+        finally:
+            loop.close()
+        return None
+    path = tmp_path_factory.mktemp("db") / "template.db"
+    eng = create_engine(f"sqlite:///{path}")
+    Base.metadata.create_all(eng)
+    eng.dispose()
+    return path
 
 
-@pytest.fixture(scope="session")
-async def engine():
-    # asyncpg connections belong to the loop that opened them: none kept between tests on PostgreSQL
-    pool = {"poolclass": NullPool} if TEST_DATABASE_URL.startswith("postgresql") else {}
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False, **pool)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+@asynccontextmanager
+async def _own_database(template: Path | None, foreign_keys: bool = False):
+    """An engine on a database of the test's own: the server's, through connections of its own (asyncpg's belong
+    to the loop that opened them: none pooled), else a copy of the SQLite template, deleted afterwards."""
+    if SERVER_URL:
+        eng, path = create_async_engine(SERVER_URL, poolclass=NullPool), None
+    else:
+        path = template.with_name(f"test-{next(_databases)}.db")
+        shutil.copyfile(template, path)
+        eng = create_async_engine(f"sqlite+aiosqlite:///{path}")
+        if foreign_keys:
+            _enforce_foreign_keys(eng)
+    try:
+        yield eng
+    finally:
+        await eng.dispose()
+        if path is not None:
+            path.unlink(missing_ok=True)
+
+
+@pytest.fixture
+async def engine(database_template):
+    async with _own_database(database_template) as eng:
+        yield eng
+
+
+@asynccontextmanager
+async def _in_one_transaction(eng):
+    """A session bound to one outer transaction, rolled back at the end: its commit and rollback work for real
+    (savepoints), and nothing it wrote outlives it."""
+    async with eng.connect() as conn:
+        outer = await conn.begin()
+        session = AsyncSession(bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint")
+        try:
+            yield session
+        finally:
+            await session.close()
+            await outer.rollback()
 
 
 @pytest.fixture
 async def db_session(engine) -> AsyncGenerator[AsyncSession, None]:
-    session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    """The test's session, the one the app's routes get. On the server its rows would outlive a commit (routes
+    commit, so do some tests), so it lives in one transaction rolled back at the end; an SQLite file is the
+    test's own and goes with it."""
+    if SERVER_URL:
+        async with _in_one_transaction(engine) as session:
+            yield session
+        return
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with session_factory() as session:
         yield session
         await session.rollback()
@@ -176,18 +260,13 @@ def same_today(monkeypatch):
 # really commit (a rotated token kept through a later rollback, an account
 # deletion) is tested with these: every commit releases a SAVEPOINT inside one
 # outer transaction, which is rolled back when the test ends. Foreign keys are
-# enforced, as on PostgreSQL (the shared test.db leaves them off).
+# enforced, as on PostgreSQL (the SQLite engine above leaves them off).
 
-@pytest.fixture(scope="session")
-async def savepoint_engine():
-    from sqlalchemy import event
-    from sqlalchemy.pool import StaticPool
-
-    eng = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
-
+def _enforce_foreign_keys(eng) -> None:
+    """SQLite with its foreign keys on, its transactions SQLAlchemy's (BEGIN and SAVEPOINT emitted itself: the
+    driver's own transaction handling breaks savepoints)."""
     @event.listens_for(eng.sync_engine, "connect")
     def _connect(dbapi_connection, _record):
-        # SQLAlchemy emits BEGIN and SAVEPOINT itself (the driver's own transaction handling breaks savepoints)
         dbapi_connection.isolation_level = None
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
@@ -197,24 +276,18 @@ async def savepoint_engine():
     def _begin(conn):
         conn.exec_driver_sql("BEGIN")
 
-    async with eng.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield eng
-    await eng.dispose()
+
+@pytest.fixture
+async def savepoint_engine(database_template):
+    async with _own_database(database_template, foreign_keys=True) as eng:
+        yield eng
 
 
 @pytest.fixture
 async def committing_session(savepoint_engine) -> AsyncGenerator[AsyncSession, None]:
-    """A session bound to one outer transaction: its commit and rollback work for real (savepoints), and
-    nothing outlives the test."""
-    async with savepoint_engine.connect() as conn:
-        outer = await conn.begin()
-        session = AsyncSession(bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint")
-        try:
-            yield session
-        finally:
-            await session.close()
-            await outer.rollback()
+    """A session whose commit and rollback work for real, foreign keys enforced on SQLite too (savepoint_engine)."""
+    async with _in_one_transaction(savepoint_engine) as session:
+        yield session
 
 
 @pytest.fixture
@@ -253,6 +326,16 @@ def _open_meteo_marker_in_memory(monkeypatch):
     from app.services import weather
 
     monkeypatch.setattr(weather, "_outage", weather.MemoryMarker())
+
+
+@pytest.fixture(autouse=True)
+def _cheap_password_hashes(monkeypatch):
+    """Password hashes cost 4 bcrypt rounds under pytest; 12, bcrypt's default, in production (≈ 0.3 s each: the
+    auth tests spent 33 s on them). The application's code is untouched, bcrypt.gensalt itself is swapped."""
+    import bcrypt
+
+    gensalt = bcrypt.gensalt
+    monkeypatch.setattr(bcrypt, "gensalt", lambda rounds=12, prefix=b"2b": gensalt(rounds=4, prefix=prefix))
 
 
 @pytest.fixture(autouse=True)
