@@ -10,7 +10,7 @@ import { Pair } from './src/types';
 import { due, fullDue, reportText, syncIssue, SyncReport, syncHealth, Trigger } from './src/sync';
 import { KEYS, KeychainLocked, secure } from './src/secure';
 import { backgroundBlock, backgroundPending, blockBackgroundSync, disableBackgroundSync, enableBackgroundSync,
-  onBackgroundReport, resetBackgroundState, syncExclusively } from './src/background';
+  onBackgroundReport, resetBackgroundState, skipSent, syncExclusively } from './src/background';
 import type { Block } from './src/background-engine';
 import { appShellScript, destinations, isBridgeUrl, prepareNavigationScript, presentationScript, refreshable, sameScreen, screenUrl, Tab, tabForUrl, tabs } from './src/navigation';
 import { Connections, Provider } from './src/connections';
@@ -211,7 +211,8 @@ function Companion() {
     refreshSources.current = forceSources;
     pending.current = { kind: 'check', nonce, url: target, consent,
       ...(inlineSync.current ? { pageUrl: webLocation.current } : {}) };
-    syncFull.current = !quiet || forceSources || fullDue(report);
+    // A pull or a manual sync reads the 7-day overlap; the history only when its reread is due.
+    syncFull.current = fullDue(report);
     lastAttempt.current = Date.now(); setStatus('Vérification du compte…');
     if (inlineSync.current) web.current?.injectJavaScript(inlineSessionScript(pending.current));
     else { setTab('devices'); setDetail('health'); setShowWeb(false); setUrl(target); }
@@ -240,6 +241,8 @@ function Companion() {
           credentials = { ...credentials, token: next.token, prev_token: next.prev_token };
           await secure.rewrite(KEYS.pair, JSON.stringify(credentials)); setPair(credentials);
         };
+        // Days and nights the server already confirmed (here or in a background run) are not sent again.
+        const skip = await skipSent(account.user_id);
         const result = await syncHealth({
           userId: account.user_id, full, previous: report, trigger: consent ? 'manual' : syncTrigger.current,
           daily: () => collect(() => setStatus('Lecture des mesures quotidiennes…'), full ? 30 : 7),
@@ -253,7 +256,9 @@ function Companion() {
               await secure.set(KEYS.last, receipt.lastReceivedAt); setLast(receipt.lastReceivedAt);
             }
           },
+          unsent: skip.unsent, sent: skip.sent,
         });
+        await skip.commit().catch(() => { /* sent again next time */ });
         setNeedsReconnect(result.reconnect); setStatus(reportText(result));
         refresh = result.received > 0 || refreshSources.current;
         setHealthIssue(syncIssue(result, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect'));

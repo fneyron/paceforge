@@ -181,13 +181,17 @@ changement de compte et déconnexion. Les API natives y sont simulées : vérifi
   de données ne peuvent pas être distingués. Une suppression dans Apple Santé
   ne supprime donc pas automatiquement un ancien résumé PaceForge. L'écran
   « Téléphones associés » permet de supprimer tous les imports et accès mobiles.
-- Synchronisation manuelle complète ; option à l’ouverture et au retour au
-  premier plan, au plus toutes les 15 min. Lecture des 7 derniers jours avec
-  recouvrement ; historique complet toutes les 6 h. Une tentative partielle
-  redevient éligible après 5 min, au prochain retour/ouverture. Un historique
-  incomplet est relu entièrement à la reprise. Avec cette option, la
-  synchronisation continue aussi en arrière-plan (section suivante) ; une
-  tentative restée en attente est reprise dès l’ouverture, sans délai de 15 min.
+- Synchronisation manuelle (Réglages ou geste d’actualisation) ; option à
+  l’ouverture et au retour au premier plan, au plus toutes les 15 min. Dans les
+  deux cas, lecture des 7 derniers jours avec recouvrement ; historique complet
+  à la connexion du téléphone puis toutes les 6 h. Les jours et les nuits déjà
+  confirmés par le serveur (au premier plan ou en arrière-plan, condensats
+  oubliés chaque jour) ne sont pas renvoyés : quatre gestes en dix minutes
+  restent loin de la limite de 200 requêtes. Une tentative partielle redevient
+  éligible après 5 min, au prochain retour/ouverture. Un historique incomplet
+  est relu entièrement à la reprise. Avec cette option, la synchronisation
+  continue aussi en arrière-plan (section suivante) ; une tentative restée en
+  attente est reprise dès l’ouverture, sans délai de 15 min.
 - Mesures quotidiennes envoyées avant la lecture du sommeil. Les lectures
   natives ont un délai maximal ; un échec n’efface pas les imports confirmés.
   Sur iOS, les cinq catégories d’un jour sont lues en parallèle, puis le jour

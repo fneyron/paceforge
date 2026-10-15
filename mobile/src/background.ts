@@ -10,11 +10,12 @@ import { api } from './api';
 import { changedMetrics, collect, collectSleep, disableHealthBackground, enableHealthBackground, hasBackgroundAccess,
   protectedDataAvailable, watchHealthChanges } from './health';
 import { isLockedError, KEYS, readNow, secure } from './secure';
-import { Block, BackgroundState, createEngine, emptyState, fileLock, LOCK_MS, readPair, readReceipt, readState,
-  TASK_INTERVAL_MINUTES, TASK_NAME } from './background-engine';
+import { Block, BackgroundState, createEngine, emptyState, fileLock, foregroundSkip, LOCK_MS, readPair, readReceipt,
+  readState, TASK_INTERVAL_MINUTES, TASK_NAME } from './background-engine';
 import type { SyncReport } from './sync';
 
 const id = Array.from(Crypto.getRandomBytes(8), b => b.toString(16).padStart(2, '0')).join('');
+const digest = (value: string) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value);
 // The file is created on use: nothing native may throw while this module is evaluated at launch.
 export const syncLock = fileLock(() => new File(Paths.document, 'paceforge-sync.lock'));
 
@@ -52,7 +53,7 @@ const engine = createEngine({
   readDaily: (daysBack, budget, metrics) => collect(() => {}, daysBack, budget, metrics),
   readNights: (daysBack, budget) => collectSleep(() => {}, daysBack, budget),
   send: (path, body, token, timeout, readAt) => api(path, 'POST', body, token, { timeout, headers: { 'X-PaceForge-Read-At': readAt } }),
-  digest: value => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value),
+  digest,
   disable: () => disableNatively(),
   notify: report => listeners.forEach(listener => listener(report)),
   locked: isLockedError,
@@ -132,6 +133,8 @@ export async function syncExclusively<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 export const backgroundPending = () => engine.pending();
+/** Inside syncExclusively: the foreground sync skips what a run already sent (and vice versa). */
+export const skipSent = (userId: number) => foregroundSkip(userId, { load: loadState, save: saveState }, digest);
 /** Receipts written by a background run of this runtime (iOS: the same process as the screen). */
 export function onBackgroundReport(listener: (report: SyncReport) => void): () => void {
   listeners.add(listener);

@@ -40,9 +40,10 @@ function weight(raw: WeightReceipt | undefined): WeightReceipt | null {
     Number.isFinite(Date.parse(raw.measured_at)) ? { value: raw.value, measured_at: raw.measured_at } : null;
 }
 
-// Short overlapping reads catch late writes. Full history is reread at least
-// every six hours and on every manual sync. Partial attempts never defer a retry
-// for six hours; neither empty reads nor HTTP success imply a fresh measurement.
+// Short overlapping reads catch late writes, also on a pull or a manual sync. Full
+// history is reread when the phone is connected, then at least every six hours.
+// Partial attempts never defer a retry for six hours; neither empty reads nor HTTP
+// success imply a fresh measurement.
 export function due(report: SyncReport | null, lastAttempt: number, now = Date.now()): boolean {
   // A pending background run skips the delay (at most one attempt a minute).
   if (report?.pending && now - lastAttempt >= 60000) return true;
