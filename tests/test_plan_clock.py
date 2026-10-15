@@ -2,7 +2,11 @@
 race's zone, cutoffs and margins are read on it, and the model's seconds after the start stay the currency."""
 
 import json
+import re
+import shutil
+import subprocess
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -117,12 +121,73 @@ def test_a_zone_without_daylight_saving_is_unchanged():
     assert secs == plain
 
 
-def test_a_cutoff_in_the_repeated_hour_is_its_first_occurrence():
+def test_a_cutoff_in_the_repeated_hour_is_the_occurrence_next_to_the_plan():
     clock = PlanClock(START_22, AUTUMN, "Europe/Paris")
-    assert cpsvc.cutoff_elapsed_s("02:45", START_22, clock=clock) == 4 * 3600 + 45 * 60  # 02:45 CEST
-    assert cpsvc.cutoff_elapsed_s("02:45", START_22, min_elapsed_s=VILLAGE_MIN * 60, clock=clock) == 4 * 3600 + 45 * 60
+    assert cpsvc.cutoff_elapsed_s("02:45", START_22, clock=clock) == 4 * 3600 + 45 * 60  # no passage known: 02:45 CEST, the first
+    assert cpsvc.cutoff_elapsed_s("02:45", START_22, min_elapsed_s=VILLAGE_MIN * 60, clock=clock) == 5 * 3600 + 45 * 60  # beside a 02:39 CET row
+    assert cpsvc.cutoff_elapsed_s("02:45", START_22, min_elapsed_s=3 * 3600 + 50 * 60, clock=clock) == 4 * 3600 + 45 * 60  # beside a 01:50 CEST row
     assert cpsvc.cutoff_elapsed_s("01:00", START_22, min_elapsed_s=30 * 3600, clock=clock) == 28 * 3600  # the second night, CET (27 h nominal)
     assert cpsvc.cutoff_elapsed_s("04:30", 21 * 3600) == 7 * 3600 + 30 * 60  # no zone: as before
+    # 02:30 beside the plan's 02:39 CET at Village: the second 02:30, 9 min late (its first reading said 69)
+    cps = _cps(cutoff="02:30")
+    secs = cpsvc.annotate_cutoffs(compute_passage_times(_course(), cps, 8 * 3600, 1.0, 22, 0, None, clock=clock), cps, START_22, clock=clock)
+    assert _by(secs, "Village")["cutoff_elapsed_s"] == 5 * 3600 + 30 * 60 and _by(secs, "Village")["cutoff_margin_s"] == -9 * 60
+
+
+def test_a_typed_time_is_read_on_the_side_of_the_switch_it_names():
+    """A passage typed on race day (and a pinned time: the page's sheet, below) names a wall clock: the occurrence
+    closest to the plan's own time there, on either side of the switch."""
+    clock, secs = _plan(AUTUMN)
+    assert clock.switches(8 * 3600 + 86400) == [{"at_elapsed_s": 5 * 3600, "shift_s": -3600}]
+    assert PlanClock(START_22, SPRING, "Europe/Paris").switches(12 * 3600) == [{"at_elapsed_s": 4 * 3600, "shift_s": 3600}]
+    assert PlanClock(START_22, AUTUMN, "Asia/Seoul").switches(48 * 3600) == [] and PlanClock(START_22).switches(48 * 3600) == []
+    assert clock.occurrences(86400 + 2 * 3600 + 30 * 60) == [4 * 3600 + 30 * 60, 5 * 3600 + 30 * 60]  # the repeated 02:30
+    assert clock.occurrences(86400 + 3 * 3600 + 10 * 60) == [6 * 3600 + 10 * 60] and clock.occurrences(3600) == [-21 * 3600]
+    assert PlanClock(START_22, SPRING, "Europe/Paris").occurrences(86400 + 2 * 3600 + 30 * 60) == [4 * 3600 + 30 * 60]  # the gap: fold 0
+    assert PlanClock(START_22).occurrences(86400 + 2 * 3600 + 30 * 60) == [86400 + 2 * 3600 + 30 * 60 - START_22]
+    # Col is planned at 01:50 CEST: « 03:10 » typed there is 03:10 CET, 6 h 10 in, and the row shows 03:10
+    assert _hhmm(_by(secs, "Col")["adjusted_clock_time_s"]) == "01:50"
+    out, rp = replan_from_passage(secs, START_22, 8 * 3600, 10.0, 3 * 3600 + 10 * 60, clock=clock)
+    assert _by(out, "Col")["adjusted_elapsed_s"] == 6 * 3600 + 10 * 60 and _hhmm(_by(out, "Col")["adjusted_clock_time_s"]) == "03:10"
+    # Village is planned at 02:39 CET: « 01:30 » is 01:30 CEST, 3 h 30 in; « 02:30 » the second 02:30, 9 min behind
+    out, rp = replan_from_passage(secs, START_22, 8 * 3600, 20.0, 1 * 3600 + 30 * 60, clock=clock)
+    assert _by(out, "Village")["adjusted_elapsed_s"] == 3 * 3600 + 30 * 60 and _hhmm(_by(out, "Village")["adjusted_clock_time_s"]) == "01:30"
+    out, rp = replan_from_passage(secs, START_22, 8 * 3600, 20.0, 2 * 3600 + 30 * 60, clock=clock)
+    assert _by(out, "Village")["adjusted_elapsed_s"] == 5 * 3600 + 30 * 60 and rp["delta_s"] == -9 * 60
+
+
+NODE = shutil.which("node")
+
+
+@pytest.mark.skipif(NODE is None, reason="node runs the page's pin sheet")
+def test_the_pin_sheet_reads_a_typed_clock_as_the_server_does(tmp_path):
+    """The page's own functions (gpx_result.html), fed the plan data the server sends: a typed clock lands on the
+    side of the switch it names, closest to the row's own time, and the sheet shows it back as typed."""
+    tpl = (Path(__file__).resolve().parents[1] / "app/templates/partials/gpx_result.html").read_text(encoding="utf-8")
+    block = re.search(r"// -- the plan's clock.*?// -- end of the plan's clock --", tpl, re.S).group(0)
+    clock, secs = _plan(AUTUMN)
+    data = build_plan_data(secs, START_22, True, 30.0, clock=clock)
+    col, village = _by(secs, "Col")["adjusted_elapsed_s"], _by(secs, "Village")["adjusted_elapsed_s"]
+    script = f"""var planData = {json.dumps({'clock_switches': data['clock_switches']})};
+function startOffset() {{ return {START_22}; }}
+{block}
+console.log(JSON.stringify({{col_0310: pinElapsed({3 * 3600 + 10 * 60}, {col}), village_0130: pinElapsed({1 * 3600 + 30 * 60}, {village}),
+  village_0230: pinElapsed({2 * 3600 + 30 * 60}, {village}), col_0230: pinElapsed({2 * 3600 + 30 * 60}, {col}),
+  before: clockShiftAt({3 * 3600}), after: clockShiftAt({6 * 3600})}}));
+planData.clock_switches = [{{at_elapsed_s: {4 * 3600}, shift_s: 3600}}];
+console.log(JSON.stringify({{gap: elapsedAtClock({86400 + 2 * 3600 + 30 * 60}), spring_0430: pinElapsed({4 * 3600 + 30 * 60}, {village})}}));
+planData.clock_switches = [];
+console.log(JSON.stringify({{nominal: pinElapsed({3 * 3600 + 10 * 60}, {col})}}));
+"""
+    (tmp_path / "pin.js").write_text(script, encoding="utf-8")
+    lines = subprocess.run([NODE, str(tmp_path / "pin.js")], capture_output=True, text=True, check=True).stdout.splitlines()
+    autumn, spring, nominal = (json.loads(line) for line in lines)
+    assert autumn["col_0310"] == 6 * 3600 + 10 * 60 and clock.clock_s(autumn["col_0310"]) == 86400 + 3 * 3600 + 10 * 60  # shown 03:10
+    assert autumn["village_0130"] == 3 * 3600 + 30 * 60 and clock.clock_s(autumn["village_0130"]) == 86400 + 1 * 3600 + 30 * 60  # shown 01:30
+    assert autumn["village_0230"] == 5 * 3600 + 30 * 60 and autumn["col_0230"] == 4 * 3600 + 30 * 60  # the 02:30 next to each row
+    assert autumn["before"] == 0 and autumn["after"] == -3600
+    assert spring["gap"] == [4 * 3600 + 30 * 60] and spring["spring_0430"] == 5 * 3600 + 30 * 60  # as PlanClock reads them
+    assert nominal["nominal"] == 5 * 3600 + 10 * 60  # no switch: the old reading (03:10 the next day)
 
 
 def test_pins_and_the_automatic_clock_sit_on_the_wall_clock():

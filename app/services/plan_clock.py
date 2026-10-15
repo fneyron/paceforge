@@ -7,10 +7,15 @@ separator. Without a zone (no date, no place: race_match.race_clock) the clock i
 elapsed seconds, as the plan always read. With one, the start instant is built in UTC (race date, local start
 time, ZoneInfo) and the elapsed seconds are added, then read in the zone: a race crossing a daylight-saving
 change shows the real wall clock (22:00 + 5 h 39 is 02:39 on the autumn night, not 03:39). A local time read
-back into seconds after the start (a cutoff, a passage typed on race day) is its FIRST occurrence (fold 0):
-the repeated autumn hour is its summer reading, a time inside the spring gap is read with the offset before
-the change. The rows keep their own elapsed seconds (``elapsed_s`` / ``adjusted_elapsed_s``), so nothing
-re-derives them from a clock that may have jumped.
+back into seconds after the start has one or two occurrences (``occurrences``): the repeated autumn hour gives
+two, and the caller takes the one closest to the plan — a passage typed on race day, a pinned time, a cutoff
+next to its row —, ``elapsed_s`` the first; a time inside the spring gap is read with the offset before the
+change (fold 0). The rows keep their own elapsed seconds (``elapsed_s`` / ``adjusted_elapsed_s``), so nothing
+re-derives them from a clock that may have jumped; the page's pin sheet reads a typed clock with ``switches``.
+
+Known limits: the page interpolates wall clocks between rows (clockAtKm / predictClockAt: display only, a leg
+across the switch reads an hour off inside it); bike plans keep the start's offset (no zone wired); the spring
+gap reads with fold 0.
 """
 
 from __future__ import annotations
@@ -54,14 +59,30 @@ class PlanClock:
         local = (self._start_utc + timedelta(seconds=elapsed_s)).astimezone(self.zone)
         return (local.date() - self._day0).days * 86400 + local.hour * 3600 + local.minute * 60 + local.second
 
-    def elapsed_s(self, clock_s: float) -> int:
-        """Seconds after the start of a plan clock: the first occurrence of an ambiguous local time."""
+    def occurrences(self, clock_s: float) -> list[int]:
+        """The seconds after the start at which the plan's clock reads ``clock_s``, in order: one, two on the
+        repeated autumn hour; a time inside the spring gap (none) reads with the offset before the change."""
         if self.zone is None:
-            return int(clock_s - self.start_offset_s)
+            return [int(clock_s - self.start_offset_s)]
         day, sod = divmod(int(clock_s), 86400)
         d = self._day0 + timedelta(days=day)
-        local = datetime(d.year, d.month, d.day, tzinfo=self.zone) + timedelta(seconds=sod)
-        return int(round((local.astimezone(timezone.utc) - self._start_utc).total_seconds()))
+        wall = datetime(d.year, d.month, d.day, tzinfo=self.zone) + timedelta(seconds=sod)
+        out = []
+        for fold in (0, 1):
+            local = wall.replace(fold=fold)
+            instant = local.astimezone(timezone.utc)
+            back = instant.astimezone(self.zone)
+            if back.replace(tzinfo=None, fold=0) == wall.replace(tzinfo=None):  # reads back as that wall time
+                e = int(round((instant - self._start_utc).total_seconds()))
+                if e not in out:
+                    out.append(e)
+        if not out:  # the spring gap: fold 0
+            out.append(int(round((wall.astimezone(timezone.utc) - self._start_utc).total_seconds())))
+        return sorted(out)
+
+    def elapsed_s(self, clock_s: float) -> int:
+        """Seconds after the start of a plan clock: the first occurrence of an ambiguous local time."""
+        return self.occurrences(clock_s)[0]
 
     def elapsed_of(self, section: dict, plan: bool) -> int | None:
         """Seconds after the start at the end of a passage section, stops included: the plan's (``plan``) or
@@ -72,3 +93,30 @@ class PlanClock:
             return int(e)
         c = section.get("adjusted_clock_time_s" if plan else "clock_time_s")
         return self.elapsed_s(c) if c is not None else None
+
+    def switches(self, until_s: int) -> list[dict]:
+        """The daylight-saving switches within ``until_s`` seconds of the start: [{at_elapsed_s, shift_s}],
+        the clock reading start + elapsed + the shifts in force (the page's pin sheet reads a typed clock with
+        them as the server does)."""
+        if self.zone is None:
+            return []
+
+        def offset(e: int) -> timedelta:
+            return (self._start_utc + timedelta(seconds=e)).astimezone(self.zone).utcoffset()
+
+        out, prev, e = [], offset(0), 0
+        while e < until_s:
+            nxt = min(e + 3600, int(until_s))
+            cur = offset(nxt)
+            if cur != prev:
+                lo, hi = e, nxt  # the switch lies in (lo, hi]: bisect it to the second
+                while hi - lo > 1:
+                    mid = (lo + hi) // 2
+                    if offset(mid) == prev:
+                        lo = mid
+                    else:
+                        hi = mid
+                out.append({"at_elapsed_s": hi, "shift_s": int((cur - prev).total_seconds())})
+                prev = cur
+            e = nxt
+        return out

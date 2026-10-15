@@ -1432,16 +1432,14 @@ def replan_from_passage(
     # The plan's time floored to the minute, as the table prints its clock, so
     # the delta the athlete reads matches the two clocks he compares.
     plan_elapsed = clock.elapsed_of(a, plan=use_plan) // 60 * 60
-    # A clock alone does not say which day: the occurrence after the start
-    # closest to the plan (a 100-miler crosses midnight twice), on the race's clock.
+    # A clock alone does not say which day, and reads twice on the repeated autumn
+    # hour: the occurrence after the start closest to the plan (a 100-miler crosses
+    # midnight twice), on the race's clock.
     anchor_elapsed = None
     for day in range(8):
-        e = clock.elapsed_s(day * 86400 + int(anchor_clock_s))
-        if e < 0:
-            continue
-        if anchor_elapsed is not None and abs(e - plan_elapsed) >= abs(anchor_elapsed - plan_elapsed):
-            break
-        anchor_elapsed = e
+        for e in clock.occurrences(day * 86400 + int(anchor_clock_s)):
+            if e >= 0 and (anchor_elapsed is None or abs(e - plan_elapsed) < abs(anchor_elapsed - plan_elapsed)):
+                anchor_elapsed = e
     delta_s = anchor_elapsed - plan_elapsed
     # Rhythm is measured against the PLAN (even effort is deliberately slower
     # than the prediction early on): 1.05 = 5 % slower than planned so far.

@@ -48,8 +48,7 @@
     {% set sec_time = s.adjusted_time_s if use_adj else s.predicted_time_s %}
     {% set cum_val = s.adjusted_cumulative_time_s if use_adj else s.cumulative_time_s %}
     {% set clock_val = s.adjusted_clock_time_s if use_adj else s.clock_time_s %}
-    {% set el_val = s.get('adjusted_elapsed_s' if use_adj else 'elapsed_s') %}
-    {% set stops_val = (el_val if el_val is not none else clock_val - start_offset_s) - cum_val %}
+    {% set el_val = s.get('adjusted_elapsed_s' if use_adj else 'elapsed_s') %}{% set stops_val = (el_val if el_val is not none else clock_val - start_offset_s) - cum_val %}
     {% set is_finish = loop.last %}
     {% set arr_stop = (s.stop_s if s.stop_s is defined and s.stop_s else 0) if not is_finish else 0 %}
     {% set stop_min = (arr_stop / 60) | round | int %}

@@ -132,6 +132,9 @@ def build_plan_data(
         # the hero shows where the pinned plan finishes when no objective is set
         "pins": sum(1 for p in points if p["pinned"]),
         "plan_total_s": points[-1]["elapsed_s"] if points and points[-1]["elapsed_s"] is not None else None,
+        # the daylight-saving switches in the plan (a day past the finish for a time typed beyond it): the pin
+        # sheet reads a typed clock with them, as the server reads a passage typed on race day
+        "clock_switches": clock.switches(int((points[-1]["elapsed_s"] if points else 0) or 0) + 86400),
         "night": night_bands_km(sections, start_offset_s, use_target, dark, clock=clock),
         "blocks": [{"start_km": b["start_km"], "end_km": b["end_km"], "cls": b["cls"], "hr_cap": b.get("hr_cap"), "vam": b.get("vam_m_per_h")} for b in (blocks or [])],
         "scenarios": ({"fast_pct": scenarios["fast_pct"], "safe_pct": scenarios["safe_pct"],

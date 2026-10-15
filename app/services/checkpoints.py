@@ -87,11 +87,13 @@ def cutoff_elapsed_s(cutoff_clock: str | None, start_offset_s: int, min_elapsed_
     """Seconds after the race start at which the cutoff falls.
 
     Cutoffs are published as clock times; a 100-miler crosses midnight (often
-    twice), so the day is inferred: the first occurrence of that clock time
-    that is not before ``min_elapsed_s`` (the earliest plausible passage), read
-    on the race's clock (``clock``, plan_clock.PlanClock: past a daylight-saving
-    change the cutoff is the wall clock's, its first occurrence on the repeated
-    autumn hour; without a zone, the start's offset).
+    twice), so the day is inferred: the first day on which that clock time
+    is not before ``min_elapsed_s`` (the earliest plausible passage), read on
+    the race's clock (``clock``, plan_clock.PlanClock: past a daylight-saving
+    change the cutoff is the wall clock's; without a zone, the start's offset).
+    On the repeated autumn hour the cutoff is the occurrence closest to the
+    planned passage — the one the athlete reads next to his row, the same rule
+    as a passage typed on race day —, the first when no passage is known.
     """
     c = _clock_to_s(cutoff_clock)
     if c is None:
@@ -99,9 +101,9 @@ def cutoff_elapsed_s(cutoff_clock: str | None, start_offset_s: int, min_elapsed_
     clock = clock or PlanClock(start_offset_s)
     day = 0
     while True:
-        elapsed = clock.elapsed_s(day * 86400 + c)
-        if elapsed >= 0 and elapsed >= min_elapsed_s - 6 * 3600:
-            return int(elapsed)
+        fits = [e for e in clock.occurrences(day * 86400 + c) if e >= 0 and e >= min_elapsed_s - 6 * 3600]
+        if fits:
+            return int(min(fits, key=lambda e: abs(e - min_elapsed_s)))
         day += 1
 
 

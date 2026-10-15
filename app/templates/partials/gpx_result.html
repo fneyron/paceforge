@@ -754,7 +754,7 @@ window._sim = {};
         var pt = planPoint(i), pinned = cp.target_s !== null && cp.target_s !== undefined;
         var est = pt && pt.clock_s !== null && pt.clock_s !== undefined ? pt.clock_s : null;
         var auto = pinned ? (pt && pt.auto_clock_s !== null && pt.auto_clock_s !== undefined ? pt.auto_clock_s : null) : est;
-        var pinAbs = pinned ? (pt && pt.pin_clock_s !== null && pt.pin_clock_s !== undefined ? pt.pin_clock_s : startOffset() + cp.target_s) : null;  // on the race's clock (a daylight-saving change)
+        var pinAbs = pinned ? (pt && pt.pin_clock_s !== null && pt.pin_clock_s !== undefined ? pt.pin_clock_s : startOffset() + cp.target_s + clockShiftAt(cp.target_s)) : null;  // on the race's clock (a daylight-saving change)
         h += sec('Heure de passage visée') + '<div class="flex items-center gap-1.5 mb-1">'
             + '<input type="text" data-pin-in inputmode="numeric" autocomplete="off" maxlength="5" value="' + (pinned ? fmtClock(pinAbs) : '') + '" placeholder="' + (auto !== null ? fmtClock(auto) : 'hh:mm') + '" aria-label="Heure de passage visée" class="sim-num w-20 h-9 px-2 rounded-lg border-2 ' + (pinned ? 'border-accent bg-accent-soft' : 'border-gray-200') + ' text-[15px] font-semibold tabular-nums text-center text-gray-900 placeholder:text-gray-400 placeholder:font-normal">'
             + '<button type="button" data-pin-go class="h-9 px-3 rounded-lg border-2 text-[13px] ' + OFF + '">Fixer</button>'
@@ -800,14 +800,28 @@ window._sim = {};
         var hh = parseInt(m[1], 10), mm = parseInt(m[2], 10);
         return (hh > 23 || mm > 59) ? null : hh * 3600 + mm * 60;
     }
-    // a clock does not say which day: the occurrence closest to the plan's own time there, after the start; read on the
-    // race's clock, whose shift from the start's offset the nearest point carries (a daylight-saving change during the race)
-    function pinElapsed(clockS, nearAbs, shift) {
-        var start = startOffset(), best = null;
-        for (var d = 0; d < 8; d++) { var abs = clockS + d * 86400; if (abs <= start) continue; if (best === null || Math.abs(abs - nearAbs) < Math.abs(best - nearAbs)) best = abs; }
-        return best === null ? null : best - start - (shift || 0);
+    // -- the plan's clock (tests/test_plan_clock.py runs this block through node): the start's offset + the seconds after
+    // the start + the daylight-saving shifts in force (planData.clock_switches, the server's PlanClock) --
+    function clockShiftAt(e) { var sw = (planData && planData.clock_switches) || [], s = 0; for (var i = 0; i < sw.length; i++) if (e >= sw[i].at_elapsed_s) s += sw[i].shift_s; return s; }
+    // the seconds after the start at which the plan's clock reads abs: two on the repeated autumn hour, none inside the
+    // spring gap (then read with the shift before the switch, as the server does)
+    function elapsedAtClock(abs) {
+        var sw = (planData && planData.clock_switches) || [], start = startOffset(), out = [], over = null, shift = 0, lo = -Infinity;
+        for (var i = 0; i <= sw.length; i++) {
+            var hi = i < sw.length ? sw[i].at_elapsed_s : Infinity, e = abs - start - shift;
+            if (e >= lo && e < hi) out.push(e); else if (e >= hi && over === null) over = e;
+            if (i < sw.length) { lo = hi; shift += sw[i].shift_s; }
+        }
+        return out.length ? out : (over === null ? [] : [over]);
     }
-    function clockShift(pt) { return pt && pt.clock_s !== null && pt.clock_s !== undefined && pt.elapsed_s !== null && pt.elapsed_s !== undefined ? pt.clock_s - startOffset() - pt.elapsed_s : 0; }
+    // a clock does not say which day, and reads twice on the repeated autumn hour: the occurrence after the start closest
+    // to the plan's own time there (nearE, seconds after the start), as the server reads a passage typed on race day
+    function pinElapsed(clockS, nearE) {
+        var best = null;
+        for (var d = 0; d < 8; d++) { var c = elapsedAtClock(clockS + d * 86400); for (var k = 0; k < c.length; k++) { var e = c[k]; if (e <= 0) continue; if (best === null || Math.abs(e - nearE) < Math.abs(best - nearE)) best = e; } }
+        return best;
+    }
+    // -- end of the plan's clock --
     // « sam. » with a race date, « jour 2 » without, nothing on the start day of an undated race
     function dayOf(abs) {
         var n = Math.floor(abs / 86400), d = raceDate;
@@ -821,8 +835,8 @@ window._sim = {};
         if (String(raw || '').trim() !== '') {
             var c = parseClock(raw);
             if (c === null) { if (err) err.classList.remove('hidden'); return false; }
-            var pt = planPoint(i), near = pt && pt.clock_s !== null && pt.clock_s !== undefined ? pt.clock_s : (predictClockAt(cp.distance_km) || startOffset());
-            val = pinElapsed(c, near, clockShift(pt));
+            var pt = planPoint(i), nearE = pt && pt.elapsed_s !== null && pt.elapsed_s !== undefined ? pt.elapsed_s : (predictClockAt(cp.distance_km) || startOffset()) - startOffset();
+            val = pinElapsed(c, nearE);
         }
         if (err) err.classList.add('hidden');
         var cur = (cp.target_s === undefined) ? null : cp.target_s;
