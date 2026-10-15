@@ -22,7 +22,7 @@
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Distance</p>
-            <p class="text-xl font-bold tabular-nums">{{ activity.distance_km }} <span class="text-sm font-normal text-gray-400">km</span></p>
+            <p class="text-xl font-bold tabular-nums">{{ activity.distance_km|fr_num }} <span class="text-sm font-normal text-gray-400">km</span></p>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Durée</p>
@@ -133,13 +133,13 @@
                             {% set l_sec = (lap_time % 60)|int %}
                             {{ l_min }}'{{ '%02d'|format(l_sec) }}"
                         </td>
-                        <td class="text-right py-2 px-4 tabular-nums text-gray-500">{{ "%.1f"|format(lap_dist / 1000) }}km</td>
+                        <td class="text-right py-2 px-4 tabular-nums text-gray-500">{{ (lap_dist / 1000)|fr_num(1) }}km</td>
                         {% if is_cycling %}
                         <td class="text-right py-2 px-4 tabular-nums font-medium {% if lap_watts and lap_watts > 200 %}text-red-500{% endif %}">
                             {% if lap_watts %}{{ lap_watts|int }}W{% else %}-{% endif %}
                         </td>
                         <td class="text-right py-2 px-4 tabular-nums text-gray-500">
-                            {% if lap_dist > 0 and lap_time > 0 %}{{ "%.1f"|format(lap_dist / lap_time * 3.6) }} km/h{% endif %}
+                            {% if lap_dist > 0 and lap_time > 0 %}{{ (lap_dist / lap_time * 3.6)|fr_num(1) }} km/h{% endif %}
                         </td>
                         {% else %}
                         <td class="text-right py-2 px-4 tabular-nums">
@@ -199,7 +199,7 @@
                             {% if split.get('moving_time') and split.get('distance', 0) > 0 %}
                                 {% if is_cycling %}
                                 {% set speed_kmh = split.distance / split.moving_time * 3.6 %}
-                                {{ '%.1f'|format(speed_kmh) }} km/h
+                                {{ speed_kmh|fr_num(1) }} km/h
                                 {% else %}
                                 {% set pace = split.moving_time / (split.distance / 1000) %}
                                 {% set p_min = (pace // 60)|int %}

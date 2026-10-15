@@ -17,6 +17,8 @@ from app.services.timezones import zone_from_strava
 # what only the detail answer (GET /activities/{id}) carries: the first import reads it after the list
 DETAIL_FIELDS = ("splits_metric", "best_efforts", "laps", "max_watts", "weighted_average_watts", "suffer_score",
                  "calories")
+# the detail's lists that have their own columns: never kept in raw_data as well (a third of its size)
+COLUMN_KEYS = ("splits_metric", "best_efforts", "laps")
 PER_PAGE = 30
 DETAIL_BACKLOG = 5  # a poll completes this many activities saved from the list only with their detail
 DETAIL_ASKED = "paceforge_detail_asked"  # in raw_data: its detail was asked once (got, or none shown): not again
@@ -30,13 +32,18 @@ def parse_date(value):
     return value
 
 
+def without_columns(data: dict) -> dict:
+    """Strava's answer without what the row's own columns hold (splits, laps, best efforts)."""
+    return {k: v for k, v in data.items() if k not in COLUMN_KEYS}
+
+
 def activity_from_strava(data: dict, user_id: int) -> Activity:
     """The row of a Strava activity, from its list summary or its detail (what the summary lacks stays empty)."""
     return Activity(
         strava_activity_id=data["id"],
         user_id=user_id,
-        sport_type=data.get("sport_type") or data.get("type") or "Unknown",
-        name=data.get("name") or "Untitled",
+        sport_type=data.get("sport_type") or data.get("type") or "Workout",  # Strava's own catch-all sport
+        name=data.get("name") or "Sans titre",
         start_date=parse_date(data.get("start_date")),
         distance=data.get("distance") or 0,
         moving_time=data.get("moving_time") or 0,
@@ -49,7 +56,7 @@ def activity_from_strava(data: dict, user_id: int) -> Activity:
         average_cadence=data.get("average_cadence"),
         average_watts=data.get("average_watts"),
         **{field: data.get(field) for field in DETAIL_FIELDS},
-        raw_data=data,
+        raw_data=without_columns(data),
     )
 
 
@@ -61,7 +68,7 @@ def apply_detail(activity: Activity, detail: dict) -> None:
         if detail.get(field) is not None:
             setattr(activity, field, detail[field])
     ours = {k: v for k, v in (activity.raw_data or {}).items() if k.startswith("paceforge")}
-    activity.raw_data = {**detail, **ours}
+    activity.raw_data = {**without_columns(detail), **ours}
 
 
 async def is_known(db: AsyncSession, strava_id: int) -> bool:

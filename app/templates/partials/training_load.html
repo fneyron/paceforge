@@ -8,16 +8,16 @@
         </div>
         <div class="grid grid-cols-2 gap-4">
             <div>
-                <p class="text-2xl font-bold tabular-nums">{{ "%.1f"|format(training_load.volume_7d_km) }} <span class="text-sm font-normal text-gray-400">km</span></p>
+                <p class="text-2xl font-bold tabular-nums">{{ training_load.volume_7d_km|fr_num(1) }} <span class="text-sm font-normal text-gray-400">km</span></p>
             </div>
             <div>
-                <p class="text-2xl font-bold tabular-nums">{{ "%.1f"|format(training_load.volume_7d_hours) }} <span class="text-sm font-normal text-gray-400">h</span></p>
+                <p class="text-2xl font-bold tabular-nums">{{ training_load.volume_7d_hours|fr_num(1) }} <span class="text-sm font-normal text-gray-400">h</span></p>
             </div>
         </div>
         {% if training_load.sport_breakdown_7d %}
         <div class="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-1.5">
             {% for sport, km in training_load.sport_breakdown_7d.items() %}
-            <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-md">{{ sport }} {{ "%.1f"|format(km) }}km</span>
+            <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-md">{{ sport }} {{ km|fr_num(1) }}km</span>
             {% endfor %}
         </div>
         {% endif %}
@@ -32,10 +32,10 @@
         </div>
         <div class="grid grid-cols-2 gap-4">
             <div>
-                <p class="text-2xl font-bold tabular-nums">{{ "%.1f"|format(training_load.volume_28d_km) }} <span class="text-sm font-normal text-gray-400">km</span></p>
+                <p class="text-2xl font-bold tabular-nums">{{ training_load.volume_28d_km|fr_num(1) }} <span class="text-sm font-normal text-gray-400">km</span></p>
             </div>
             <div>
-                <p class="text-2xl font-bold tabular-nums">{{ "%.1f"|format(training_load.volume_28d_hours) }} <span class="text-sm font-normal text-gray-400">h</span></p>
+                <p class="text-2xl font-bold tabular-nums">{{ training_load.volume_28d_hours|fr_num(1) }} <span class="text-sm font-normal text-gray-400">h</span></p>
             </div>
         </div>
     </div>
