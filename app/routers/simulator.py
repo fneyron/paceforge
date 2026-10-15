@@ -1750,8 +1750,7 @@ async def get_weather(
             points = None
     try:
         weather = await cached_forecast(lat, lon, date, points=points)
-    except Exception:  # the page shows a retry chip either way
-        logger.warning("Weather lookup failed", exc_info=True)
+    except Exception:  # the service already logs; the page shows a retry chip either way
         weather = None
     if not weather:
         # 503, not 500: the upstream is unreachable, nothing is broken here — the client reads the error field
