@@ -251,13 +251,12 @@ async def delete_account(
     from app.models.mobile import MobileDaily, MobileDevice
     from app.models.nutrition import NutritionProduct
     from app.models.oauth_attempt import OAuthAttempt
-    from app.models.route import Route, RouteCheckpoint, Simulation
+    from app.models.route import Route, RouteCheckpoint
 
     # Delete in order (foreign key constraints)
     await db.execute(delete(Activity).where(Activity.user_id == user_id))
     routes = select(Route.id).where(Route.user_id == user_id)
     await db.execute(delete(RouteCheckpoint).where(RouteCheckpoint.route_id.in_(routes)))
-    await db.execute(delete(Simulation).where((Simulation.user_id == user_id) | Simulation.route_id.in_(routes)))
     await db.execute(delete(Route).where(Route.user_id == user_id))
     await db.execute(delete(HealthSample).where(HealthSample.user_id == user_id))
     await db.execute(delete(HealthMetric).where(HealthMetric.user_id == user_id))

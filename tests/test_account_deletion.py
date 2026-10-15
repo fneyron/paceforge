@@ -27,7 +27,6 @@ from app.models import (
     OAuthAttempt,
     Route,
     RouteCheckpoint,
-    Simulation,
     User,
 )
 from app.routers import settings as settings_router
@@ -72,7 +71,6 @@ async def _seed(db, user: User) -> None:
     route = rows[1]
     db.add_all([
         RouteCheckpoint(route_id=route.id, name="Ravito", distance_km=10),
-        Simulation(route_id=route.id, user_id=user.id),
     ])
     await db.flush()
 

@@ -54,7 +54,6 @@ class Route(Base):
     )
 
     checkpoints = relationship("RouteCheckpoint", back_populates="route", cascade="all, delete-orphan", order_by="RouteCheckpoint.distance_km")
-    simulations = relationship("Simulation", back_populates="route", cascade="all, delete-orphan")
 
 
 class RouteCheckpoint(Base):
@@ -85,22 +84,3 @@ class RouteCheckpoint(Base):
             "kind": self.kind or "none", "crew": bool(self.crew), "drop_bag": bool(self.drop_bag),
             "cutoff_clock": self.cutoff_clock, "stop_s": self.stop_s, "target_s": self.target_s,
         }
-
-
-class Simulation(Base):
-    __tablename__ = "simulations"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    route_id: Mapped[int] = mapped_column(Integer, ForeignKey("routes.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    target_time_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    config_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
-    results_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
-    weather_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-
-    route = relationship("Route", back_populates="simulations")
