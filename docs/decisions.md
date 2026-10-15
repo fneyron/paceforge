@@ -77,3 +77,9 @@ l’ordre chronologique. Les citations sont celles du propriétaire.
 | Le repère de 8 h de sommeil est dit comme tel, sans prétendre mesurer le besoin individuel ; l’écart sur 7 jours précise les nuits documentées, les nuits absentes ne valent pas zéro. | Aucune mesure du besoin individuel. | docs/health-context-2026-10-15.md — `sante.py`, `sante_sleep.py` |
 | Le ressenti déclaré (fatigue, douleur, tolérance du dernier effort) est enregistré à part, daté au jour local du compte, et ne change ni l’indice ni les anciens indicateurs. | Mesures, activités et ressenti restent distincts. | docs/health-context-2026-10-15.md — `sante_checkin.py` |
 | Le contexte après-course exige une activité reçue, éventuellement liée comme résultat d’un parcours ; une course seulement prévue ne suffit pas ; l’association suit la copie conservée au dédoublonnage. | Aucun contexte sans mesure. | docs/health-context-2026-10-15.md — `activity_identity.py`, `sante_context.py` |
+
+## 15 octobre 2026 (revue de fix2/cleanup)
+
+| Décision | Raison | Source |
+|---|---|---|
+| Les cinq tables de l’ancienne chaîne IA et des simulations (analyses, chat_messages, weekly_digests, generated_plans, simulations) restent une version de plus, non mappées (leurs modèles sont supprimés, `alembic check` les ignore) ; elles seront supprimées après la première sauvegarde. | chat_messages et generated_plans peuvent contenir des lignes saisies par l’athlète (routeurs coach et séance livrés de juin à septembre) ; la suppression est irréversible et la production n’a pas encore de sauvegarde ; pendant la fenêtre de déploiement, l’ancien worker charge encore `analyses` à chaque lecture complète d’Activity. | Revue de fix2/cleanup, 15 oct. — `alembic/env.py` (include_object), docs/ops-runbook.md |
