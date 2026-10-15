@@ -23,3 +23,29 @@ async def test_health_and_asset_urls_share_the_deployed_build(client):
     assert response.headers["cache-control"] == "no-store"
     page = (await client.get("/auth/login")).text
     assert f"/static/css/tailwind.css?v={BUILD_ID}" in page
+
+
+def test_build_covers_what_a_deploy_ships(tmp_path):
+    """The deploy's smoke test waits for this fingerprint: a change to the migrations, the image's definition or
+    a lock file must move it, a change to anything else (tests, docs) must not."""
+    from app.build import DEPLOYED
+
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "main.py").write_text("app")
+    (tmp_path / "alembic" / "versions").mkdir(parents=True)
+    (tmp_path / "alembic" / "versions" / "0001_a.py").write_text("up")
+    for name in DEPLOYED[2:]:
+        (tmp_path / name).write_text(name)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_x.py").write_text("t")
+    original = fingerprint(tmp_path, DEPLOYED)
+    (tmp_path / "tests" / "test_x.py").write_text("changed")
+    (tmp_path / "README.md").write_text("doc")
+    (tmp_path / "app" / "__pycache__").mkdir()
+    (tmp_path / "app" / "__pycache__" / "main.cpython-312.pyc").write_bytes(b"bytecode")
+    assert fingerprint(tmp_path, DEPLOYED) == original
+    for name in ("app/main.py", "alembic/versions/0001_a.py", "Dockerfile", "docker-compose.prod.yml",
+                 "pyproject.toml", "requirements.lock"):
+        before = fingerprint(tmp_path, DEPLOYED)
+        (tmp_path / name).write_text("new " + name)
+        assert fingerprint(tmp_path, DEPLOYED) != before, name
