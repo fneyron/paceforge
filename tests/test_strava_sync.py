@@ -488,22 +488,64 @@ async def test_the_poll_finds_an_activity_uploaded_long_after_its_start(db_sessi
     assert (await _poll_user(test_user.id))["new_activities"] == 0  # known: never twice
 
 
-async def test_the_poll_pages_until_a_page_is_all_known(db_session, test_user, task_session, monkeypatch):
+async def test_the_poll_resumes_past_known_pages_and_restarts_a_completed_sweep(task_db, monkeypatch):
     from app.tasks.poll_activities import POLL_PAGES, _poll_user
 
     now = datetime.now(timezone.utc)
-    await _own_app(db_session, test_user)
+    async with task_db() as db:
+        user = await _own_app(db, await _athlete(db, 12345678))
+        uid, athlete_id = user.id, user.strava_athlete_id
+        await db.commit()
     pages = {p: [_data(710_000 + 30 * p + i, now - timedelta(hours=30 * p + i)) for i in range(30)]
              for p in range(1, 6)}
     calls = []
 
     async def fetch(self, user, per_page=30, page=1):
         calls.append(page)
-        return pages[page]
+        return pages.get(page, [])
     monkeypatch.setattr(StravaService, "get_recent_activities", fetch)
-    assert (await _poll_user(test_user.id))["new_activities"] == 30 * POLL_PAGES and calls == [1, 2, 3]
-    calls.clear()  # the second round: page 1 is all known, nothing more is asked
-    assert (await _poll_user(test_user.id))["new_activities"] == 0 and calls == [1]
+    assert (await _poll_user(uid))["new_activities"] == 30 * POLL_PAGES and calls == [1, 2, 3]
+    assert strava_state.reconciliation_page(uid, athlete_id) == 4
+    calls.clear()  # known head: the following round still reaches the stranded backlog
+    assert (await _poll_user(uid))["new_activities"] == 60 and calls == [1, 4, 5]
+    calls.clear()
+    assert (await _poll_user(uid))["new_activities"] == 0 and calls == [1, 6]
+    assert strava_state.reconciliation_page(uid, athlete_id) == 2
+    # A late upload behind an entirely known first page is found in the next sweep, without a webhook.
+    late = _data(719_999, now - timedelta(hours=65))
+    pages[2][5] = late
+    calls.clear()
+    assert (await _poll_user(uid))["new_activities"] == 1 and calls == [1, 2, 3]
+    async with task_db() as db:
+        assert (await _row(db, late["id"])).moving_time == late["moving_time"]
+
+
+async def test_a_failed_poll_does_not_advance_the_history_cursor(task_db, monkeypatch):
+    from app.tasks.poll_activities import _poll_user
+
+    now = datetime.now(timezone.utc)
+    async with task_db() as db:
+        user = await _own_app(db, await _athlete(db, 12345678))
+        uid, athlete_id = user.id, user.strava_athlete_id
+        await db.commit()
+    fail = True
+    calls = []
+
+    async def fetch(self, user, per_page=30, page=1):
+        calls.append(page)
+        if fail and page == 3:
+            raise httpx.ConnectError("interrupted")
+        return [_data(715_000 + page * 30 + i, now - timedelta(hours=page * 30 + i)) for i in range(30)]
+    monkeypatch.setattr(StravaService, "get_recent_activities", fetch)
+    with pytest.raises(httpx.ConnectError):
+        await _poll_user(uid)
+    assert strava_state.reconciliation_page(uid, athlete_id) == 2
+    async with task_db() as db:
+        assert await _row(db, 715_060) is None  # neither rows nor cursor outlive the rollback
+    fail = False
+    calls.clear()
+    assert (await _poll_user(uid))["new_activities"] == 90 and calls == [1, 2, 3]
+    assert strava_state.reconciliation_page(uid, athlete_id) == 4
 
 
 async def test_one_athletes_failure_leaves_the_others_import_whole(task_db, monkeypatch):
@@ -1047,16 +1089,22 @@ async def test_an_edit_on_strava_renames_the_activity(db_session, test_user, tas
     await _own_app(db_session, test_user, sub=55)
     now = datetime.now(timezone.utc)
     db_session.add(Activity(user_id=test_user.id, strava_activity_id=730_001, sport_type="Run", name="Morning Run",
-                            start_date=now, distance=10_000, moving_time=3600, elapsed_time=3700, raw_data={}))
+                            start_date=now, distance=10_000, moving_time=3600, elapsed_time=3700, raw_data={},
+                            streams_data={"time": [0, 1]}, computed_metrics={"pace": 360}))
     await db_session.flush()
     fetch = AsyncMock(return_value=_data(730_001, now, name="Tour du Lac", sport_type="TrailRun",
-                                         splits_metric=[{"split": 1}]))
+                                         distance=148_000, moving_time=56_000, elapsed_time=60_000,
+                                         average_heartrate=138, splits_metric=[{"split": 1}]))
     monkeypatch.setattr(StravaService, "get_activity", fetch)
     # what the event says is not trusted: the name and sport are Strava's own, read with the athlete's token
     result = await _run_webhook_sync(730_001, test_user.strava_athlete_id, "update")
     row = await _row(db_session, 730_001)
     assert result == {"status": "updated", "name": "Tour du Lac"} and row.sport_type == "TrailRun"
     assert row.splits_metric == [{"split": 1}]  # the detail read anyway is kept (review D7)
+    assert (row.distance, row.moving_time, row.elapsed_time, row.average_heartrate) == (148_000, 56_000, 60_000, 138)
+    assert row.streams_data is None and row.computed_metrics is None and row.raw_data["paceforge_revision"] == 1
+    await _run_webhook_sync(730_001, test_user.strava_athlete_id, "update")
+    assert row.raw_data["paceforge_revision"] == 1  # repeated webhook: no needless cache churn
     # an edit of an activity never received brings it
     fetch.return_value = _data(730_002, now, name="Rattrapée")
     assert (await _run_webhook_sync(730_002, test_user.strava_athlete_id, "update"))["status"] == "saved"
@@ -1064,6 +1112,28 @@ async def test_an_edit_on_strava_renames_the_activity(db_session, test_user, tas
     for status in (403, 404):
         fetch.side_effect = _api_error(status)
         assert (await _run_webhook_sync(730_003, test_user.strava_athlete_id, "create"))["status"] == "gone"
+
+
+async def test_known_summaries_repair_metrics_without_modifying_another_owner(db_session, test_user, task_session,
+                                                                           monkeypatch):
+    from app.services import strava_activities
+    from app.tasks.poll_activities import _poll_user
+
+    await _own_app(db_session, test_user)
+    other = await _athlete(db_session, 88888)
+    now = datetime.now(timezone.utc)
+    mine = strava_activities.activity_from_strava(_data(735_001, now, moving_time=0, distance=0), test_user.id)
+    theirs = strava_activities.activity_from_strava(_data(735_002, now, moving_time=900), other.id)
+    db_session.add_all([mine, theirs])
+    await db_session.flush()
+    monkeypatch.setattr(StravaService, "get_recent_activities", AsyncMock(return_value=[
+        _data(735_001, now, moving_time=56_000, distance=148_000, average_heartrate=138),
+        _data(735_002, now, moving_time=56_000, distance=148_000)]))
+    monkeypatch.setattr(strava_activities, "complete_details", AsyncMock(return_value=0))
+    assert (await _poll_user(test_user.id))["new_activities"] == 0  # corrections are not counted as new activities
+    assert (mine.moving_time, mine.distance, mine.average_heartrate) == (56_000, 148_000, 138)
+    assert mine.raw_data["paceforge_revision"] == 1
+    assert (theirs.moving_time, theirs.distance, theirs.raw_data.get("paceforge_revision")) == (900, 10_000, None)
 
 
 async def test_a_rename_keeps_what_a_watch_brought(db_session, test_user, task_session, monkeypatch):

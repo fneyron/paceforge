@@ -57,6 +57,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
+from app.models.route import Route
 
 logger = logging.getLogger(__name__)
 
@@ -291,13 +292,18 @@ async def build_race_effort_model(db: AsyncSession, user_id: int, months: int = 
 
     Returns {"a", "b", "n", "fitted", "races": [...]} or None when no race is
     usable (the caller then keeps the training-based prediction). Kept per
-    worker while the candidate set is unchanged (its count and last write),
-    RACE_MODEL_TTL_S at most; every caller gets its own copy.
+    worker while the candidate set is unchanged (its count and last write) and
+    no result link moved (a route's link confirms an outing as a race and names
+    it: activity_identity.confirmed_races), RACE_MODEL_TTL_S at most; every
+    caller gets its own copy.
     """
     count, last_write = (await db.execute(
         candidate_query(user_id, months).with_only_columns(func.count(Activity.id), func.max(Activity.updated_at))
     )).one()
-    key = (months, count, last_write)
+    links, last_link = (await db.execute(
+        select(func.count(Route.result_activity_id), func.max(Route.updated_at)).where(Route.user_id == user_id)
+    )).one()
+    key = (months, count, last_write, links, last_link)
     now = time.monotonic()
     hit = _RACE_MODELS.get(user_id)
     if hit and hit[0] > now and hit[1] == key:
@@ -319,12 +325,15 @@ async def collect_race_points(db: AsyncSession, user_id: int, months: int = MODE
     """The athlete's races and long efforts as the model reads them (race_point; one per duplicate)."""
     acts = [_Candidate(row) for row in (await db.execute(candidate_columns(user_id, months))).all()]
 
-    from app.services.activity_dedupe import find_duplicate_ids
+    from app.services.activity_dedupe import duplicate_representatives
+    from app.services.activity_identity import confirmed_races, races_on_retained_copies
 
-    dups = find_duplicate_ids(acts)
+    dups = duplicate_representatives(acts)
+    confirmed = await confirmed_races(db, user_id, activity_ids=[a.id for a in acts])
+    confirmed = races_on_retained_copies(confirmed, dups)
     kept = [a for a in acts
             if a.id not in dups and a.moving_time and a.moving_time >= MIN_RACE_H * 3600
-            and (_is_race(a) or (a.distance or 0) / 1000 >= LONG_EFFORT_KM)]
+            and (_is_race(a) or a.id in confirmed or (a.distance or 0) / 1000 >= LONG_EFFORT_KM)]
     # the altitude streams of the races whose D+ is not cached yet (backfill_race_dplus caches it once, out of
     # the request path; until then, or without a Strava stream, the row's own): those rows alone
     need = [a for a in kept if cached_dplus(a) is None]
@@ -338,11 +347,11 @@ async def collect_race_points(db: AsyncSession, user_id: int, months: int = MODE
     points = []
     for a in kept:
         km = (a.distance or 0) / 1000
-        is_race = _is_race(a)
+        is_race = _is_race(a) or a.id in confirmed
         dplus, src = activity_dplus(a)
         heat = activity_heat(a)
         points.append(race_point(
-            a.name, km, dplus, a.moving_time / 3600, is_race,
+            confirmed.get(a.id) or a.name, km, dplus, a.moving_time / 3600, is_race,
             day=a.start_date.date() if a.start_date else None, id=a.id, dplus_src=src,
             **({"heat": heat} if heat else {}),
         ))

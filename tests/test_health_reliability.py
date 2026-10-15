@@ -165,8 +165,8 @@ def test_quality_distinguishes_building_from_missing_and_never_claims_precision(
     young = _day(night_rows(range(6)))  # 6 nights up to last night: no band yet
     quality = sc.quality(young)
     assert not quality['partial'] and not quality['provisional'] and young['score']['value'] is None
-    assert [r['state'] for r in quality['rows']] == ['Utilisé', 'Repères en construction (0/14)',
-                                                  'Repères en construction (0/14)']
+    assert [r['state'] for r in quality['rows']] == ['Utilisé', 'Repères en construction (6/7)',
+                                                  'Repères en construction (6/7)']
     assert '%' not in str(quality)
     provisional = _day(night_rows(range(10)))  # 10 nights up to last night, 2 in the lagged window: provisional
     quality = sc.quality(provisional)

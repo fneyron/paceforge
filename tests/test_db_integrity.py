@@ -146,7 +146,8 @@ async def test_the_race_model_reads_columns_and_the_streams_of_uncached_races_on
 
     queries.clear()
     points = {p["name"]: p for p in await rc.collect_race_points(db_session, test_user.id)}
-    assert len(queries) == 2 and "streams_data" in queries[1] and "IN" in queries[1]  # Trail B's stream alone
+    # the candidates, the result links that confirm a race (activity_identity), then Trail B's stream alone
+    assert len(queries) == 3 and "routes" in queries[1] and "streams_data" in queries[2] and "IN" in queries[2]
     assert points["Ultra A"]["dplus"] == 5000 and points["Ultra A"]["dplus_src"] == "stream"
     assert points["Ultra A"]["heat"] == 1.05
     assert 280 <= points["Trail B"]["dplus"] <= 300 and points["Trail B"]["dplus_src"] == "stream"  # smoothed
@@ -161,10 +162,19 @@ async def test_the_fitted_model_is_kept_per_worker_while_the_races_are_unchanged
     queries.clear()
     again = await rc.build_race_effort_model(db_session, test_user.id)
     assert again == first and again is not first  # the caller's own copy
-    assert len(queries) == 1 and "count" in queries[0].lower()  # the candidate set's version alone
+    assert len(queries) == 2 and all("count" in q.lower() for q in queries)  # the versions alone: races, links
     db_session.add(_race(test_user.id, "C", 300, 80, 10))
     await db_session.flush()
     assert (await rc.build_race_effort_model(db_session, test_user.id))["n_used"] == 3  # a new race: refitted
+    long_run = _race(test_user.id, "Sortie longue", 50, 45, 6, raw_data={"workout_type": 0})
+    db_session.add(long_run)
+    await db_session.flush()
+    model = await rc.build_race_effort_model(db_session, test_user.id)
+    assert model["n_races"] == 3 and {p["name"] for p in model["races"]} == {"A", "B", "C"}
+    db_session.add(Route(user_id=test_user.id, name="Trail du lac", total_distance_km=45, result_activity_id=long_run.id))
+    await db_session.flush()  # a result link confirms the outing as a race (activity_identity): refitted at once
+    model = await rc.build_race_effort_model(db_session, test_user.id)
+    assert model["n_races"] == 4 and "Trail du lac" in {p["name"] for p in model["races"]}
     expires, key, kept = rc._RACE_MODELS[test_user.id]
     rc._RACE_MODELS[test_user.id] = (0.0, key, kept)  # past the TTL
     queries.clear()

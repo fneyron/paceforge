@@ -56,23 +56,23 @@ def test_without_usual_values_the_card_says_when_they_come():
     build, nothing about nights that would not count; no band drawn, no band in the legend."""
     c = _card(night_rows(range(0, 6)))  # 6 nights: they enter the baseline a week after each; a 7th makes it
     assert c["status"] == {"key": "none", "value": None, "word": "en construction", "tone": None, "meaning": None,
-                           "detail": "prête dans 9\u00a0nuits",
-                           "text": "Tes valeurs habituelles s'afficheront ici dès 7 nuits mesurées avant les 7 derniers jours."}
+                           "detail": "prête après ta prochaine nuit",
+                           "text": "Une référence apparaît dès 7 nuits mesurées avec la même source et le même calcul."}
     assert c["band"] == [] == c["band_prov"] and not c["edge_lo"] and not c["edge_prov_lo"]
     assert c["legend"] == [("is-dot", "nuit"), sante.LEGEND_MEAN]  # every night counts: one kind of dot
     c = _card(night_rows(range(0, 5)))
-    assert (c["status"]["detail"], c["status"]["text"]) == ("prête dans 10\u00a0nuits", sante.BUILDS.format(n=7))
+    assert (c["status"]["detail"], c["status"]["text"]) == ("prête dans 2\u00a0nuits", sante.BUILDS.format(n=7))
     html = render("{{ v.viz_night_card(c, 'VFC · 14 nuits') }}", c=c)
     assert "pf-viz-band" not in html and "pf-viz-edge" not in html
     # the nights older than 67 days leave the baseline as the coming ones enter it: 3 nights 56 to 58 days old and
     # 2 recent ones make 7 after 13 nights (each coming night replaces one that leaves, until the old ones are gone)
     old = _nights(night_rows([0, 1, 56, 57, 58]))
-    assert sante.nights_to_normal(old, "hrv", D) == 13 and sante.nights_to_normal(old, "hr", D) == 13
-    assert sante.nights_to_normal(_nights(night_rows([0])), "hrv", D) == 14
+    assert sante.nights_to_normal(old, "hrv", D) == 5 and sante.nights_to_normal(old, "hr", D) == 5
+    assert sante.nights_to_normal(_nights(night_rows([0])), "hrv", D) == 6
 
 
 @pytest.mark.parametrize("count, in_baseline, remaining, provisional",
-                         [(1, 0, 21, False), (8, 0, 14, False), (14, 14, 0, True), (22, 14, 0, False)])
+                         [(1, 1, 13, False), (8, 8, 6, False), (14, 14, 0, True), (22, 14, 0, False)])
 def test_sdnn_progress_matches_its_fourteen_night_reference(count, in_baseline, remaining, provisional):
     """Apple's SDNN has its own 14-night reference, from day −67 to −8 (a night counts a week after it): `count`
     nights up to this morning hold `in_baseline` of them; with 14 up to last night and fewer in that window, the
@@ -98,7 +98,7 @@ def test_sdnn_progress_matches_its_fourteen_night_reference(count, in_baseline, 
     assert day["score"]["value"] is None  # descriptive SDNN still never creates an RMSSD state
     if remaining:
         assert sante.nights_to_normal(nights, "hrv", D) == remaining
-        assert card["status"]["text"].endswith("dès 14 nuits mesurées avant les 7 derniers jours.")
+        assert "dès 14 nuits mesurées avec la même source" in card["status"]["text"]
         assert day["stats"]["hrv"]["normal"] is None
     else:
         assert day["stats"]["hrv"]["normal"]["source"] == source
@@ -109,7 +109,7 @@ def test_sdnn_wait_accounts_for_nights_leaving_the_sixty_day_window():
     source = "Apple Santé:watch (SDNN sommeil)"
     nights = {D - timedelta(days=i): nt.Night(D - timedelta(days=i), hrv=40 + i % 3, hrv_source=source)
               for i in (0, 1, 56, 57, 58)}
-    assert sante.nights_to_normal(nights, "hrv", D) == 20  # old nights expire before fourteen can accumulate (17)
+    assert sante.nights_to_normal(nights, "hrv", D) == 12  # old nights expire before fourteen can accumulate
 
 
 @pytest.mark.parametrize("metric, field, source_field, unit", [
