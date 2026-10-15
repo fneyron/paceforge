@@ -1,19 +1,31 @@
 {
-  "updated": "2026-10-14",
+  "updated": "2026-10-15",
   "dataset": {
-    "races": 770,
-    "events": 162,
-    "editions": 342,
-    "finisher_results": 105743,
-    "checkpoint_passages": 919486,
-    "races_with_gps_track": 124,
+    "races": 787,
+    "events": 168,
+    "editions": 350,
+    "finisher_results": 109765,
+    "checkpoint_passages": 949687,
+    "races_with_gps_track": 138,
     "sources": {
-      "utmb_live": 169,
-      "livetrail": 601
+      "utmb_live": 183,
+      "livetrail": 604
+    },
+    "by_source": {
+      "utmb_live": {
+        "finisher_results": 64763,
+        "checkpoint_passages": 606549,
+        "with_gps_track": 138
+      },
+      "livetrail": {
+        "finisher_results": 45002,
+        "checkpoint_passages": 343138,
+        "with_gps_track": 0
+      }
     },
     "stored": {
-      "utmb_live": 175,
-      "livetrail": 821
+      "utmb_live": 192,
+      "livetrail": 827
     },
     "note": "solo running races only (scripts/race_data/dataset_stats.py): left out 216 bike / triathlon / relay / duo / pairs / team / walk / hike / stage / time-limited formats and PTL by name, 3 courses whose median finisher effort speed is a bike's or broken timing, 5 with fewer than 10 finishers, 2 without checkpoint distances. events = event series (an event's editions count once); finishers are those stored (UTMB Live up to 676 per race; of the 175 races stored, all finishers on 68, the fastest third whole then an even sample by rank on 60, an even sample of 150-450 by rank on the 47 collected first; LiveTrail up to 80, an even sample by rank)"
   },
