@@ -1,6 +1,6 @@
-# La charge d'entraînement : un seul calcul, en contexte de la récupération
+# La charge d’entraînement : un seul calcul, distinct des signaux nocturnes
 
-Révision du 14 octobre 2026. Elle remplace le modèle `cumulative-1` du 12 octobre, qui limitait
+Révision du 15 octobre 2026. Elle remplace le modèle `cumulative-1` du 12 octobre, qui limitait
 le score de récupération d'après l'accumulation des séances ordinaires.
 
 ## Ce qui change et pourquoi
@@ -21,9 +21,13 @@ quartile de référence et une limite `100 − A × (1 − exp(−excès))`. Il 
    limite cumulative et les 7 / 28 jours d'Activités lisaient la charge de quatre façons : bornes
    cardiaques, décroissances et doublons différents.
 
-La récupération ne lit donc plus la charge. Le pourcentage du cadran Entraînement s'affiche à côté,
-comme contexte. Les gros efforts gardent leurs fenêtres (estimations, C7), une raison de l'état du
-jour qui dit « fenêtre indicative jusqu'à J+n ».
+L’indice « Signaux nocturnes » ne lit ni la charge ni les anciennes fenêtres après effort. Le
+pourcentage du cadran Entraînement s’affiche à côté, comme contexte. Une course effectivement
+enregistrée ou un ultra récent peut être nommé avec son J+n réel, sans plafond d’indice ni date
+de récupération. Le contexte regarde les 28 derniers jours pour l’affichage ; ce n’est pas une
+fenêtre physiologique. Une tendance nocturne habituelle ne prouve pas que muscles et tendons ont
+récupéré. Les seuils des signaux mesurés et les règles spécifiques de l’alerte FC restent inchangés
+([C7 et C8](sante-estimates.md)).
 
 ## Le calcul unique (`app/services/sante_load.py`)
 

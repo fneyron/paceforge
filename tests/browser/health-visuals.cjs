@@ -11,17 +11,24 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
   fs.mkdirSync(output, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {
-    for (const width of [320, 393]) for (const scale of [1, 2]) {
+    for (const width of [320, 393]) for (const scale of [1, 2]) for (const dark of [false, true]) {
       const page = await browser.newPage({ viewport: { width, height: 852 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
       const errors = []; page.on('pageerror', error => errors.push(error.message));
       await page.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; window.paceforgeNativeRefresh = 2; });
       await page.goto(base + '/sante', { waitUntil: 'networkidle' });
-      await page.evaluate(scale => {
+      await page.evaluate(({ scale, dark }) => {
         document.documentElement.style.fontSize = 16 * scale + 'px';
         document.documentElement.classList.toggle('pf-large-text', scale >= 1.4);
-      }, scale);
+        document.documentElement.classList.toggle('dark', dark);
+      }, { scale, dark });
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      const label = `${width}px/${scale * 100}%`;
+      const mode = dark ? 'dark' : 'light', capture = `${width}-${scale}-${mode}`;
+      const label = `${width}px/${scale * 100}%/${mode}`;
+      assert.ok(await page.locator('#synthese-sante').isVisible(), `${label}: measured signals need a visible synthesis`);
+      assert.ok(await page.locator('#synthese-sante .pf-synthesis-reasons > li').count() <= 2, `${label}: the primary synthesis has at most two reasons`);
+      assert.ok((await page.locator('.pf-synthesis-freshness').innerText()).trim(), `${label}: the synthesis needs a measurement date`);
+      assert.equal(await page.locator('#ressenti').evaluate(el => el.open), false, `${label}: the optional check-in starts collapsed`);
+      assert.equal(await page.locator('#ressenti input:checked').count(), 0, `${label}: no feeling is inferred from the measurements`);
       await page.evaluate(() => window.paceforgeRememberPage());
       assert.deepEqual(await page.evaluate(() => {
         const key = 'pf-view:' + document.querySelector('#main-content').dataset.account + ':/sante';
@@ -36,10 +43,17 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       for (const selector of ['#qualite-bilan', '#charge-detail', '#sommeil-habitudes']) {
         if (await page.locator(selector).count()) assert.equal(await page.locator(selector).evaluate(el => el.open), false, `${label}: secondary information opens by default`);
       }
-      await page.screenshot({ path: `${output}/health-default-${width}-${scale}.png`, fullPage: true });
-      await page.screenshot({ path: `${output}/health-top-${width}-${scale}.png` });
-      await page.locator('.pf-dials').screenshot({ path: `${output}/dials-${width}-${scale}.png` });
-      assert.match(await page.locator('.pf-ring-recup .pf-ring-value').innerText(), /^100/, `${label}: fixture must exercise a three-digit percentage`);
+      await page.screenshot({ path: `${output}/health-default-${capture}.png`, fullPage: true });
+      await page.screenshot({ path: `${output}/health-top-${capture}.png` });
+      await page.locator('.pf-dials').screenshot({ path: `${output}/dials-${capture}.png` });
+      assert.match(await page.locator('.pf-ring-recup .pf-ring-value').innerText(), /^100\s*\/100$/, `${label}: fixture must exercise a three-digit index, never a recovery percentage`);
+      await page.locator('#ressenti > summary').click();
+      for (const choice of await page.locator('.pf-checkin-choice').all()) {
+        const box = await choice.boundingBox();
+        assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= width + 1, `${label}: check-in choices are readable tap targets`);
+      }
+      await page.locator('.pf-health-checkin').screenshot({ path: `${output}/checkin-${capture}.png` });
+      await page.locator('#ressenti > summary').click();
       // Every available main chart keeps a visible date and accessible value on selection.
       for (const selector of required) for (const figure of await page.locator(selector).all()) {
         const selected = await figure.evaluate(fig => {
@@ -93,9 +107,9 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       });
       assert.deepEqual(failures, [], `${label}: graph layout regressions`);
       await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
-      await page.screenshot({ path: `${output}/health-selected-${width}-${scale}.png`, fullPage: true });
-      await page.locator('#vfc').screenshot({ path: `${output}/hrv-selected-${width}-${scale}.png` });
-      await page.locator('#sommeil').screenshot({ path: `${output}/sleep-selected-${width}-${scale}.png` });
+      await page.screenshot({ path: `${output}/health-selected-${capture}.png`, fullPage: true });
+      await page.locator('#vfc').screenshot({ path: `${output}/hrv-selected-${capture}.png` });
+      await page.locator('#sommeil').screenshot({ path: `${output}/sleep-selected-${capture}.png` });
       await page.locator('#vfc .pf-viz-range').dispatchEvent('keydown', { key: 'Escape' });
       const reset = await page.locator('#vfc figure').evaluate(fig => {
         const data = JSON.parse(fig.querySelector('.pf-viz-data').textContent);
@@ -109,6 +123,6 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       assert.deepEqual(errors, [], `${label}: browser errors`);
       await page.close();
     }
-    console.log('Health visuals: main plots visible, secondary disclosures closed, dated selections, readable dials and non-overlapping legends at 320/393px and 100/200% text passed.');
+    console.log('Health visuals: compact synthesis, optional check-in, main plots, dated selections and readable index/legends at 320/393px, 100/200% text, light/dark passed.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

@@ -472,6 +472,14 @@ def fake(monkeypatch) -> FakeCoros:
     f = FakeCoros(shift_days=(datetime.now(timezone.utc).date() - D30).days)
     monkeypatch.setattr(coros, "_transport", httpx.MockTransport(f.handler))
     monkeypatch.setattr(coros, "CALL_DELAY_S", 0)
+    history = {}
+
+    def history_store(key, value=None):
+        if value is not None:
+            history[key] = value
+        return history.get(key)
+
+    monkeypatch.setattr(coros, "_history_store", history_store)
     return f
 
 
@@ -861,7 +869,7 @@ async def test_coros_going_down_mid_sync_keeps_the_nights(db_session: AsyncSessi
     assert by[("sleep", today)] == 588 and ("hrv", today) in by
     lost = [n for n, _ in fake.tool_calls if n in fake.timeouts or n in fake.tool_status]
     assert len(lost) == 3  # then it stopped calling
-    assert conn.last_sync_at is not None and conn.last_error == coros.PARTIAL
+    assert conn.last_sync_at is not None and conn.last_error == f"{coros.PARTIAL} {coros.ACTIVITIES_PARTIAL}"
 
     fake.timeouts, fake.tool_status = set(), {}
     before = len(fake.tool_calls)
@@ -999,7 +1007,8 @@ async def test_latest_hrv_retries_a_failed_wide_request_once(db_session, test_us
     assert hrv_calls[1]["endDate"] == today.strftime("%Y%m%d")
     assert today in (await _values(db_session, test_user))["hrv"]
     # The latest value recovered; the unread remainder is still reported honestly.
-    assert conn.last_error == (coros.PARTIAL if first_sync else coros.HRV_PARTIAL) and conn.last_sync_at is not None
+    expected_error = f"{coros.PARTIAL} {coros.ACTIVITIES_PARTIAL}" if first_sync else coros.HRV_PARTIAL
+    assert conn.last_error == expected_error and conn.last_sync_at is not None
     status = await coros.coros_status(db_session, test_user.id)
     assert status["retryable_partial"] and status["partial"]
     from app.routers.sante import STALE_NIGHT, _sync_stale

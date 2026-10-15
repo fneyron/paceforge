@@ -39,10 +39,10 @@ def test_sleep_reference_is_the_same_need_as_the_hero(monkeypatch):
 
     monkeypatch.setattr(viz, "day_bars", capture)
     section = sl.sleep_section(nights, D)
-    assert section["hero"]["need"] == "besoin estimé 8h00"
+    assert section["hero"]["need"] == "repère 8h00"
     assert captured[0]["targets"] == [480] * 14
     assert section["bars"]["14"]["ref"] is None
-    assert "besoin estimé 8h00" in json.loads(section["bars"]["14"]["data"])["r"][-1][2]
+    assert "repère 8h00" in json.loads(section["bars"]["14"]["data"])["r"][-1][2]
     assert section["deficit"]["minutes"] == 280 and "need" not in section and "baseline" not in section
 
 
@@ -83,13 +83,13 @@ def test_three_months_only_with_a_night_14_to_90_days_old_and_r_is_honoured():
 
 def test_the_hero_prints_the_times_the_nap_and_this_mornings_hours():
     """The Sommeil dial at the top says this morning's 24 h as a percentage of the 8-h need, so the Sommeil card's
-    first row prints its hours (once on the page) « besoin estimé 8h00 », with the nap it counts."""
+    first row prints its hours (once on the page) « repère 8h00 », with the nap it counts."""
     rows = night_rows([0], asleep=350, start=(23, 35), end=(5, 38))
     rows["nap"][D] = (140, {"windows": [[f"{D}T06:42", f"{D}T09:07"]]}, "Garmin")
     h = sl.hero(_nights(rows), D)
     assert (h["label"], h["times"], h["nap"], h["total"], h["need"]) == ("Cette nuit", "23:35 → 05:40",
                                                                          "+ sieste 2h20", "8h10",
-                                                                         "besoin estimé 8h00")
+                                                                         "repère 8h00")
     t = h["timeline"]
     assert len(t["naps"]) == 1 and [nm for nm, _, _ in t["lanes"]] == ["nuit", "sieste"] and not h["out_naps"]
     # an older night (none this morning): the dial is empty, the card prints that night's hours
@@ -135,7 +135,7 @@ def test_the_bars_rest_on_the_mean_and_print_a_night_on_a_tap():
     mean = round((13 * 440 + 516) / 14 / 5) * 5
     # one line at rest, never the toggle's « 14 nuits » nor the title's « sur 24 h » again
     assert c["read"] == [viz.hm(mean), "en moyenne", "Sur 14 nuits mesurées · 14 nuits"]
-    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · besoin estimé 8h00"]
+    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · repère 8h00"]
     assert c["ref"] is None and c["targets"] and c["bars"][13]["today"] and c["trend"] is None
     assert all(not b.get("miss") for b in c["bars"])
     gap = sl.bars(_nights(night_rows([0, 2])), D, "14")
@@ -148,7 +148,7 @@ def test_a_short_main_night_is_said_plainly():
     a nap without a night says so plainly."""
     rows = night_rows([0], asleep=150, start=(4, 0), end=(6, 40))
     d = json.loads(sl.bars(_nights(rows), D, "14")["data"])
-    assert d["r"][13] == ["2h30", "", "nuit du mer. 7 au jeu. 8 · 04:00 → 06:40 · besoin estimé 8h00"]
+    assert d["r"][13] == ["2h30", "", "nuit du mer. 7 au jeu. 8 · 04:00 → 06:40 · repère 8h00"]
     nap = {"nap": {D: (82, {"windows": [[f"{D}T01:23", f"{D}T02:52"]]}, "COROS")}}
     d = json.loads(sl.bars(_nights(nap), D, "14")["data"])
     assert d["r"][13] == ["1h22", "sieste seule", "nuit du mer. 7 au jeu. 8 · nuit non enregistrée"]
@@ -222,7 +222,7 @@ def test_the_nights_method_is_in_the_one_fold_and_names_no_race():
 
     assert not hasattr(sl, "METHOD")
     text = sc.flat(sc.METHOD)
-    for said in ("siestes comprises", "besoin de 8 h", "Ta journée commence au réveil",
+    for said in ("siestes comprises", "repère de 8 h", "Ce repère ne mesure pas ton besoin personnel",
                  "Ta montre estime tes phases"):
         assert said in text, said
     assert "ne compte" not in text
