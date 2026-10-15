@@ -160,15 +160,12 @@ def test_the_stage_colours_reach_3_to_1_on_the_cards():
 
 async def test_recovery_lives_on_sante_only(as_user: AsyncClient, client: AsyncClient, db_session: AsyncSession,
                                             test_user: User, monkeypatch):
-    """The owner's Transjeju: Santé reads it without naming it (v4.3; its window is a reason of the state once the
-    usual values exist: owner, 2026-10-14: scientific basis — on 08/10 his 10 nights give 2 of the 14 a baseline
-    needs from day −67 to −8, so no state, the line says why); no Charge ring (v4.4: the week's volume is
-    Activités'); Activités shows it as an outing of its week, with no recovery line, no taper line, no fatigue
-    model."""
+    """The recorded ultra is dated context on Santé. Insufficient cardiac references still prevent an index;
+    Activités keeps its activity listing without an added recovery verdict or prescription."""
     await seed_owner_v4(db_session, test_user)
     html = await _page(as_user, monkeypatch, D8)
-    assert "Transjeju" not in _main(html) and "/activity/" not in _main(html)
-    assert "pf-ring-charge" not in html and "Pas de score ce matin : repères en construction (2/14)." in html
+    assert "Après Transjeju 100M · J+5" in _main(html) and "/activity/" not in _main(html)
+    assert "pf-ring-charge" not in html and "repères en construction (5/7)" in html
     assert "Charge · 14 jours" not in html and 'data-viz-key="charge"' not in html
 
     async def today(*a, **k):
@@ -202,12 +199,12 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     def words(body):
         return H.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip().replace("\u00a0", " "))
 
-    dials = [words(b) for b in re.findall(r'<a class="pf-ring pf-ring-\w+ is-\w+"[^>]*>(.*?)</a>', top, re.S)]
+    dials = [words(b) for b in re.findall(r'<a class="pf-ring pf-ring-\w+ is-\w+(?: pf-ring-index)?"[^>]*>(.*?)</a>', top, re.S)]
     # 7h20 every night against the 8-h need: 92 % (owner, 2026-10-14: scientific basis — 94 % against a learnt
     # need); the night missing 4 days ago held the cycle's highest VFC, so the 7-night mean is 0.61 SD under the
     # baseline: inside T (0.74 for these 6 nights, 1.28 standard errors of a week's mean: it was orange under the
     # 0.5 of max(0.5, 1.28/√n7)), green; (0.95 + 1)/2 → 97
-    assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "97 % Récupération bonne", dials
+    assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "97 /100 Signaux nocturnes habituels", dials
     # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 4 active weeks,
     # under the 8 the word needs, so the dial says the 7 days' time, as without a usual week (it read « 100 % comme
     # d'habitude »: at 4 active weeks the word came with 40 % of ordinary weeks; the second statistics review)
@@ -216,7 +213,7 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     card = main.split('<section id="recuperation"')[1].split('</section>')[0]
     assert 'data-viz-key="recuperation"' in card
     quality = card.split('<details id="qualite-bilan"')[1].split('</details>')[0]
-    assert 'Effort accumulé' in quality
+    assert 'Effort accumulé' not in quality and 'Disponibilité des mesures' in quality
     assert 'Effort accumulé' not in card.split('<details id="qualite-bilan"')[0]
     for key in ("vfc", "fc"):
         card = re.search(rf'<article id="{key}"[^>]*>(.*?)</article>', main, re.S).group(1)
@@ -242,14 +239,8 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
 
 async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: AsyncClient, db_session: AsyncSession,
                                                                    test_user: User, monkeypatch):
-    """OWN-1: D+2 after the Transjeju (ended 03/10 13:53), no night measured since (his real COROS log): no score,
-    an empty dial (owner, 2026-10-09, like WHOOP: « Mets un cadran vide, oui ») and the line that says why; the
-    page names no activity (v4.3, owner: « mets juste les scores »). The Sommeil dial: no night this morning; the
-    Récupération card's rows: the effort's window open to 16/10 at 35 (red), first (the audit, 2026-10-09: the row
-    that decides the day): the fatigue is still said, on its row; no usual values yet for VFC nor FC de nuit (when
-    they will be ready). Owner, 2026-10-14: scientific basis — the rows were never drawn (deleted with the 0–100
-    index): no state without a night, the effort is a reason of a state only; the cards say when the usual values
-    will be ready (a night counts a week after it: 3 nights before the race, the 7th in 12 nights)."""
+    """No measured night after the Transjeju means no index, even with a confirmed recent ultra.
+    Context names its actual J+2; progress counts the recent nights and freshness stays explicit."""
     await _link(db_session, test_user)
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D5)
@@ -258,21 +249,20 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
     sleep, recup = page["dials"][:2]
     assert (sleep["value"], sleep["sub"]) == ("—", "pas de données") and "ring" not in page
     assert (recup["value"], recup["unit"], recup["sub"], recup["tone"]) == ("—", None, "pas de score", "none")
-    assert recup["aria"] == "Récupération : pas de score ce matin."
+    assert recup["aria"] == "Signaux nocturnes : pas d’indice pour cette nuit."
     assert score["missing"] == {"key": "no_night", "label": "pas de bilan"} and "rows" not in page
     assert [(page[k]["status"]["word"], page[k]["status"]["detail"]) for k in ("vfc", "fc")] == [
-        ("en construction", "prête dans 12\u00a0nuits"), ("en construction", "prête dans 12\u00a0nuits")]
+        ("en construction", "prête dans 4\u00a0nuits"), ("en construction", "prête dans 4\u00a0nuits")]
     html = await _page(as_user, monkeypatch, D5)
     assert '<span class="pf-ring-sub" aria-hidden="true">pas de score</span>' in html and ">estimée<" not in html
-    assert "Transjeju" not in _main(html) and "Pas de nuit mesurée ce matin." not in html
+    assert "Après Transjeju 100M · J+2" in _main(html) and "nuit du lun. 5 oct." in _main(html).lower()
+    assert page["synthesis"]["freshness"]["missing"] and not page["synthesis"]["freshness"]["current"]
 
 
-async def test_a_strava_only_athlete_after_an_ultra_gets_a_state(as_user: AsyncClient, db_session: AsyncSession,
+async def test_a_strava_only_athlete_after_an_ultra_gets_context_without_a_state(as_user: AsyncClient, db_session: AsyncSession,
                                                                  test_user: User, monkeypatch):
-    """OWN-A: no watch, an ultra 2 days ago: no score from the activity alone any more (owner, 2026-10-09, like
-    WHOOP: « Mets un cadran vide, oui »), the line says why and the connect links show how to add the nights (the
-    « Effort récent » row, never drawn, is gone: owner, 2026-10-14: scientific basis — the effort is a reason of a
-    state only)."""
+    """An ultra without any watch data supplies dated context, never an index or invented nights.
+    Connection links remain available next to the insufficient-measurements summary."""
     today = date(2026, 10, 8)
     await _runs(db_session, test_user, today, n=8)
     d = today - timedelta(days=2)
@@ -285,14 +275,13 @@ async def test_a_strava_only_athlete_after_an_ultra_gets_a_state(as_user: AsyncC
     assert page["state"] is None and page["score"]["value"] is None and page["connect"]
     assert page["line"] == td.NO_WATCH and page["score"]["missing"]["key"] == "no_night"
     html = await _page(as_user, monkeypatch, today)
-    assert "Effort récent" not in html and 'href="/settings#coros"' in html and "Grand Raid" not in _main(html)
+    assert "Effort récent" not in html and 'href="/settings#coros"' in html and "Après Grand Raid · J+2" in _main(html)
     assert "Connecte ta montre pour ta récupération." not in html
 
 
 async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSession, test_user: User):
-    """DAWN-FINISH: a 22-h 100-miler finishing at 03:00, asleep 04:00 → 11:00: that morning reads it (D+1),
-    « Effort récent » red (owner, 2026-10-14: scientific basis — red on D+0 and D+1 after an Ultra, a reason, no
-    cap: the indice held to 39, was 35), its window to D+5; that sleep is « après ultra »."""
+    """A 22-hour ultra finishing today at 03:00 retains its first-sleep tag and calendar J+0 context.
+    Usual measured signals remain usual; the legacy effort window does not cap their index."""
     today = date(2026, 10, 8)
     rows = _garmin_rows(today)
     rows["sleep"][today] = (400, {"main_start": f"{today}T04:00", "main_end": f"{today}T11:00", "timeline": True},
@@ -306,10 +295,11 @@ async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSess
                             total_elevation_gain=9000, raw_data={"utc_offset": 7200}))
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["state"]["key"] == "effort" and page["state"]["text"] is None and page["score"]["value"] == 39
-    assert page["state"]["tone"] == "danger" and [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr"]
-    assert [(r["key"], r["tone"], r["text"]) for r in page["state"]["reasons"]] == [
-        ("effort", "danger", "fenêtre indicative jusqu'à J+5")]
+    assert page["state"]["key"] == "ok" and page["state"]["text"] is None and page["score"]["value"] == 100
+    assert page["state"]["tone"] == "ok" and [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr"]
+    assert page["state"]["reasons"] == []
+    assert page["synthesis"]["context"][0]["label"] == "Après 100 miles · J+0"
+    assert page["synthesis"]["context"][0]["date"] == today.isoformat()
     marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
     assert "◇ après un gros effort" in marks[today.isoformat()]  # 22 h: an ultra (v4.2), no outing named (v4.3)
 
