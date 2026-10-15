@@ -6,8 +6,11 @@ Le compte Apple Developer, la signature et le traitement TestFlight restent néc
 
 ## Depuis GitHub Actions
 
-Le workflow `Publish iPhone to TestFlight` compile sur un runner macOS standard
-de GitHub, avec Xcode 26.6 et Node 22, puis transmet le fichier `.ipa` produit à EAS Submit.
+Le workflow `Publish iPhone to TestFlight` compile sur le runner macOS courant
+de GitHub (`macos-latest`), avec le Xcode le plus récent de l’image (26 au
+minimum, exigé par Apple) et Node 22, puis transmet le fichier `.ipa` produit à
+EAS Submit. La version de l’application est celle de `app.json` (`version`,
+vérifiée dans l’IPA) ; EAS attribue le numéro de build.
 Il s'exécute manuellement depuis `main` et conserve le profil `production` existant :
 bundle `Fr.paceforge.mobile`, application App Store Connect `6821579538`, numéro de
 build incrémenté par EAS. Il ne lance aucune compilation sur les serveurs EAS Build.
@@ -69,8 +72,8 @@ Apple propriétaire, dans `mobile/` :
 
 ## Depuis un Mac personnel
 
-Installer une version de Xcode compatible avec le projet (26.6 utilisée en CI), Node 22,
-CocoaPods et fastlane, puis exécuter depuis `mobile/` :
+Installer une version de Xcode compatible avec le projet (26 au minimum, comme
+en CI), Node 22, CocoaPods et fastlane, puis exécuter depuis `mobile/` :
 
 ```sh
 npm ci

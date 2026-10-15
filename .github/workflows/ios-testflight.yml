@@ -21,6 +21,8 @@ jobs:
     if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[testflight]')
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     defaults:
       run:
         working-directory: mobile
@@ -59,6 +61,12 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: npx --yes eas-cli@24.12.1 whoami > /dev/null
+      - name: Read the app version from app.json
+        id: version
+        run: |
+          version=$(node -p "require('./app.json').expo.version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "PaceForge $version (the build number is assigned by EAS)" >> "$GITHUB_STEP_SUMMARY"
       - run: npm ci
       - run: npm run lint && npm run typecheck && npm test
       - run: npx expo prebuild --no-install
@@ -69,16 +77,25 @@ jobs:
           python3 scripts/check-background-sync.py
           --entitlements ios/PaceForge/PaceForge.entitlements
           --info-plist ios/PaceForge/Info.plist
+      - name: Check generated iOS release metadata and privacy manifest
+        run: python3 ../scripts/verify-ios-release.py --prebuilt ios/PaceForge app.json
       - run: npx expo export --platform ios --platform android
+      - name: Check the bundle size budget
+        run: python3 scripts/check-bundle-size.py dist
 
   publish:
     needs: check
-    runs-on: macos-26
+    # The current macOS image; the newest release Xcode on it is selected below.
+    runs-on: macos-latest
     timeout-minutes: 90
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      # Apple requires the iOS 26 SDK for App Store uploads.
+      XCODE_MIN: '26'
+      # Pinned fallbacks: the GitHub macOS images ship both tools.
+      COCOAPODS_VERSION: '1.16.2'
+      FASTLANE_VERSION: '2.228.0'
       FASTLANE_SKIP_UPDATE_CHECK: '1'
-      HOMEBREW_NO_AUTO_UPDATE: '1'
+      PF_APP_VERSION: ${{ needs.check.outputs.version }}
     defaults:
       run:
         working-directory: mobile
@@ -91,15 +108,20 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: mobile/package-lock.json
-      - name: Check local iOS build tools
+      - name: Select the newest release Xcode on this runner
         run: |
-          if [ ! -d "$DEVELOPER_DIR" ]; then
-            echo '::error::This release requires Xcode 26.6. The selected runner image no longer provides it.'
+          xcode=$(ls -d /Applications/Xcode_[0-9]*.app | grep -iv beta | sort -V | tail -n 1)
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          major=$(xcodebuild -version | awk 'NR == 1 { print int($2) }')
+          if [ "$major" -lt "$XCODE_MIN" ]; then
+            echo "::error::This release needs Xcode $XCODE_MIN or later; the runner image offers $xcode."
             exit 1
           fi
           xcodebuild -version
-          if ! command -v pod > /dev/null; then brew install cocoapods; fi
-          if ! command -v fastlane > /dev/null; then brew install fastlane; fi
+      - name: Check local iOS build tools
+        run: |
+          if ! command -v pod > /dev/null; then gem install --no-document cocoapods -v "$COCOAPODS_VERSION"; fi
+          if ! command -v fastlane > /dev/null; then gem install --no-document fastlane -v "$FASTLANE_VERSION"; fi
           pod --version
           fastlane --version
       - run: npm ci
@@ -118,6 +140,7 @@ jobs:
         run: |
           npx --yes eas-cli@24.12.1 submit --platform ios --profile production \
             --path "$RUNNER_TEMP/PaceForge.ipa" --non-interactive --wait
+          echo "PaceForge $PF_APP_VERSION submitted to TestFlight." >> "$GITHUB_STEP_SUMMARY"
       # The repository is public: neither the IPA nor signing files become
       # downloadable GitHub artifacts. EAS cleans its temporary signing keychain.
       - name: Remove the local archive
