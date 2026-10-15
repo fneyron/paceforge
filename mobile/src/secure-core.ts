@@ -2,7 +2,7 @@
 // stay readable on a locked phone (after the first unlock since the last reboot):
 // background launches read the token and write the receipt while it is locked.
 export const KEY = 'paceforge.phone.v1';
-export const KEYS = { pair: KEY, sync: KEY + '.sync', last: KEY + '.last', auto: KEY + '.auto', background: KEY + '.bg' } as const;
+export const KEYS = { pair: KEY, sync: KEY + '.sync', last: KEY + '.last', auto: KEY + '.auto', background: KEY + '.bg', progress: KEY + '.bg.progress' } as const;
 export const OFFLINE_INDEX = 'paceforge.offline.index.v1';
 export const MIGRATED = 'paceforge.keychain.v2';
 // Written once the install marker exists: a launch without the marker is then a reinstall.

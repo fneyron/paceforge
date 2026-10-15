@@ -49,7 +49,7 @@ def test_the_sommeil_dial():
         360: ("75", "%", "Sommeil", "un peu court", "sleep", 0.75), 359: ("75", "%", "Sommeil", "court", "warn", 0.748),
         300: ("63", "%", "Sommeil", "court", "warn", 0.625)}
     assert dials[420]["href"] == "#sommeil"
-    assert sante.sleep_dial(516, 480, "#sommeil")["aria"] == "Sommeil 100 % de ton besoin estimé de 8 heures, suffisant."
+    assert sante.sleep_dial(516, 480, "#sommeil")["aria"] == "Sommeil 100 % du repère de 8 heures, suffisant."
     none = sante.sleep_dial(None, 480, "#sommeil")
     assert (none["value"], none["sub"], none["tone"], none["dash"]) == ("—", "pas de données", "none", 0)
     assert none["aria"] == "Sommeil : aucune donnée de nuit reçue pour ce matin."
@@ -62,7 +62,7 @@ def test_the_sommeil_dial_reads_the_8_h_need():
     « court » under 6 h, whatever need a caller passes."""
     d = sante.sleep_dial(516, 480, "#sommeil")
     assert (d["value"], d["sub"], d["tone"]) == ("100", "suffisant", "sleep")
-    assert d["aria"] == "Sommeil 100\u00a0% de ton besoin estimé de 8 heures, suffisant."
+    assert d["aria"] == "Sommeil 100\u00a0% du repère de 8 heures, suffisant."
     short = sante.sleep_dial(470, 480, None)
     assert (short["value"], short["sub"], short["tone"]) == ("98", "suffisant", "sleep")
     assert sante.sleep_word(419) == "un peu court" and sante.sleep_word(420) == "suffisant"
@@ -79,18 +79,18 @@ def test_the_recuperation_dial():
         return sc.dial(score, td.state(score), "#recuperation")
     dials = (dial(85, "ok"), dial(65, "warn"), dial(35, "danger"))
     assert [(d["value"], d["unit"], d["label"], d["sub"], d["tone"], _fill(d)) for d in dials] == [
-        ("85", "%", "Récupération", "bonne", "ok", 0.85), ("65", "%", "Récupération", "en cours", "warn", 0.65),
-        ("35", "%", "Récupération", "faible", "danger", 0.35)]
-    assert dial(65, "warn")["aria"] == "Récupération 65 %, en cours."
+        ("85", "/100", "Signaux nocturnes", "habituels", "ok", 0.85), ("65", "/100", "Signaux nocturnes", "à surveiller", "warn", 0.65),
+        ("35", "/100", "Signaux nocturnes", "inhabituels", "danger", 0.35)]
+    assert dial(65, "warn")["aria"] == "Signaux nocturnes : indice 65 sur 100, à surveiller."
     none = sc.dial({"value": None}, None, None)
     assert (none["value"], none["sub"], none["tone"], none["href"], none["dash"]) == ("—", "pas de score", "none",
                                                                                       None, 0)
     html = render("{{ v.viz_ring(r) }}", r=dial(65, "warn"))
-    assert '<a class="pf-ring pf-ring-recup is-warn" href="#recuperation" aria-label="Récupération 65 %, en cours.">' \
+    assert '<a class="pf-ring pf-ring-recup is-warn pf-ring-index" href="#recuperation" aria-label="Signaux nocturnes : indice 65 sur 100, à surveiller.">' \
         in html
-    assert '<span>65<span class="pf-ring-unit">%</span></span>' in html
-    assert '<span class="pf-ring-label" aria-hidden="true">Récupération</span>' in html
-    assert '<span class="pf-ring-sub" aria-hidden="true">en cours</span>' in html
+    assert '<span>65<span class="pf-ring-unit">/100</span></span>' in html
+    assert '<span class="pf-ring-label" aria-hidden="true">Signaux nocturnes</span>' in html
+    assert '<span class="pf-ring-sub" aria-hidden="true">à surveiller</span>' in html
 
 
 def _weeks(minutes_per_week: list, this_week: float | None = None) -> list:
@@ -284,9 +284,8 @@ def test_two_windows_the_strongest_names_the_reason():
     assert st.effort_window([old, new], D + timedelta(days=3)) is None  # D+9 and D+4: both over
 
 
-def test_the_effort_reason_shows_whenever_a_window_is_open():
-    """Owner, 2026-10-08: « Un effort récent, il faut le prendre en compte et afficher la fatigue quand même »:
-    the effort is a reason whenever its window is open, listed after the illness alert's when both hold."""
+def test_an_effort_window_does_not_add_a_signal_reason():
+    """An open effort window cannot add a physiological reason or suppress an existing alert."""
     from tests.test_sante_score import _day as day_of
     from tests.test_sante_score import _runs, night_rows
 
@@ -294,7 +293,7 @@ def test_the_effort_reason_shows_whenever_a_window_is_open():
     ultra = _session(D - timedelta(days=7), 1500, sid=9)  # 25 h, ended on D-6: orange to D+7
     day = day_of(rows, _runs() + [ultra])
     assert day["state"]["key"] == "ill" and day["window"]["tone"] == "warn"
-    assert [(r["key"], r["tone"]) for r in day["state"]["reasons"]] == [("ill", "danger"), ("effort", "warn")]
+    assert [(r["key"], r["tone"]) for r in day["state"]["reasons"]] == [("ill", "danger")]
 
 
 def test_a_card_status_says_its_place_in_words():
@@ -355,6 +354,6 @@ def test_the_percentages_are_said_in_the_fold():
     the dial's word, no bullet any more (the audit, 2026-10-09: one fold, without what the page already says)."""
     text = sc.flat(sc.typo(sc.METHOD)).replace("\u00a0", " ")
     assert sc.pct(100) == "100\u00a0%" and "70 %" not in text
-    assert "Sommeil compare tes 24 h, siestes comprises, à un besoin de 8 h." in text
+    assert "Sommeil compare tes 24 h, siestes comprises, au repère de 8 h." in text
     assert ("Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand "
             "ton pouls est haut.") in sc.METHOD

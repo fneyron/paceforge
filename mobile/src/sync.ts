@@ -64,10 +64,11 @@ export async function syncHealth(d: Dependencies): Promise<SyncReport> {
   const previous = d.previous?.userId === d.userId ? d.previous : null;
   const report: SyncReport = { userId: d.userId, checkedAt: now(), complete: false, reconnect: false, retryFull: full || !!previous?.retryFull,
     lastReceivedAt: previous?.lastReceivedAt || '', fullAt: previous?.fullAt || '', received: 0, notices: [],
-    weightRead: null, weightReceived: previous?.weightReceived || null, pending: false, trigger };
+    weightRead: null, weightReceived: previous?.weightReceived || null, pending: true, trigger };
   let complete = true;
+  let interruptedRun = false;
   const late = () => d.deadline !== undefined && (d.clock ?? Date.now)() >= d.deadline;
-  const interrupt = () => { complete = false; report.pending = true; };
+  const interrupt = () => { complete = false; interruptedRun = true; report.pending = true; };
   const save = async () => { report.checkedAt = now(); await d.save({ ...report, notices: [...report.notices] }); };
   const failed = (e: unknown, stage: string) => {
     complete = false;
@@ -78,7 +79,8 @@ export async function syncHealth(d: Dependencies): Promise<SyncReport> {
     report.received += r.received;
     if (r.received) report.lastReceivedAt = r.checked_at;
   };
-  // Persist "incomplete" first, including if iOS suspends/kills us during a read.
+  // An unfinished run stays pending on disk if iOS kills it mid-read/send. Only
+  // reaching a handled end clears this flag; the next opening can retry at once.
   await save();
   let dailyStage = 'Lecture des mesures quotidiennes';
   try {
@@ -108,6 +110,7 @@ export async function syncHealth(d: Dependencies): Promise<SyncReport> {
     failed(e, dailyStage); await save();
     // Authentication/transport failures cannot be repaired by reading 60 nights.
     report.notices.push('Les nuits restent à synchroniser.');
+    report.pending = false;
     await save(); return report;
   }
   try {
@@ -134,6 +137,7 @@ export async function syncHealth(d: Dependencies): Promise<SyncReport> {
     }
   } catch (e) { if (e === interrupted) interrupt(); else failed(e, 'Lecture du sommeil'); }
   report.complete = complete;
+  report.pending = interruptedRun;
   if (complete && full) { report.fullAt = now(); report.retryFull = false; }
   report.notices = [...new Set(report.notices)];
   await save();

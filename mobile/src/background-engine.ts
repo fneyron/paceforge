@@ -33,11 +33,17 @@ export type Outcome = 'off' | 'locked' | 'busy' | 'deferred' | 'unchanged' | 'se
 export type Block = '' | 'logout' | 'mismatch';
 export type BackgroundState = {
   userId: number | null; enabled: boolean; blocked: Block;
+  generation: string;
   hashes: Record<string, string>; hashedAt: number;
   tokens: Record<string, string>; retryAt: number;
 };
 export const emptyState = (userId: number | null = null): BackgroundState =>
-  ({ userId, enabled: false, blocked: '', hashes: {}, hashedAt: 0, tokens: {}, retryAt: 0 });
+  ({ userId, enabled: false, blocked: '', generation: '', hashes: {}, hashedAt: 0, tokens: {}, retryAt: 0 });
+// A run may only write its progress. Account/consent state is owned by the screen,
+// in a separate entry, so even another JavaScript runtime cannot overwrite a logout.
+export type BackgroundProgress = Pick<BackgroundState, 'userId' | 'generation' | 'hashes' | 'hashedAt' | 'tokens' | 'retryAt'>;
+export const progressOf = (state: BackgroundState): BackgroundProgress => ({ userId: state.userId, generation: state.generation,
+  hashes: state.hashes, hashedAt: state.hashedAt, tokens: state.tokens, retryAt: state.retryAt });
 const strings = (v: unknown): Record<string, string> => v && typeof v === 'object' && !Array.isArray(v)
   ? Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === 'string')) : {};
 const time = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : 0;
@@ -47,6 +53,7 @@ export function readState(raw: string | null): BackgroundState {
   if (!v || typeof v !== 'object') return emptyState();
   return { userId: Number.isSafeInteger(v.userId) ? v.userId as number : null, enabled: v.enabled === true,
     blocked: v.blocked === 'logout' || v.blocked === 'mismatch' ? v.blocked : '',
+    generation: typeof v.generation === 'string' ? v.generation : '',
     hashes: strings(v.hashes), hashedAt: time(v.hashedAt), tokens: strings(v.tokens), retryAt: time(v.retryAt) };
 }
 export function readPair(raw: string | null): Pair | null {
@@ -100,7 +107,7 @@ export type Stored = { pair: Pair | null; automatic: boolean; receipt: SyncRepor
 export type EngineDeps = {
   id: string; now: () => number;
   load: () => Promise<Stored>;
-  saveState: (state: BackgroundState) => Promise<void>;
+  saveProgress: (state: BackgroundProgress) => Promise<void>;
   saveReceipt: (report: SyncReport) => Promise<void>;
   savePair: (pair: Pair) => Promise<void>;
   lock: { acquire: (owner: string, until: number) => Promise<boolean>; release: (owner: string) => Promise<void> };
@@ -158,21 +165,24 @@ export function hashSkip(hashes: Record<string, string>, digest: (value: string)
     },
   };
 }
-export type HashStore = { load: () => Promise<BackgroundState>; save: (state: BackgroundState) => Promise<void> };
+/** `load`: the control state with its progress merged (as the engine reads it);
+ * `save`: the progress entry only, never the account/consent state. */
+export type HashStore = { load: () => Promise<BackgroundState>; save: (progress: BackgroundProgress) => Promise<void> };
 /** The foreground sync shares the background run's digests, so a pull or a manual sync
  * never sends a day or a night the server already has: callbacks for syncHealth, then
  * `commit` once the sync is over, under the sync lock. */
 export async function foregroundSkip(userId: number, store: HashStore, digest: (value: string) => Promise<string>, now = Date.now()) {
   const stored = await store.load().catch(() => emptyState());
-  const state = freshHashes(stored.userId === userId ? stored : { ...emptyState(userId), enabled: stored.enabled }, now);
+  const state = freshHashes(stored.userId === userId ? stored : emptyState(userId), now);
   const skip = hashSkip({ ...state.hashes }, digest);
   return {
     unsent: skip.unsent, sent: skip.sent,
-    /** Only the digests: the rest of the state (tokens, block, toggle) is not this sync's. */
+    /** Only the digests, for this account and this pairing generation: a logout or a
+     * re-pairing meanwhile keeps its own state, and the tokens stay as written since. */
     commit: async (): Promise<void> => {
       const latest = await store.load().catch(() => null);
-      if (!latest || (latest.userId !== null && latest.userId !== userId)) return;
-      await store.save({ ...latest, userId, hashes: recent(skip.hashes, now), hashedAt: state.hashedAt });
+      if (!latest || latest.userId !== userId || latest.generation !== state.generation) return;
+      await store.save({ ...progressOf(latest), hashes: recent(skip.hashes, now), hashedAt: state.hashedAt });
     },
   };
 }
@@ -182,6 +192,8 @@ export function createEngine(deps: EngineDeps) {
   let running: Promise<void> | null = null;
   let queue: { wake: Wake; resolve: (outcome: Outcome) => void }[] = [];
   let wakeEnd = 0, runs = 0, pendingHere = false, missed = false;
+  let cancellation = 0;
+  const stopped = new Error('background sync stopped');
 
   /** Coalesces wakes (HealthKit calls once per changed type) into one run at a time. */
   function request(wake: Wake): Promise<Outcome> {
@@ -201,7 +213,7 @@ export function createEngine(deps: EngineDeps) {
         let outcome: Outcome;
         // Only HealthKit wakes are bounded by its window; the task and a resumed wake are not.
         const wake = batch.find(b => b.wake !== 'healthkit')?.wake ?? 'healthkit';
-        try { outcome = await once(wake); } catch { outcome = 'failed'; }
+        try { outcome = await once(wake); } catch (e) { outcome = e === stopped ? 'off' : 'failed'; }
         batch.forEach(b => b.resolve(outcome));
       }
     })();
@@ -236,6 +248,7 @@ export function createEngine(deps: EngineDeps) {
   }
 
   async function run(deadline: number): Promise<Outcome> {
+    const started = cancellation;
     let stored: Stored;
     try { stored = await deps.load(); } catch (e) {
       if (deps.locked(e)) { pendingHere = true; return 'locked'; }
@@ -245,22 +258,34 @@ export function createEngine(deps: EngineDeps) {
     if (!pair || !automatic || (receipt?.userId === pair.user_id && receipt.reconnect)) return 'off';
     let state: BackgroundState = stored.state.userId === pair.user_id ? stored.state
       : { ...emptyState(pair.user_id), enabled: stored.state.enabled };
-    if (state.blocked) return 'off';
+    if (state.blocked || !state.enabled) return 'off';
+    // Re-check after every await before reading, sending or saving: logout,
+    // automatic-off and re-pairing may happen while HealthKit is still reading.
+    const current = async () => {
+      if (started !== cancellation) throw stopped;
+      const latest = await deps.load();
+      if (started !== cancellation || !latest.pair || latest.pair.user_id !== pair.user_id || !latest.automatic ||
+        !latest.state.enabled || latest.state.blocked || latest.state.generation !== state.generation ||
+        (latest.state.userId !== null && latest.state.userId !== pair.user_id)) throw stopped;
+      return latest;
+    };
+    const saveProgress = async (next: BackgroundState) => { await current(); await deps.saveProgress(progressOf(next)); };
     const now = deps.now();
     if (state.retryAt > now) return 'deferred';
     const previous = receipt?.userId === pair.user_id ? receipt : null;
     if (!await deps.protectedData()) {
       // Locked phone: the HealthKit store is encrypted. The next opening syncs at once.
       pendingHere = true;
-      if (previous && !previous.pending) await deps.saveReceipt({ ...previous, pending: true }).catch(() => {});
+      if (previous && !previous.pending) { await current(); await deps.saveReceipt({ ...previous, pending: true }); }
       return 'locked';
     }
     state = freshHashes(state, now);
     const remaining = () => Math.max(0, deadline - deps.now());
     const within = (b: Required<ReadBudget>) => ({ total: Math.min(b.total, remaining()), perRead: b.perRead });
+    await current();
     const plan = await deps.changes(state.tokens, within(CHANGES));
-    if (plan.quota) { await deps.saveState({ ...state, retryAt: now + 3600000 }); return 'deferred'; }
-    if (plan.daysBack === 0) { await deps.saveState({ ...state, tokens: plan.tokens }); return 'unchanged'; }
+    if (plan.quota) { await saveProgress({ ...state, retryAt: now + 3600000 }); return 'deferred'; }
+    if (plan.daysBack === 0) { await saveProgress({ ...state, tokens: plan.tokens }); return 'unchanged'; }
 
     const skip = hashSkip({ ...state.hashes }, deps.digest);
     // The stored pairing the credentials come from, re-read if the app rotated the token.
@@ -271,15 +296,20 @@ export function createEngine(deps: EngineDeps) {
       userId: pair.user_id, full: false, previous, trigger: 'background', deadline, clock: deps.now,
       now: () => new Date(deps.now()).toISOString(),
       daily: async () => {
+        await current();
         daily = await deps.readDaily(plan.daysBack, within(DAILY), plan.metrics);
         quota = !!daily.quota;
         return daily;
       },
-      sleep: () => deps.readNights(NIGHTS, within(SLEEP)),
+      sleep: async () => { await current(); return deps.readNights(NIGHTS, within(SLEEP)); },
       send: async (path, body, meta) => {
-        const request = (token: string) => deps.send(path, body, token, Math.max(1000, Math.min(SEND_MS, remaining())), meta.readAt)
-          .catch(e => { refused = e; throw e; });
+        const request = async (token: string) => {
+          await current();
+          return deps.send(path, body, token, Math.max(1000, Math.min(SEND_MS, remaining())), meta.readAt)
+            .catch(e => { refused = e; throw e; });
+        };
         const keep = async (next: Credentials) => {
+          await current();
           credentials = next;
           await deps.savePair({ ...base, token: next.token, prev_token: next.prev_token });
         };
@@ -289,7 +319,7 @@ export function createEngine(deps: EngineDeps) {
           // The app may have rotated the token while this run was suspended: once the new
           // token is used, the old one is refused. Retry with the stored one, never unpair.
           if (!(e instanceof ApiError) || e.status !== 401) throw e;
-          const latest = (await deps.load().catch(() => null))?.pair;
+          const latest = (await current()).pair;
           if (!latest || latest.user_id !== pair.user_id || latest.token === credentials.token) throw e;
           base = latest; // its rotation date and name, not the ones read when the run started
           credentials = { token: latest.token, prev_token: latest.prev_token };
@@ -298,14 +328,15 @@ export function createEngine(deps: EngineDeps) {
       },
       unsent: skip.unsent,
       sent: async (path, body) => { sent++; await skip.sent(path, body); },
-      save: async r => { await deps.saveReceipt(r); deps.notify(r); },
+      save: async r => { await current(); await deps.saveReceipt(r); await current(); deps.notify(r); },
       progress: () => {},
     });
     pendingHere = !!report.pending;
+    await current();
     if (report.reconnect) {
       // The token is refused: stop waking the app; Réglages asks to reconnect.
       await deps.disable().catch(() => {});
-      await deps.saveState({ ...state, hashes: recent(skip.hashes, now), enabled: false });
+      await saveProgress({ ...state, hashes: recent(skip.hashes, now) });
       return 'reconnect';
     }
     const retryAt = refused instanceof ApiError && refused.status === 429 ? now + (refused.retryAfter || 900) * 1000
@@ -318,7 +349,7 @@ export function createEngine(deps: EngineDeps) {
     const tokens = skip.dailyDone()
       ? { ...state.tokens, ...Object.fromEntries(Object.entries(plan.tokens).filter(([metric]) => !unread.has(metric))) }
       : state.tokens;
-    await deps.saveState({ ...state, hashes: recent(skip.hashes, now), tokens, retryAt });
+    await saveProgress({ ...state, hashes: recent(skip.hashes, now), tokens, retryAt });
     return !report.complete ? 'partial' : sent ? 'sent' : 'unchanged';
   }
 
@@ -327,6 +358,7 @@ export function createEngine(deps: EngineDeps) {
     /** A locked phone or a time limit left work for the next opening. */
     pending: () => pendingHere,
     clearPending: () => { pendingHere = false; },
+    cancel: () => { cancellation++; pendingHere = false; missed = false; },
     /** After the foreground sync released the lock: run a wake it kept waiting. */
     resumeMissed: () => { if (missed) { missed = false; void request('resume'); } },
   };

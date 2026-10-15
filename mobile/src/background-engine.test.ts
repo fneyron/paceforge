@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiError } from './api';
-import { BackgroundState, createEngine, emptyState, EngineDeps, fileLock, foregroundSkip, LOCK_MS, LockFile, readState, RUN_MS } from './background-engine';
+import { BackgroundProgress, BackgroundState, createEngine, emptyState, EngineDeps, fileLock, foregroundSkip, LOCK_MS, LockFile, readState, RUN_MS } from './background-engine';
 import { isLockedError, KeychainLocked } from './secure-core';
 import { syncHealth, SyncReport } from './sync';
 import type { Daily, HealthResult, Metric, Pair } from './types';
@@ -25,7 +25,7 @@ function fixture(overrides: Partial<EngineDeps> = {}) {
   const deps: EngineDeps = {
     id: 'test', now: () => clock, debounceMs: 15, retryMs: 2,
     load: async () => ({ pair: stored.pair, automatic: stored.automatic, receipt: stored.receipt, state: stored.state }),
-    saveState: async state => { stored.state = state; },
+    saveProgress: async progress => { stored.state = { ...stored.state, ...progress }; },
     saveReceipt: async report => { stored.receipt = report; },
     savePair: async pair => { stored.pair = pair; },
     lock: { acquire: async () => { if (held && clock < freeAt) { clock += waitTick; return false; } held = true; return true; },
@@ -98,6 +98,60 @@ test('one run at a time: a change during a run is read again right after it', as
   assert.equal(await first, 'sent');
   assert.equal(await second, 'unchanged');
   assert.equal(reads, 2); assert.equal(f.peak(), 1);
+});
+
+test('logout, automatic-off, a new account or a new pairing during a read stop before any upload', async () => {
+  for (const change of ['logout', 'off', 'account', 'pairing'] as const) {
+    const f = fixture(), read = f.deps.readDaily;
+    let progressWrites = 0;
+    f.deps.saveProgress = async () => { progressWrites++; };
+    f.deps.readDaily = async (...args) => {
+      if (change === 'logout') f.stored.state = { ...f.stored.state, blocked: 'logout', enabled: false };
+      if (change === 'off') f.stored.automatic = false;
+      if (change === 'account') {
+        f.stored.pair = { token: 'other-account', user_id: 2, name: 'Other' };
+        f.stored.state = { ...emptyState(2), enabled: true };
+      }
+      if (change === 'pairing') f.stored.state = { ...emptyState(1), enabled: true, generation: 'new-pairing' };
+      f.stored.receipt = null; // the new account/pairing must keep its own receipt
+      return read(...args);
+    };
+    assert.equal(await createEngine(f.deps).request('task'), 'off', change);
+    assert.equal(f.sent.length, 0, change);
+    assert.equal(progressWrites, 0, change);
+    assert.equal(f.stored.receipt, null, change);
+    if (change === 'logout') assert.equal(f.stored.state.blocked, 'logout');
+  }
+});
+
+test('logout during an in-flight upload preserves the block and prevents subsequent nights or credentials writes', async () => {
+  const f = fixture(), send = f.deps.send;
+  f.stored.pair.prev_token = 'previous';
+  let pairingWrites = 0, progressWrites = 0;
+  f.deps.savePair = async () => { pairingWrites++; };
+  f.deps.saveProgress = async () => { progressWrites++; };
+  f.deps.send = async (...args) => {
+    f.stored.state = { ...f.stored.state, blocked: 'logout', enabled: false };
+    return send(...args);
+  };
+  assert.equal(await createEngine(f.deps).request('task'), 'off');
+  assert.deepEqual(f.sent.map(s => s.path), ['/api/mobile/daily']);
+  assert.equal(f.stored.state.blocked, 'logout');
+  assert.equal(f.stored.state.enabled, false);
+  assert.equal(pairingWrites, 0); assert.equal(progressWrites, 0);
+});
+
+test('local cancellation is immediate, before the control state finishes persisting', async () => {
+  const f = fixture(), engine = createEngine(f.deps), read = f.deps.readDaily;
+  f.deps.readDaily = async (...args) => { engine.cancel(); return read(...args); };
+  assert.equal(await engine.request('task'), 'off');
+  assert.equal(f.sent.length, 0);
+  const checking = fixture();
+  let changeReads = 0;
+  checking.deps.protectedData = async () => { checking.stored.state.blocked = 'logout'; return true; };
+  checking.deps.changes = async tokens => { changeReads++; return { daysBack: 3, tokens }; };
+  assert.equal(await createEngine(checking.deps).request('task'), 'off');
+  assert.equal(changeReads, 0, 'a logout during the availability check must stop before reading changes');
 });
 
 test('a wake while the foreground sync holds the lock waits for it, or runs once that sync is over', async () => {
@@ -173,7 +227,6 @@ test('a refused token stops background sync and asks to reconnect, without retry
   const f = fixture({ send: async () => { throw new ApiError(401); } }), engine = createEngine(f.deps);
   assert.equal(await engine.request('task'), 'reconnect');
   assert.ok(f.calls.includes('disable'));
-  assert.equal(f.stored.state.enabled, false);
   assert.equal(f.stored.receipt?.reconnect, true);
   assert.equal(await engine.request('task'), 'off');
   assert.equal(f.calls.filter(c => c.startsWith('daily')).length, 1);
@@ -337,8 +390,9 @@ test('four pulls in ten minutes stay under the phone budget: confirmed days and 
   const days = (count: number): Daily[] => [weighIn, ...Array.from({ length: count }, (_, i) => ({ ...steps, date: date(i) }))];
   const nights = (count: number): AppleNight[] => [night, ...Array.from({ length: count * 3 },
     (_, i) => ({ ...night, date: date(Math.floor(i / 3)), source_id: `writer-${i % 3}` }))];
-  let state: BackgroundState = { ...emptyState(1), enabled: true, tokens: { weight: 'w1' } };
-  const store = { load: async () => state, save: async (next: BackgroundState) => { state = next; } };
+  let state: BackgroundState = { ...emptyState(1), enabled: true, generation: 'g1', tokens: { weight: 'w1' } };
+  // The progress entry only, as background.ts writes it; the control state stays the screen's.
+  const store = { load: async () => state, save: async (progress: BackgroundProgress) => { state = { ...state, ...progress }; } };
   const requests: string[] = [];
   const pull = async (full: boolean, clock: number, data = { days: days(full ? 30 : 7), nights: nights(full ? 60 : 7) }) => {
     // As App.tsx composes them, inside syncExclusively.

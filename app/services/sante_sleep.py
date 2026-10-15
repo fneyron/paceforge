@@ -167,8 +167,8 @@ def bars(nights: dict, today: date, key: str) -> dict:
     for i, d in enumerate(days):
         read, said = _readout(nights, d)
         if tst[i] is not None:
-            read[2] += f" · besoin estimé {viz.hm(needs[i])}"
-            said += f", besoin estimé {viz.hm_long(needs[i])}"
+            read[2] += f" · repère {viz.hm(needs[i])}"
+            said += f", repère {viz.hm_long(needs[i])}"
         r.append(read)
         a.append(said)
     totals = [v for v in tst if v is not None]
@@ -270,14 +270,14 @@ def deficit(nights: dict, d: date, raced=frozenset()) -> dict:
     out = {"n": n, "raced": r, "days": DEFICIT_DAYS}
     if n < DEFICIT_MIN_NIGHTS:
         return {**out, "minutes": None, "raw": None, "floor": None,
-                "text": f"manque non estimable ({n}/{DEFICIT_DAYS} nuits)"}
+                "text": f"écart non estimable ({n}/{DEFICIT_DAYS} nuits)"}
     raw = max(0.0, raced_gap + (DEFICIT_DAYS - r) / n * sum(gaps))
     unmeasured = DEFICIT_DAYS - r - n
     floor = max(DEFICIT_MIN, DEFICIT_Z * tst_spread(nights, d) * math.sqrt(unmeasured * (DEFICIT_DAYS - r) / n))
     minutes = int(10 * math.floor(raw / 10 + 0.5)) if raw > floor else 0
     return {**out, "minutes": minutes, "raw": raw, "floor": floor,
-            "text": f"manque estimé sur 7 jours{viz.NBSP}: {viz.hm(minutes)}" if minutes else
-            "pas de manque notable sur 7 jours"}
+            "text": f"écart estimé au repère sur 7 jours{viz.NBSP}: {viz.hm(minutes)}" if minutes else
+            "écart faible au repère sur 7 jours"}
 
 
 def tst_spread(nights: dict, d: date) -> float:
@@ -329,7 +329,7 @@ def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:
         aria += f", {later.replace(' · ', ', ')}"
     return {"day": last, "today": last == today, "label": "Cette nuit" if last == today else viz.night_label(last),
             "source": n.source, "times": times, "nap": nap, "total": viz.hm(n.asleep + nap_min), "later": later,
-            "need": f"besoin estimé {viz.hm(NEED_DEFAULT)}",
+            "need": f"repère {viz.hm(NEED_DEFAULT)}",
             "timeline": t, "out_naps": out_naps, "stages": bool(intervals), "phases": ph, "aria": aria}
 
 

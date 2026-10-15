@@ -1,4 +1,4 @@
-# Estimations Santé — révision du 14 octobre 2026
+# Estimations Santé — révision du 15 octobre 2026
 
 Cette révision remplace les formules du 10 et du 12 octobre : base de sommeil apprise, besoin
 augmenté par l'effort et la dette, score pondéré VFC 25 · FC 25 · sommeil 30 avec ses limites,
@@ -9,14 +9,15 @@ est un choix de produit, marqué **(H)** dans le code et les tests.
 Rien ici n'est une validation clinique. Les nombres décrivent ce que la page calcule. Les
 simulations (avant-dernière section) décrivent son comportement sur des données synthétiques.
 
-Code : `app/services/nights.py` (C2–C4), `sante_sleep.py` (C5), `sante_training.py` et
-`sante_load.py` (C6, C7), `sante_score.py` et `sante_today.py` (C8), `sante.py` (la page).
+Code : `app/services/nights.py` (C2–C4), `sante_sleep.py` (C5), `sante_training.py`,
+`sante_load.py` et `sante_context.py` (C6, C7), `sante_score.py` et `sante_today.py` (C8),
+`sante.py` (la page).
 
 ## C2 — Valeurs habituelles
 
 - **Fenêtre décalée.** Les valeurs habituelles d'un jour J portent sur les nuits de J−67 à J−8.
-  Les 7 nuits que la tendance juge n'y entrent jamais : une semaine n'est plus comparée à une
-  moyenne qui la contient. C'est un choix de conception **(H)**, pas une règle publiée. Avant, la
+  Les 7 nuits que la tendance juge n’y entrent pas une fois cette référence disponible.
+  L’exception provisoire pour une série récente est décrite ci-dessous. C'est un choix de conception **(H)**, pas une règle publiée. Avant, la
   référence allait jusqu'à la dernière nuit incluse.
 - **Nombre de nuits.** Référence complète dès 14 nuits mesurées dans cette fenêtre. De 7 à 13
   nuits, une référence « provisoire » est tracée en pointillés ; l'état la lit et le dit
@@ -24,7 +25,9 @@ Code : `app/services/nights.py` (C2–C4), `sante_sleep.py` (C5), `sante_trainin
   nouvelle) trace et lit de la même façon une référence provisoire prise sur les 60 nuits jusqu'à
   la dernière incluse, le temps que la fenêtre décalée se remplisse (propriétaire, 2026-10-14 :
   « il y a bien un score » ; avant l'audit, 7 nuits jusqu'à la dernière donnaient déjà un score
-  provisoire). Le seuil T tient compte du petit nombre de nuits de référence (C3).
+  provisoire). Les compteurs et le délai affichés utilisent cette référence réellement disponible :
+  six nuits récentes donnent 6/7, pas 0/14. Le SDNN conserve son seuil distinct de 14 nuits,
+  sans entrer dans l’indice RMSSD. Le seuil T tient compte du petit nombre de nuits de référence (C3).
 - **Centre.** Moyenne du ln RMSSD pour la VFC (moyenne géométrique). Moyenne pour la tendance de
   la FC de nuit : elle compare une moyenne de 7 nuits, et la comparer à une médiane donnait 26 à
   32 % de matins « au-dessus » quand quelques nuits chaudes étirent la distribution vers le haut.
@@ -78,14 +81,15 @@ Code : `app/services/nights.py` (C2–C4), `sante_sleep.py` (C5), `sante_trainin
 
 ## C5 — Sommeil
 
-- **Besoin N = 8 h pour tous.** Il n'est jamais demandé, jamais appris des nuits de l'athlète,
+- **Repère N = 8 h pour tous.** Ce n’est pas une mesure du besoin personnel. Il n’est
+  jamais demandé, jamais appris des nuits de l’athlète,
   jamais augmenté par un effort ou un manque. C'est le milieu de 7 à 9 h (Watson 2015a ;
   Hirshkowitz 2015). Un besoin réglable de 7 à 9 h dans Réglages reste une proposition.
 - **Cadran Sommeil** = min(100 % ; TST24/N). TST24 couvre les 24 h avant le réveil, siestes
   comprises, chacune comptée une fois. Mots : « suffisant » dès 7 h, « un peu court » de 6 à 7 h,
   « court » sous 6 h. Moins de 6 h est une raison orange de l'état du jour (Craven 2022 :
   performance réduite après une privation aiguë).
-- **Manque sur 7 jours.** D7 = max(0 ; Σ_courues(N − siestes) + (7 − r)/n_m · Σ_mesurées(N − TST24)).
+- **Écart estimé au repère sur 7 jours.** D7 = max(0 ; Σ_courues(N − siestes) + (7 − r)/n_m · Σ_mesurées(N − TST24)).
   Les n_m nuits mesurées représentent les 7 − r autres ; une nuit non mesurée ne vaut jamais 0 h.
   Les r nuits passées à courir comptent leur propre sommeil (leurs siestes), sans extrapolation :
   trois nuits de 8 h et une nuit courue donnaient « 14h00 » pour un manque réel d'environ 8 h.
@@ -93,12 +97,13 @@ Code : `app/services/nights.py` (C2–C4), `sante_sleep.py` (C5), `sante_trainin
 - **Plancher.** Un manque n'est dit que s'il dépasse max(1 h ; 1,28 · σ_T · √(u · (7 − r)/n_m))
   **(H)**, u = 7 − r − n_m étant les nuits non mesurées : c'est l'erreur de l'extrapolation seule.
   Quand toutes les nuits non courues sont mesurées, le manque de la semaine est connu et le plancher
-  vaut 1 h. Sinon « pas de manque notable sur 7 jours ». σ_T est l'écart-type des 24 h de l'athlète
+  vaut 1 h. Sinon « écart faible au repère sur 7 jours ». σ_T est l'écart-type des 24 h de l'athlète
   sur les jours J−67 à J−8, tiré vers 45 min comme les autres dispersions. Le plancher précédent,
   1,28 · σ_T · 7/√n_m (environ 2 h 30 pour σ_T = 45 min et 7 nuits), testait si la moyenne de
   l'athlète était sous 8 h, et non le manque de la semaine, et ignorait les nuits courues :
   « pas de manque » y était faux pour une dette de 45 min.
-- Arrondi à 10 min, D7 s'affiche à part et ne s'ajoute jamais à N. Van Dongen 2003 montre que la
+- Arrondi à 10 min, D7 s’affiche à part et ne s’ajoute jamais à N. Le détail donne la couverture
+  des sept nuits et rappelle l’incertitude liée aux nuits absentes. Van Dongen 2003 montre que la
   dette d'une semaine de nuits courtes s'accumule ; Kitamura 2016, qu'il faut plusieurs jours pour
   la rembourser.
 
@@ -138,46 +143,52 @@ Détails et raisons du retrait de `cumulative-1` : [recovery-cumulative.md](reco
   locaux. Les kilomètres affichés en tête sont ceux de tous les sports, comme le dit la ligne
   « 7 j : X km · 28 j : Y km » (ceux d'un cycliste sont ceux de ses sorties) ; ils sont aussi
   donnés par sport, et ceux de la course à pied à part.
-- **Récupération.** Aucune limite liée à la charge. L'Entraînement % s'affiche comme contexte.
+- **Signaux nocturnes.** Aucune limite liée à la charge. L’Entraînement % s’affiche comme contexte.
 
-## C7 — Fenêtres après un gros effort
+## C7 — Contexte après une course enregistrée
 
-Classes d'après la durée propre de l'effort, arrêts compris : longue ≥ 3 h (ou ≥ 1 500 m D+ à
-pied), très longue ≥ 6 h, ultra ≥ 10 h ; un sport sans impact descend d'une classe **(H)**.
-Le jour J0 de l'effort est le jour de sa fin locale, ou la veille s'il finit avant 6 h.
+Une course effectivement enregistrée (type de l’activité ou résultat relié à cette activité), ou
+un ultra identifié dans les activités, peut être nommé à côté des signaux nocturnes. Une date de
+course planifiée seule ne crée jamais ce contexte. Le J+n compte les jours calendaires depuis la
+fin locale réelle, indépendamment de l’ancrage du cycle de sommeil. Confirmer un résultat ne
+change donc pas le J+n d’un ultra terminé le même matin.
 
-| Effort | Rouge | Orange jusqu'à | Appui |
-| --- | --- | --- | --- |
-| Longue | — | J+1 | **(H)** |
-| Longue courue comme une course | — | J+2 | Petersen 2007 : puissance encore −18 % à J+2 |
-| Très longue | — | J+3 | **(H)**, entre le marathon et l'ultra |
-| Ultra | J0 et J+1 | J+5 | Fazackerley 2019 ; Hoffman 2017 |
-| Ultra de 24 h ou plus | J0 et J+1 | J+7 | **(H)** |
+La page retient le plus récent de ces efforts sur 28 jours **(H)**. Il s’agit d’une fenêtre
+d’affichage, pas d’une durée de récupération. Le texte rappelle qu’une tendance nocturne habituelle
+ne mesure pas la récupération des muscles et des tendons. Aucun terme, date de guérison ou
+plafond d’indice n’en découle.
 
-Texte : « fenêtre indicative jusqu'à J+n ». Aucune date de récupération n'est promise. Quand deux
-efforts sont proches, la fenêtre la plus forte nomme le jour.
+Les classes d’effort et les tags nocturnes existants restent disponibles : longue ≥ 3 h (ou
+≥ 1 500 m D+ à pied), très longue ≥ 6 h, ultra ≥ 10 h ; un sport sans impact descend d’une classe
+**(H)**. Les anciennes fenêtres de 1 à 7 jours restent des métadonnées internes compatibles ;
+elles ne fixent plus la couleur, les raisons ou la valeur de l’indice. Les règles spécifiques de
+l’alerte FC, dont l’exclusion des nuits avec contexte connu, sont conservées.
 
-## C8 — État du jour et indice nocturne
+## C8 — Signaux nocturnes et indice /100
 
 - **Conditions.** La dernière nuit est mesurée sur la série ; au moins une série cardiaque a une
-  référence complète ; la semaine compte au moins 3 nuits. Sinon, la page dit pourquoi, sans
-  nombre : « repères en construction (n/14) », « pas assez de nuits cette semaine (n/3) »,
-  « dernière nuit mesurée par une autre montre que d'habitude » ou « … avec un autre calcul que
-  d'habitude », « il manque des données de nuit ». Jamais d'état à partir du seul sommeil ou des
-  seules activités. L'alerte FC de nuit s'affiche sur sa carte même quand la semaine est trop
-  mince pour une tendance.
-- **Marqueur principal.** La VFC (RMSSD), sinon la FC de nuit.
-- **Rouge.** L'alerte FC de nuit, ou J0 et J+1 après un ultra.
-- **Orange**, chaque raison listée. Tendance du marqueur principal hors du seuil T (VFC en
-  dessous, FC au-dessus) ; respiration ; moins de 6 h sur 24 h ; fenêtre d'effort ouverte.
-- Une FC de nuit hors de ses valeurs alors que la VFC y reste s'affiche sur sa seule ligne.
+  référence utilisable (complète à 14 nuits, provisoire dès 7) ; la semaine compte au moins 3 nuits.
+  Sinon, la page dit pourquoi, sans nombre : « repères en construction (n/7) », « pas assez de
+  nuits cette semaine (n/3) », autre montre ou calcul, nuit absente. Le SDNN reste séparé et exclu
+  de l’indice. Jamais d’état à partir du seul sommeil ou des seules activités. L’alerte FC de nuit
+  s’affiche sur sa carte même quand la semaine est trop mince pour une tendance.
+- **Séries cardiaques.** La VFC RMSSD et la FC de nuit disponibles contribuent chacune. Une FC
+  de nuit au-dessus de son seuil conserve sa raison orange même si la VFC est habituelle.
+- **Rouge.** L’alerte FC de nuit selon les seuils existants.
+- **Orange.** Tendance VFC sous le seuil T, FC de nuit au-dessus, respiration plus rapide, ou moins
+  de 6 h sur 24 h. Les fenêtres d’effort ne créent plus de raison ou de plafond.
+- **Présentation.** « Signaux habituels », « à surveiller » ou « inhabituels », avec deux raisons
+  visibles au plus et les autres dans le détail. La fraîcheur est datée ; une nuit absente n’est
+  jamais affichée comme une mesure du jour. Avant midi, le cycle précédent peut rester visible,
+  explicitement daté. Les sources et calculs de VFC et de FC sont précisés à la demande.
 - **Indice nocturne**, le nombre du cadran : 100 × la moyenne, sur les séries utilisées, de
-  s_VFC = clip((z + 2,5)/2) et s_FC = clip((2,5 − z)/2) **(H)**. Il vaut 100 jusqu'au plus petit
+  s_VFC = clip((z + 2,5)/2) et s_FC = clip((2,5 − z)/2) **(H)**. Il vaut 100 jusqu’au plus petit
   changement utile et 0 à 2,5 σ. Il est ramené à 69 au plus en orange, 39 au plus en rouge, 70 au
-  moins en vert **(H)** : le nombre ne contredit jamais l'état. Ce n'est pas un pourcentage de
-  récupération.
-- L'historique de 14 jours recalcule chaque jour avec ce qu'il savait alors, sans donnée datée
-  après lui, ses 24 h de sommeil comprises : une sieste de l'après-midi sans nuit suivante ne
+  moins en vert **(H)**. La formule et ces seuils restent inchangés. Le cadran dit **/100**, pas
+  « % de récupération » : cet indice descriptif n’est ni une validation clinique, ni une consigne
+  d’entraînement, ni une mesure de la récupération musculaire ou tendineuse.
+- L’historique de 14 jours recalcule chaque jour avec ce qu’il savait alors, sans donnée datée
+  après lui, ses 24 h de sommeil comprises : une sieste de l’après-midi sans nuit suivante ne
   rejoint plus son jour après coup.
 
 ## FC à allure comparable (Forme, Activités)
@@ -197,7 +208,10 @@ sorties chaudes (25 °C ressentis ou plus) restent hors de la référence **(H)*
 
 ## Simulations (données synthétiques, 14 octobre 2026)
 
-Scripts hors dépôt, mêmes générateurs avant et après ; « avant » désigne le commit `0f276af`.
+Résultats historiques de la révision du 14 octobre, avant que la FC de nuit puisse à elle seule
+faire passer un jour à « à surveiller » le 15 octobre. Les taux d’état global orange ne décrivent
+donc pas la présentation actuelle. Scripts hors dépôt, mêmes générateurs avant et après ;
+« avant » désigne le commit `0f276af`.
 
 - **Athlète stable, port complet** (40 × 110 matins ; ln RMSSD σ 0,11, AR(1) 0,3 ; FC σ 1,9 bpm).
   VFC « en dessous » : 13,2 % avant (score pondéré), 16,7 % avec le seuil max(0,5 ; 1,28/√n7),

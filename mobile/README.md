@@ -116,6 +116,12 @@ déjà ouvertes restent consultables. Les mises à jour automatiques utilisent l
 même remplacement discret. Les requêtes sont bornées et une double demande
 rejoint celle en cours. Voir [audit et limites des tests](../docs/mobile-fluidite.md).
 
+Un envoi confirmé en arrière-plan marque aussi le document déjà ouvert comme
+à actualiser. Au retour dans Santé ou Activités, son contenu est remplacé sans
+navigation ni nouvelle lecture Santé, en conservant défilement et sélection.
+Une course en édition et une copie hors connexion ne sont pas actualisées.
+Un reçu sans nouvelle donnée ne provoque aucun rafraîchissement supplémentaire.
+
 Santé conserve trois cadrans de même importance : Sommeil, Récupération et
 Entraînement. Chacun ouvre son détail, dans le même ordre. Les graphiques
 de la dernière nuit et de récupération restent visibles ; l’historique détaillé
@@ -255,6 +261,14 @@ demande de reconnexion dans Réglages).
   changer la version des données de Santé. L’expiration du jeton avance à chaque
   utilisation, y compris en arrière-plan. Le serveur limite chaque téléphone à
   200 requêtes par 10 min (429, réessai plus tard) et la taille des envois.
+  Une déconnexion ou un changement de compte interrompt les nouvelles lectures
+  et les nouveaux envois du traitement en cours. Une requête déjà partie peut
+  finir sur le compte auquel elle était autorisée. Les décisions de connexion
+  et les empreintes/curseurs sont stockés séparément, liés au compte et à une
+  génération d’association : une réponse tardive ne peut pas rétablir un ancien
+  consentement. Association, dissociation et rotation partagent le même verrou.
+  Un traitement commencé reste « en attente » sur disque jusqu’à sa fin, afin
+  qu’une fermeture par iOS permette une reprise dès la prochaine ouverture.
 - **Trousseau.** L’association, son reçu et l’index des plans hors connexion
   sont lisibles après le premier déverrouillage suivant un redémarrage
   (`AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`, migration unique des anciens éléments).
