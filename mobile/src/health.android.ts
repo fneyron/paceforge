@@ -6,6 +6,9 @@ const records: Record<Metric, RecordType> = { weight: 'Weight', body_fat: 'BodyF
 export const backgroundTypes: readonly string[] = Object.values(records);
 // Background reads have a smaller Health Connect quota: once refused, stop until the next run.
 const quotaError = (e: unknown) => /quota|rate.?limit/i.test(e instanceof Error ? e.message : '');
+// Health Connect absent or too old: the message carries the store page (the alert makes it tappable).
+const STORE = 'https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata';
+const unavailable = () => new Error(`Installe ou mets à jour Health Connect sur ce téléphone : ${STORE}`);
 type Read = ReturnType<typeof healthReader>;
 async function readable(read: Read) {
   const granted = await read(() => getGrantedPermissions());
@@ -13,7 +16,7 @@ async function readable(read: Read) {
 }
 /** `background` also asks READ_HEALTH_DATA_IN_BACKGROUND (automatic updates). */
 export async function authorize(background = false): Promise<void> {
-  if (!await initialize()) throw new Error('Installe ou mets à jour Health Connect sur ce téléphone.');
+  if (!await initialize()) throw unavailable();
   const permissions = Object.values(records).map(recordType => ({ accessType: 'read', recordType } as Permission));
   await requestPermission(background ? [...permissions, { accessType: 'read', recordType: 'BackgroundAccessPermission' }] : permissions);
 }
@@ -26,7 +29,7 @@ export async function hasBackgroundAccess(): Promise<boolean> {
 }
 export async function collect(progress: (s: string) => void, daysBack = 30, budget: ReadBudget = {}, metrics?: Metric[]): Promise<HealthResult> {
   const read = healthReader(budget.total ?? 60000, budget.perRead);
-  if (!await read(() => initialize())) throw new Error('Health Connect n’est pas disponible.');
+  if (!await read(() => initialize())) throw unavailable();
   const allowed = await readable(read);
   const wanted = metrics?.length ? metrics : Object.keys(records) as Metric[];
   const days: Daily[] = [], errors = new Set<string>();

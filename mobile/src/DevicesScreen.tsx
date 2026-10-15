@@ -101,7 +101,7 @@ export function DevicesScreen(p: Props) {
       </View>
     </>}
     {!busy && detail === 'health' && (p.status || p.report) ? <Text accessibilityLiveRegion="polite" style={ui.body}>{p.status || (p.report && reportText(p.report))}</Text> : null}
-    {p.error ? <Text accessibilityRole="alert" style={ui.error}>{p.error}</Text> : null}
+    {p.error ? <Text accessibilityRole="alert" style={ui.error} dataDetectorType="link">{p.error}</Text> : null}
   </ScrollView>;
 }
 
