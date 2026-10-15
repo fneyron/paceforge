@@ -9,7 +9,7 @@ from app.sentry import init_sentry
 
 logging.getLogger("httpx").setLevel(logging.WARNING)  # request URLs can carry tokens
 
-init_sentry(celery=True)  # nothing while SENTRY_DSN is empty
+init_sentry()  # once per process; nothing while SENTRY_DSN is empty
 
 celery_app = Celery(
     "paceforge",
@@ -46,6 +46,9 @@ celery_app.conf.update(
     result_expires=3600,
     task_soft_time_limit=TASK_SOFT_TIME_LIMIT_S,
     task_time_limit=TASK_TIME_LIMIT_S,
+    # a child past this (KiB) is replaced between two tasks: one the kernel kills instead loses its task to an
+    # immediate retry (task_reject_on_worker_lost), a first import that cannot fit would loop
+    worker_max_memory_per_child=700 * 1024,
     beat_schedule={
         "poll-new-activities": {
             "task": "paceforge.poll_new_activities",
@@ -71,20 +74,23 @@ celery_app.conf.update(
 # More workers can be added without --beat; beat stays in exactly one process.
 #
 # A task taken but not yet acknowledged (acks_late) is handed out again after the broker's visibility timeout.
-# Every task is acknowledged within TASK_TIME_LIMIT_S of being taken: the hard limit kills what runs longer,
-# and a worker takes at most one task per process (prefetch 1), so none waits taken. Twice the limit is the
-# smallest value no running task can reach — a slow one would otherwise run twice at once — and a task lost
-# with its worker (a crash, a deploy's SIGKILL after the 12 min of grace) runs again within 2 h, not 6.
+# Every task that ends — done, failed, or killed by the hard limit, acknowledged all the same
+# (acks_on_failure_or_timeout) — is acknowledged within TASK_TIME_LIMIT_S of being taken, and a worker takes
+# at most one task per process (prefetch 1), so none waits taken. Twice the limit is the smallest value no
+# running task can reach — a slow one would otherwise run twice at once. Only a task lost with its worker (a
+# crash, the kernel's OOM kill, a deploy's SIGKILL after the 12 min of grace) comes back: within 2 h, not 6.
 # A countdown longer than it would be delivered twice too: the longest retry wait is the webhook's 15 min; the
 # waits after a failed first import are the round's, not ETAs.
 celery_app.conf.broker_transport_options = {"visibility_timeout": 2 * TASK_TIME_LIMIT_S}
-# The long syncs have a queue of their own. A worker started without -Q consumes both; as deployed, a worker
-# `-Q celery` beside the `-Q long` one keeps the hourly round, the polls and the webhook events moving during them.
+# The long syncs have a queue of their own: the first imports, the rounds, and one link's own sync (a press of
+# « Synchroniser maintenant », 10 to 23 min). A worker started without -Q consumes both; as deployed, a worker
+# `-Q celery` beside the `-Q long` one keeps the polls and the webhook events moving during them.
 celery_app.conf.task_queues = tuple(  # each its own binding (two on one key would both get every message)
     Queue(name, Exchange(name, type="direct"), routing_key=name) for name in ("celery", "long"))
 celery_app.conf.task_default_queue = "celery"
 celery_app.conf.task_routes = {name: {"queue": "long"} for name in (
-    "paceforge.initial_sync", "paceforge.sync_coros", "paceforge.sync_garmin")}
+    "paceforge.initial_sync", "paceforge.sync_coros", "paceforge.sync_garmin",
+    "paceforge.sync_coros_user", "paceforge.sync_garmin_user")}
 
 # Expired Strava link attempts are purged every hour (app.tasks.oauth_cleanup)
 celery_app.conf.include = [*celery_app.conf.include, "app.tasks.oauth_cleanup"]

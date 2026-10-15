@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 PREFIX = "paceforge:strava:"
 WEBHOOK_FRESH_S = 24 * 3600  # an athlete the webhook reached within this is not polled hourly
 POLLED_EVERY_S = 24 * 3600  # every linked athlete is polled at least this often all the same (an event may be lost)
-INITIAL_RUN_S = 3 * 3600  # a first import running (a lost worker frees it after this)
+INITIAL_RUN_S = 65 * 60  # a first import running: just past the worker's hard limit (app.celery_app), a killed one frees it
 INITIAL_RETRY_S, INITIAL_RETRY_MAX_S = 3600, 24 * 3600  # a failed first import waits 1 h, 2 h, 4 h… 24 h at most
 _KEEP_FAILURE_S = 7 * 24 * 3600
 

@@ -129,7 +129,7 @@ services:
       retries: 5
     restart: unless-stopped
     stop_grace_period: 1m  # a clean shutdown (checkpoint) rather than a crash recovery at the next start
-    mem_limit: 1g
+    mem_limit: 1536m
     logging: *logging
 
   # A dump of the database every day at 03:10 (scripts/backup/backup.sh), 14 daily and 8 weekly kept on the
