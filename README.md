@@ -32,7 +32,7 @@ tâches de fond).
 
 ## Tests, lint, dépendances
 
-- `make test` : la suite sur SQLite (environ 2,5 min, 1 280 tests).
+- `make test` : la suite sur SQLite (environ 1 300 tests, 2,5 à 4 min).
 - `TEST_DATABASE_URL=postgresql+asyncpg://… make test-pg` : la même sur PostgreSQL, schéma construit par les
   migrations, comme en production et en CI.
 - `make lint` : ruff sur `app/` et `tests/`.
