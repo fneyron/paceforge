@@ -357,3 +357,46 @@ async def test_email_tokens_are_stored_hashed(client: AsyncClient, db_session, n
         assert "Lien expiré" in r.text
         r = await c.post("/auth/reset-password", data={"token": reset, "password": "pw-87654321"})
         assert r.status_code == 302 and user.password_reset_token is None
+
+
+# ── the webhook: one reply for every event, an event queued once, a default token warned about ──
+
+async def test_the_webhook_answers_alike_and_queues_an_event_once(client: AsyncClient, db_session, test_user, monkeypatch):
+    """Base code: « ok » for a known (athlete, subscription) pair, « ignored » otherwise (an oracle), and Strava's
+    retries or a replay queued the same event again (a Strava read on the athlete's token each time)."""
+    from app.tasks import webhook_sync
+
+    calls = []
+    monkeypatch.setattr(webhook_sync.sync_activity_from_webhook, "delay", lambda *a, **k: calls.append(a))
+    test_user.strava_client_id, test_user.strava_webhook_subscription_id = "123", 55  # the athlete's own app
+    await db_session.flush()
+    known = {"object_type": "activity", "object_id": 7, "aspect_type": "create", "owner_id": test_user.strava_athlete_id,
+             "subscription_id": 55, "event_time": 1_760_000_000, "updates": {}}
+    bodies = (known, {**known, "owner_id": 999}, {**known, "subscription_id": 56}, {"bad": 1})
+    answers = [await client.post("/webhook/strava", json=body) for body in bodies]
+    assert all(r.status_code == 200 and r.json() == {"status": "ok"} for r in answers)
+    assert calls == [(7, test_user.strava_athlete_id)]
+    r = await client.post("/webhook/strava", json=known)  # the same event again: acknowledged, not queued twice
+    assert r.status_code == 200 and r.json() == {"status": "ok"} and len(calls) == 1
+    assert (await client.post("/webhook/strava", json={**known, "object_id": 8})).status_code == 200
+    assert (await client.post("/webhook/strava", json={**known, "aspect_type": "update"})).status_code == 200
+    assert calls == [(7, test_user.strava_athlete_id), (8, test_user.strava_athlete_id),
+                     (7, test_user.strava_athlete_id, "update")]
+
+
+def test_the_default_webhook_token_is_warned_about_outside_debug(monkeypatch, caplog):
+    import logging
+
+    from app.config import settings
+    from app.main import check_secrets
+
+    monkeypatch.setattr(settings, "SECRET_KEY", "a-long-random-secret-for-this-test-0123456789")
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", "")
+    monkeypatch.setattr(settings, "DEBUG", False)
+    caplog.set_level(logging.WARNING)
+    check_secrets()
+    assert "STRAVA_WEBHOOK_VERIFY_TOKEN is the default" in caplog.text
+    caplog.clear()
+    monkeypatch.setattr(settings, "STRAVA_WEBHOOK_VERIFY_TOKEN", "something-random-and-long")
+    check_secrets()
+    assert "STRAVA_WEBHOOK_VERIFY_TOKEN" not in caplog.text

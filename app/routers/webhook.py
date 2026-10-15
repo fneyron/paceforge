@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 import logging
 from contextlib import asynccontextmanager
 
@@ -108,25 +110,40 @@ async def _athlete_of(db: AsyncSession, event: StravaWebhookEvent) -> tuple[User
     return (user, bool(check)) if check is not False else (None, False)
 
 
+ACK = {"status": "ok"}  # one reply whatever the event: nothing here tells which athletes or subscriptions are known
+
+
+def _event_key(event: StravaWebhookEvent) -> str:
+    fields = (event.object_type, event.aspect_type, event.object_id, event.owner_id, event.subscription_id,
+              event.event_time, json.dumps(event.updates, sort_keys=True, default=str))
+    return hashlib.sha256("|".join(map(str, fields)).encode()).hexdigest()[:32]
+
+
 @router.post("/webhook/strava")
 async def strava_webhook_event(request: Request, db: AsyncSession = Depends(get_db)):
     """Receive Strava webhook events. Must respond within 2 seconds: the work is queued. Anyone can post here, so an
     event is only queued when it comes through a subscription PaceForge knows for that athlete's app, and the task
-    checks it with Strava before changing anything (tasks/webhook_sync)."""
+    checks it with Strava before changing anything (tasks/webhook_sync). Every answer is the same (ACK): a probe
+    learns nothing. An event seen within a day already (Strava's retries, a replay) is acknowledged, not queued
+    again."""
     if await over_quota("webhook", ip=client_ip(request)):  # Strava sends a few a day; a flood is someone else
-        return JSONResponse(status_code=429, content={"status": "ignored"})
+        return JSONResponse(status_code=429, content=ACK)
     try:
         event = StravaWebhookEvent(**(await request.json()))
     except Exception:
         logger.warning("Invalid webhook event payload ignored")
-        return JSONResponse(status_code=200, content={"status": "ignored"})
+        return JSONResponse(status_code=200, content=ACK)
+    if not strava_state.event_first_seen(_event_key(event)):
+        logger.info("Strava webhook: %s %s of athlete %d seen already, ignored", event.object_type, event.aspect_type,
+                    event.owner_id)
+        return JSONResponse(status_code=200, content=ACK)
 
     kind = _kind(event)
     user, verified = await _athlete_of(db, event) if kind else (None, False)
     if user is None:
         logger.info("Strava webhook: %s %s of athlete %d ignored (subscription %d)", event.object_type,
                     event.aspect_type, event.owner_id, event.subscription_id)
-        return JSONResponse(status_code=200, content={"status": "ignored"})
+        return JSONResponse(status_code=200, content=ACK)
 
     logger.info("Strava webhook: %s %d for user %d, enqueuing", kind, event.object_id, user.id)
     if verified:  # the app's webhook works: its quiet athletes need a daily poll only
@@ -147,4 +164,4 @@ async def strava_webhook_event(request: Request, db: AsyncSession = Depends(get_
     except Exception:
         logger.exception("Failed to enqueue webhook sync (broker unavailable?)")
 
-    return JSONResponse(status_code=200, content={"status": "ok"})
+    return JSONResponse(status_code=200, content=ACK)

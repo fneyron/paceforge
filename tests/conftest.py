@@ -297,3 +297,11 @@ def _revoked_sessions_in_memory(monkeypatch):
     from app.services import sessions
 
     monkeypatch.setattr(sessions, "_store", sessions.MemoryRevocations())
+
+
+@pytest.fixture(autouse=True)
+def _webhook_events_forgotten():
+    """The Strava events the webhook saw lately (strava_state.event_first_seen), fresh for each test."""
+    from app.services import strava_state
+
+    strava_state._seen.clear()

@@ -74,6 +74,30 @@ def read(name: str) -> str | None:
         return None
 
 
+# ── the events the webhook saw lately: Strava's retries and replays are queued once ──
+
+EVENT_SEEN_S = 24 * 3600
+_seen: dict[str, float] = {}  # this process's own memory of them: the fallback when Redis does not answer
+
+
+def event_first_seen(key: str, ttl: float = EVENT_SEEN_S) -> bool:
+    """True the first time `key` (an event's digest) comes within `ttl` seconds: Redis, shared by the workers, and
+    this process's memory whatever Redis says (alone when it does not answer: then each worker deduplicates its
+    own events only)."""
+    now = time.monotonic()
+    if _seen.get(key, 0.0) > now:
+        return False
+    if len(_seen) > 10000:
+        for stale in [k for k, until in _seen.items() if until <= now]:
+            del _seen[stale]
+    _seen[key] = now + ttl
+    try:
+        return bool(_redis().set(PREFIX + "event:" + key, "1", nx=True, ex=max(1, int(ttl))))
+    except Exception:
+        logger.warning("Strava state unavailable: webhook events deduplicated in this worker only")
+        return True
+
+
 # ── the app's quota (shared by every athlete of that app) ───────────────────
 
 def back_off(client_id: str | None, until: float) -> None:

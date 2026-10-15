@@ -790,11 +790,12 @@ def queued(monkeypatch):
 async def test_the_webhook_acts_only_on_subscriptions_it_knows(client: AsyncClient, db_session, test_user,
                                                                 queued, monkeypatch):
     """Base code: any POST was queued, whatever its subscription (anyone knowing an athlete id could make PaceForge
-    call Strava with that athlete's token)."""
+    call Strava with that athlete's token). The reply is « ok » whatever the event (an « ignored » told a probe which
+    athletes and subscriptions are known): what matters is what gets queued."""
     await _own_app(db_session, test_user, sub=55)
     for sub in (999, 56):
         r = await client.post("/webhook/strava", json=_event(test_user, sub=sub))
-        assert r.status_code == 200 and r.json()["status"] == "ignored"
+        assert r.status_code == 200 and r.json()["status"] == "ok"
     assert queued == []
     assert (await client.post("/webhook/strava", json=_event(test_user, sub=55, obj=7))).json()["status"] == "ok"
     assert queued == [(7, test_user.strava_athlete_id)]  # a create as the previous worker takes it
@@ -806,8 +807,8 @@ async def test_the_webhook_acts_only_on_subscriptions_it_knows(client: AsyncClie
     monkeypatch.setenv("STRAVA_SUBSCRIPTION_ID", "777")
     shared = await _athlete(db_session, 5001, strava_client_id="90001", initial_sync_done=True)
     queued.clear()
-    assert (await client.post("/webhook/strava", json=_event(shared, sub=55))).json()["status"] == "ignored"
-    assert (await client.post("/webhook/strava", json=_event(test_user, sub=777))).json()["status"] == "ignored"
+    assert (await client.post("/webhook/strava", json=_event(shared, sub=55))).json()["status"] == "ok"
+    assert (await client.post("/webhook/strava", json=_event(test_user, sub=777))).json()["status"] == "ok"
     assert (await client.post("/webhook/strava", json=_event(shared, sub=777, obj=8))).json()["status"] == "ok"
     assert queued == [(8, 5001)]
     # the owner's own app became the shared one: its stored subscription is the shared app's
@@ -821,9 +822,9 @@ async def test_the_webhook_acts_only_on_subscriptions_it_knows(client: AsyncClie
     stranger = User(strava_athlete_id=6000)
     for body in (_event(stranger, sub=55), {**_event(test_user), "object_type": "club"}, {"bad": 1}):
         r = await client.post("/webhook/strava", json=body)
-        assert r.status_code == 200 and r.json()["status"] == "ignored"
+        assert r.status_code == 200 and r.json()["status"] == "ok"
     r = await client.post("/webhook/strava", content=b"not json", headers={"content-type": "application/json"})
-    assert r.status_code == 200 and r.json()["status"] == "ignored"
+    assert r.status_code == 200 and r.json()["status"] == "ok"
 
 
 @pytest.fixture
@@ -877,7 +878,7 @@ async def test_the_shared_apps_subscription_is_learnt_from_strava(client: AsyncC
     assert (await client.post("/webhook/strava", json=_event(athlete, sub=123456, obj=778))).json()["status"] == "ok"
     assert queued == [(778, 5001)]
     # another id right after a lookup: ignored at once; a forged event never gets to the athlete's token
-    assert (await client.post("/webhook/strava", json=_event(athlete, sub=999, obj=779))).json()["status"] == "ignored"
+    assert (await client.post("/webhook/strava", json=_event(athlete, sub=999, obj=779))).json()["status"] == "ok"
     detail.reset_mock()
     assert (await _run_webhook_sync(780, 5001, "create", 999))["status"] == "unknown_subscription"
     assert detail.await_count == 0 and len(lookups) == 1
@@ -892,7 +893,7 @@ async def test_the_shared_apps_subscription_is_learnt_from_strava(client: AsyncC
     monkeypatch.setenv("STRAVA_SUBSCRIPTION_ID", "999")
     queued.clear()
     assert (await client.post("/webhook/strava", json=_event(athlete, sub=999, obj=782))).json()["status"] == "ok"
-    assert (await client.post("/webhook/strava", json=_event(athlete, sub=123456))).json()["status"] == "ignored"
+    assert (await client.post("/webhook/strava", json=_event(athlete, sub=123456))).json()["status"] == "ok"
     assert queued == [(782, 5001)] and len(lookups) == 2
 
     # 12 h later the round reads it again; Strava failing, the id known is kept (re-review N3: a real event of the
@@ -1016,7 +1017,7 @@ async def test_the_webhook_queues_edits_deletions_and_revocations(client: AsyncC
     inspect.signature(previous_worker).bind(*queued[0])
     queued.clear()
     athlete_update = {**_event(test_user, "deauth"), "updates": {"authorized": "true"}}
-    assert (await client.post("/webhook/strava", json=athlete_update)).json()["status"] == "ignored"
+    assert (await client.post("/webhook/strava", json=athlete_update)).json()["status"] == "ok"
     assert queued == []
 
 
