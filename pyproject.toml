@@ -21,6 +21,7 @@ dependencies = [
     "cryptography>=43.0",
     "bcrypt>=4.2",
     "garminconnect>=0.3.17,<0.4",
+    "sentry-sdk[fastapi]>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -38,6 +39,7 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "time-machine>=2.15",
+    "pyyaml>=6",
 ]
 
 [build-system]

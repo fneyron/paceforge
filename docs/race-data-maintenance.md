@@ -114,4 +114,30 @@ modèle après une collecte réussie ; un modèle rejeté constitue un résultat
 normal, tandis qu’un calcul ou téléchargement défaillant rend le job rouge.
 
 Les dépendances scientifiques sont isolées dans l’extra Python `research` et
-ne sont pas installées dans les conteneurs de production.
+ne sont pas installées dans les conteneurs de production. Le workflow installe
+les versions verrouillées (`requirements.lock`, puis `requirements-research.lock`
+pour la réévaluation) ; après une modification de `pyproject.toml`, `make lock`.
+
+## Jeton de publication
+
+Le workflow pousse la branche `race-data` avec le secret `RACE_DATA_TOKEN` du
+dépôt s’il existe, sinon avec le jeton du workflow (`GITHUB_TOKEN`, droit
+`contents: write`), comme avant. Dans les deux cas, le jeton n’entre dans la
+configuration Git qu’après la collecte, jamais pendant que les collecteurs lisent
+des données distantes (`persist-credentials: false`), et en est retiré à la fin.
+
+Pour mettre le jeton dédié en place, une fois :
+
+1. GitHub → *Settings → Developer settings → Personal access tokens → Fine-grained
+   tokens* : un jeton limité à ce seul dépôt, permissions *Contents : Read and
+   write* (et *Metadata : Read*), avec une expiration (un an au plus, à renouveler).
+2. Dans le dépôt, *Settings → Secrets and variables → Actions* : le secret
+   `RACE_DATA_TOKEN`.
+3. Dans `.github/workflows/race-data.yml`, passer `permissions: contents: write`
+   à `read` : le jeton du workflow ne peut alors plus rien pousser, seul
+   `RACE_DATA_TOKEN` le peut.
+
+Un jeton à granularité fine n’est pas limité à une branche par lui-même : pour
+que `main` reste hors de sa portée, un *ruleset* sur `main` (pas de push direct
+hors de la liste de contournement) et, idéalement, un jeton créé par un compte
+machine collaborateur absent de cette liste.

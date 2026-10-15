@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from celery import Task
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import select
 
 from app.celery_app import celery_app
@@ -113,7 +114,7 @@ async def _run_initial_sync(user_id: int) -> dict:
                     break
                 try:
                     detail = await strava.get_activity(user, strava_id)
-                except StravaTokenError:
+                except (StravaTokenError, SoftTimeLimitExceeded):  # the worker's limit is the task's, not this one's
                     raise
                 except StravaRateLimitError:
                     break
@@ -142,6 +143,8 @@ async def _run_initial_sync(user_id: int) -> dict:
                     from app.services.race_calibration import backfill_race_dplus
 
                     await backfill_race_dplus(db, user, strava, limit=40)
+                except SoftTimeLimitExceeded:
+                    raise
                 except Exception:
                     logger.warning("Race D+ backfill failed for user %d", user_id, exc_info=True)
 

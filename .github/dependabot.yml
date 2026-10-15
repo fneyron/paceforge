@@ -1,0 +1,21 @@
+# Weekly dependency updates. A Python update must be followed by `make lock` on its branch: the Dockerfile and
+# CI install the hashed requirements*.lock files, not pyproject.toml's ranges (docs/ops-runbook.md).
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /mobile
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
