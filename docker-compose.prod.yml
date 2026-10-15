@@ -1,30 +1,60 @@
+# The production stack, run by Coolify from this file. Secrets and tunables come from Coolify's environment;
+# every default here equals app/config.py's, so a variable left unset never reaches the app as an empty
+# string. POSTGRES_PASSWORD and STRAVA_WEBHOOK_VERIFY_TOKEN have no default: `docker compose config` refuses
+# to start without them. Operations: docs/ops-runbook.md.
+
+x-env: &env
+  DATABASE_URL: postgresql+asyncpg://paceforge:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD, the database password}@db:5432/paceforge
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/1
+  # the connection budget (app/config.py): raise them together with max_connections below
+  DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+  DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+  DB_TASK_POOL_SIZE: ${DB_TASK_POOL_SIZE:-1}
+  DB_TASK_MAX_OVERFLOW: ${DB_TASK_MAX_OVERFLOW:-2}
+  STRAVA_SHARED_APP_ENABLED: ${STRAVA_SHARED_APP_ENABLED:-false}
+  STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
+  STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
+  STRAVA_WEBHOOK_VERIFY_TOKEN: ${STRAVA_WEBHOOK_VERIFY_TOKEN:?set STRAVA_WEBHOOK_VERIFY_TOKEN, a random string only Strava and the app know}
+  STRAVA_SUBSCRIPTION_ID: ${STRAVA_SUBSCRIPTION_ID:-}
+  BASE_URL: ${BASE_URL}
+  SECRET_KEY: ${SECRET_KEY}
+  ENCRYPTION_KEYS: ${ENCRYPTION_KEYS:-}
+  APP_NAME: ${APP_NAME:-PaceForge}
+  SMTP_HOST: ${SMTP_HOST:-ssl0.ovh.net}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: "${SMTP_FROM:-PaceForge <contact@paceforge.fr>}"
+  SURFACE_FETCH: ${SURFACE_FETCH:-true}
+  COROS_SYNC: ${COROS_SYNC:-true}
+  GARMIN_SYNC: ${GARMIN_SYNC:-true}
+  ACTIVITY_ENV_FETCH: ${ACTIVITY_ENV_FETCH:-true}
+  CYCLING_ENABLED: ${CYCLING_ENABLED:-false}
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  DEBUG: "false"
+  # glibc opens one malloc arena per thread by default: two cap what a worker keeps after a burst of pages
+  MALLOC_ARENA_MAX: "2"
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
 services:
   app:
     build: .
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://paceforge:${POSTGRES_PASSWORD}@db:5432/paceforge
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - STRAVA_SHARED_APP_ENABLED=${STRAVA_SHARED_APP_ENABLED:-false}
-      - STRAVA_CLIENT_ID=${STRAVA_CLIENT_ID}
-      - STRAVA_CLIENT_SECRET=${STRAVA_CLIENT_SECRET}
-      - STRAVA_WEBHOOK_VERIFY_TOKEN=${STRAVA_WEBHOOK_VERIFY_TOKEN:-paceforge-verify}
-      - STRAVA_SUBSCRIPTION_ID=${STRAVA_SUBSCRIPTION_ID:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - BASE_URL=${BASE_URL}
-      - SECRET_KEY=${SECRET_KEY}
-      - ENCRYPTION_KEYS=${ENCRYPTION_KEYS:-}
-      - SMTP_HOST=${SMTP_HOST:-ssl0.ovh.net}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - DEBUG=false
+    environment: *env
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 30s  # uvicorn finishes the requests in flight (Dockerfile) before Docker kills it
+    mem_limit: 3g
+    logging: *logging
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -34,27 +64,13 @@ services:
     expose:
       - "8000"
 
+  # The long syncs (first Strava imports, the COROS and Garmin rounds) and beat, the schedule. Beat must run in
+  # exactly one process: this service is never scaled (app/celery_app.py); its schedule file lives in /tmp, the
+  # image being read-only for its user. 12 min of grace: a running sync ends instead of being killed and redone.
   celery-worker:
     build: .
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://paceforge:${POSTGRES_PASSWORD}@db:5432/paceforge
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - STRAVA_SHARED_APP_ENABLED=${STRAVA_SHARED_APP_ENABLED:-false}
-      - STRAVA_CLIENT_ID=${STRAVA_CLIENT_ID}
-      - STRAVA_CLIENT_SECRET=${STRAVA_CLIENT_SECRET}
-      - STRAVA_WEBHOOK_VERIFY_TOKEN=${STRAVA_WEBHOOK_VERIFY_TOKEN:-paceforge-verify}
-      - STRAVA_SUBSCRIPTION_ID=${STRAVA_SUBSCRIPTION_ID:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - BASE_URL=${BASE_URL}
-      - SECRET_KEY=${SECRET_KEY}
-      - ENCRYPTION_KEYS=${ENCRYPTION_KEYS:-}
-      - SMTP_HOST=${SMTP_HOST:-ssl0.ovh.net}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - DEBUG=false
-    command: celery -A app.celery_app worker --beat --loglevel=info --concurrency=2
+    environment: *env
+    command: celery -A app.celery_app worker --beat --schedule /tmp/celerybeat-schedule -Q long -n long@%h --loglevel=info --concurrency=2
     depends_on:
       app:
         condition: service_healthy
@@ -63,8 +79,34 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 12m
+    mem_limit: 1536m
+    logging: *logging
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.celery_app inspect ping --timeout 10 2>/dev/null | grep -q pong || exit 1"]
+      test: ["CMD-SHELL", "celery -A app.celery_app inspect ping -d long@$$HOSTNAME --timeout 10 2>/dev/null | grep -q pong || exit 1"]
+      interval: 30s
+      timeout: 15s
+      start_period: 30s
+      retries: 3
+
+  # The short tasks (the Strava polls, the webhook events, the hourly purge) keep moving while a long sync runs.
+  celery-worker-default:
+    build: .
+    environment: *env
+    command: celery -A app.celery_app worker -Q celery -n celery@%h --loglevel=info --concurrency=2
+    depends_on:
+      app:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 12m
+    mem_limit: 1536m
+    logging: *logging
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.celery_app inspect ping -d celery@$$HOSTNAME --timeout 10 2>/dev/null | grep -q pong || exit 1"]
       interval: 30s
       timeout: 15s
       start_period: 30s
@@ -72,18 +114,55 @@ services:
 
   db:
     image: postgres:16-alpine
+    # sized for its 1 GB; autovacuum stays at its defaults (the activities table is tuned by its own migration)
+    command: postgres -c shared_buffers=256MB -c work_mem=16MB -c effective_cache_size=768MB -c random_page_cost=1.1 -c max_connections=150 -c default_toast_compression=lz4 -c log_min_duration_statement=500ms
     volumes:
       - pgdata:/var/lib/postgresql/data
     environment:
       POSTGRES_DB: paceforge
       POSTGRES_USER: paceforge
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-paceforge_prod_2024}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD, the database password}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U paceforge"]
       interval: 5s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    stop_grace_period: 1m  # a clean shutdown (checkpoint) rather than a crash recovery at the next start
+    mem_limit: 1g
+    logging: *logging
+
+  # A dump of the database every day at 03:10 (scripts/backup/backup.sh), 14 daily and 8 weekly kept on the
+  # pgbackups volume, each verified; copied to BACKUP_S3_URL when set. Unhealthy when no dump is younger than
+  # 26 h, which Coolify's notifications report. Restore: scripts/backup/restore.sh (docs/ops-runbook.md).
+  db-backup:
+    build: scripts/backup
+    environment:
+      PGHOST: db
+      PGUSER: paceforge
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD, the database password}
+      PGDATABASE: paceforge
+      BACKUP_DIR: /backups
+      BACKUP_S3_URL: ${BACKUP_S3_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-}
+    volumes:
+      - pgbackups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 2m  # a dump in progress finishes
+    mem_limit: 256m
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "backup.sh", "check"]
+      interval: 10m
+      timeout: 30s
+      start_period: 15m
+      retries: 3
 
   redis:
     image: redis:7-alpine
@@ -96,7 +175,10 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    mem_limit: 256m
+    logging: *logging
 
 volumes:
   pgdata:
   redisdata:
+  pgbackups:
