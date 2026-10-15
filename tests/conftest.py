@@ -30,14 +30,37 @@ from app.models.activity import Activity
 from app.models.analysis import Analysis
 from app.models.user import User
 
-# PostgreSQL, as in production, when TEST_DATABASE_URL names one: build its schema with `alembic upgrade head`
-# first (the models say JSONB where the migrated columns are json). Test values stay within int32 for it. Without
-# it, every test gets a temporary SQLite file of its own: nothing is written in the repository (two suites once
-# shared ./test.db, one dropping the tables the other was reading) and nothing outlives a test, not a commit, not
-# a dropped table.
+# PostgreSQL, as in production, when TEST_DATABASE_URL names one (never the application's DATABASE_URL: the suite
+# empties its tables; one suite at a time on it): build its schema with `alembic upgrade head` first (the models
+# say JSONB where the migrated columns are json). Test values stay within int32 for it. There, each test runs in
+# one transaction rolled back at its end: a commit, a route's included, never reaches the next test (a table
+# dropped for real, or rows written through another engine, would). Without it, every test gets a temporary
+# SQLite file of its own: nothing is written in the repository (two suites once shared ./test.db, one dropping
+# the tables the other was reading) and nothing outlives the test.
 SERVER_URL = os.getenv("TEST_DATABASE_URL", "")
 assert not SERVER_URL.startswith("sqlite"), "TEST_DATABASE_URL names a PostgreSQL database: unset it for SQLite"
 _databases = itertools.count()
+
+
+def _same_database(a: str, b: str) -> bool:
+    from sqlalchemy.engine import make_url
+
+    x, y = make_url(a), make_url(b)
+    return (x.host, x.port or 5432, x.database) == (y.host, y.port or 5432, y.database)
+
+
+def pytest_sessionstart(session):
+    """On the server: never the application's database (the suite empties the tables), and say which one."""
+    if not SERVER_URL:
+        return
+    from sqlalchemy.engine import make_url
+
+    from app.config import settings
+
+    if any(url and _same_database(SERVER_URL, url) for url in (os.getenv("DATABASE_URL", ""), settings.DATABASE_URL)):
+        pytest.exit("TEST_DATABASE_URL is the application's DATABASE_URL: the suite empties its tables", returncode=3)
+    session.config.pluginmanager.get_plugin("terminalreporter").write_line(
+        f"tests on PostgreSQL {make_url(SERVER_URL).render_as_string(hide_password=True)}, its tables emptied first")
 
 
 @pytest.fixture(scope="session")
@@ -92,11 +115,30 @@ async def engine(database_template):
         yield eng
 
 
+@asynccontextmanager
+async def _in_one_transaction(eng):
+    """A session bound to one outer transaction, rolled back at the end: its commit and rollback work for real
+    (savepoints), and nothing it wrote outlives it."""
+    async with eng.connect() as conn:
+        outer = await conn.begin()
+        session = AsyncSession(bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint")
+        try:
+            yield session
+        finally:
+            await session.close()
+            await outer.rollback()
+
+
 @pytest.fixture
 async def db_session(engine) -> AsyncGenerator[AsyncSession, None]:
-    session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    """The test's session, the one the app's routes get. On the server its rows would outlive a commit (routes
+    commit, so do some tests), so it lives in one transaction rolled back at the end; an SQLite file is the
+    test's own and goes with it."""
+    if SERVER_URL:
+        async with _in_one_transaction(engine) as session:
+            yield session
+        return
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with session_factory() as session:
         yield session
         await session.rollback()
@@ -269,16 +311,9 @@ async def savepoint_engine(database_template):
 
 @pytest.fixture
 async def committing_session(savepoint_engine) -> AsyncGenerator[AsyncSession, None]:
-    """A session bound to one outer transaction: its commit and rollback work for real (savepoints), and
-    nothing outlives the test."""
-    async with savepoint_engine.connect() as conn:
-        outer = await conn.begin()
-        session = AsyncSession(bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint")
-        try:
-            yield session
-        finally:
-            await session.close()
-            await outer.rollback()
+    """A session whose commit and rollback work for real, foreign keys enforced on SQLite too (savepoint_engine)."""
+    async with _in_one_transaction(savepoint_engine) as session:
+        yield session
 
 
 @pytest.fixture
