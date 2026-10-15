@@ -143,7 +143,7 @@ async def test_failed_logins_are_limited_per_address_and_email(client, db_sessio
         for _ in range(9):
             await _login(c, user.email)
         assert (await _login(c, user.email, "pw-12345678")).status_code == 302
-        await c.get("/auth/logout")
+        await c.post("/auth/logout")
         for _ in range(9):
             assert (await _login(c, user.email)).status_code == 200
 
@@ -344,7 +344,7 @@ async def test_a_login_that_works_is_not_charged_to_the_address(client, db_sessi
     async with AsyncClient(transport=client._transport, base_url="https://test") as c:
         for _ in range(5):  # five good logins from the address: none counts against it
             assert (await _login(c, user.email, "pw-12345678")).status_code == 302
-            await c.get("/auth/logout")
+            assert (await c.post("/auth/logout")).status_code == 303
         for i in range(3):
             assert (await _login(c, f"x{i}@x.fr")).status_code == 200
         assert (await _login(c, "x9@x.fr")).status_code == 429

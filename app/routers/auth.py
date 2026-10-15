@@ -15,6 +15,7 @@ from app.config import settings
 from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db, sign_in
 from app.models.user import User
+from app.services import sessions
 from app.services.auth import (
     DUMMY_HASH,
     PASSWORD_PREFIX,
@@ -238,9 +239,26 @@ async def login(
     return RedirectResponse(url=f"/connections/{next}" if next else HOME, status_code=302)
 
 
-@router.get("/auth/logout")
-async def logout(request: Request):
+async def _sign_out(request: Request) -> None:
+    """The session ends for good: its id is refused from now on, whatever cookie still carries it."""
+    sid, iat = request.session.get("sid"), request.session.get("iat")
     request.session.clear()
+    if sid:
+        await sessions.revoke(sid, iat)
+
+
+@router.post("/auth/logout")
+async def logout(request: Request):
+    await _sign_out(request)
+    return RedirectResponse(url="/", status_code=303)
+
+
+@router.get("/auth/logout")
+async def logout_link(request: Request):
+    """An old link or bookmark: it signs out only when the browser says the navigation is its own (same-origin,
+    or none for a typed address), never from a link on another site; otherwise home, signed in as before."""
+    if request.headers.get("sec-fetch-site") in ("same-origin", "none"):
+        await _sign_out(request)
     return RedirectResponse(url="/", status_code=302)
 
 

@@ -25,9 +25,9 @@
                 <p class="text-base font-semibold truncate">{{ user.firstname or '' }} {{ user.lastname or '' }}</p>
                 {% if user.email %}<p class="text-xs text-gray-400 truncate">{{ user.email }}</p>{% endif %}
             </div>
-            <a href="/auth/logout" class="pf-btn pf-btn-secondary pf-btn-sm shrink-0">
+            <form method="post" action="/auth/logout" class="pf-logout-form"><button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm shrink-0">
                 <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Se déconnecter
-            </a>
+            </button></form>
         </div>
     </div>
 

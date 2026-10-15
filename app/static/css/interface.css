@@ -43,6 +43,7 @@ button:disabled { cursor: wait; opacity: .55; }
 .pf-ic.hidden { display: none; }
 .pf-ibtn { width: 40px; height: 40px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; color: rgb(var(--pf-gray-600)); flex: none; }
 .pf-ibtn:hover { background: rgb(var(--pf-soft)); color: rgb(var(--pf-ink)); }
+.pf-logout-form { display: contents; } /* the logout button is a form (a POST): the form itself takes no room */
 .pf-avatar { width: 34px; height: 34px; border-radius: 50%; background: rgb(var(--pf-soft)); color: rgb(var(--pf-gray-700)); font-weight: 600; font-size: 0.875rem; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; margin-left: 4px; flex: none; }
 .pf-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .pf-main { min-width: 0; }

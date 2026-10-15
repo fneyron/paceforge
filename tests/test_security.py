@@ -1,6 +1,8 @@
 """Browser-side hardening: assets served from here, security headers, cross-site requests refused, sessions that
 end, limits that hold without Redis, tokens stored hashed, a webhook that tells nothing."""
+import base64
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -176,3 +178,88 @@ async def test_the_webhook_and_the_bearer_api_are_exempt(client: AsyncClient):
     assert (await client.post("/api/mobile/daily", json={"days": []}, headers=bearer)).status_code == 401
     assert (await client.delete("/api/mobile/device", headers=bearer)).status_code == 401
     assert (await client.post("/api/mobile/daily", json={"days": []}, headers=evil)).status_code == 403
+
+
+# ── sessions that end: logout revokes, a lifetime, sessions without an id signed out ──
+
+def _cookie(user_id: int, **fields) -> str:
+    from itsdangerous import TimestampSigner
+
+    from app.config import settings
+
+    value = base64.b64encode(json.dumps({"user_id": user_id, **fields}).encode())
+    return TimestampSigner(settings.SECRET_KEY).sign(value).decode()
+
+
+async def test_logout_ends_the_session_for_good(client: AsyncClient, db_session, no_commit):
+    """Base code: logout cleared the cookie and nothing else; the cookie as it was before (copied, kept by a
+    shared browser or an extension) still opened the account, for 30 more days at each use."""
+    user = await _member(db_session)
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:
+        assert (await _login(c, user.email)).status_code == 302
+        before = c.cookies.get("paceforge_session")
+        assert (await c.get("/settings")).status_code == 200
+        r = await c.post("/auth/logout")
+        assert r.status_code == 303 and r.headers["location"] == "/"
+        assert (await c.get("/settings")).headers["location"] == "/auth/login"
+    async with AsyncClient(transport=client._transport, base_url="https://test",
+                           cookies={"paceforge_session": before}) as old:
+        assert (await old.get("/settings")).headers["location"] == "/auth/login"
+        assert (await old.get("/")).status_code == 200  # the public home: nobody is signed in
+
+
+async def test_an_old_logout_link_acts_only_on_the_browsers_own_navigation(client: AsyncClient, db_session, no_commit):
+    """GET /auth/logout stays for old links and bookmarks: a link on another site (logout CSRF) does nothing."""
+    user = await _member(db_session)
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:
+        assert (await _login(c, user.email)).status_code == 302
+        for headers in ({"Sec-Fetch-Site": "cross-site"}, {"Sec-Fetch-Site": "same-site"}, {}):
+            r = await c.get("/auth/logout", headers=headers)
+            assert r.status_code == 302 and r.headers["location"] == "/"
+            assert (await c.get("/settings")).status_code == 200, headers  # still signed in
+        r = await c.get("/auth/logout", headers={"Sec-Fetch-Site": "same-origin"})
+        assert r.status_code == 302 and (await c.get("/settings")).headers["location"] == "/auth/login"
+        assert (await _login(c, user.email)).status_code == 302
+        await c.get("/auth/logout", headers={"Sec-Fetch-Site": "none"})  # a typed address
+        assert (await c.get("/settings")).headers["location"] == "/auth/login"
+
+
+async def test_a_session_ends_after_its_lifetime_and_one_without_an_id_is_signed_out(client: AsyncClient, db_session,
+                                                                                    no_commit):
+    """Base code: a 30-day cookie renewed at every answer, so a session used now and then never ended. A session
+    made before this change has no id logout could revoke: it is signed out once."""
+    user = await _member(db_session)
+    now = int(time.time())
+    cases = (({"sid": "s" * 22, "iat": now - 89 * 86400}, 200), ({"sid": "o" * 22, "iat": now - 91 * 86400}, 303),
+             ({}, 303), ({"sid": "x" * 22}, 303), ({"sid": "f" * 22, "iat": now + 3600}, 303))
+    for fields, expected in cases:
+        async with AsyncClient(transport=client._transport, base_url="https://test",
+                               cookies={"paceforge_session": _cookie(user.id, **fields)}) as c:
+            assert (await c.get("/settings")).status_code == expected, fields
+
+
+async def test_the_logout_buttons_post(client: AsyncClient, db_session, no_commit):
+    user = await _member(db_session)
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:
+        assert (await _login(c, user.email)).status_code == 302
+        for path in ("/sante", "/settings"):
+            page = (await c.get(path)).text
+            assert 'href="/auth/logout"' not in page, path
+            assert '<form method="post" action="/auth/logout" class="pf-logout-form"><button type="submit"' in page, path
+        page = (await c.get("/sante")).text
+        assert 'class="pf-ibtn pf-logout" title="Se déconnecter" aria-label="Se déconnecter"' in page
+        page = (await c.get("/mobile/connect?challenge=" + "a" * 64 + "&platform=ios")).text
+        assert '<form method="post" action="/auth/logout"><p><button type="submit" class="link">Changer de compte</button>' in page
+
+
+async def test_revocations_hold_in_this_process_when_redis_is_down(monkeypatch):
+    from app.config import settings
+    from app.services import sessions
+
+    monkeypatch.setattr(settings, "REDIS_URL", "redis://127.0.0.1:1/0")  # nothing listens there
+    store = sessions.Revocations()
+    await store.revoke("gone", 60)
+    assert await store.is_revoked("gone") and not await store.is_revoked("other")
+    assert store.down_until > time.monotonic()  # Redis left alone for a minute, then tried again
+    assert 89 * 86400 - 2 <= sessions.remaining_s(time.time() - 86400) <= 89 * 86400
+    assert sessions.remaining_s(None) == 90 * 86400 and sessions.alive(time.time() - 10) and not sessions.alive("x")

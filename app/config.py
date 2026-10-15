@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     # all decrypt, and so does the key derived from SECRET_KEY used before them (app.crypto)
     ENCRYPTION_KEYS: str = ""
     APP_NAME: str = "PaceForge"
+    # a browser session ends this long after the sign-in, however often it is used (app.services.sessions)
+    SESSION_LIFETIME_DAYS: int = 90
     DEBUG: bool = False
     # Fetch each trace's road/track/trail surface from OpenStreetMap (off in tests)
     SURFACE_FETCH: bool = True

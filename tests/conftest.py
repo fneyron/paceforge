@@ -289,3 +289,11 @@ def _rate_limits_in_memory(monkeypatch):
     from app.services import auth
 
     monkeypatch.setattr(auth, "_counter", auth.MemoryCounter())
+
+
+@pytest.fixture(autouse=True)
+def _revoked_sessions_in_memory(monkeypatch):
+    """The sessions logout revoked, in this process and fresh for each test (Redis in production)."""
+    from app.services import sessions
+
+    monkeypatch.setattr(sessions, "_store", sessions.MemoryRevocations())

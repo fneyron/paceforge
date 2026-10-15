@@ -2,6 +2,7 @@ import base64
 import importlib.util
 import json
 import re
+import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -22,7 +23,8 @@ from app.services.sante_daily import daily_card, daily_context
 def login(client, user):
     # Production sessions are Secure; exercise the browser handshake over HTTPS.
     client.base_url = "https://test"
-    value = base64.b64encode(json.dumps({"user_id": user.id}).encode())
+    # a session as dependencies.sign_in makes one: its id and birth time, without which it is refused
+    value = base64.b64encode(json.dumps({"user_id": user.id, "sid": "s" * 22, "iat": int(time.time())}).encode())
     client.cookies.set("paceforge_session", TimestampSigner(settings.SECRET_KEY).sign(value).decode())
 
 
