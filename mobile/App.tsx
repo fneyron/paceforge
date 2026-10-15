@@ -1,5 +1,5 @@
 import React, { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, Platform, Pressable, StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, AppState, BackHandler, Linking, Platform, Pressable, StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
@@ -80,6 +80,9 @@ function Companion() {
   const navigationId = useRef(0);
   const recoveringBridge = useRef(false);
   const syncReturn = useRef<{ tab: Tab; url: string; showWeb: boolean } | null>(null);
+  // The site's effective theme, once it reported it, wins over the system scheme.
+  const webAppearance = useRef(false);
+  const canGoBack = useRef(false);
 
   // A locked phone (background launch) cannot read the keychain: this is never « not
   // paired ». The read is retried on the first return to the foreground.
@@ -133,6 +136,19 @@ function Companion() {
   useEffect(() => {
     web.current?.injectJavaScript(presentationScript(fontScale, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect'));
   }, [fontScale]);
+  // Native screens follow the system scheme until the site reports its own theme
+  // (it does so again by itself when the system changes and its theme is automatic).
+  useEffect(() => { if (!webAppearance.current) setDark(systemDark); }, [systemDark]);
+  // Android hardware back: the WebView's own history first, then the system default.
+  const onHardwareBack = useEffectEvent(() => {
+    if (webVisible && !concealBridge && !loadError && canGoBack.current) { web.current?.goBack(); return true; }
+    return false;
+  });
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => onHardwareBack());
+    return () => subscription.remove();
+  }, []);
 
   const onAppLink = useEffectEvent((link: string) => {
     if (link === 'paceforge://privacy') openSettings('/mobile/privacy');
@@ -287,7 +303,7 @@ function Companion() {
           else { retryNavigation.current = navigation.go; setError('Ton plan n’a pas été enregistré. Réessaie avant de quitter cet écran.'); }
           return;
         }
-        if (data?.type === 'appearance' && typeof data.dark === 'boolean') { setDark(data.dark); return; }
+        if (data?.type === 'appearance' && typeof data.dark === 'boolean') { webAppearance.current = true; setDark(data.dark); return; }
       } catch { /* Other messages are validated by the account bridge below. */ }
     }
     if (refreshable(event.nativeEvent.url)) {
@@ -575,6 +591,7 @@ function Companion() {
           return false;
         }}
         onNavigationStateChange={nav => {
+          canGoBack.current = nav.canGoBack;
           if (!trusted(nav.url)) return;
           documentUrl.current = nav.url;
           if (nav.loading) {
