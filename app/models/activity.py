@@ -80,9 +80,6 @@ class Activity(Base):
 
     # Relationships
     user = relationship("User", back_populates="activities")
-    analysis = relationship(
-        "Analysis", back_populates="activity", uselist=False, lazy="selectin"
-    )
 
     def __repr__(self) -> str:
         return (f"<Activity {self.id} strava={self.strava_activity_id} garmin={self.garmin_activity_id} "

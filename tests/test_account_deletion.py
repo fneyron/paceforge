@@ -3,7 +3,7 @@ every row of the athlete goes, whether or not the database cascades; the logs ca
 email."""
 import asyncio
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import httpx
@@ -16,11 +16,8 @@ from app.database import Base
 from app.dependencies import get_current_user
 from app.models import (
     Activity,
-    Analysis,
-    ChatMessage,
     CorosConnection,
     GarminConnection,
-    GeneratedPlan,
     HealthMetric,
     HealthSample,
     LactateTest,
@@ -30,9 +27,7 @@ from app.models import (
     OAuthAttempt,
     Route,
     RouteCheckpoint,
-    Simulation,
     User,
-    WeeklyDigest,
 )
 from app.routers import settings as settings_router
 from app.services import coros
@@ -52,10 +47,6 @@ def _rows(user: User) -> list:
     route = Route(user_id=uid, name="Course", total_distance_km=42)
     return [
         activity, route,
-        ChatMessage(user_id=uid, role="user", content="?"),
-        GeneratedPlan(user_id=uid, plan_type="workout", sport="Run", content_json={}),
-        WeeklyDigest(user_id=uid, week_start=date(2026, 10, 5), week_end=date(2026, 10, 11), summary="s",
-                     highlights=[], recommendations=[], model_used="-", raw_response="-"),
         HealthSample(user_id=uid, metric="hrv", kind="", start_at=NOW.replace(tzinfo=None),
                      end_at=NOW.replace(tzinfo=None), value=60, source="COROS"),
         HealthMetric(user_id=uid, date=NOW.date(), metric="sleep", value=480, source="COROS"),
@@ -77,12 +68,9 @@ async def _seed(db, user: User) -> None:
     rows = _rows(user)
     db.add_all(rows)
     await db.flush()
-    activity, route = rows[0], rows[1]
+    route = rows[1]
     db.add_all([
-        Analysis(activity_id=activity.id, summary="s", strengths=[], improvements=[], next_workout_tip="t",
-                 strava_comment="c", model_used="-", raw_response="-"),
         RouteCheckpoint(route_id=route.id, name="Ravito", distance_km=10),
-        Simulation(route_id=route.id, user_id=user.id),
     ])
     await db.flush()
 

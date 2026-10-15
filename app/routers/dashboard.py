@@ -175,6 +175,7 @@ async def manual_sync(
                     pass  # another tab's sync brings them: nothing to report
                 except Exception:
                     await db.rollback()
+                    logger.warning("Strava refresh failed for user %d", user.id, exc_info=True)
                     errors.append("Strava : synchronisation incomplète. Réessaie dans un instant.")
         return JSONResponse({"received": received, "errors": errors}, headers={"Cache-Control": "no-store"})
     new_count = 0  # sessions Strava brought, a watch's row taken over included
@@ -186,6 +187,8 @@ async def manual_sync(
         except SyncRunning:
             running = True
         except Exception:  # what it saved before failing stays (this request commits it): said as such
+            logger.warning("Strava sync failed for user %d after %d activities", user.id, progress["saved"],
+                           exc_info=True)
             new_count, failed = progress["saved"], True
 
     if new_count > 0:

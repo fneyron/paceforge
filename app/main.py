@@ -97,7 +97,8 @@ async def _first_start_of_this_build() -> bool:
             return bool(await r.set(f"paceforge:start-scan:{BUILD_ID}:{keys}", "1", nx=True, ex=15 * 60))
         finally:
             await r.aclose()
-    except Exception:
+    except Exception:  # Redis down or slow: scan on this start all the same
+        logger.warning("Start-up secret scan: Redis unavailable, scanning on this start", exc_info=True)
         return True
 
 

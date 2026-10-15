@@ -26,6 +26,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
+from app.csrf import check_csrf, csrf
 from app.dependencies import get_current_user, get_db
 from app.models.mobile import MobileDaily, MobileDevice
 from app.models.user import User
@@ -135,17 +136,6 @@ def validated(model: type[BaseModel], raw: bytes):
 
 def utc(dt: datetime) -> datetime:
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
-
-
-def csrf(request: Request) -> str:
-    if "mobile_csrf" not in request.session:
-        request.session["mobile_csrf"] = secrets.token_urlsafe(32)
-    return request.session["mobile_csrf"]
-
-
-def check_csrf(request: Request, token: str) -> None:
-    if not secrets.compare_digest(request.session.get("mobile_csrf", ""), token) or not token:
-        raise HTTPException(403, "Recharge la page puis réessaie.")
 
 
 def page(request: Request, **context):

@@ -149,11 +149,6 @@ def expected_s(route) -> int | None:
     return int(round(hours * 3600))
 
 
-def taper_weeks(rd: date) -> tuple[date, date]:
-    """(J-14, the race day): the taper Activités' A1 line names."""
-    return rd - timedelta(days=TAPER_DAYS), rd
-
-
 def taper_days(m: date, rd: date) -> tuple[int, int]:
     """(days before J-14, days in J-14 → J-1) of the week of Monday `m`, the race day and after left out."""
     lo, nxt = rd - timedelta(days=TAPER_DAYS), m + timedelta(days=7)

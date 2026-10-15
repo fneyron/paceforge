@@ -1,7 +1,7 @@
 [project]
 name = "paceforge"
 version = "1.0.0"
-description = "AI-powered endurance coaching from your Strava data"
+description = "Recovery, activities and race plans from your watch and Strava data"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
@@ -11,7 +11,6 @@ dependencies = [
     "alembic>=1.14",
     "pydantic-settings>=2.6",
     "httpx>=0.28",
-    "anthropic>=0.42",
     "celery[redis]>=5.4",
     "redis>=5.2",
     "python-dotenv>=1.0",

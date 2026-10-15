@@ -15,7 +15,6 @@ class ActivitySummary(BaseModel):
     average_speed: float | None = None
     average_heartrate: float | None = None
     total_elevation_gain: float = 0.0
-    has_analysis: bool = False
     # Hygiene flags (see services/activity_dedupe): set by the list handler.
     is_duplicate: bool = False
     is_false_start: bool = False

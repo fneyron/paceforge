@@ -4,14 +4,6 @@ model); the swim is distance × pace since you can't plan a swim from a GPX."""
 
 from __future__ import annotations
 
-import statistics
-from datetime import datetime, timedelta, timezone
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.activity import Activity
-
 FORMATS = {
     "S": {"label": "S · 750 m / 20 km / 5 km", "swim_m": 750},
     "M": {"label": "M · 1,5 km / 40 km / 10 km", "swim_m": 1500},
@@ -20,29 +12,6 @@ FORMATS = {
 }
 DEFAULT_T1_S = 3 * 60
 DEFAULT_T2_S = 2 * 60
-
-
-async def estimate_swim_pace(db: AsyncSession, user_id: int, months: int = 12) -> float | None:
-    """Median swim pace (s per 100 m) over the athlete's recent Strava swims."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=months * 30)
-    result = await db.execute(
-        select(Activity)
-        .where(
-            Activity.user_id == user_id,
-            Activity.sport_type == "Swim",
-            Activity.start_date >= cutoff,
-            Activity.distance >= 500,
-            Activity.moving_time > 0,
-        )
-        .order_by(Activity.start_date.desc())
-        .limit(30)
-    )
-    paces = []
-    for a in result.scalars().all():
-        pace = a.moving_time / (a.distance / 100.0)
-        if 60 <= pace <= 240:  # 1:00 to 4:00 per 100 m
-            paces.append(pace)
-    return round(statistics.median(paces), 1) if paces else None
 
 
 def build_timeline(start_offset_s: int, swim_s: int, t1_s: int, bike_s: int, t2_s: int, run_s: int) -> list[dict]:

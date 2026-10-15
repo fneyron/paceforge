@@ -471,16 +471,18 @@ async def _shared(call):
 
         client = aioredis.Redis.from_url(settings.REDIS_URL, socket_timeout=0.5, socket_connect_timeout=0.5)
     except Exception:
+        logger.warning("Weather cache: no Redis client", exc_info=True)
         return None
     try:
         return await call(client)
     except Exception:
+        logger.warning("Weather cache: Redis call failed", exc_info=True)
         return None
     finally:
         try:
             await client.aclose()
         except Exception:
-            pass
+            logger.warning("Weather cache: Redis client not closed", exc_info=True)
 
 
 def _zone(name) -> str | None:

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import settings
 from app.database import Base
-from app.models import Activity, Analysis, User  # noqa: F401
+from app.models import Activity, User  # noqa: F401
 
 config = context.config
 
@@ -15,6 +15,14 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+
+# The AI chain's tables and simulations are unmapped (their models are gone) but kept one release, dropped after
+# the first backup; see docs/ops-runbook.md. Autogenerate and `alembic check` leave them alone until then.
+LEGACY_TABLES = {"analyses", "chat_messages", "weekly_digests", "generated_plans", "simulations"}
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    return not (type_ == "table" and name in LEGACY_TABLES)
 
 # Override sqlalchemy.url with our async DATABASE_URL
 # Convert asyncpg URL to psycopg2 for sync operations if needed
@@ -26,6 +34,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -35,7 +44,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(connection=connection, target_metadata=target_metadata, include_object=include_object)
     with context.begin_transaction():
         context.run_migrations()
 

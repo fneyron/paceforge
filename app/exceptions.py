@@ -39,22 +39,11 @@ class StravaTokenError(StravaAPIError):
         super().__init__("Failed to refresh Strava token", status_code=401)
 
 
-class ClaudeAPIError(PaceForgeError):
-    """Error communicating with Claude API."""
-
-
 class ActivityNotFoundError(PaceForgeError):
     """Activity not found."""
 
     def __init__(self, activity_id: int) -> None:
         super().__init__(f"Activity {activity_id} not found")
-
-
-class AnalysisNotFoundError(PaceForgeError):
-    """Analysis not found for activity."""
-
-    def __init__(self, activity_id: int) -> None:
-        super().__init__(f"Analysis not found for activity {activity_id}")
 
 
 class UserNotFoundError(PaceForgeError):

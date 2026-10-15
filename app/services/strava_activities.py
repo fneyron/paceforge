@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import defer, raiseload
+from sqlalchemy.orm import defer
 
 from app.models.activity import Activity
 from app.models.user import User
@@ -130,7 +130,7 @@ async def save_new(db: AsyncSession, user: User, data: dict) -> Activity | None:
     if not data.get("id"):
         return None
     existing = (await db.execute(select(Activity).options(
-        raiseload(Activity.analysis), defer(Activity.streams_data), defer(Activity.computed_metrics)).where(
+        defer(Activity.streams_data), defer(Activity.computed_metrics)).where(
         Activity.strava_activity_id == data["id"]))).scalar_one_or_none()
     if existing is not None:
         if existing.user_id == user.id:

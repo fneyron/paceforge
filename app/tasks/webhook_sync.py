@@ -192,7 +192,7 @@ async def _deleted(db, user: User, strava, row: Activity | None, activity_id: in
     if row.garmin_activity_id or row.coros_activity_id:
         row.strava_activity_id = None
         return {"status": "unlinked"}
-    await db.execute(delete(Activity).where(Activity.id == row.id))  # its analysis goes with it (ON DELETE CASCADE)
+    await db.execute(delete(Activity).where(Activity.id == row.id))
     return {"status": "deleted"}
 
 

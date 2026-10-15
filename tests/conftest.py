@@ -12,7 +12,6 @@ os.environ.setdefault("ACTIVITY_ENV_FETCH", "false")
 os.environ["CYCLING_ENABLED"] = "false"
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -23,7 +22,6 @@ from app.database import Base
 from app.dependencies import get_db
 from app.main import create_app
 from app.models.activity import Activity
-from app.models.analysis import Analysis
 from app.models.user import User
 
 # PostgreSQL, as in production, when TEST_DATABASE_URL names one: build its schema with `alembic upgrade head`
@@ -122,31 +120,6 @@ async def test_activity(db_session: AsyncSession, test_user: User) -> Activity:
     await db_session.flush()
     await db_session.refresh(activity)
     return activity
-
-
-@pytest.fixture
-async def test_analysis(db_session: AsyncSession, test_activity: Activity) -> Analysis:
-    analysis = Analysis(
-        activity_id=test_activity.id,
-        summary="Bonne sortie d'endurance avec une allure régulière.",
-        strengths=["Allure stable", "Cadence régulière"],
-        improvements=["Légère dérive cardiaque après 4km"],
-        next_workout_tip="Essaye une sortie similaire en partant 10s/km plus lent.",
-        strava_comment="Analyse automatique 🧠\n\nBonne régularité.\n\n👉 Pars un peu plus lent.\n\nAnalyse générée par PaceForge",
-        fatigue_note=None,
-        training_load_7d_km=25.0,
-        training_load_7d_hours=2.5,
-        training_load_7d_count=3,
-        training_load_28d_km=90.0,
-        training_load_28d_hours=9.0,
-        training_load_28d_count=12,
-        model_used="claude-sonnet-4-20250514",
-        raw_response='{"summary": "test"}',
-    )
-    db_session.add(analysis)
-    await db_session.flush()
-    await db_session.refresh(analysis)
-    return analysis
 
 
 @pytest.fixture
