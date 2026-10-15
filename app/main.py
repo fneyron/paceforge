@@ -13,6 +13,7 @@ from starlette.requests import Request
 from app.build import BUILD_ID
 from app.config import settings
 from app.exceptions import register_exception_handlers
+from app.middleware.security import CrossSiteRequestMiddleware, SecurityHeadersMiddleware
 
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
@@ -126,7 +127,11 @@ def create_app() -> FastAPI:
     )
     app.state.build_id = BUILD_ID
 
-    # Middleware
+    # Middleware, innermost first (the last added runs first): the session is read before the headers middleware
+    # answers, which needs it to tell a signed-in page; the cross-site check refuses before any route runs, and its
+    # answer gets the headers too
+    app.add_middleware(CrossSiteRequestMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.add_middleware(
         SessionMiddleware,

@@ -397,9 +397,10 @@ async def test_the_limits_count_the_address_the_proxy_saw(db_session, no_commit,
 # ── auth forms posted from another site are refused (login CSRF) ────────────
 
 CROSS_SITE = [{"Sec-Fetch-Site": "cross-site"}, {"Origin": "https://evil.example"}, {"Origin": "null"},
-              {"Sec-Fetch-Site": "same-site", "Origin": "https://evil.example"}]
+              {"Sec-Fetch-Site": "same-site", "Origin": "https://evil.example"},
+              {"Sec-Fetch-Site": "same-site"}]  # another subdomain: not this site either (app.middleware.security)
 OWN_SITE = [{}, {"Sec-Fetch-Site": "same-origin", "Origin": "https://test"}, {"Sec-Fetch-Site": "none"},
-            {"Sec-Fetch-Site": "same-site"}, {"Origin": "http://localhost:8000"}]  # BASE_URL in the tests
+            {"Origin": "http://localhost:8000"}]  # BASE_URL in the tests
 
 
 @pytest.mark.parametrize("headers", CROSS_SITE)
