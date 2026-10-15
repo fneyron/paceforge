@@ -228,17 +228,20 @@ async def test_invalid_weight_preserves_the_saved_value(as_user, test_user, weig
     assert test_user.weight_kg == 70
 
 
-async def test_account_deletion_removes_legacy_nutrition_only_for_that_user(as_user, db_session, test_user):
-    other = User()
-    db_session.add(other)
-    await db_session.flush()
-    db_session.add_all([NutritionProduct(user_id=test_user.id, name="Owned"),
-                        NutritionProduct(user_id=other.id, name="Other")])
-    await db_session.flush()
-    response = await as_user.post("/settings/delete-account", data={"confirmation": "SUPPRIMER"})
+async def test_account_deletion_removes_legacy_nutrition_only_for_that_user(committing_session, committing_client):
+    """Foreign keys enforced (as on PostgreSQL): the pantry goes with its owner, the other athlete keeps his."""
+    db = committing_session
+    user, other = User(), User()
+    db.add_all([user, other])
+    await db.flush()
+    db.add_all([NutritionProduct(user_id=user.id, name="Owned"), NutritionProduct(user_id=other.id, name="Other")])
+    await db.commit()
+    committing_client._transport.app.dependency_overrides[get_current_user] = lambda: user
+    response = await committing_client.post("/settings/delete-account", data={"confirmation": "SUPPRIMER"})
     assert response.status_code == 302
-    assert (await db_session.execute(select(User).where(User.id == test_user.id))).first() is None
-    assert [p.name for p in (await db_session.execute(select(NutritionProduct))).scalars()] == ["Other"]
+    await db.rollback()
+    assert (await db.execute(select(User).where(User.id == user.id))).first() is None
+    assert [p.name for p in (await db.execute(select(NutritionProduct))).scalars()] == ["Other"]
 
 
 def test_oauth_migration_round_trip_and_foreign_key():
