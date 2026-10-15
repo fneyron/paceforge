@@ -25,6 +25,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.services import coros, garmin
 from app.services.sante import health_page
+from app.services.watch_sync_status import sync_notice
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -108,6 +109,7 @@ def _link(conn, service, retryable=()) -> dict:
     return {"connected": True, "needs_reauth": needs_reauth, "last_sync_at": conn.last_sync_at,
             "syncing": bool(claimed and datetime.now(timezone.utc) - _utc(claimed) < service.CLAIM_TTL),
             "last_error": error,
+            "sync_notice": sync_notice("COROS" if service is coros else "Garmin", error, needs_reauth),
             "retryable_partial": partial and conn.last_sync_at is not None}
 
 
@@ -163,7 +165,7 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
     from app.models.activity import Activity
     from app.models.health import HealthMetric
     from app.models.mobile import MobileDaily
-    from app.services.activity_identity import confirmed_races, revision_sum
+    from app.services.activity_identity import revision_sum
     from app.services.sante_training import int_sum as whole  # a NaN or ±∞ (PostgreSQL cannot cast it) counts as 0
 
     n, last = (await db.execute(select(func.count(HealthMetric.id), func.max(HealthMetric.updated_at)).where(
@@ -178,14 +180,13 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
                                       whole(Activity.max_heartrate), whole(Activity.total_elevation_gain),
                                       whole(Activity.elapsed_time), revision_sum(db)).where(Activity.user_id == user_id))).one()
     version += "-" + "-".join(str(int(v or 0)) for v in counts)
-    version += "-races:" + repr(sorted((await confirmed_races(db, user_id)).items()))
     for _, service in _WATCHES:
         conn = await service.connection_for(db, user_id)
         if conn is None:
             version += "-none"
             continue
         needs_reauth, error = _flags(conn, service)
-        version += f"-{int(bool(needs_reauth))}{int(error is not None)}"
+        version += "-" + repr((bool(needs_reauth), error))
     return sha256(version.encode()).hexdigest()
 
 
@@ -337,7 +338,7 @@ async def sante_sync_status(
     """Polled, quietly, while the opening sync runs: the page reloads only when
     the sync brought something new; it stops waiting after 2 min."""
     if request.headers.get("accept") == "application/json":
-        pending, errors = [], []
+        pending, errors, warnings = [], [], []
         for name, service in _WATCHES:
             if name not in watches.split(','):
                 continue
@@ -350,10 +351,14 @@ async def sante_sync_status(
             elif _claimed(conn, service):
                 pending.append(name)
             elif error:
-                errors.append(f"{name} : synchronisation incomplète. Vérifie Réglages.")
+                notice = sync_notice(name, error)
+                (warnings if notice["level"] == "warning" else errors).append(notice["message"])
             elif since and (conn.last_sync_at is None or _utc(conn.last_sync_at) < _utc(since)):
                 pending.append(name)  # queued but not yet claimed/completed
-        return JSONResponse({"pending": pending, "errors": errors}, headers={"Cache-Control": "no-store"})
+        state = {"pending": pending, "errors": errors}
+        if warnings:
+            state["warnings"] = warnings
+        return JSONResponse(state, headers={"Cache-Control": "no-store"})
     try:
         links = await link_state(db, user.id)
         if any(link.get("syncing") for link in links) and n < MAX_POLLS:
