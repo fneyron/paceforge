@@ -89,8 +89,10 @@ async def test_the_declared_encoding_and_the_bom_are_honoured(as_user, db_sessio
 
 @pytest.mark.parametrize("content, reason", [
     (gpx_bytes(line()).replace(b"UTF-8", b"KLINGON"), "son encodage « KLINGON » est inconnu."),
-    (gpx_bytes(line(), name="Forêt").replace(b'"UTF-8"', b'"ASCII"'),
-     "son texte ne correspond pas à l’encodage annoncé (ASCII)."),
+    (gpx_bytes(line(), name="Forêt", encoding="ISO-8859-1").replace(b'"ISO-8859-1"', b'"UTF-8"'),
+     "son texte ne correspond pas à l’encodage annoncé (UTF-8)."),
+    (gpx_bytes(line(), name="Forêt", encoding="ISO-8859-1").replace(b'"ISO-8859-1"', b'"undefined"'),
+     "son texte ne correspond pas à l’encodage annoncé (undefined)."),
     (gpx_bytes([*line()[:10], ("nan", 6.0, 500.0), *line()[11:]]), "il contient des coordonnées invalides."),
     (gpx_bytes([*line()[:10], ("inf", 6.0, 500.0), *line()[11:]]), "il contient des coordonnées invalides."),
     (b"not xml at all", "ce n’est pas un fichier XML valide."),
@@ -102,6 +104,48 @@ async def test_an_unreadable_file_gets_one_french_sentence(as_user, content, rea
     assert not re.search(r"codec|NaN|float|Traceback|Error", r.text)
     r = await upload(as_user, b'<gpx version="1.1"><trk><trkseg></trkseg></trk></gpx>')
     assert "Le fichier GPX ne contient aucun point de trace." in r.text
+
+
+def test_the_declaration_may_space_its_equals_sign_and_lie_about_a_utf8_file():
+    latin = gpx_bytes(line(), name="Forêt d'Été", encoding="ISO-8859-1").replace(b'encoding="ISO-8859-1"',
+                                                                                  b'encoding = "ISO-8859-1"')
+    assert gpx_service.read_gpx(latin).name == "Forêt d'Été"
+    # UTF-8 bytes under a single-byte declaration (a file re-saved by an editor): UTF-8 first, not « ForÃªt »
+    lying = gpx_bytes(line(), name="Forêt").replace(b'"UTF-8"', b'"ISO-8859-1"')
+    assert gpx_service.read_gpx(lying).name == "Forêt"
+
+
+def test_only_the_exports_own_cp_prefix_is_stripped():
+    parsed = gpx_service.read_gpx(gpx_bytes(line(), waypoints=[
+        ("CP1 — Ravito", 45.05, 6.0), ("CP3 - Les Contamines", 45.1, 6.0), ("CP4 – Col", 45.12, 6.0),
+        ("CP5", 45.13, 6.0), ("CP6 — ", 45.14, 6.0)]))
+    assert [w["name"] for w in parsed.waypoints] == ["Ravito", "CP3 - Les Contamines", "CP4 – Col", "CP5", "CP6 —"]
+
+
+async def test_a_doctype_is_refused_before_any_parse(as_user, monkeypatch):
+    """An internal entity would expand one literal point into as many as the DTD says: the text's point count
+    saw one, the parser would build them all."""
+    parses = []
+    real = gpx_service.gpxpy.parse
+    monkeypatch.setattr(gpx_service.gpxpy, "parse", lambda *a, **k: parses.append(1) or real(*a, **k))
+    entity = (b'<?xml version="1.0"?><!DOCTYPE gpx [<!ENTITY p \'<trkpt lat="45" lon="6"><ele>1</ele></trkpt>\'>]>'
+              b'<gpx version="1.1"><trk><trkseg><trkpt lat="45" lon="6"/>' + b"&p;" * 1000 + b"</trkseg></trk></gpx>")
+    r = await upload(as_user, entity)
+    assert r.status_code == 200 and "il contient une déclaration DOCTYPE, dont un GPX n’a pas besoin." in r.text
+    assert parses == []
+
+
+def test_the_point_cap_holds_whatever_the_text_counted(monkeypatch):
+    import gpxpy.gpx as g
+
+    fake, trk, seg = g.GPX(), g.GPXTrack(), g.GPXTrackSegment()
+    trk.segments.append(seg)
+    fake.tracks.append(trk)
+    seg.points.extend(g.GPXTrackPoint(45 + i * 1e-4, 6.0, elevation=1.0) for i in range(60))
+    monkeypatch.setattr(gpx_service.gpxpy, "parse", lambda text: fake)
+    monkeypatch.setattr(gpx_service, "MAX_POINTS", 50)
+    with pytest.raises(gpx_service.GpxError, match="trop de points"):
+        gpx_service.read_gpx(b"<gpx/>")
 
 
 async def test_oversized_files_are_refused_before_any_parse(as_user, monkeypatch):

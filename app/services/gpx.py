@@ -19,8 +19,8 @@ MAX_POINTS = 150_000
 SNAP_MAX_M = 500.0
 _CELL = 0.01  # degrees: 1.1 km of latitude, so a cell and its neighbours hold every point within SNAP_MAX_M
 _CANNOT_READ = "Ce fichier GPX n’a pas pu être lu : "
-_ENCODING = re.compile(rb"^\s*<\?xml[^>]*?encoding=[\"']([A-Za-z0-9._-]+)[\"']")
-_CP_PREFIX = re.compile(r"^CP\d+\s*[—–-]\s*")  # what the GPX export writes before a checkpoint's name
+_ENCODING = re.compile(rb"^\s*<\?xml[^>]*?encoding\s*=\s*[\"']([A-Za-z0-9._-]+)[\"']")
+_CP_PREFIX = re.compile(r"^CP\d+ — ")  # exactly what the GPX export writes before a checkpoint's name
 
 
 class GpxError(ValueError):
@@ -49,6 +49,21 @@ def _thousands(n: int) -> str:
     return f"{n:,}".replace(",", " ")
 
 
+def _too_many(n: int) -> GpxError:
+    return GpxError(f"Ce fichier GPX contient trop de points ({_thousands(n)} ; {_thousands(MAX_POINTS)} au plus).")
+
+
+def _decode(content: bytes, declared: str) -> str:
+    """A single-byte declaration (ISO-8859-1, windows-1252…) over UTF-8 bytes — a file re-saved by an editor —
+    would decode silently to mojibake: UTF-8 is tried first, the declared codec is the fallback."""
+    if not codecs.lookup(declared).name.startswith(("utf-8", "utf-16", "utf-32")):  # LookupError: unknown
+        try:
+            return content.decode("utf-8")
+        except UnicodeError:
+            pass
+    return content.decode(declared)
+
+
 def decode_gpx(content: bytes) -> str:
     """The file's text, read by its BOM or its XML declaration (UTF-8 without either)."""
     for bom, enc in ((codecs.BOM_UTF8, "utf-8"), (codecs.BOM_UTF16_LE, "utf-16-le"),
@@ -65,10 +80,10 @@ def decode_gpx(content: bytes) -> str:
             m = _ENCODING.match(content)
             declared = m.group(1).decode("ascii") if m else "utf-8"
     try:
-        return content.decode(declared)
+        return _decode(content, declared)
     except LookupError:
         raise GpxError(f"{_CANNOT_READ}son encodage « {declared} » est inconnu.") from None
-    except UnicodeDecodeError:
+    except UnicodeError:  # a decode error, or a codec such as « undefined » that refuses every byte
         raise GpxError(f"{_CANNOT_READ}son texte ne correspond pas à l’encodage annoncé ({declared}).") from None
 
 
@@ -116,10 +131,11 @@ def read_gpx(content: bytes) -> ParsedGpx:
     """The usable track of a GPX file (<trk>, else <rte>), its named waypoints and its name. Several tracks:
     the longest is kept (each measured from its own start), the others left out and said so."""
     text = decode_gpx(content)
+    if "<!DOCTYPE" in text:  # a DTD can define an entity that expands into points by the million: no GPX needs one
+        raise GpxError(f"{_CANNOT_READ}il contient une déclaration DOCTYPE, dont un GPX n’a pas besoin.")
     n = text.count("<trkpt") + text.count("<rtept")
     if n > MAX_POINTS:
-        raise GpxError(f"Ce fichier GPX contient trop de points ({_thousands(n)} ; "
-                       f"{_thousands(MAX_POINTS)} au plus).")
+        raise _too_many(n)
     try:
         gpx = gpxpy.parse(text)
     except GPXXMLSyntaxException:
@@ -132,6 +148,8 @@ def read_gpx(content: bytes) -> ParsedGpx:
         tracks = [t for t in (_track(rte.name, rte.points) for rte in gpx.routes) if t]
     if not tracks:
         raise GpxError("Le fichier GPX ne contient aucun point de trace.")
+    if sum(len(t[1]) for t in tracks) > MAX_POINTS:  # whatever the text's count said
+        raise _too_many(sum(len(t[1]) for t in tracks))
     name, points = max(tracks, key=lambda t: t[1][-1].distance_from_start)
     notice = None
     if len(tracks) > 1:
@@ -143,7 +161,8 @@ def read_gpx(content: bytes) -> ParsedGpx:
     # « CP1 — » its names were given, so they never stack.
     waypoints = []
     for wpt in gpx.waypoints:
-        wname = _CP_PREFIX.sub("", (wpt.name or "").strip())
+        original = (wpt.name or "").strip()
+        wname = _CP_PREFIX.sub("", original) or original
         if not wname or wpt.latitude is None or wpt.longitude is None:
             continue
         waypoints.append({"name": wname, "lat": wpt.latitude, "lon": wpt.longitude, "elevation": wpt.elevation or 0.0})
