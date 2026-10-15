@@ -141,7 +141,8 @@ Dans une course enregistrée, le menu ⋯ propose « Garder hors connexion ».
 Les modifications sont d’abord sauvegardées sur le compte ; le serveur produit
 une copie des horaires, points de passage, ravitaillements et barrières horaires.
 La copie native est ensuite consultable depuis « Plans hors connexion » dans
-Courses, ou depuis l’écran d’erreur réseau, même après redémarrage de l’app.
+Courses, ou depuis l’écran d’erreur réseau de cet onglet, même après redémarrage
+de l’app. Santé et Activités proposent uniquement de réessayer leur chargement.
 La date de copie est affichée. Répéter l’action remplace la copie ; il n’y a pas
 de mise à jour automatique. Carte, édition et export restent en ligne.
 Fermer une copie réaffiche la course encore chargée sans nouvelle requête.

@@ -19,7 +19,6 @@ from app.services.model_stats import load_model_stats
 from app.services.strava import StravaService
 from app.services.strava_activities import adopt_zone, import_recent
 from app.services.timezones import athlete_zone, local_date, zone_of
-from app.services.training_load import calculate_training_load
 from app.services.training_view import MEASURES, spike_ids, training_top
 from app.services.viz import d_short, hm
 from app.services.viz import dplus as dplus_fmt
@@ -101,18 +100,17 @@ async def activities_page(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Training log: the 7 / 28-day volume at the top, « Semaines » on page 1 (one measure, `m`: duree, distance
+    """Training log: « Semaines » visible on page 1 (one measure, `m`: duree, distance
     or dplus; the sport filter applies to it and to the list), then the activities grouped by week. `depuis` (a
     day of the last month, Santé's Entraînement card's link): only the activities from that day, as the card
     counts them."""
     sport = sport if sport in _FILTER_KEYS else None
     m = m if m in {k for k, _, _ in MEASURES} else None
     now, zone = await _clock(db, user)  # the athlete's clock, read once and passed down
-    training_load = await calculate_training_load(db, user.id, now, zone=zone)
     recent = await _recent(db, user.id, depuis, zone) if depuis else None
     if recent is not None:
         return templates.TemplateResponse(request, "activities.html", context={
-            "user": user, "recent": recent, "training_load": training_load, "weeks": [], "has_more": False,
+            "user": user, "recent": recent, "weeks": [], "has_more": False,
             "page": 1, "sport": None, "filters": FILTERS, "training": None, "spikes": set()})
 
     weeks, has_more, spikes = await _week_groups(db, user.id, page, sport, now, zone)
@@ -128,7 +126,6 @@ async def activities_page(
             "page": page,
             "sport": sport,
             "filters": FILTERS,
-            "training_load": training_load,
             "training": training,
             "spikes": spikes,
         },
