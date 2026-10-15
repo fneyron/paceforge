@@ -428,6 +428,22 @@ python3 scripts/check-ios-health-privacy.py ios/PaceForge/Info.plist
 La CI applique aussi ce contrôle au `Info.plist` de l'application compilée pour
 le simulateur. Le script accepte également le fichier extrait d'un `.ipa` signé.
 
+Le reste des métadonnées de diffusion est vérifié par
+`python3 ../scripts/verify-ios-release.py --prebuilt ios/PaceForge app.json`
+(CI, après `expo prebuild`) puis sur l’IPA signé (workflow TestFlight) : version
+de `app.json`, textes français `NSFaceIDUsageDescription` (option
+`faceIDPermission` d’expo-secure-store) et `NSLocalNetworkUsageDescription`
+(`ios.infoPlist`), `CFBundleLocalizations` `["fr"]` et
+`CFBundleDevelopmentRegion` `fr` (fiche App Store en français),
+`UIUserInterfaceStyle` automatique, déclaration de chiffrement, modes
+d’arrière-plan (`processing` seul : `plugins/without-background-fetch` retire
+le `fetch` inutilisé ajouté par expo-task-manager) et `PrivacyInfo.xcprivacy`
+(`ios.privacyManifests` : API à motif requis de React Native / Expo, données
+Santé et identifiant de compte liées au compte, jamais de pistage). Les réponses
+« Confidentialité de l’app » dans App Store Connect doivent rester cohérentes
+avec ce manifeste. L’écran de lancement est la couleur de l’application, sans
+image (`plugins/with-launch-screen`, iOS et Android).
+
 ### Icônes
 
 `assets/icon.png` est l'icône carrée opaque de 1024 × 1024 pixels utilisée
