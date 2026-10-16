@@ -98,14 +98,15 @@ def spikes(sessions: list[st.Session], since: date) -> list[tuple[st.Session, fl
 
 
 async def spike_ids(db: AsyncSession, user_id: int, since: date, now: datetime | None = None,
-                    zone=None) -> set[int]:
+                    zone=None, *, today: date | None = None, sessions: list[st.Session] | None = None) -> set[int]:
     """The activities of the list (since `since`) that are a single-run spike (spikes): their rows say « plus
     longue que d'habitude » (v4.3: no ▲ on the chart any more). Never fails the list. `zone`:
     sante_training.athlete_clock's, when the caller read it."""
     try:
         zone = zone if zone is not None else await st.athlete_clock(db, user_id)
-        today = await st.athlete_today(db, user_id, now, zone=zone)
-        return {s.id for s, _ in spikes(await st.load_sessions(db, user_id, today, zone=zone), since)}
+        today = today if today is not None else await st.athlete_today(db, user_id, now, zone=zone)
+        sessions = sessions if sessions is not None else await st.load_sessions(db, user_id, today, zone=zone)
+        return {s.id for s, _ in spikes(sessions, since)}
     except Exception:
         logger.exception("Activités › spikes failed for user %d", user_id)
         return set()
@@ -294,7 +295,8 @@ def footing(sessions: list[st.Session], today: date, peak: float) -> dict | None
 # ── the block ───────────────────────────────────────────────────────────────
 
 async def training_top(db: AsyncSession, user_id: int, now: datetime | None = None, sport: str | None = None,
-                       measure: str | None = None, zone=None) -> dict | None:
+                       measure: str | None = None, zone=None, *, today: date | None = None,
+                       sessions: list[st.Session] | None = None) -> dict | None:
     """What partials/activity_training.html draws for the sport filter `sport` (None: every sport), or None on a
     failure (the list below never blanks for it): « Semaines » (None without an activity in its 12 weeks) and
     « FC en footing » (under « Tout », « Course » and « Trail »). No planned race is read. `zone`:
@@ -305,8 +307,8 @@ async def training_top(db: AsyncSession, user_id: int, now: datetime | None = No
         weeks, first = await week_totals(db, user_id, sport, now, zone)
         easy = None
         if sport in FOOTING_SPORTS:
-            today = await st.athlete_today(db, user_id, now, zone=zone)
-            sessions = await st.load_sessions(db, user_id, today, zone=zone)
+            today = today if today is not None else await st.athlete_today(db, user_id, now, zone=zone)
+            sessions = sessions if sessions is not None else await st.load_sessions(db, user_id, today, zone=zone)
             # their km splits: the same steady flat splits Santé › Forme reads (sante_training.comparable)
             await st.load_hr_segments(db, user_id, sessions, today - timedelta(days=st.EASY_FIT_DAYS))
             easy = footing(sessions, today, st.hr_max(sessions, today)) if sessions else None

@@ -62,7 +62,7 @@ export function inlineConnectionsScript(task: Extract<Pending, { kind: 'connecti
 function inlineReadScript(task: Extract<Pending, { kind: 'check' | 'connections' }>, type: 'session' | 'connections'): string {
   return `(async function () {
     if (location.origin !== ${JSON.stringify(new URL(task.url).origin)}) return;
-    const send = data => window.ReactNativeWebView?.postMessage(JSON.stringify({...data, transport:'inline', nonce:${JSON.stringify(task.nonce)}}));
+    const send = data => window.ReactNativeWebView?.postMessage(JSON.stringify({...data, transport:'inline', page_url:location.href, nonce:${JSON.stringify(task.nonce)}}));
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 25000);
     try {
       const response = await fetch(${JSON.stringify(task.url)}, {credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}, signal:controller.signal});

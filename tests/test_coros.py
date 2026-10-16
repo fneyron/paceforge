@@ -269,6 +269,19 @@ def test_hrv_answer_requires_readable_raw_lines_not_only_a_successful_response()
     assert not coros.hrv_answer_read("")
 
 
+def test_real_coros_omitted_hrv_day_is_understood_without_accepting_unknown_raw_lines():
+    assert coros.hrv_answer_read(oc.HRV_2026_09_28)
+    assert coros.parse_hrv_points(oc.HRV_2026_09_28) == []
+    assert coros.hrv_days(oc.HRV_2026_09_28) == {date(2026, 9, 28)}
+    mixed = (oc.HRV_2026_09_28 + "\n2026-09-29:\n"
+             "  timestamp=1790610290, timezone=36, hrv=77 ms\n")
+    assert coros.hrv_answer_read(mixed)
+    assert coros.parse_hrv_points(mixed) == [(1790610290, 36, 77.0)]
+    assert not coros.hrv_answer_read(mixed + "  timestamp=1790610590, offset=36, hrv=101 ms\n")
+    assert not coros.hrv_answer_read(mixed.replace("raw HRV points omitted.", "raw HRV points unreadable."))
+    assert not coros.hrv_answer_read(mixed.replace("raw HRV points omitted.", "raw HRV points omitted. New format follows."))
+
+
 def test_tool_text_decodes_the_json_quoted_text_coros_sends():
     # what COROS really sends: the text is itself a JSON string literal
     quoted = {"content": [{"type": "text", "text": json.dumps(RHR, ensure_ascii=True)}]}
@@ -1035,13 +1048,14 @@ async def test_unreadable_hrv_preserves_values_and_reports_partial_sync(db_sessi
     assert [a["days"] for n, a in fake.tool_calls if n == "querySleepHrv"] == [7, 2]
     status = await coros.coros_status(db_session, test_user.id)
     assert status["partial"] and not status["retryable_partial"]
-    assert "Synchro incomplète" in (await as_user.get("/settings")).text
+    assert "VFC indisponible" in (await as_user.get("/settings")).text
 
 
 @pytest.mark.parametrize("text", [
     "Sleep HRV\nNo readings for this period.\n",
     "Sleep HRV Time Series\n================\n",
     "HRV Assessment\n2026-10-13:\n  HRV Avg: 83 ms — Normal\n",
+    oc.HRV_2026_09_28,
 ])
 async def test_empty_hrv_and_assessment_without_raw_points_are_not_sync_failures(db_session, test_user, fake,
                                                                                no_commit, text):
@@ -1054,6 +1068,26 @@ async def test_empty_hrv_and_assessment_without_raw_points_are_not_sync_failures
     assert len([a for n, a in fake.tool_calls if n == "querySleepHrv"]) == 9  # no extra retries
     status = await coros.coros_status(db_session, test_user.id)
     assert "pas encore reçue" in status["hrv_note"]
+
+
+@pytest.mark.parametrize("first_sync", [False, True])
+async def test_real_empty_hrv_day_does_not_reject_other_nights_in_the_same_response(
+        db_session, test_user, fake, no_commit, first_sync):
+    conn = await _link(db_session, test_user)
+    if not first_sync:
+        assert (await coros.run_sync(db_session, conn))["ok"]
+    today = datetime.now(timezone.utc).date()
+    empty_day = today - timedelta(days=2)
+    fake.texts["querySleepHrv"] += (f"\n{empty_day}: no official sleep HRV value for this day; "
+                                   "raw HRV points omitted.\n")
+    fake.tool_calls.clear()
+    result = await coros.run_sync(db_session, conn)
+    assert result["ok"] and not result["result"]["hrv_incomplete"]
+    assert not result["result"]["hrv_unreadable"] and conn.last_error is None
+    hrv = (await _values(db_session, test_user))["hrv"]
+    assert today in hrv and today - timedelta(days=1) in hrv
+    assert empty_day not in hrv  # an explicit absence is never a zero or a fabricated value
+    assert len(_asked(fake, "querySleepHrv")) == (9 if first_sync else 1)
 
 
 async def test_latest_hrv_status_uses_accepted_measurement_date_not_sync_or_other_watch(db_session, test_user,
@@ -1608,6 +1642,38 @@ async def test_an_hrv_format_not_understood_is_not_a_60_day_read_every_sync(db_s
     fake.tool_calls.clear()
     assert (await coros.run_sync(db_session, conn))["ok"]  # the same day
     assert [a["days"] for a in _asked(fake, "querySleepHrv")] == [7, 2] and conn.last_error == coros.HRV_UNREADABLE
+
+
+async def test_fixed_hrv_parser_recovers_recent_nights_then_the_persisted_history_debt(
+        db_session, test_user, fake, no_commit, monkeypatch):
+    """A deployed fix clears the actual parse failure, without claiming the old range was read."""
+    today = datetime.now(timezone.utc).date()
+    fake.texts["querySleepHrv"] += (f"\n{today - timedelta(days=2)}: no official sleep HRV value for this day; "
+                                   "raw HRV points omitted.\n")
+    conn = await _link(db_session, test_user)
+    corrected_parser = coros.hrv_answer_read
+    with monkeypatch.context() as old:
+        # The previous release rejected this recognised empty-day sentence.
+        old.setattr(coros, "hrv_answer_read", lambda text: corrected_parser(text)
+                    and "raw HRV points omitted." not in text)
+        assert (await coros.run_sync(db_session, conn))["ok"]
+    assert conn.last_error == coros.HRV_UNREADABLE
+    assert "hrv" not in await _values(db_session, test_user)
+
+    fake.tool_calls.clear()
+    recovered = await coros.run_sync(db_session, conn)
+    assert recovered["ok"] and not recovered["result"]["hrv_unreadable"]
+    assert today in (await _values(db_session, test_user))["hrv"]
+    assert len(_asked(fake, "querySleepHrv")) == 1  # manual refresh or the scheduled sync, same day
+    assert conn.last_error == coros.PARTIAL  # earlier days have not yet been read with the fixed parser
+    status = await coros.coros_status(db_session, test_user.id)
+    assert status["retryable_partial"] and status["partial"]
+
+    conn.last_sync_at -= timedelta(days=1)
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert len(_asked(fake, "querySleepHrv")) == 9  # next day's complete history settles the debt
+    assert conn.last_error is None
 
 
 async def test_the_pkce_verifier_is_not_readable_in_the_session_cookie(as_user: AsyncClient, fake):

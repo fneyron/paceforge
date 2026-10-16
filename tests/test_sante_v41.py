@@ -204,25 +204,29 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     # need); the night missing 4 days ago held the cycle's highest VFC, so the 7-night mean is 0.61 SD under the
     # baseline: inside T (0.74 for these 6 nights, 1.28 standard errors of a week's mean: it was orange under the
     # 0.5 of max(0.5, 1.28/√n7)), green; (0.95 + 1)/2 → 97
-    assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "97 /100 Signaux nocturnes habituels", dials
+    assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "97 /100 Récupération habituels", dials
     # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 4 active weeks,
     # under the 8 the word needs, so the dial says the 7 days' time, as without a usual week (it read « 100 % comme
     # d'habitude »: at 4 active weeks the word came with 40 % of ordinary weeks; the second statistics review)
     assert dials[2] == "1h40 Entraînement 7 derniers jours"
-    # Recovery and nightly graphs stay visible; secondary explanations stay in their own disclosures.
+    # Recovery and nightly graphs stay visible; explanations and provenance have one entry point.
     card = main.split('<section id="recuperation"')[1].split('</section>')[0]
     assert 'data-viz-key="recuperation"' in card
-    quality = card.split('<details id="qualite-bilan"')[1].split('</details>')[0]
-    assert 'Effort accumulé' not in quality and 'Disponibilité des mesures' in quality
-    assert 'Effort accumulé' not in card.split('<details id="qualite-bilan"')[0]
+    assert 'id="qualite-bilan"' not in main
+    assert main.count('id="comprendre-indicateurs"') == 1
+    explanation = main.split('<details id="comprendre-indicateurs"')[1].split('</details>')[0]
+    assert 'id="explain-recovery"' in explanation and 'FC de nuit :' in explanation
+    assert 'Effort accumulé' not in card
     for key in ("vfc", "fc"):
         card = re.search(rf'<article id="{key}"[^>]*>(.*?)</article>', main, re.S).group(1)
-        primary, reference = card.split('<details', 1)
-        # Raw measurement and source are visible. The rolling comparison lives with its legend.
+        assert '<details' not in card
+        primary = card.split('<script')[0]
+        # The date and raw measurement stay visible. Source/method remain in the shared detail and VoiceOver.
         assert re.search(r'<b data-r>\d+\u00a0(ms|bpm)</b>', primary), key
-        assert "Dernière nuit" in primary and "Garmin" in primary and "Moy. 7 j" not in primary
-        assert 'data-transient' in reference and '<summary>Référence · ' in reference
-        legend = reference.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
+        readout = primary.split('class="pf-viz-read pf-viz-read2"')[1].split('<div class="pf-viz-plot">')[0]
+        assert "Dernière nuit" in readout and "Garmin" not in readout and "Moy. 7 j" not in readout
+        assert f'data-viz-detail-for="{key}"' in explanation and "Garmin" in explanation
+        legend = primary.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
         assert ('<i class="pf-lg is-dot"></i>nuit' in legend and "moyenne 7 j" in legend
                 and '<i class="pf-lg is-band"></i>repère habituel' in legend), key
         assert "is-out" not in legend and "is-band-prov" not in legend  # every night counts, a full band
@@ -249,7 +253,7 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
     sleep, recup = page["dials"][:2]
     assert (sleep["value"], sleep["sub"]) == ("—", "pas de données") and "ring" not in page
     assert (recup["value"], recup["unit"], recup["sub"], recup["tone"]) == ("—", None, "pas de score", "none")
-    assert recup["aria"] == "Signaux nocturnes : pas d’indice pour cette nuit."
+    assert recup["aria"] == "Récupération : pas d’indice nocturne pour cette nuit."
     assert score["missing"] == {"key": "no_night", "label": "pas de bilan"} and "rows" not in page
     assert [(page[k]["status"]["word"], page[k]["status"]["detail"]) for k in ("vfc", "fc")] == [
         ("en construction", "prête dans 4\u00a0nuits"), ("en construction", "prête dans 4\u00a0nuits")]

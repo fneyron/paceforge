@@ -8,6 +8,7 @@
                             .is-none on it when the selected day has no value in any series)
      [data-i="k"] ......... per-mark elements: the selected one gets .is-sel
      [data-r] ............. readout slots, filled in DOM order from D.r[k]
+     [data-viz-detail-for]  optional context outside the figure, in Santé's shared explanation disclosure
      [data-step="±1"] ..... the 44×44 ‹ › buttons, when the figure has them (aria-disabled at either end, never
                             disabled: they keep focus); Santé's cards have none: a tap selects, a drag scrubs
      data-tone ............ on the figure, D.t[k] (the selected point's tone: its readout's word wears it, by CSS)
@@ -110,17 +111,30 @@
       }
     }
 
+    // Santé keeps sources and reference details in one shared disclosure. Its
+    // selected-point context follows the graph without putting brands back in
+    // the visible date. Re-query so a refreshed disclosure cannot keep old nodes.
+    function detail(text) {
+      var targets = document.querySelectorAll("[data-viz-detail-for]");
+      var key = fig.getAttribute("data-viz-key");
+      for (var j = 0; j < targets.length; j++) {
+        if (targets[j].getAttribute("data-viz-detail-for") === key) targets[j].textContent = text || "";
+      }
+    }
+
     // the readout's tallest line, so that no selection moves the plot: the longest readouts are measured
     // (a dozen at most), with the resting one and « — »; again when the figure's width changes
-    var lastW = -1;
+    var lastW = -1, lastFont = "";
     function reserve() {
       // These cards already have a fixed one-line readout and an overlay date.
       // Measuring every candidate here forces repeated synchronous layouts.
       if (fig.classList.contains("pf-viz-quiet")) return;
       if (!readBox || !slots.length) return;
       var w = readBox.clientWidth;
-      if (!w || w === lastW) return;
-      lastW = w;
+      if (!w) return;
+      var font = getComputedStyle(readBox).fontSize;
+      if (w === lastW && font === lastFont) return;
+      lastW = w; lastFont = font;
       var rows = (D.r || []).map(function (r, i) { return { r: r || [], i: i }; });
       function len(r, k) { return ((r[k] || "") + "").length; }
       var cand = rows.slice().sort(function (a, b) { return (len(b.r, 1) + len(b.r, 2)) - (len(a.r, 1) + len(a.r, 2)); })
@@ -128,15 +142,23 @@
         .map(function (o) { return o.r; });
       if (rest) cand.push(rest);
       cand.push(["", "—", ""]);
-      var keep = [], k;
-      for (k = 0; k < slots.length; k++) keep.push(slots[k].textContent);
-      readBox.style.minHeight = "";
-      var max = 0;
+      // Measure copies together. Updating the visible readout and reading its
+      // height for each candidate forces a complete page layout every time.
+      // These copies inherit the figure's fonts and width, but never participate
+      // in its flow, accessibility tree, focus order or chart interactions.
+      var rail = document.createElement("div"), copies = [];
+      rail.setAttribute("aria-hidden", "true"); rail.setAttribute("inert", "");
+      rail.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;contain:layout style;left:0;top:0;width:" + w + "px";
       for (var c = 0; c < cand.length; c++) {
-        for (k = 0; k < slots.length; k++) slots[k].textContent = cand[c][k] || "";
-        max = Math.max(max, readBox.offsetHeight);
+        var copy = readBox.cloneNode(true), texts = copy.querySelectorAll("[data-r]");
+        copy.style.minHeight = "";
+        for (var k = 0; k < texts.length; k++) texts[k].textContent = cand[c][k] || "";
+        rail.appendChild(copy); copies.push(copy);
       }
-      for (k = 0; k < slots.length; k++) slots[k].textContent = keep[k];
+      fig.appendChild(rail);
+      var max = 0;
+      for (var n = 0; n < copies.length; n++) max = Math.max(max, copies[n].offsetHeight);
+      rail.remove();
       if (max) readBox.style.minHeight = max + "px";
     }
 
@@ -169,6 +191,7 @@
       for (var k = 0; k < slots.length; k++) {
         slots[k].textContent = quiet && k === 2 ? (D.dateLabels || [])[i] || "" : r[k] || "";
       }
+      detail(r[3]);
       tone(i);
       if (input) { input.value = i; input.setAttribute("aria-valuetext", D.a ? D.a[i] : r.join(" ")); }
       link(D.h && D.h[i]);
@@ -184,6 +207,7 @@
       cur = END; pending = null;
       if (cross) cross.style.visibility = "hidden";
       for (var k = 0; k < slots.length; k++) slots[k].textContent = rest[k] || "";
+      detail(rest[3]);
       if (fig.classList.contains("pf-viz-quiet") && slots[2]) slots[2].textContent = "";
       tone(-1);
       if (input) { input.value = END; input.setAttribute("aria-valuetext", D.restA || rest.join(" ")); }
@@ -197,6 +221,7 @@
       cur = -1; pending = date;
       if (cross) cross.style.visibility = "hidden";
       for (var k = 0; k < slots.length; k++) slots[k].textContent = k === 1 ? "—" : "";
+      detail("");
       tone(-1);
       link(null);
       nights(-1);

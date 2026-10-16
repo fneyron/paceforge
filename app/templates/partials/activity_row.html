@@ -2,11 +2,12 @@
    than the longest of the 30 days before it (never a race nor an effort of 6 h or more: training_view.spikes) says so
    in words under its date (v4.3: no ▲ on the chart any more). #}
 {% set dim = activity.is_duplicate or activity.is_false_start %}
+{% set distance_first = activity.distance > 0 and activity.sport_type not in ['WeightTraining', 'Workout', 'Crossfit', 'Yoga', 'Pilates', 'Stretching', 'Mobility'] %}
 {% set days = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'] %}
 <a href="/activity/{{ activity.id }}"
    id="activity-row-{{ activity.id }}"
    class="pf-activity-row {% if dim %}opacity-60{% endif %}">
-    <span class="pf-sport-icon pf-sport-{{ activity.sport_group }}">
+    <span class="pf-sport-icon pf-sport-{{ activity.sport_group }}" aria-hidden="true">
         {% if activity.sport_group == 'trail' %}
         <i data-lucide="mountain" class="w-[18px] h-[18px]"></i>
         {% elif activity.sport_group == 'run' %}
@@ -30,14 +31,23 @@
                   title="Enregistrement très court">faux départ</span>
             {% endif %}
         </span>
-        <span class="pf-item-sub block">{{ days[activity.start_date.weekday()] }} {{ activity.start_date.strftime('%d/%m') }}<span class="sm:hidden"> · {{ activity.duration_formatted }}{% if activity.elevation_m %} · +{{ activity.elevation_m }} m{% endif %}</span></span>
+        <span class="pf-item-sub block">{{ days[activity.start_date.weekday()] }} {{ activity.start_date.strftime('%d/%m') }}</span>
         {% if spikes and activity.id in spikes %}<span class="pf-item-flag">plus longue que d'habitude</span>{% endif %}
     </span>
-    <span class="sm:hidden pf-item-end"><b>{{ activity.distance_km|fr_num }}<small class="text-[13px] font-medium text-gray-500"> km</small></b></span>
+    <span class="pf-activity-mobile-stats tabular-nums">
+        {% if distance_first %}
+        <b class="pf-activity-primary">{{ activity.distance_km|fr_num }}<small> km</small></b>
+        <span>{{ activity.duration_formatted }}</span>
+        {% else %}
+        <b class="pf-activity-primary">{{ activity.duration_formatted }}</b>
+        {% if activity.average_heartrate %}<span>{{ activity.average_heartrate|int }} bpm</span>{% endif %}
+        {% endif %}
+        {% if activity.elevation_m %}<span>+{{ activity.elevation_m }} m</span>{% endif %}
+    </span>
     {# Tablet: value over its label, « — » for a missing one. Desktop: one line, the unit inline; a missing value leaves its
        cell empty (.pf-act-none is not drawn there), and a column no row of the list fills is not drawn #}
     <span class="pf-act-stats hidden sm:flex items-center gap-6 shrink-0 text-right tabular-nums">
-        <span class="w-16"><b class="block text-[16px] font-semibold text-ink">{{ activity.distance_km|fr_num }}<small class="pf-act-u"> km</small></b><span class="pf-label">km</span></span>
+        <span class="w-16">{% if distance_first %}<b class="block text-[16px] font-semibold text-ink">{{ activity.distance_km|fr_num }}<small class="pf-act-u"> km</small></b><span class="pf-label">km</span>{% else %}<b class="pf-act-none block text-[16px] font-semibold text-gray-300">—</b><span class="pf-label">km</span>{% endif %}</span>
         <span class="pf-act-dplus w-14">{% if activity.elevation_m %}<b class="block text-[16px] font-semibold text-ink">+{{ activity.elevation_m }}<small class="pf-act-u"> m</small></b>{% else %}<b class="pf-act-none block text-[16px] font-semibold text-gray-300">—</b>{% endif %}<span class="pf-label">D+</span></span>
         <span class="w-16"><b class="block text-[16px] font-semibold text-ink">{{ activity.duration_formatted }}</b><span class="pf-label">durée</span></span>
         {% set pace = activity.pace_formatted %}{% if pace %}{% set pv, pu = pace.rsplit(' ', 1) if ' ' in pace else pace.split('/', 1) %}{% set pu = (' ' if ' ' in pace else '/') ~ pu %}{% endif %}

@@ -654,7 +654,7 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
                unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132,
                sources=None, mean_counts=None, mean_sources=None, notes=None, daytime: bool = False,
                zero_base: bool = False, label_nights: bool = False, reference=None,
-               compact: bool = False) -> dict:
+               compact: bool = False, show_source: bool = True, method_labels=None) -> dict:
     """One nightly signal over the days (Santé's VFC and FC de nuit cards): a
     filled dot per measured night — every one counts toward the athlete's
     usual values (owner, 2026-10-08: « Tous les relevés VFC doivent compter
@@ -673,8 +673,11 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     selected: its value is the card's. `min_span`: the y axis never narrower
     (noise must not look like a cliff). Context wraps on small screens so the
     band and its provisional status remain readable. With `compact`, the
-    third readout slot is the date and source; the fourth keeps the full
-    context in a disclosure. Spoken readouts remain complete."""
+    third readout slot is the date and optional source; the fourth keeps the full
+    context in a disclosure. `show_source=False` removes the brand from this
+    compact visible stamp only; optional `method_labels` keeps a known method
+    visible even without its brand. Spoken readouts, per-point provenance and the
+    boundaries between measurement series remain complete."""
     n = len(days)
     xs = slot_x(n)
     lo_b = [b[0] if b else None for b in band]
@@ -716,6 +719,8 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             line += f" · d'habitude {span(b[0], b[1], digits)}{' (provisoire)' if pv else ''}"
             spoken += (f", d'habitude {span_long(b[0], b[1], digits)}"
                        + (", valeurs provisoires" if pv else ""))
+        if method_labels and method_labels[i] and method_labels[i] not in spoken:
+            spoken += f", {method_labels[i]}"
         selected_label = ("dernière nuit mesurée" if i == last else "nuit sélectionnée") if label_nights else ""
         r.append([f"{num(v, digits)}{NBSP}{unit}", selected_label, line])
         a.append(spoken)
@@ -726,8 +731,10 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             before = d - timedelta(days=1)
             start = str(before.day) + (f" {MOIS[before.month - 1]}" if before.month != d.month else "")
             stamp = d_short(d) if daytime else f"{start} → {d.day} {MOIS[d.month - 1]}"
-            if sources and sources[i] and values[i] is not None:
+            if show_source and sources and sources[i] and values[i] is not None:
                 stamp += f" · {source_label(sources[i])}"
+            elif method_labels and method_labels[i] and values[i] is not None:
+                stamp += f" · {method_labels[i]}"
             if notes and notes[i] == "journée en cours":
                 stamp += " · en cours"
             word = "Dernière nuit" if i == last else "Nuit sélectionnée"

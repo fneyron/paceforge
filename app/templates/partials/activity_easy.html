@@ -1,0 +1,12 @@
+{% import "partials/_viz.html" as vz %}
+{% set e = training.easy %}
+{% if e %}
+<details id="fc-facile" class="pf-train-fold"{% if e.flagged %} open{% endif %}>
+    <summary>FC en footing{% if e.flagged %} <span class="pf-train-warn">· à surveiller</span>{% elif e.after_ultra %} <span class="pf-train-soft">· après ultra</span>{% endif %}</summary>
+    <span id="forme"></span>
+    {% if e.line %}<p class="pf-train-note">{{ e.line }}</p>{% endif %}
+    {{ vz.viz_dots(e, "FC en footing", "footing") }}
+    {{ vz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "tes valeurs habituelles")] if e.band else [])) }}
+    <p class="pf-viz-cap">Sorties faciles et plates, FC ramenée à {{ e.pace }}.</p>
+</details>
+{% endif %}

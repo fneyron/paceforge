@@ -1,11 +1,19 @@
 // Actual App + File/SecureStore contracts mocked; no HealthKit or native filesystem runtime.
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict'),fs=require('node:fs');
+const output=process.env.PF_NATIVE_OUTPUT||'/tmp/paceforge-native-activities';
+fs.mkdirSync(output,{recursive:true});
 const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-native-preview.js','utf8');
 (async()=>{
  const browser=await chromium.launch({headless:true});
  try {
   const p=await browser.newPage({viewport:{width:393,height:852}}),errors=[];
+  async function openSavedCourses(){
+   await p.getByRole('tab',{name:'Courses',exact:true}).click();
+   await p.waitForFunction(()=>new URL(source).pathname.startsWith('/simulator'));
+   await p.evaluate(()=>pageFail());
+   await p.getByRole('button',{name:'Plans hors connexion',exact:true}).click();
+  }
   p.on('pageerror',e=>errors.push(e.message));
   await p.route('http://native.test/**',r=>r.fulfill({contentType:'text/html',body:'<html><body style="margin:0"><div id="app" style="height:100dvh;display:flex"></div><script src="/bundle.js"></script></body></html>'}));
   await p.route('**/bundle.js',r=>r.fulfill({contentType:'text/javascript',body:bundle}));
@@ -31,7 +39,18 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   await p.addInitScript(()=>{window.holdNavigation=true;});
   await p.reload();await p.waitForFunction(()=>window.pageFail);
   await p.evaluate(()=>pageFail());
-  await p.getByRole('button',{name:'Plans hors connexion',exact:true}).click();
+  await p.getByRole('heading',{name:'Écran indisponible'}).waitFor();
+  assert.equal(await p.getByRole('button',{name:'Plans hors connexion',exact:true}).count(),0,'Santé must not offer unrelated course plans');
+  assert.ok(await p.getByRole('button',{name:'Réessayer',exact:true}).isVisible());
+  await p.getByRole('tab',{name:'Activités',exact:true}).click();
+  await p.waitForFunction(()=>new URL(source).pathname==='/activities');
+  await p.evaluate(()=>pageFail());
+  await p.getByRole('heading',{name:'Écran indisponible'}).waitFor();
+  assert.equal(await p.getByRole('button',{name:'Plans hors connexion',exact:true}).count(),0,'Activités must not offer unrelated course plans');
+  await p.screenshot({path:output+'/activities-unavailable-393.png'});
+  await p.getByRole('button',{name:'Réessayer',exact:true}).click();
+  assert.equal(await p.evaluate(()=>reloads),1,'Activities can retry its unavailable document');
+  await openSavedCourses();
   await p.getByRole('button',{name:/Course de montagne/}).click();
   await p.getByRole('heading',{name:'Course de montagne'}).waitFor();
   // Failed disk and SecureStore writes keep the previous committed slot.
@@ -43,17 +62,17 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   await p.evaluate(()=>{window.failDisk=false;window.failSecure=true;followLink('paceforge://offline/save/2');});
   await p.waitForTimeout(100);
   await p.reload();await p.waitForFunction(()=>window.pageFail);await p.evaluate(()=>pageFail());
-  await p.getByRole('button',{name:'Plans hors connexion',exact:true}).click();
+  await openSavedCourses();
   assert.ok(await p.getByRole('button',{name:/Course de montagne/}).isVisible());
   // Changing account removes the old library, including after another relaunch.
   await p.getByRole('tab',{name:'Santé',exact:true}).click();
-  await p.evaluate(()=>{window.accountId=2;navigate('https://paceforge.fr/sante');});
+  await p.evaluate(()=>{window.accountId=2;fullNavigate('https://paceforge.fr/sante');});
   await p.waitForTimeout(100);
   await p.evaluate(()=>followLink('paceforge://offline'));
   await p.getByText(/Ouvre une course avec une connexion/).waitFor();
   assert.equal(await p.getByRole('button',{name:/Course de montagne/}).count(),0);
   await p.reload();await p.waitForFunction(()=>window.pageFail);await p.evaluate(()=>pageFail());
-  await p.getByRole('button',{name:'Plans hors connexion',exact:true}).click();
+  await openSavedCourses();
   assert.ok(await p.getByText(/Ouvre une course avec une connexion/).isVisible());
   // A logout request clears copies even if its response is lost.
   await p.getByRole('tab',{name:'Courses',exact:true}).click();
@@ -62,9 +81,9 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   await p.getByRole('heading',{name:'Course de montagne'}).waitFor();
   await p.evaluate(()=>followLink('https://paceforge.fr/auth/logout'));await p.waitForTimeout(100);
   await p.reload();await p.waitForFunction(()=>window.pageFail);await p.evaluate(()=>pageFail());
-  await p.getByRole('button',{name:'Plans hors connexion',exact:true}).click();
+  await openSavedCourses();
   assert.ok(await p.getByText(/Ouvre une course avec une connexion/).isVisible());
   assert.deepEqual(errors,[]);
-  console.log('Offline plans: save ordering, duplicate reply, midnight, relaunch without network, interrupted writes, account change and logout passed.');
+  console.log('Offline plans: Courses-only error access, Santé/Activities retry, save ordering, duplicate reply, midnight, relaunch without network, interrupted writes, account change and logout passed.');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});
