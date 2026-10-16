@@ -241,6 +241,16 @@ function Companion() {
     if (watchdog.current) clearTimeout(watchdog.current);
     watchdog.current = setTimeout(() => { if (pending.current) fail(new Error('La connexion au compte prend trop de temps. Vérifie le réseau ou connecte-toi, puis réessaie.')); }, 60000);
   }
+  // An explicit web logout: nothing of the account may finish, the offline copies go, and
+  // background sync stops until the account is confirmed again. The logout is a POST form
+  // (Android never asks onShouldStartLoadWithRequest for a POST), so the navigation itself
+  // is watched; the request hook stays as a fallback. Once per logout document.
+  const logoutSeen = useRef(false);
+  function leaveSession() {
+    if (logoutSeen.current) return;
+    logoutSeen.current = true;
+    cancelAccountWork(true); offline.forget(); setBlock('logout'); void blockBackgroundSync('logout').catch(() => {});
+  }
   function cancelAccountWork(release = false) {
     accountEpoch.current++;
     backgroundRefresh.current = null;
@@ -653,7 +663,7 @@ function Companion() {
               else { refresh(); return false; }
             }
             const path = new URL(request.url).pathname;
-            if (path === '/auth/logout') { cancelAccountWork(true); offline.forget(); setBlock('logout'); void blockBackgroundSync('logout').catch(() => {}); }
+            if (path === '/auth/logout') leaveSession();
             if (path === '/settings' && ['#connections', '#coros', '#garmin', '#strava'].includes(new URL(request.url).hash)) { openTab('devices'); return false; }
             if (['/auth/strava', '/coros/connect', '/setup'].includes(path)) {
               // Start AND finish OAuth in the same browser session.
@@ -678,6 +688,7 @@ function Companion() {
             documentReady.current = false; cloudRefresh.current = false; setPageRefreshing(false);
           }
           const path = new URL(nav.url).pathname;
+          if (path === '/auth/logout') leaveSession(); else logoutSeen.current = false;
           if (pending.current && (path.startsWith('/auth/') || path === '/')) {
             setShowWeb(true); if (watchdog.current) clearTimeout(watchdog.current);
           }
