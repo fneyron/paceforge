@@ -150,7 +150,10 @@ Un écran ayant échoué ou une page différente reste rechargé normalement.
 La bibliothèque locale utilise `expo-file-system` 57.0.7 dans le répertoire des
 documents de l’application, avec deux fichiers alternés et un index de compte
 commis dans SecureStore seulement après écriture. La déconnexion explicite et
-le changement de compte invalident l’index avant de remplacer les fichiers.
+le changement de compte invalident l’index avant de remplacer les fichiers ;
+une session expirée (page de connexion sans déconnexion explicite, les sessions
+durent 90 jours) conserve les copies : au matin d’une course, le plan reste
+lisible sans se reconnecter.
 Les réponses sont liées à l’origine HTTPS, à la page courante, au nonce et à la
 course demandée. Les champs sont sélectionnés et validés avant stockage ;
 aucun HTML authentifié, jeton ou relevé Santé n’est enregistré dans ces copies.
