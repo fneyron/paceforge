@@ -27,13 +27,16 @@ importées d’un module voisin (F811) sont ignorées dans `tests/`, c’est l�
 `ignore_missing_imports`. Le code n’est pas typé partout ; plutôt que de corriger 315 erreurs d’un coup, on
 tient la ligne :
 
-- `mypy-baseline.txt` contient les constats du 2026-10-15 (315, dans 45 fichiers), une ligne par constat sans
+- `mypy-baseline.txt` contient les constats du 2026-10-16 (351, après la fusion des corrections), une ligne par constat sans
   numéro de ligne (le code bouge) : `chemin: error: message  [code]`.
 - `python scripts/mypy_baseline.py check` relance mypy et échoue sur tout constat absent de la baseline (il
   l’affiche avec sa ligne, et l’annote dans Actions). C’est le job de CI.
 - `python scripts/mypy_baseline.py update` réécrit la baseline avec les constats du jour : après avoir corrigé
   des erreurs (le fichier raccourcit), ou pour accepter en connaissance de cause un constat nouveau (il
   s’allonge : dire pourquoi dans le commit). Relire le diff de `mypy-baseline.txt` avant de le committer.
+  Toujours avec les versions du verrou (`pip install --require-hashes -r requirements-dev.lock` dans un
+  environnement à part) : mypy, pydantic et SQLAlchemy changent les constats d’une version à l’autre, et la CI
+  installe ces versions-là.
 
 mypy prend ≈ 30 s sur `app/` ; `check` signale aussi les constats de la baseline qui ont disparu, pour la
 resserrer.
