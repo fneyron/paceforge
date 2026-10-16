@@ -11,7 +11,7 @@ from app.models.activity import Activity
 from app.models.user import User
 from app.routers.dashboard import imported_label
 from app.schemas.activity import ActivitySummary
-from app.services.auth import hash_password, verification_token
+from app.services.auth import hash_password, hash_token, verification_token
 from app.services.strava_activities import activity_from_strava, apply_detail
 from app.services.viz import fr_num
 from tests.test_simulator_routes import _create_route
@@ -70,7 +70,7 @@ def test_every_bike_sport_shows_a_speed():
 
 async def test_a_verification_link_opened_twice_says_verified(client, db_session):
     token = verification_token()
-    db_session.add(User(email="twice-link@x.fr", password_hash=hash_password("pw-12345678"), email_verify_token=token))
+    db_session.add(User(email="twice-link@x.fr", password_hash=hash_password("pw-12345678"), email_verify_token=hash_token(token)))
     await db_session.flush()
     async with AsyncClient(transport=client._transport, base_url="https://test") as c:
         for _ in range(2):  # a mail client fetching the link first, then the athlete's own click

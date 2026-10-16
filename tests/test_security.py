@@ -400,7 +400,9 @@ async def test_email_tokens_are_stored_hashed(client: AsyncClient, db_session, n
         assert user.email_verify_token == hash_token(token) and len(user.email_verify_token) == 64
         assert "Lien invalide" in (await c.get("/auth/verify-email", params={"token": user.email_verify_token})).text
         assert "Email vérifié" in (await c.get("/auth/verify-email", params={"token": token})).text
-        assert user.email_verified and user.email_verify_token is None
+        # the hash stays on the verified account: the link opened again says « Email vérifié », never « Lien invalide »
+        assert user.email_verified and user.email_verify_token == hash_token(token)
+        assert "Email vérifié" in (await c.get("/auth/verify-email", params={"token": token})).text
         assert (await c.post("/auth/forgot-password", data={"email": "new@x.fr"})).status_code == 200
         reset = sent[1][1]
         assert user.password_reset_token == hash_token(reset) and reset != user.password_reset_token
