@@ -4,7 +4,6 @@ from tempfile import TemporaryDirectory
 os.environ.update(DEBUG='false',COROS_SYNC='false',GARMIN_SYNC='false',ACTIVITY_ENV_FETCH='false')
 from contextlib import asynccontextmanager
 from datetime import datetime,timezone,timedelta
-from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine,async_sessionmaker
 from app.main import create_app
 from app.database import Base

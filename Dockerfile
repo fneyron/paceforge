@@ -18,9 +18,9 @@ RUN apt-get update && \
 COPY requirements.lock ./
 RUN pip install --require-hashes -r requirements.lock
 
-# The rest of what app/build.py fingerprints: the migrations, and the files that shape this image, so the
-# container reports the same build id as the tree it was built from (the deploy's smoke test compares them).
-COPY alembic.ini Dockerfile docker-compose.prod.yml pyproject.toml requirements-dev.lock requirements-research.lock ./
+# The rest of what app/build.py fingerprints (the migrations, pyproject and the locks), so the container reports
+# the same build id as the tree it was built from (the deploy's smoke test compares them).
+COPY alembic.ini pyproject.toml requirements-dev.lock requirements-research.lock ./
 COPY alembic/ ./alembic/
 COPY app/ ./app/
 

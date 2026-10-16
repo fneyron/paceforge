@@ -8,7 +8,7 @@ import pytest
 
 from app.models.health import HealthMetric
 from app.services import nights as nt, sante, sante_daily, sante_score as sc, sante_sleep as sl
-from app.services import sante_training as st, viz
+from app.services import sante_training as st
 
 D = date(2026, 10, 10)
 

@@ -1,6 +1,6 @@
 name: Quality gate
 
-# ruff with pyproject's rules, mypy held to « no new finding » against mypy-baseline.txt (docs/quality.md).
+# ruff errors blocking (style reported only), mypy held to « no new finding » against mypy-baseline.txt (docs/quality.md).
 # Deploys do not wait for it yet (deploy.yml): make them once main is clean.
 on:
   push:
@@ -33,8 +33,15 @@ jobs:
           pip install --upgrade pip
           pip install --require-hashes -r requirements-dev.lock
 
-      - name: ruff
-        run: ruff check --output-format github .
+      # Blocking: pyflakes and syntax errors (undefined names, unused imports, redefinitions) — none today.
+      - name: ruff, errors
+        run: ruff check --select F,E9 --output-format github .
+
+      # Informational: the full rule set (line length, style). Reported, not blocking, until a sweep makes it clean.
+      - name: ruff, full rules (report only)
+        if: success() || failure()
+        continue-on-error: true
+        run: ruff check --output-format concise --statistics .
 
       - name: mypy, no new finding
         if: success() || failure()

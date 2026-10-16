@@ -11,13 +11,15 @@ familles E, F, W, I, N, UP, B, A, SIM, TCH ; `B008` est ignorée (`Depends()` e
 FastAPI), E501 reste active.
 
 ```sh
-.venv/bin/ruff check .                           # en local
-ruff check --output-format github .              # en CI : chaque constat annote le commit ou la PR
+.venv/bin/ruff check --select F,E9 .             # la garde bloquante : erreurs (noms indéfinis, imports inutilisés…)
+.venv/bin/ruff check .                           # tout le jeu de règles, pour information
 ```
 
-État au 2026-10-15 : 1 602 constats, dont 710 lignes trop longues et 42 de la famille F (imports inutilisés,
-redéfinitions, variables mortes) ; 589 se corrigent avec `ruff check --fix`. Le balayage prévu après la fusion
-des branches les ramène à zéro ; jusque-là le job ruff est rouge, mais il ne bloque rien (voir CI).
+En CI, la première commande bloque (zéro constat aujourd’hui) ; la seconde est publiée sans bloquer. État au
+2026-10-16 : environ 1 300 constats de style, surtout des lignes de plus de 120 colonnes et
+`timezone.utc` → `UTC` (corrigeable par `ruff check --fix`). Un balayage d’ensemble est volontairement remis :
+il toucherait la plupart des fichiers et entrerait en conflit avec les branches en cours. Les fixtures pytest
+importées d’un module voisin (F811) sont ignorées dans `tests/`, c’est l’idiome de pytest.
 
 ## mypy
 

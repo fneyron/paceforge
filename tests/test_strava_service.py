@@ -1,11 +1,10 @@
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import StravaAPIError, StravaRateLimitError, StravaTokenError
+from app.exceptions import StravaAPIError, StravaTokenError
 from app.models.user import User
 from app.services.strava import StravaService
 

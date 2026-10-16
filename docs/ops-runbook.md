@@ -12,8 +12,10 @@ toutes.
 1. Un push sur `main` lance `.github/workflows/deploy.yml` : les tests sur SQLite et sur PostgreSQL (schéma
    construit par les migrations), la répétition sauvegarde/restauration, puis le job `deploy` appelle le
    webhook Coolify et attend que `https://paceforge.fr/health` serve l’empreinte du commit (`build`, calculée
-   par `app/build.py` sur `app/`). Rouge après 10 min : le build Coolify a échoué ou l’app redémarre en
-   boucle — ouvrir le journal de déploiement dans Coolify.
+   par `app/build.py` sur `app/`, `alembic/`, `pyproject.toml` et les verrous). Rouge après 10 min : le build
+   Coolify a échoué ou l’app redémarre en boucle — ouvrir le journal de déploiement dans Coolify. Le Dockerfile
+   et le compose n’entrent pas dans l’empreinte (Coolify les réécrit au build) : un déploiement qui ne change
+   qu’eux se vérifie dans le journal Coolify.
 2. Coolify reconstruit les images (les dépendances viennent de `requirements.lock`, une couche gardée en cache
    tant que le verrou ne change pas) et remplace les conteneurs. `app` exécute `alembic upgrade head` au
    démarrage, puis uvicorn ; l’ancien conteneur reçoit SIGTERM et finit ses requêtes (20 s) ; un worker a

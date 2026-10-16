@@ -1,4 +1,4 @@
-import sys, pickle, itertools, statistics
+import sys, pickle, itertools
 sys.path.insert(0,'/home/user/paceforge/scripts/race_data'); sys.path.insert(0,'/home/user/paceforge')
 import dataset, calibrate as cal
 S=__import__("os").environ.get("RACE_PREPS_DIR", "/tmp/")
