@@ -1352,8 +1352,7 @@ window._sim = {};
     function closeExport() { var sh = document.getElementById('export-sheet'); if (sh) hideSheet(sh); }
     function openSettings() { closeMenus(); var sh = document.getElementById('settings-sheet'); if (!sh) return; showSheet(sh); }
     function closeSettings() { var sh = document.getElementById('settings-sheet'); if (sh) hideSheet(sh); }
-    var toastT = null;
-    function toast(msg) { var el = document.getElementById('pf-toast'); if (!el) return; el.textContent = msg; el.classList.remove('hidden'); if (toastT) clearTimeout(toastT); toastT = setTimeout(function () { el.classList.add('hidden'); }, 2600); }
+    function toast(msg) { if (window.pfToast) window.pfToast(msg); }  // the app's one toast (app.js): one element, one timer
     // the passage times as plain text, for the crew (share sheet on the phone, clipboard elsewhere)
     function planText() {
         var name = (raceName || '').trim() || 'Ma course', lines = [];

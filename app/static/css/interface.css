@@ -372,7 +372,7 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 /* sheets: bottom sheets on the phone, centred 460 px modals on desktop */
 .pf-sheet { box-shadow: 0 -8px 40px rgb(0 0 0 / .18); }
 .pf-race-row { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 12px; margin-top: 14px; }
-.pf-toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 90; max-width: calc(100vw - 40px); padding: 12px 18px; border-radius: 14px; background: rgb(var(--pf-ink)); color: rgb(var(--pf-bg)); font-size: 0.875rem; box-shadow: 0 8px 24px rgb(0 0 0 / .2); }
+.pf-toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 90; pointer-events: none; max-width: calc(100vw - 40px); padding: 12px 18px; border-radius: 14px; background: rgb(var(--pf-ink)); color: rgb(var(--pf-bg)); font-size: 0.875rem; box-shadow: 0 8px 24px rgb(0 0 0 / .2); }
 
 @media (min-width: 640px) {
     /* one line per row: clock · name (+ a close cutoff) · km · chevron; the open detail sits under the name */

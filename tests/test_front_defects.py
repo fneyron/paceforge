@@ -29,7 +29,10 @@ def test_failed_requests_say_so_in_the_toast_and_the_plan_page_error_is_plain():
     js = _read("app/static/js/app.js")
     assert "htmx:responseError" in js and "htmx:sendError" in js and "Impossible de charger. Réessaie." in js
     assert "window.pfConfirm = pfConfirm" in js and "window.pfToast = pfToast" in js
+    assert r"/\bevery\b/" in js and "xhr.status === 404" in js and "lastFailedToast" in js  # not for polls, stop-polling 404s or repeats
+    assert re.search(r"\.pf-toast \{[^}]*pointer-events: none;", _read("app/static/css/interface.css"))  # a status: taps go through it
     plan = _read("app/templates/partials/gpx_result.html")
+    assert "function toast(msg) { if (window.pfToast) window.pfToast(msg); }" in plan  # one element, one timer
     assert "Un problème est survenu sur cette page. Recharge-la." in plan and "Erreur dans la page" not in plan
     for tpl in ("settings.html", "partials/strava_settings.html", "partials/coros_settings.html", "partials/garmin_settings.html"):
         assert re.search(r"pfConfirm\(msg, function \(\) \{ f\.submit\(\); \}, '[^']+'\)", _read(f"app/templates/{tpl}")), tpl
