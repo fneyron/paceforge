@@ -14,7 +14,7 @@ def _read(rel: str) -> str:
 def test_the_phone_input_rule_spares_the_objective_fields_and_the_number_is_bounded_by_the_screen():
     css = _read("app/static/css/interface.css")
     assert ".pf-input, .sim-num:not(.pf-hero-in), select, textarea { font-size: max(16px, 1rem); min-height: 44px; }" in css
-    assert ".pf-hero-num { font-size: clamp(2.5rem, 22vw, 5rem); }" in css
+    assert ".pf-hero-num { font-size: clamp(2.5rem, 25vw, 5rem); }" in css
 
 
 def test_passage_rows_measure_their_columns_in_rem_and_stack_the_clock_under_large_text():

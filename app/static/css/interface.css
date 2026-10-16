@@ -249,7 +249,7 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-hero { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "heat" "act"; margin-top: 24px; }
 .pf-hero-main { grid-area: main; min-width: 0; }
 .pf-hero-btn { display: inline-flex; align-items: baseline; gap: 10px; margin-top: 2px; text-align: left; border-radius: 12px; }
-.pf-hero-num { font-size: clamp(2.5rem, 22vw, 5rem); }  /* bounded by the screen: « 38h30 » fits a 390 px phone at 200 % text */
+.pf-hero-num { font-size: clamp(2.5rem, 25vw, 5rem); }  /* bounded by the screen: 80 px from 320 px up, « 38h30 » fits a 390 px phone at 200 % text */
 .pf-hero-pen { width: 20px; height: 20px; color: rgb(var(--pf-accent)); flex: none; }
 .pf-hero-btn:hover .pf-hero-num { color: rgb(var(--pf-gray-700)); }
 #hero-edit { margin-top: 2px; }
