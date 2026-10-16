@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { trusted } from './api';
-import { OfflineLibrary, OfflineRequest, offlineAccountScript, offlineFetchScript, offlineReply, readOfflinePlan, withPlan } from './offline';
+import { OfflineLibrary, OfflineRequest, offlineAccountScript, offlineFetchScript, offlineReply, readOfflinePlan, reconcileAccount, withPlan } from './offline';
 import { loadOfflineLibrary, storeOfflineLibrary } from './offline-storage';
 import { isLockedError } from './secure';
 
@@ -39,11 +39,13 @@ export function useOfflinePlans(inject: (script: string) => void, random: () => 
     }).catch(failed);
   }
   // Serialized with startup and writes; a late response cannot restore another account's copies.
+  // A sign-in page (expired session) keeps them: only another account replaces them here.
   async function checkAccount(uid: number | null) {
     identity.current = undefined;
-    if (current.current.userId === uid && uid !== null) return;
-    setView(null); update({ userId: uid, plans: [] });
-    await storeOfflineLibrary(current.current);
+    const next = reconcileAccount(current.current, uid);
+    if (next === current.current) return;
+    setView(null); update(next);
+    await storeOfflineLibrary(next);
   }
   function change(get: (previous: OfflineLibrary) => OfflineLibrary) {
     const job = queue.current.then(async () => {

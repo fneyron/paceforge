@@ -161,7 +161,10 @@ Un écran ayant échoué ou une page différente reste rechargé normalement.
 La bibliothèque locale utilise `expo-file-system` 57.0.7 dans le répertoire des
 documents de l’application, avec deux fichiers alternés et un index de compte
 commis dans SecureStore seulement après écriture. La déconnexion explicite et
-le changement de compte invalident l’index avant de remplacer les fichiers.
+le changement de compte invalident l’index avant de remplacer les fichiers ;
+une session expirée (page de connexion sans déconnexion explicite, les sessions
+durent 90 jours) conserve les copies : au matin d’une course, le plan reste
+lisible sans se reconnecter.
 Les réponses sont liées à l’origine HTTPS, à la page courante, au nonce et à la
 course demandée. Les champs sont sélectionnés et validés avant stockage ;
 aucun HTML authentifié, jeton ou relevé Santé n’est enregistré dans ces copies.
@@ -184,6 +187,18 @@ changement de compte et déconnexion. Les API natives y sont simulées : vérifi
 - Sur **iPhone**, lecture du sommeil sur **60 jours**, avec SDNN, FC et respiration
   à l'intérieur des périodes de sommeil mesurées, du même auteur/appareil.
   Les intervalles sont envoyés à `/api/mobile/nights` puis réduits sur le serveur.
+  Règle des sessions (`night-samples.ts`) : les relevés d’un même auteur/appareil
+  sont découpés en sessions par les silences de plus de 90 min ; deux sessions
+  consécutives à moins de 3 h l’une de l’autre sont réunies si aucune ne contient
+  de réveil (« awake ») et si chacune compte au moins une heure de sommeil (un
+  long réveil nocturne d’un auteur qui n’enregistre pas ses réveils ne transforme
+  pas le début de la nuit en sieste ; une somnolence avant le coucher ou une
+  sieste reste à part ; la règle ne regarde que deux sessions, la forme d’une
+  nuit ne dépend donc pas de la fenêtre lue ; le serveur ne compte que le
+  sommeil mesuré, jamais un silence). Sur un jour de réveil, la session la plus
+  longue (≥ 3 h) est la nuit,
+  les autres (≤ 6 h) des siestes ; des siestes invraisemblables (plus de 12, ou
+  plus de 10 h) sont écartées sans écarter la nuit.
   Les moyennes quotidiennes restent exclues. SDNN ne devient jamais RMSSD.
   Aucune écriture dans le référentiel santé du téléphone. Android garde ses
   cinq catégories quotidiennes ; les nouvelles nuits sont propres à iOS.
@@ -198,13 +213,19 @@ changement de compte et déconnexion. Les API natives y sont simulées : vérifi
   de données ne peuvent pas être distingués. Une suppression dans Apple Santé
   ne supprime donc pas automatiquement un ancien résumé PaceForge. L'écran
   « Téléphones associés » permet de supprimer tous les imports et accès mobiles.
-- Synchronisation manuelle complète ; option à l’ouverture et au retour au
-  premier plan, au plus toutes les 15 min. Lecture des 7 derniers jours avec
-  recouvrement ; historique complet toutes les 6 h. Une tentative partielle
-  redevient éligible après 5 min, au prochain retour/ouverture. Un historique
-  incomplet est relu entièrement à la reprise. Avec cette option, la
-  synchronisation continue aussi en arrière-plan (section suivante) ; une
-  tentative restée en attente est reprise dès l’ouverture, sans délai de 15 min.
+- Synchronisation manuelle (Réglages ou geste d’actualisation) ; option à
+  l’ouverture et au retour au premier plan, au plus toutes les 15 min. Dans les
+  deux cas, lecture des 7 derniers jours avec recouvrement ; historique complet
+  à la connexion du téléphone puis toutes les 6 h. Les jours et les nuits déjà
+  confirmés par le serveur (au premier plan ou en arrière-plan, condensats
+  couvrant les 60 jours relus, oubliés chaque jour) ne sont pas renvoyés, et
+  une relecture complète n’est jamais retentée dans les dix minutes, même
+  incomplète : quatre gestes en dix minutes restent sous la limite de 200
+  requêtes (au plus 182 avec trois auteurs de sommeil). Une tentative partielle redevient
+  éligible après 5 min, au prochain retour/ouverture. Un historique incomplet
+  est relu entièrement à la reprise. Avec cette option, la synchronisation
+  continue aussi en arrière-plan (section suivante) ; une tentative restée en
+  attente est reprise dès l’ouverture, sans délai de 15 min.
 - Mesures quotidiennes envoyées avant la lecture du sommeil. Les lectures
   natives ont un délai maximal ; un échec n’efface pas les imports confirmés.
   Sur iOS, les cinq catégories d’un jour sont lues en parallèle, puis le jour
@@ -236,7 +257,8 @@ demande de reconnexion dans Réglages).
   `com.apple.developer.healthkit.background-delivery`). iOS réveille alors
   l’application après une nouvelle pesée ou une nuit enregistrée par une montre ;
   les observateurs sont réenregistrés nativement à chaque lancement, avant le
-  JavaScript. Il n’y a pas de JavaScript sans écran sur iOS : un réveil lance
+  JavaScript ; une erreur signalée par un observateur est journalisée, sans
+  lecture (la tâche horaire rattrape). Il n’y a pas de JavaScript sans écran sur iOS : un réveil lance
   l’application entière, mais la WebView ne se charge qu’au premier passage au
   premier plan. HealthKit garde l’application éveillée environ 25 s à partir de
   son signal, démarrage à froid compris : une fois les réveils regroupés (1,5 s),
@@ -271,7 +293,11 @@ demande de reconnexion dans Réglages).
   sont lisibles après le premier déverrouillage suivant un redémarrage
   (`AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`, migration unique des anciens éléments).
   Un trousseau verrouillé n’est jamais lu comme « non associé », et les plans
-  hors connexion ne sont plus remplacés par une bibliothèque vide.
+  hors connexion ne sont plus remplacés par une bibliothèque vide. iOS conserve
+  ces éléments après une désinstallation : un marqueur dans les documents de
+  l’application (supprimés avec elle) distingue une réinstallation, qui efface
+  l’association, le reçu, l’interrupteur, l’état d’arrière-plan et l’index hors
+  connexion, d’une mise à jour, qui les garde.
 
 Limites, sans contournement possible :
 
@@ -445,6 +471,22 @@ python3 scripts/check-ios-health-privacy.py ios/PaceForge/Info.plist
 La CI applique aussi ce contrôle au `Info.plist` de l'application compilée pour
 le simulateur. Le script accepte également le fichier extrait d'un `.ipa` signé.
 
+Le reste des métadonnées de diffusion est vérifié par
+`python3 ../scripts/verify-ios-release.py --prebuilt ios/PaceForge app.json`
+(CI, après `expo prebuild`) puis sur l’IPA signé (workflow TestFlight) : version
+de `app.json`, textes français `NSFaceIDUsageDescription` (option
+`faceIDPermission` d’expo-secure-store) et `NSLocalNetworkUsageDescription`
+(`ios.infoPlist`), `CFBundleLocalizations` `["fr"]` et
+`CFBundleDevelopmentRegion` `fr` (fiche App Store en français),
+`UIUserInterfaceStyle` automatique, déclaration de chiffrement, modes
+d’arrière-plan (`processing` seul : `plugins/without-background-fetch` retire
+le `fetch` inutilisé ajouté par expo-task-manager) et `PrivacyInfo.xcprivacy`
+(`ios.privacyManifests` : API à motif requis de React Native / Expo, données
+Santé et identifiant de compte liées au compte, jamais de pistage). Les réponses
+« Confidentialité de l’app » dans App Store Connect doivent rester cohérentes
+avec ce manifeste. L’écran de lancement est la couleur de l’application, sans
+image (`plugins/with-launch-screen`, iOS et Android).
+
 ### Icônes
 
 `assets/icon.png` est l'icône carrée opaque de 1024 × 1024 pixels utilisée
@@ -475,7 +517,8 @@ la vérification statique. Ils ne remplacent pas les essais sur appareils réels
 
 Le workflow mobile peut être lancé manuellement avec `platform=all`, `android`
 ou `ios`. Il compile un APK Android avec SDK/NDK et/ou une application iOS native
-Release pour le simulateur Apple Silicon sur macOS avec Xcode 26.6.
+Release pour le simulateur Apple Silicon sur le runner macOS courant, avec le
+Xcode 26 le plus récent de l’image (`XCODE_MIN`, comme le workflow TestFlight).
 L'artefact `paceforge-android-preview` est signé
 avec la clé de test du projet généré, pour installation de test uniquement ;
 il ne remplace pas une signature Play Store. Il n'inclut pas de serveur Metro.

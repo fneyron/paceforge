@@ -44,14 +44,30 @@ export function episodes(samples: readonly SleepSample[], fallback: string, now 
   }
   const result: Episode[] = [];
   for (const group of groups.values()) {
+    // Sessions of one writer: a silence of more than 90 min ends one. A writer that records
+    // « awake » parts marks its own wake periods; one that does not leaves a silence for a
+    // wake in the night, so two consecutive sessions at most three hours apart are joined
+    // when neither has an awake part and each holds at least an hour of sleep: a long wake
+    // no longer turns the first hours of a night into a nap, while a doze before bed or a
+    // nap stays apart. The rule looks at two sessions only, so a night keeps the same shape
+    // whatever the window read. The server counts measured sleep only: a silence inside a
+    // session stays unknown, never asleep.
     const clusters: Interval[][] = [];
     let end = 0;
     for (const part of group.parts.sort((a,b) => Date.parse(a.start)-Date.parse(b.start))) {
       if (!clusters.length || Date.parse(part.start)-end > 90*60000) clusters.push([]);
       clusters.at(-1)!.push(part); end = Math.max(end, Date.parse(part.end));
     }
+    const joinable = (c: Interval[]) => c.every(p => p.stage !== 'awake') && asleepDuration(c) >= 60*60000;
+    const sessions: Interval[][] = [];
+    for (const cluster of clusters) {
+      const last = sessions.at(-1);
+      const gap = last ? Date.parse(cluster[0].start) - Math.max(...last.map(p => Date.parse(p.end))) : Infinity;
+      if (last && gap <= 3*3600000 && joinable(last) && joinable(cluster)) last.push(...cluster);
+      else sessions.push([...cluster]);
+    }
     const days = new Map<string, Interval[][]>();
-    for (let cluster of clusters) {
+    for (let cluster of sessions) {
       const asleep = cluster.filter(p => p.stage !== 'awake');
       if (!asleep.length) continue;
       const a = Math.min(...asleep.map(p => Date.parse(p.start))), b = Math.max(...asleep.map(p => Date.parse(p.end)));
@@ -69,8 +85,10 @@ export function episodes(samples: readonly SleepSample[], fallback: string, now 
       if (date < cutoff.toISOString().slice(0,10)) continue;
       parts.sort((a,b) => asleepDuration(b)-asleepDuration(a));
       const sleep = asleepDuration(parts[0]) >= 180*60000 ? parts.shift()! : [];
-      const naps = parts.filter(p => Date.parse(p.at(-1)!.end)-Date.parse(p[0].start) <= 6*3600000);
-      if (naps.length > 12 || naps.reduce((n,p) => n+asleepDuration(p),0) > 600*60000) continue;
+      // Implausible naps (more than twelve, or more than ten hours: the server refuses the
+      // packet) are left out; the night of that day is still sent.
+      const shortOnes = parts.filter(p => Date.parse(p.at(-1)!.end)-Date.parse(p[0].start) <= 6*3600000);
+      const naps = shortOnes.length <= 12 && shortOnes.reduce((n,p) => n+asleepDuration(p),0) <= 600*60000 ? shortOnes : [];
       if (sleep.length || naps.length) result.push({ date, key: group.key, timezone: group.timezone, source_name: group.source_name, sleep, naps });
     }
   }

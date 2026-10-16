@@ -1,5 +1,5 @@
 import React, { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, Platform, Pressable, StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, AppState, BackHandler, Linking, Platform, Pressable, StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
@@ -10,7 +10,7 @@ import { Pair } from './src/types';
 import { due, fullDue, reportText, syncIssue, SyncReport, syncHealth, Trigger } from './src/sync';
 import { KEYS, KeychainLocked, secure } from './src/secure';
 import { backgroundBlock, backgroundPending, blockBackgroundSync, cancelBackgroundSync, disableBackgroundSync, enableBackgroundSync,
-  onBackgroundReport, resetBackgroundState, syncExclusively } from './src/background';
+  onBackgroundReport, resetBackgroundState, skipSent, syncExclusively } from './src/background';
 import type { Block } from './src/background-engine';
 import { appShellScript, destinations, isBridgeUrl, messagePageUrl, prepareNavigationScript, presentationScript, refreshable, sameScreen, screenUrl, Tab, tabForUrl, tabNavigationScript, tabs } from './src/navigation';
 import { Connections, Provider } from './src/connections';
@@ -90,12 +90,21 @@ function Companion() {
   const navigationId = useRef(0);
   const recoveringBridge = useRef(false);
   const syncReturn = useRef<{ tab: Tab; url: string; showWeb: boolean } | null>(null);
+  // The site's effective theme, once it reported it, wins over the system scheme.
+  const webAppearance = useRef(false);
+  const canGoBack = useRef(false);
+  // History entries since the last bridge document (pairing, session or connections
+  // check), counted from the navigation events: the back key walks only these. A bridge
+  // document is never a place to go back to: its load is refused, or it reloads the
+  // screen on top of it and the history never ends, so the app could not be left any more.
+  const documents = useRef(0);
+  const lastDocument = useRef('');
 
   // A locked phone (background launch) cannot read the keychain: this is never « not
   // paired ». The read is retried on the first return to the foreground.
   const readStored = useEffectEvent(async () => {
     try {
-      await secure.migrate().catch(e => { if (e instanceof KeychainLocked) throw e; });
+      await secure.prepare().catch(e => { if (e instanceof KeychainLocked) throw e; });
       const [saved, time, auto, receipt, blocked] = await Promise.all([secure.recover(KEYS.pair), secure.get(KEYS.last),
         secure.get(KEYS.auto), secure.get(KEYS.sync), backgroundBlock()]);
       const account = saved ? JSON.parse(saved) as Pair : null;
@@ -164,6 +173,22 @@ function Companion() {
   useEffect(() => {
     web.current?.injectJavaScript(presentationScript(fontScale, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect'));
   }, [fontScale]);
+  // Native screens follow the system scheme until the site reports its own theme
+  // (it does so again by itself when the system changes and its theme is automatic).
+  useEffect(() => { if (!webAppearance.current) setDark(systemDark); }, [systemDark]);
+  // Android hardware back: the WebView's own history first, then the system default.
+  const onHardwareBack = useEffectEvent(() => {
+    if (webVisible && !concealBridge && !loadError && canGoBack.current && documents.current > 1) {
+      documents.current -= 2; // the document gone back to is counted again once it has loaded
+      web.current?.goBack(); return true;
+    }
+    return false;
+  });
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => onHardwareBack());
+    return () => subscription.remove();
+  }, []);
 
   const onAppLink = useEffectEvent((link: string) => {
     if (link === 'paceforge://privacy') openSettings('/mobile/privacy');
@@ -254,6 +279,16 @@ function Companion() {
     if (watchdog.current) clearTimeout(watchdog.current);
     watchdog.current = setTimeout(() => { if (pending.current) fail(new Error('La connexion au compte prend trop de temps. Vérifie le réseau ou connecte-toi, puis réessaie.')); }, 60000);
   }
+  // An explicit web logout: nothing of the account may finish, the offline copies go, and
+  // background sync stops until the account is confirmed again. The logout is a POST form
+  // (Android never asks onShouldStartLoadWithRequest for a POST), so the navigation itself
+  // is watched; the request hook stays as a fallback. Once per logout document.
+  const logoutSeen = useRef(false);
+  function leaveSession() {
+    if (logoutSeen.current) return;
+    logoutSeen.current = true;
+    cancelAccountWork(true); offline.forget(); setBlock('logout'); void blockBackgroundSync('logout').catch(() => {});
+  }
   function cancelAccountWork(release = false) {
     accountEpoch.current++;
     cancelledReadingContext.current = null; softNavigation.current = null;
@@ -290,7 +325,8 @@ function Companion() {
     refreshSources.current = forceSources;
     pending.current = { kind: 'check', nonce, url: target, consent,
       ...(inlineSync.current ? { pageUrl: webLocation.current } : {}) };
-    syncFull.current = !quiet || forceSources || fullDue(report);
+    // A pull or a manual sync reads the 7-day overlap; the history only when its reread is due.
+    syncFull.current = fullDue(report);
     lastAttempt.current = Date.now(); setStatus('Vérification du compte…');
     if (inlineSync.current) web.current?.injectJavaScript(inlineSessionScript(pending.current));
     else { setTab('devices'); setDetail('health'); setShowWeb(false); setUrl(target); }
@@ -323,6 +359,8 @@ function Companion() {
           credentials = { ...credentials, token: next.token, prev_token: next.prev_token };
           await secure.rewrite(KEYS.pair, JSON.stringify(credentials)); setPair(credentials);
         };
+        // Days and nights the server already confirmed (here or in a background run) are not sent again.
+        const skip = await skipSent(account.user_id);
         const result = await syncHealth({
           userId: account.user_id, full, previous: report, trigger: consent ? 'manual' : syncTrigger.current,
           daily: () => { current(); return collect(() => setStatus('Lecture des mesures quotidiennes…'), full ? 30 : 7); },
@@ -338,8 +376,10 @@ function Companion() {
               await secure.set(KEYS.last, receipt.lastReceivedAt); setLast(receipt.lastReceivedAt);
             }
           },
+          unsent: skip.unsent, sent: skip.sent,
         });
         current();
+        await skip.commit().catch(() => { /* sent again next time */ });
         setNeedsReconnect(result.reconnect); setStatus(reportText(result));
         refresh = result.received > 0 || refreshSources.current;
         setHealthIssue(syncIssue(result, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect'));
@@ -433,7 +473,7 @@ function Companion() {
           if (next && next !== 'devices') { tabLocations.current[next] = event.nativeEvent.url; setTab(next); }
           setLoadError(''); onForeground(); return;
         }
-        if (data?.type === 'appearance' && typeof data.dark === 'boolean') { setDark(data.dark); return; }
+        if (data?.type === 'appearance' && typeof data.dark === 'boolean') { webAppearance.current = true; setDark(data.dark); return; }
       } catch { /* Other messages are validated by the account bridge below. */ }
     }
     if (refreshable(event.nativeEvent.url)) {
@@ -736,7 +776,7 @@ function Companion() {
               else { refresh(); return false; }
             }
             const path = new URL(request.url).pathname;
-            if (path === '/auth/logout') { cancelAccountWork(true); offline.forget(); setBlock('logout'); void blockBackgroundSync('logout').catch(() => {}); }
+            if (path === '/auth/logout') leaveSession();
             if (path === '/settings' && ['#connections', '#coros', '#garmin', '#strava'].includes(new URL(request.url).hash)) { openTab('devices'); return false; }
             if (['/auth/strava', '/coros/connect', '/setup'].includes(path)) {
               // Start AND finish OAuth in the same browser session.
@@ -754,12 +794,14 @@ function Companion() {
           return false;
         }}
         onNavigationStateChange={nav => {
+          canGoBack.current = nav.canGoBack;
           if (!trusted(nav.url) || (suppressReadingNavigation.current && refreshable(nav.url))) return;
           documentUrl.current = nav.url;
           if (nav.loading) {
             documentReady.current = false; cloudRefresh.current = false; setPageRefreshing(false);
           }
           const path = new URL(nav.url).pathname;
+          if (path === '/auth/logout') leaveSession(); else logoutSeen.current = false;
           if (pending.current && (path.startsWith('/auth/') || path === '/')) {
             setShowWeb(true); if (watchdog.current) clearTimeout(watchdog.current);
           }
@@ -769,6 +811,7 @@ function Companion() {
           // Bridge completion can arrive before the final navigation event.
           // Those hidden pages must never turn into a visible device detail.
           if (isBridgeUrl(nav.url)) {
+            documents.current = 0; lastDocument.current = nav.url;
             documentReady.current = false; setBridgeDocument(true);
             if (pending.current) guard();
             if (pending.current?.kind === 'check') setShowWeb(false);
@@ -776,6 +819,9 @@ function Companion() {
             return;
           }
           if (!nav.loading) { setBridgeDocument(false); recoveringBridge.current = false; }
+          // Every history entry is reported here: full loads, the reading tabs' pushState
+          // navigations and hash changes, and the entries gone back to (not a reload).
+          if (!nav.loading && nav.url !== lastDocument.current) { documents.current++; lastDocument.current = nav.url; }
           if (!nav.loading && !pending.current && (!lock.current || inlineSync.current) && webVisible) {
             webLocation.current = nav.url;
             const next = tabForUrl(nav.url);

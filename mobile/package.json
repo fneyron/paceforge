@@ -1,6 +1,6 @@
 {
   "name": "paceforge-mobile",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "index.ts",
   "dependencies": {
     "@kingstinct/react-native-healthkit": "^16.2.0",

@@ -23,7 +23,10 @@ const SLEEP: Required<ReadBudget> = { total: 10000, perRead: 3000 };
 const CHANGES: Required<ReadBudget> = { total: 4000, perRead: 3000 };
 const SEND_MS = 8000;
 // Hashes only skip identical re-sends: forgotten daily, so a loss on the server heals.
-const HASHES_MS = 24 * 3600000, HASH_DAYS = 10;
+// Shared with the foreground sync (foregroundSkip): they cover its full reread (60 nights,
+// 30 days), so an incomplete one is not sent again whole. At most about 35 KB in the
+// keychain progress entry with three sleep writers.
+const HASHES_MS = 24 * 3600000, HASH_DAYS = 60;
 
 // resume: a wake the foreground sync kept waiting, run once it is over.
 export type Wake = 'healthkit' | 'task' | 'resume';
@@ -129,6 +132,62 @@ function recent(hashes: Record<string, string>, now: number) {
   const oldest = new Date(now - HASH_DAYS * 86400000).toISOString().slice(0, 10);
   return Object.fromEntries(Object.entries(hashes).filter(([key]) => (key.split('|')[1] || '') >= oldest));
 }
+/** The stored digests, or none once they are a day old. */
+function freshHashes(state: BackgroundState, now: number): BackgroundState {
+  return now - state.hashedAt > HASHES_MS ? { ...state, hashes: {}, hashedAt: now } : state;
+}
+/** Skip-if-unchanged for syncHealth: `unsent` leaves out the rows whose digest the server
+ * already confirmed, `sent` records what it confirmed. `hashes` is updated in place. */
+export function hashSkip(hashes: Record<string, string>, digest: (value: string) => Promise<string>) {
+  let dailyDone = false;
+  return {
+    hashes,
+    /** The daily rows were all confirmed, or all already known. */
+    dailyDone: () => dailyDone,
+    unsent: async (path: string, body: unknown): Promise<unknown | null> => {
+      if (path === '/api/mobile/daily') {
+        const days: Daily[] = [];
+        for (const day of (body as { days: Daily[] }).days) {
+          if (hashes[dailyKey(day)] !== await digest(dailyValue(day))) days.push(day);
+        }
+        if (!days.length) dailyDone = true;
+        return days.length ? { days } : null;
+      }
+      const night = body as AppleNight;
+      return hashes[nightKey(night)] === await digest(JSON.stringify(night)) ? null : night;
+    },
+    sent: async (path: string, body: unknown): Promise<void> => {
+      if (path === '/api/mobile/daily') {
+        dailyDone = true;
+        for (const day of (body as { days: Daily[] }).days) hashes[dailyKey(day)] = await digest(dailyValue(day));
+      } else {
+        const night = body as AppleNight;
+        hashes[nightKey(night)] = await digest(JSON.stringify(night));
+      }
+    },
+  };
+}
+/** `load`: the control state with its progress merged (as the engine reads it);
+ * `save`: the progress entry only, never the account/consent state. */
+export type HashStore = { load: () => Promise<BackgroundState>; save: (progress: BackgroundProgress) => Promise<void> };
+/** The foreground sync shares the background run's digests, so a pull or a manual sync
+ * never sends a day or a night the server already has: callbacks for syncHealth, then
+ * `commit` once the sync is over, under the sync lock. */
+export async function foregroundSkip(userId: number, store: HashStore, digest: (value: string) => Promise<string>, now = Date.now()) {
+  const stored = await store.load().catch(() => emptyState());
+  const state = freshHashes(stored.userId === userId ? stored : emptyState(userId), now);
+  const skip = hashSkip({ ...state.hashes }, digest);
+  return {
+    unsent: skip.unsent, sent: skip.sent,
+    /** Only the digests, for this account and this pairing generation: a logout or a
+     * re-pairing meanwhile keeps its own state, and the tokens stay as written since. */
+    commit: async (): Promise<void> => {
+      const latest = await store.load().catch(() => null);
+      if (!latest || latest.userId !== userId || latest.generation !== state.generation) return;
+      await store.save({ ...progressOf(latest), hashes: recent(skip.hashes, now), hashedAt: state.hashedAt });
+    },
+  };
+}
 
 export function createEngine(deps: EngineDeps) {
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -222,7 +281,7 @@ export function createEngine(deps: EngineDeps) {
       if (previous && !previous.pending) { await current(); await deps.saveReceipt({ ...previous, pending: true }); }
       return 'locked';
     }
-    if (now - state.hashedAt > HASHES_MS) state = { ...state, hashes: {}, hashedAt: now };
+    state = freshHashes(state, now);
     const remaining = () => Math.max(0, deadline - deps.now());
     const within = (b: Required<ReadBudget>) => ({ total: Math.min(b.total, remaining()), perRead: b.perRead });
     await current();
@@ -230,11 +289,11 @@ export function createEngine(deps: EngineDeps) {
     if (plan.quota) { await saveProgress({ ...state, retryAt: now + 3600000 }); return 'deferred'; }
     if (plan.daysBack === 0) { await saveProgress({ ...state, tokens: plan.tokens }); return 'unchanged'; }
 
-    const hashes = { ...state.hashes };
+    const skip = hashSkip({ ...state.hashes }, deps.digest);
     // The stored pairing the credentials come from, re-read if the app rotated the token.
     let base: Pair = pair;
     let credentials: Credentials = { token: pair.token, prev_token: pair.prev_token };
-    let refused: unknown = null, quota = false, dailyDone = false, sent = 0, daily: HealthResult | null = null;
+    let refused: unknown = null, quota = false, sent = 0, daily: HealthResult | null = null;
     const report = await syncHealth({
       userId: pair.user_id, full: false, previous, trigger: 'background', deadline, clock: deps.now,
       now: () => new Date(deps.now()).toISOString(),
@@ -269,28 +328,8 @@ export function createEngine(deps: EngineDeps) {
           return authorized(credentials, request, keep);
         }
       },
-      unsent: async (path, body) => {
-        if (path === '/api/mobile/daily') {
-          const days: Daily[] = [];
-          for (const day of (body as { days: Daily[] }).days) {
-            if (hashes[dailyKey(day)] !== await deps.digest(dailyValue(day))) days.push(day);
-          }
-          if (!days.length) dailyDone = true;
-          return days.length ? { days } : null;
-        }
-        const night = body as AppleNight;
-        return hashes[nightKey(night)] === await deps.digest(JSON.stringify(night)) ? null : night;
-      },
-      sent: async (path, body) => {
-        sent++;
-        if (path === '/api/mobile/daily') {
-          dailyDone = true;
-          for (const day of (body as { days: Daily[] }).days) hashes[dailyKey(day)] = await deps.digest(dailyValue(day));
-        } else {
-          const night = body as AppleNight;
-          hashes[nightKey(night)] = await deps.digest(JSON.stringify(night));
-        }
-      },
+      unsent: skip.unsent,
+      sent: async (path, body) => { sent++; await skip.sent(path, body); },
       save: async r => { await current(); await deps.saveReceipt(r); await current(); deps.notify(r); },
       progress: () => {},
     });
@@ -299,7 +338,7 @@ export function createEngine(deps: EngineDeps) {
     if (report.reconnect) {
       // The token is refused: stop waking the app; Réglages asks to reconnect.
       await deps.disable().catch(() => {});
-      await saveProgress({ ...state, hashes: recent(hashes, now) });
+      await saveProgress({ ...state, hashes: recent(skip.hashes, now) });
       return 'reconnect';
     }
     const retryAt = refused instanceof ApiError && refused.status === 429 ? now + (refused.retryAfter || 900) * 1000
@@ -309,10 +348,10 @@ export function createEngine(deps: EngineDeps) {
     const read = daily as HealthResult | null; // assigned in the callback above
     const unread = new Set<string>(!read || quota ? Object.keys(plan.tokens)
       : read.unread ?? (read.complete ? [] : Object.keys(plan.tokens)));
-    const tokens = dailyDone
+    const tokens = skip.dailyDone()
       ? { ...state.tokens, ...Object.fromEntries(Object.entries(plan.tokens).filter(([metric]) => !unread.has(metric))) }
       : state.tokens;
-    await saveProgress({ ...state, hashes: recent(hashes, now), tokens, retryAt });
+    await saveProgress({ ...state, hashes: recent(skip.hashes, now), tokens, retryAt });
     return !report.complete ? 'partial' : sent ? 'sent' : 'unchanged';
   }
 

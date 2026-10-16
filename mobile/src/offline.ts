@@ -39,6 +39,14 @@ export function readOfflinePlan(data: unknown): OfflinePlan | null {
   return { version, user_id, route_id, name, saved_at, race_date, distance_km, elevation_m, start_s, planned, points };
 }
 
+/** The copies once a page reports who is signed in. A sign-in page (`null`: the session
+ * expired, or was closed elsewhere) keeps them: a runner opening the app on race morning
+ * with a dead session still finds his plan. Only another account replaces them here; an
+ * explicit logout (forget) and « Supprimer » (remove) are the other two ways out. */
+export function reconcileAccount(library: OfflineLibrary, uid: number | null): OfflineLibrary {
+  return uid === null || library.userId === uid ? library : { userId: uid, plans: [] };
+}
+
 export function withPlan(library: OfflineLibrary, plan: OfflinePlan): OfflineLibrary {
   const previous = library.userId === plan.user_id ? library.plans : [];
   const plans = [plan, ...previous.filter(p => p.route_id !== plan.route_id)];

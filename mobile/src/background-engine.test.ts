@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiError } from './api';
-import { createEngine, emptyState, EngineDeps, fileLock, LOCK_MS, LockFile, readState, RUN_MS } from './background-engine';
+import { BackgroundProgress, BackgroundState, createEngine, emptyState, EngineDeps, fileLock, foregroundSkip, LOCK_MS, LockFile, readState, RUN_MS } from './background-engine';
 import { isLockedError, KeychainLocked } from './secure-core';
-import type { SyncReport } from './sync';
+import { fullDue, syncHealth, SyncReport } from './sync';
 import type { Daily, HealthResult, Metric, Pair } from './types';
 import type { AppleNight } from './night-samples';
 
@@ -381,4 +381,57 @@ test('the lock file: held until it expires, released by its owner, written over 
     write: () => { throw new Error('io'); }, delete: () => { throw new Error('io'); } }));
   assert.equal(await broken.acquire('g', clock + LOCK_MS), true);
   await broken.release('g');
+});
+
+test('four pulls in ten minutes stay under the phone budget, even after an incomplete full reread', async () => {
+  // The server allows 200 requests per phone and 10 minutes. Worst case: three sleep writers,
+  // the 6-hourly full reread (30 days, 60 nights) due on the first pull, and one night the
+  // server refuses (422), which keeps the full reread due (retryFull) until it is accepted.
+  const date = (daysAgo: number) => new Date(start - daysAgo * 86400000).toISOString().slice(0, 10);
+  const days = (count: number): Daily[] => [weighIn, ...Array.from({ length: count }, (_, i) => ({ ...steps, date: date(i) }))];
+  const nights = (count: number): AppleNight[] => [night, ...Array.from({ length: count * 3 },
+    (_, i) => ({ ...night, date: date(Math.floor(i / 3)), source_id: `writer-${i % 3}` }))];
+  let state: BackgroundState = { ...emptyState(1), enabled: true, generation: 'g1', tokens: { weight: 'w1' } };
+  // The progress entry only, as background.ts writes it; the control state stays the screen's.
+  const store = { load: async () => state, save: async (progress: BackgroundProgress) => { state = { ...state, ...progress }; } };
+  const requests: string[] = [];
+  let refused = true, previous: SyncReport | null = null;
+  const refuses = (body: unknown) => refused && (body as AppleNight).date === date(40) && (body as AppleNight).source_id === 'writer-2';
+  const pull = async (clock: number, data?: { days: Daily[]; nights: AppleNight[] }) => {
+    // As App.tsx decides and composes them, inside syncExclusively.
+    const full = fullDue(previous, clock);
+    const read = data ?? { days: days(full ? 30 : 7), nights: nights(full ? 60 : 7) };
+    const skip = await foregroundSkip(1, store, async value => `#${value}`, clock);
+    previous = await syncHealth({ userId: 1, full, previous, now: () => new Date(clock).toISOString(),
+      daily: async () => ({ days: read.days, notices: [], complete: true }),
+      sleep: async () => ({ nights: read.nights, notices: [], complete: true }),
+      send: async (path, body) => {
+        requests.push(path);
+        if (refuses(body)) throw new ApiError(422);
+        return { received: 1, checked_at: new Date(clock).toISOString() };
+      },
+      save: async () => {}, progress: () => {}, unsent: skip.unsent, sent: skip.sent });
+    await skip.commit();
+    return previous;
+  };
+  const first = await pull(start);
+  assert.equal(first.complete, false); assert.equal(first.retryFull, true, 'the refused night keeps the full reread due');
+  assert.equal(requests.length, 1 + 1 + 60 * 3, 'the full reread sends everything once');
+  for (const minute of [2, 5, 9]) assert.equal((await pull(start + minute * 60000)).received, 0);
+  assert.equal(requests.length, 182, 'no second full attempt within ten minutes, nothing changed: nothing sent');
+  // Ten minutes later the full reread is due again: only the night never confirmed is sent.
+  refused = false;
+  assert.equal((await pull(start + 11 * 60000)).complete, true);
+  assert.deepEqual(requests.slice(182), ['/api/mobile/nights']);
+  // A corrected weigh-in is the only row of the next pull; the tokens written meanwhile stay.
+  await pull(start + 12 * 60000, { days: days(7).map(d => d === weighIn ? { ...d, value: 69.9 } : d), nights: nights(7) });
+  assert.deepEqual(requests.slice(183), ['/api/mobile/daily']);
+  assert.deepEqual(state.tokens, { weight: 'w1' });
+  assert.equal(state.enabled, true);
+  // A background run right after finds the same data already confirmed.
+  const f = fixture();
+  f.stored.state = state;
+  f.data.days = [{ ...weighIn, value: 69.9 }, steps];
+  assert.equal(await createEngine(f.deps).request('task'), 'unchanged');
+  assert.equal(f.sent.length, 0);
 });

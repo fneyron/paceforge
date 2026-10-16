@@ -10,6 +10,8 @@ export type SyncReport = {
   weightRead: WeightReceipt | null; weightReceived: WeightReceipt | null;
   // A background run could not finish (locked phone, time limit): the next opening syncs at once.
   pending?: boolean; trigger?: Trigger;
+  // When the last full reread started, complete or not: never two within ten minutes.
+  fullAttemptAt?: string;
 };
 type Receipt = { received: number; checked_at: string; latest?: { weight?: WeightReceipt } };
 export type SendMeta = { readAt: string };
@@ -40,9 +42,10 @@ function weight(raw: WeightReceipt | undefined): WeightReceipt | null {
     Number.isFinite(Date.parse(raw.measured_at)) ? { value: raw.value, measured_at: raw.measured_at } : null;
 }
 
-// Short overlapping reads catch late writes. Full history is reread at least
-// every six hours and on every manual sync. Partial attempts never defer a retry
-// for six hours; neither empty reads nor HTTP success imply a fresh measurement.
+// Short overlapping reads catch late writes, also on a pull or a manual sync. Full
+// history is reread when the phone is connected, then at least every six hours.
+// Partial attempts never defer a retry for six hours; neither empty reads nor HTTP
+// success imply a fresh measurement.
 export function due(report: SyncReport | null, lastAttempt: number, now = Date.now()): boolean {
   // A pending background run skips the delay (at most one attempt a minute).
   if (report?.pending && now - lastAttempt >= 60000) return true;
@@ -50,6 +53,10 @@ export function due(report: SyncReport | null, lastAttempt: number, now = Date.n
   return stamp > now + 300000 || now - stamp >= (report?.complete ? 15 : 5) * 60000;
 }
 export function fullDue(report: SyncReport | null, now = Date.now()): boolean {
+  // Never two full rereads within ten minutes, even after an incomplete one (retryFull):
+  // four pulls must stay under the phone's request budget of 200 per ten minutes.
+  const attempt = Date.parse(report?.fullAttemptAt || '') || 0;
+  if (attempt <= now + 300000 && now - attempt < 10 * 60000) return false;
   const stamp = Date.parse(report?.fullAt || '') || 0;
   return !!report?.retryFull || stamp > now + 300000 || now - stamp >= 6 * 3600000;
 }
@@ -63,7 +70,8 @@ export async function syncHealth(d: Dependencies): Promise<SyncReport> {
   const previous = d.previous?.userId === d.userId ? d.previous : null;
   const report: SyncReport = { userId: d.userId, checkedAt: now(), complete: false, reconnect: false, retryFull: full || !!previous?.retryFull,
     lastReceivedAt: previous?.lastReceivedAt || '', fullAt: previous?.fullAt || '', received: 0, notices: [],
-    weightRead: null, weightReceived: previous?.weightReceived || null, pending: true, trigger };
+    weightRead: null, weightReceived: previous?.weightReceived || null, pending: true, trigger,
+    fullAttemptAt: full ? now() : previous?.fullAttemptAt };
   let complete = true;
   let interruptedRun = false;
   const late = () => d.deadline !== undefined && (d.clock ?? Date.now)() >= d.deadline;
