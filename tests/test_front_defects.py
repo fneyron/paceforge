@@ -69,6 +69,8 @@ def test_decorative_icons_are_hidden_from_readers_and_inline_icons_carry_a_size(
                 unsized.append(f"{rel}: {tag[:80]}")
     assert not unhidden, unhidden
     assert not unsized, unsized
+    for macro in ("partials/_icons.html", "partials/_plan_glyphs.html"):
+        assert 'width="{{ px }}" height="{{ px }}"' in _read(f"app/templates/{macro}"), macro  # the fallback size follows the class
 
 
 def test_the_service_worker_precaches_nothing_stale():
