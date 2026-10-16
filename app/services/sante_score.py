@@ -142,9 +142,11 @@ def sub(metric: str, z: float) -> float:
 LABELS = {"ill": "FC de nuit nettement plus haute depuis 2 nuits", "effort": "Effort récent",
           "hrv": "VFC plus basse que d'habitude", "hr": "FC de nuit plus haute que d'habitude",
           "resp": "Respiration plus rapide depuis 2 nuits", "short": "Sommeil court"}
-TEXTS = {"hrv": "Ça arrive avec la fatigue, le stress, l'alcool ou un début de maladie.",
+TEXTS = {"hrv": "Une VFC plus basse que tes habitudes sur plusieurs nuits peut accompagner une fatigue ou un stress accru. "
+                "À lire avec ton sommeil, ta FC nocturne et ton ressenti.",
          "hr": "Ça arrive avec la fatigue, la chaleur, l'alcool ou un début de maladie.",
-         "resp": "Ta respiration nocturne est plus rapide que d'habitude. Ça arrive au début d'une infection.",
+         "resp": "Une respiration nocturne plus rapide que d’habitude est un signal à croiser avec ta FC et ton ressenti. "
+                 "Elle ne permet pas, à elle seule, d’en identifier la cause.",
          "short": "Moins de 6 h de sommeil sur 24 h."}
 
 
@@ -299,11 +301,11 @@ def dial(score: dict, state: dict | None, href: str | None = None) -> dict:
     when the page has none (a plain dial)."""
     v = score.get("value")
     if v is None:
-        return viz.ring("recup", None, "—", "Signaux nocturnes", NO_SCORE, tone="none", href=href,
-                        aria="Signaux nocturnes : pas d’indice pour cette nuit.")
+        return viz.ring("recup", None, "—", "Récupération", NO_SCORE, tone="none", href=href,
+                        aria="Récupération : pas d’indice nocturne pour cette nuit.")
     word = DIAL_WORDS[state["tone"]]
-    return viz.ring("recup", v / 100, str(v), "Signaux nocturnes", word, tone=state["tone"], unit="/100", href=href,
-                    note="indice nocturne", aria=f"Signaux nocturnes : indice {v} sur 100, {word}.")
+    return viz.ring("recup", v / 100, str(v), "Récupération", word, tone=state["tone"], unit="/100", href=href,
+                    note="indice nocturne", aria=f"Récupération : indice nocturne {v} sur 100, {word}.")
 
 
 def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> dict | None:

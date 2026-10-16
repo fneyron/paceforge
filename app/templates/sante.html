@@ -15,12 +15,16 @@
         {% if page and page.cycle_pending %}<p class="pf-card-meaning">En attente de la prochaine nuit.</p>{% endif %}
     </div>
 
-    {% set sync_issues = [] %}
+    {% set sync_issues = [] %}{% set sync_notes = [] %}
     {% for name, link in (('COROS', coros), ('Garmin', garmin)) if link.connected and (link.needs_reauth or (link.last_error and not link.syncing)) %}
-        {% set _ = sync_issues.append('Reconnecte ' ~ name ~ ' dans Réglages.' if link.needs_reauth else name ~ ' n’a pas pu être actualisé.') %}
+        {% if link.sync_notice.level == 'warning' %}{% set _ = sync_notes.append(link.sync_notice.message) %}
+        {% else %}{% set _ = sync_issues.append(link.sync_notice.message) %}{% endif %}
     {% endfor %}
     {% if sync_issues %}
     <p class="pf-health-sync-issue" data-sync-issue="{{ sync_issues|join(' ') }}" role="status"><span>{{ sync_issues|join(' ') }}</span><a href="/settings#connections">Détails ›</a></p>
+    {% endif %}
+    {% if sync_notes %}
+    <p class="pf-health-sync-note" data-sync-note role="status"><span>{{ sync_notes|join(' ') }}</span><a href="/settings#connections">Détails ›</a></p>
     {% endif %}
 
     {% if page is none %}
@@ -41,7 +45,6 @@
             <a href="/settings#strava" class="pf-btn pf-btn-secondary pf-btn-sm">Connecter Strava</a>
         </div>
         </div>
-        <p><a href="/simulator" class="pf-link text-sm">Préparer une course : importer un GPX →</a></p>
     </section>
     {% endif %}
     {% else %}
@@ -49,5 +52,3 @@
     {% endif %}
 </div>
 {% endblock content %}
-
-{% block scripts %}<script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>{% endblock scripts %}

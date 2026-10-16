@@ -145,13 +145,13 @@ Détails et raisons du retrait de `cumulative-1` : [recovery-cumulative.md](reco
   donnés par sport, et ceux de la course à pied à part.
 - **Signaux nocturnes.** Aucune limite liée à la charge. L’Entraînement % s’affiche comme contexte.
 
-## C7 — Contexte après une course enregistrée
+## C7 — Contexte après un effort enregistré
 
-Une course effectivement enregistrée (type de l’activité ou résultat relié à cette activité), ou
-un ultra identifié dans les activités, peut être nommé à côté des signaux nocturnes. Une date de
-course planifiée seule ne crée jamais ce contexte. Le J+n compte les jours calendaires depuis la
-fin locale réelle, indépendamment de l’ancrage du cycle de sommeil. Confirmer un résultat ne
-change donc pas le J+n d’un ultra terminé le même matin.
+Une course marquée comme telle par une activité importée, ou un effort de classe ultra identifié
+dans les activités, peut être nommé à côté des signaux nocturnes. La durée seule ne qualifie pas
+une activité de compétition. Le planner, facultatif, ne fournit ni nom, ni date, ni type à Santé,
+même lorsqu’un résultat lui est associé. Le J+n compte les jours calendaires depuis la fin locale
+réelle de l’activité, indépendamment de l’ancrage du cycle de sommeil.
 
 La page retient le plus récent de ces efforts sur 28 jours **(H)**. Il s’agit d’une fenêtre
 d’affichage, pas d’une durée de récupération. Le texte rappelle qu’une tendance nocturne habituelle
@@ -177,7 +177,8 @@ l’alerte FC, dont l’exclusion des nuits avec contexte connu, sont conservée
 - **Rouge.** L’alerte FC de nuit selon les seuils existants.
 - **Orange.** Tendance VFC sous le seuil T, FC de nuit au-dessus, respiration plus rapide, ou moins
   de 6 h sur 24 h. Les fenêtres d’effort ne créent plus de raison ou de plafond.
-- **Présentation.** « Signaux habituels », « à surveiller » ou « inhabituels », avec deux raisons
+- **Présentation.** Rubrique et anneau « Récupération », indice nocturne /100 distinct d’un
+  pourcentage de récupération. « Signaux habituels », « à surveiller » ou « inhabituels », avec deux raisons
   visibles au plus et les autres dans le détail. La fraîcheur est datée ; une nuit absente n’est
   jamais affichée comme une mesure du jour. Avant midi, le cycle précédent peut rester visible,
   explicitement daté. Les sources et calculs de VFC et de FC sont précisés à la demande.

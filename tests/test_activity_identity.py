@@ -1,8 +1,9 @@
-"""A race is a linked real outing, including its richer duplicate; revisions invalidate all worker caches."""
+"""Santé uses imported outings only; optional planner result links remain local to its calibration."""
 import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import select
 
 from app.models.activity import Activity
@@ -10,6 +11,7 @@ from app.models.route import Route
 from app.models.user import User
 from app.routers.sante import data_version
 from app.services import sante_training as st
+from app.services import sante_context
 from app.services.activity_dedupe import duplicate_representatives, find_duplicate_ids
 from app.services.activity_identity import confirmed_races, races_on_retained_copies, revision_sum
 from app.services.activity_sources import adopt_watch_twin, merge_twins
@@ -41,7 +43,7 @@ def test_race_identity_follows_the_final_copy_when_duplicates_form_a_chain():
     assert races_on_retained_copies({1: "TransJeju"}, representatives)[3] == "TransJeju"
 
 
-async def test_coros_result_is_a_named_race_without_rewriting_provider_fields(db_session, test_user):
+async def test_linked_plan_names_a_planner_result_but_never_relabels_health_activity(db_session, test_user):
     row = activity(test_user.id)
     db_session.add(row)
     await db_session.flush()
@@ -49,7 +51,8 @@ async def test_coros_result_is_a_named_race_without_rewriting_provider_fields(db
     await db_session.flush()
     assert await confirmed_races(db_session, test_user.id) == {row.id: "TransJeju"}
     sessions = await st.load_sessions(db_session, test_user.id, NOW.date())
-    assert len(sessions) == 1 and sessions[0].race_confirmed and sessions[0].race_name == "TransJeju"
+    assert len(sessions) == 1 and not sessions[0].is_race and sessions[0].name == "Trail Run"
+    assert not sante_context.recent_effort(st.efforts(sessions), sessions, NOW.date())
     assert sessions[0].workout_type == 0 and row.name == "Trail Run" and row.raw_data["source"] == "coros"
     points = await collect_race_points(db_session, test_user.id)
     assert len(points) == 1 and points[0]["is_race"] and points[0]["name"] == "TransJeju"
@@ -67,26 +70,37 @@ async def test_plan_dates_and_foreign_links_never_prove_a_race(db_session, test_
     await db_session.flush()
     assert await confirmed_races(db_session, test_user.id) == {}
     assert await confirmed_races(db_session, other.id) == {}
-    assert not (await st.load_sessions(db_session, test_user.id, NOW.date()))[0].race_confirmed
+    assert not (await st.load_sessions(db_session, test_user.id, NOW.date()))[0].is_race
     assert await collect_race_points(db_session, test_user.id) == []  # 20 km is not the long-effort fallback
 
 
-async def test_unlink_and_rename_refresh_cached_race_identity(db_session, test_user):
+async def test_creating_linking_renaming_and_unlinking_plan_never_changes_health(db_session, test_user):
     row = activity(test_user.id)
     db_session.add(row)
     await db_session.flush()
-    saved = route(test_user.id, row.id)
+    before = await data_version(db_session, test_user.id)
+    sessions = await st.load_sessions(db_session, test_user.id, NOW.date())
+    session_key = st._CACHE[test_user.id][0]
+    saved = route(test_user.id, race_date=row.start_date.date().isoformat())
     db_session.add(saved)
     await db_session.flush()
-    before = await data_version(db_session, test_user.id)
-    assert (await st.load_sessions(db_session, test_user.id, NOW.date()))[0].race_name == "TransJeju"
+    assert await data_version(db_session, test_user.id) == before
+    assert await st.load_sessions(db_session, test_user.id, NOW.date()) == sessions
+    saved.result_activity_id = row.id
+    await db_session.flush()
+    assert await data_version(db_session, test_user.id) == before
+    assert await st.load_sessions(db_session, test_user.id, NOW.date()) == sessions
+    assert (await collect_race_points(db_session, test_user.id))[0]["name"] == "TransJeju"
     saved.name = "JejuTrail"  # same character count
     await db_session.flush()
-    assert (await st.load_sessions(db_session, test_user.id, NOW.date()))[0].race_name == "JejuTrail"
+    assert await data_version(db_session, test_user.id) == before
+    assert await st.load_sessions(db_session, test_user.id, NOW.date()) == sessions
+    assert (await collect_race_points(db_session, test_user.id))[0]["name"] == "JejuTrail"
     saved.result_activity_id = None
     await db_session.flush()
-    assert await data_version(db_session, test_user.id) != before
-    assert not (await st.load_sessions(db_session, test_user.id, NOW.date()))[0].race_confirmed
+    assert await data_version(db_session, test_user.id) == before
+    assert await st.load_sessions(db_session, test_user.id, NOW.date()) == sessions
+    assert st._CACHE[test_user.id][0] == session_key
     assert await collect_race_points(db_session, test_user.id) == []
 
 
@@ -101,10 +115,47 @@ async def test_link_on_discarded_copy_follows_richer_recording(db_session, test_
     await db_session.flush()
     sessions = await st.load_sessions(db_session, test_user.id, NOW.date())
     assert [s.id for s in sessions] == [rich.id]
-    assert sessions[0].race_confirmed and sessions[0].race_name == "TransJeju" and sessions[0].workout_type == 0
+    assert not sessions[0].is_race and sessions[0].name == "Trail Run" and sessions[0].workout_type == 0
     points = await collect_race_points(db_session, test_user.id)
     assert len(points) == 1 and points[0]["id"] == rich.id and points[0]["name"] == "TransJeju"
     assert points[0]["is_race"]
+
+
+@pytest.mark.parametrize("source", ["strava", "garmin", "coros"])
+async def test_recorded_ultra_has_health_context_without_any_plan(db_session, test_user, source):
+    row = activity(test_user.id, **{f"{source}_activity_id": 807, "coros_activity_id": 807 if source == "coros" else None},
+                   name="Sortie réellement enregistrée", moving_time=11 * 3600, elapsed_time=12 * 3600,
+                   distance=80_000, raw_data={"source": source})
+    db_session.add(row)
+    await db_session.flush()
+    sessions = await st.load_sessions(db_session, test_user.id, NOW.date())
+    context = sante_context.recent_effort(st.efforts(sessions), sessions, NOW.date())
+    assert context[0]["activity_id"] == row.id and context[0]["kind"] == "effort"
+    assert context[0]["label"] == "Après Sortie réellement enregistrée · J+2"
+    assert not sessions[0].is_race  # duration alone cannot establish a competition
+
+
+async def test_provider_race_tag_survives_richer_duplicate_without_a_plan(db_session, test_user):
+    tagged = activity(test_user.id, coros_activity_id=None, strava_activity_id=802,
+                      raw_data={"workout_type": 1})
+    rich = activity(test_user.id, coros_activity_id=803, name="Enregistrement montre",
+                    start_date=tagged.start_date + timedelta(seconds=30), average_heartrate=140)
+    db_session.add_all([tagged, rich])
+    await db_session.flush()
+    sessions = await st.load_sessions(db_session, test_user.id, NOW.date())
+    assert [s.id for s in sessions] == [rich.id]
+    assert sessions[0].is_race and sessions[0].workout_type == 0
+    context = sante_context.recent_effort(st.efforts(sessions), sessions, NOW.date())
+    assert context[0]["kind"] == "race" and context[0]["activity_id"] == rich.id
+    assert context[0]["label"] == "Après Enregistrement montre · J+2"
+    # A corrected provider tag must remove race context in every worker too.
+    before = await data_version(db_session, test_user.id)
+    assert apply_detail(tagged, {"workout_type": 0})
+    await db_session.flush()
+    sessions = await st.load_sessions(db_session, test_user.id, NOW.date())
+    assert not sessions[0].is_race
+    assert not sante_context.recent_effort(st.efforts(sessions), sessions, NOW.date())
+    assert await data_version(db_session, test_user.id) != before
 
 
 async def test_equal_size_provider_correction_invalidates_sessions_and_page_version(db_session, test_user):

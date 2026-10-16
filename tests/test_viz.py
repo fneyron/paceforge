@@ -244,6 +244,36 @@ def test_bars_lines_dots():
 # ── macros ──────────────────────────────────────────────────────────────────
 
 
+def test_health_compact_dates_hide_brands_without_losing_point_provenance_or_series_breaks():
+    days = [D - timedelta(days=3-i) for i in range(4)]
+    card = viz.night_card("vfc", days, [60.0, 62.0, 64.0, None], band=[(55, 70)] * 4,
+                          prov=[False] * 4, mean=[60.0, 61.0, 64.0, None], unit="ms",
+                          unit_long="millisecondes", name="VFC", sources=["Garmin", "Garmin", "COROS", None],
+                          compact=True, show_source=False)
+    payload = json.loads(card["data"])
+    assert all("Garmin" not in row[2] and "COROS" not in row[2] for row in payload["r"])
+    assert "Garmin" in payload["r"][0][3] and "COROS" in payload["r"][2][3]
+    assert "Garmin" in payload["a"][0] and "COROS" in payload["a"][2]
+    assert card["mean"].count("M") == 2  # switching source still breaks the comparison curve
+    html = render("{{ v.viz_night_card(c, 'VFC', central_details=True) }}", c=card)
+    assert "pf-chart-details" not in html
+    assert payload["r"][3][0] == "—" and payload["y"][0][3] is None
+
+
+def test_health_compact_vfc_keeps_known_methods_in_each_selected_date():
+    days = [D - timedelta(days=3-i) for i in range(4)]
+    card = viz.night_card("vfc", days, [60.0, 40.0, 48.0, None], band=[None] * 4,
+                          prov=[False] * 4, mean=[None] * 4, unit="ms", unit_long="millisecondes", name="VFC",
+                          sources=["COROS", "Apple Santé:watch (SDNN sommeil)", "Autre", "COROS"],
+                          compact=True, show_source=False, method_labels=["RMSSD", "SDNN", None, "RMSSD"])
+    data = json.loads(card["data"])
+    assert data["r"][0][2].endswith(" · RMSSD") and data["r"][1][2].endswith(" · SDNN")
+    assert not any(method in data["r"][i][2] for method in ("RMSSD", "SDNN") for i in (2, 3))
+    assert not any(brand in row[2] for brand in ("COROS", "Apple Santé", "Autre") for row in data["r"])
+    assert "COROS" in data["r"][0][3] and "Apple Santé · SDNN" in data["r"][1][3]
+    assert "Apple Santé · SDNN" in data["a"][1] and "RMSSD" in data["a"][0]
+
+
 def test_quiet_health_cards_keep_dates_for_selection_without_source_labels():
     days = [D - timedelta(days=1), D]
     card = viz.night_card("vfc", days, [60.0, None], band=[None] * 2, prov=[False] * 2,

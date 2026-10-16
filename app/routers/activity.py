@@ -29,6 +29,12 @@ router = APIRouter(tags=["activity"])
 # A saved route is a plausible match for this outing if distances agree.
 _COMPARE_DISTANCE_TOL = 0.35
 _COMPARE_MAX = 5
+# The detail renders these schema fields and the computed summary. Provider
+# payloads, GPS streams and legacy AI analyses can be much larger than the page.
+_DETAIL_COLUMNS = tuple(getattr(Activity, name) for name in ActivityDetail.model_fields
+                        if name not in {"has_analysis", "is_duplicate", "is_false_start", "best_efforts"}) + (
+    Activity.computed_metrics,
+)
 
 
 @router.get("/activity/{activity_id}", response_class=HTMLResponse)
@@ -39,9 +45,9 @@ async def activity_detail(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Activity).where(Activity.id == activity_id, Activity.user_id == user.id)
+        select(*_DETAIL_COLUMNS).where(Activity.id == activity_id, Activity.user_id == user.id)
     )
-    activity = result.scalar_one_or_none()
+    activity = result.one_or_none()
     if not activity:
         raise ActivityNotFoundError(activity_id)
 
@@ -49,14 +55,15 @@ async def activity_detail(
     metrics = activity.computed_metrics or {}
 
     # Routes worth comparing against (foot activities only), closest first.
-    compare_routes: list[Route] = []
+    compare_routes = []
     if sport_group(activity.sport_type) in ("run", "trail") and activity.distance:
         dist_km = activity.distance / 1000
         routes_q = await db.execute(
-            select(Route).where(Route.user_id == user.id, Route.sport_type.notin_(("bike", "triathlon")))
+            select(Route.id, Route.name, Route.total_distance_km).where(
+                Route.user_id == user.id, Route.sport_type.notin_(("bike", "triathlon")))
         )
         candidates = [
-            r for r in routes_q.scalars().all()
+            r for r in routes_q.all()
             if r.total_distance_km
             and abs(r.total_distance_km - dist_km) / max(r.total_distance_km, 1.0) <= _COMPARE_DISTANCE_TOL
         ]

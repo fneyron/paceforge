@@ -61,13 +61,13 @@
                     <svg width="20" height="20" class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
                 </a>
                 <a href="/settings" class="pf-avatar" aria-label="Mon profil">
-                    {% if user.profile_picture_url %}<img src="{{ user.profile_picture_url }}" alt="">{% else %}{{ (user.firstname or 'A')[0] | upper }}{% endif %}
+                    {% if user.profile_picture_url %}<img src="{{ user.profile_picture_url }}" alt="" loading="lazy" decoding="async">{% else %}{{ (user.firstname or 'A')[0] | upper }}{% endif %}
                 </a>
             </div>
         </div>
     </header>
 
-    <main id="main-content" tabindex="-1" class="pf-main" data-account="{{ user.id }}">
+    <main id="main-content" tabindex="-1" class="pf-main" data-account="{{ user.id }}" data-build="{{ request.app.state.build_id }}">
         <div class="pf-wrap pf-page">
             {% block content %}{% endblock %}
         </div>
@@ -122,6 +122,10 @@
     <script src="/static/js/app.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
     {% if user is defined and user %}<script src="/static/js/page-state.js?v={{ request.app.state.build_id }}"></script>{% endif %}
     {% if user is defined and user %}<script src="/static/js/refresh.js?v={{ request.app.state.build_id }}"></script>{% endif %}
+    {% if user is defined and user and request.url.path in ['/sante', '/activities'] %}
+    <script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id }}"></script>
+    <script defer src="/static/js/tab-navigation.js?v={{ request.app.state.build_id }}"></script>
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>
