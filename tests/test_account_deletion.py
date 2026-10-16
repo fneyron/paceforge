@@ -1,6 +1,6 @@
 """Deleting an account: PaceForge's access is revoked at each provider first (best effort, time-bounded), then
-every row of the athlete goes, whether or not the database cascades; the logs carry the account id, never the
-email."""
+every row of the athlete goes with the user, by the foreign keys' ON DELETE CASCADE (every table has one, checked
+here); the logs carry the account id, never the email."""
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
@@ -136,15 +136,16 @@ async def test_deletion_revokes_every_provider_then_empties_every_table(committi
     assert "leaving@x.fr" not in caplog.text and str(user.id) in caplog.text
 
 
-async def test_without_cascades_every_table_is_still_emptied(client, db_session, fake_coros, strava, monkeypatch):
-    """SQLite's default (foreign keys off) cascades nothing: every table is deleted explicitly."""
-    monkeypatch.setattr(db_session, "commit", db_session.flush)
-    other = await _athlete(db_session, "other@x.fr")
-    user = await _athlete(db_session, "leaving@x.fr")
-    before = await _counts(db_session)
-    assert (await _delete(client, user)).status_code == 302
-    assert await _counts(db_session) == {table: n // 2 for table, n in before.items()}
-    assert (await db_session.get(User, other.id)) is not None
+def test_every_table_goes_with_the_athlete_by_cascade():
+    """What delete_account relies on (one DELETE on users): every table but the shared ones reaches users through
+    foreign keys ON DELETE CASCADE, directly or through activities and routes (a SET NULL link is not ownership)."""
+    def goes_with_the_user(table) -> bool:
+        return any(fk.ondelete == "CASCADE" and (fk.column.table.name == "users" or goes_with_the_user(fk.column.table))
+                   for fk in table.foreign_keys)
+
+    for table in Base.metadata.sorted_tables:
+        if table.name not in SHARED | {"users"}:
+            assert goes_with_the_user(table), table.name
 
 
 async def test_a_provider_that_hangs_or_fails_never_stops_the_deletion(committing_session, committing_client,

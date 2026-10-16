@@ -34,7 +34,7 @@ class User(Base):
     # Fernet-encrypted (a token stored in clear before is read as is, encrypted at its next refresh)
     strava_access_token: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
     strava_refresh_token: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
-    strava_token_expires_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    strava_token_expires_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # epoch seconds, past 2038 too
 
     # Per-user Strava API app credentials
     strava_client_id: Mapped[str | None] = mapped_column(String(20), nullable=True)

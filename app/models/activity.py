@@ -4,8 +4,9 @@ from sqlalchemy import JSON, BigInteger, DateTime, Float, ForeignKey, Index, Int
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-# Use JSONB on PostgreSQL, JSON on other backends (SQLite for tests)
-JSONType = JSON().with_variant(JSONB, "postgresql")
+# Use JSONB on PostgreSQL, JSON on other backends (SQLite for tests). A Python None is a SQL NULL, never a JSON
+# null: `IS NOT NULL` then means « has a value » (a JSON null matched it and read as None).
+JSONType = JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
 
 from app.database import Base
 
@@ -29,13 +30,14 @@ class Activity(Base):
     coros_activity_id: Mapped[int | None] = mapped_column(
         BigInteger, unique=True, index=True, nullable=True
     )
+    # indexed by ix_activities_user_start_date (user_id first): every read is per athlete, most by date
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     sport_type: Mapped[str] = mapped_column(String(50), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     start_date: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True
+        DateTime(timezone=True), nullable=False
     )
 
     # Core metrics
@@ -76,6 +78,10 @@ class Activity(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # the last write (a sync filling raw_data, a D+ or heat cached in it): the per-worker caches key on it
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     # Relationships

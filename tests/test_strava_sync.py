@@ -1251,8 +1251,8 @@ async def test_every_sync_saves_an_activity_alike(db_session, test_user, task_se
                    average_speed=3.0, average_watts=180.0)  # in the list too
     extra = dict(summary, calories=640.0, max_watts=300.0, weighted_average_watts=210.0, suffer_score=40,
                  laps=[{"lap_index": 1}], splits_metric=[{"split": 1}], best_efforts=[{"name": "1k"}])
-    fields = [c for c in Activity.__table__.columns.keys()
-              if c not in {"id", "created_at", "strava_activity_id", "raw_data", "name"}]
+    fields = [c for c in Activity.__table__.columns.keys()  # created_at and updated_at: the database's, not a sync's
+              if c not in {"id", "created_at", "updated_at", "strava_activity_id", "raw_data", "name"}]
 
     def saved(row: Activity) -> dict:
         return {c: getattr(row, c) for c in fields}

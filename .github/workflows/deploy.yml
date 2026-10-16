@@ -87,6 +87,13 @@ jobs:
           SECRET_KEY: ci-only-not-a-secret
           DEBUG: "true"
 
+      - name: Check the models against the migrated schema
+        run: alembic check
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/paceforge_test
+          SECRET_KEY: ci-only-not-a-secret
+          DEBUG: "true"
+
       - name: Run tests
         run: pytest tests/ -q
         env:
