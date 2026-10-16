@@ -503,7 +503,8 @@ la vérification statique. Ils ne remplacent pas les essais sur appareils réels
 
 Le workflow mobile peut être lancé manuellement avec `platform=all`, `android`
 ou `ios`. Il compile un APK Android avec SDK/NDK et/ou une application iOS native
-Release pour le simulateur Apple Silicon sur macOS avec Xcode 26.6.
+Release pour le simulateur Apple Silicon sur le runner macOS courant, avec le
+Xcode 26 le plus récent de l’image (`XCODE_MIN`, comme le workflow TestFlight).
 L'artefact `paceforge-android-preview` est signé
 avec la clé de test du projet généré, pour installation de test uniquement ;
 il ne remplace pas une signature Play Store. Il n'inclut pas de serveur Metro.

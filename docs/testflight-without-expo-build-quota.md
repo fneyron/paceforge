@@ -7,8 +7,10 @@ Le compte Apple Developer, la signature et le traitement TestFlight restent néc
 ## Depuis GitHub Actions
 
 Le workflow `Publish iPhone to TestFlight` compile sur le runner macOS courant
-de GitHub (`macos-latest`), avec le Xcode le plus récent de l’image (26 au
-minimum, exigé par Apple) et Node 22, puis transmet le fichier `.ipa` produit à
+de GitHub (`macos-latest`), avec le Xcode 26 le plus récent de l’image (la
+version majeure exigée par Apple, `XCODE_MIN` dans le workflow : une version
+majeure plus récente n’est jamais choisie sans le dire) et Node 22, puis
+transmet le fichier `.ipa` produit à
 EAS Submit. La version de l’application est celle de `app.json` (`version`,
 vérifiée dans l’IPA) ; EAS attribue le numéro de build.
 Il s'exécute manuellement depuis `main` et conserve le profil `production` existant :

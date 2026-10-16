@@ -89,11 +89,9 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 90
     env:
-      # Apple requires the iOS 26 SDK for App Store uploads.
+      # The Xcode major this project builds with (Apple requires the iOS 26 SDK for App
+      # Store uploads); a newer major is never picked silently.
       XCODE_MIN: '26'
-      # Pinned fallbacks: the GitHub macOS images ship both tools.
-      COCOAPODS_VERSION: '1.16.2'
-      FASTLANE_VERSION: '2.228.0'
       FASTLANE_SKIP_UPDATE_CHECK: '1'
       PF_APP_VERSION: ${{ needs.check.outputs.version }}
     defaults:
@@ -108,20 +106,21 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: mobile/package-lock.json
-      - name: Select the newest release Xcode on this runner
+      - name: Select the newest release Xcode of the required major on this runner
         run: |
-          xcode=$(ls -d /Applications/Xcode_[0-9]*.app | grep -iv beta | sort -V | tail -n 1)
-          sudo xcode-select -s "$xcode/Contents/Developer"
-          major=$(xcodebuild -version | awk 'NR == 1 { print int($2) }')
-          if [ "$major" -lt "$XCODE_MIN" ]; then
-            echo "::error::This release needs Xcode $XCODE_MIN or later; the runner image offers $xcode."
+          xcode=$(ls -d /Applications/Xcode_"$XCODE_MIN".app /Applications/Xcode_"$XCODE_MIN".*.app 2>/dev/null | grep -Eiv 'beta|candidate' | sort -V | tail -n 1)
+          if [ -z "$xcode" ]; then
+            echo "::error::No release Xcode $XCODE_MIN.x on this runner image. Raise XCODE_MIN once the project builds with a newer Xcode."
             exit 1
           fi
+          sudo xcode-select -s "$xcode/Contents/Developer"
           xcodebuild -version
       - name: Check local iOS build tools
+        # Both ship with the GitHub macOS images: a missing one is an image change to look at, not something to install here.
         run: |
-          if ! command -v pod > /dev/null; then gem install --no-document cocoapods -v "$COCOAPODS_VERSION"; fi
-          if ! command -v fastlane > /dev/null; then gem install --no-document fastlane -v "$FASTLANE_VERSION"; fi
+          for tool in pod fastlane; do
+            if ! command -v "$tool" > /dev/null; then echo "::error::$tool is missing from this runner image."; exit 1; fi
+          done
           pod --version
           fastlane --version
       - run: npm ci
