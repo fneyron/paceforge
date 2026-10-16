@@ -89,10 +89,16 @@ export function createSecure(native: NativeStore, options: { ios: boolean; acces
     } else if (!stamped) await set(INSTALLED, '1');
   }
   let preparation: Promise<void> | null = null;
-  /** Once per launch, when unlocked: the fresh-install check, then the migration. The
-   * app and the background engine share it, so neither reads before it is done. */
+  /** Once per launch, when unlocked: the fresh-install check, then the migration, which
+   * runs even when the marker failed (a locked keychain stops both). The app and the
+   * background engine share it, so neither reads before it is done. */
   function prepare(): Promise<void> {
-    preparation ??= freshInstall().then(migrate).catch(error => { preparation = null; throw error; });
+    preparation ??= (async () => {
+      let failure: unknown = null;
+      try { await freshInstall(); } catch (error) { if (error instanceof KeychainLocked) throw error; failure = error; }
+      await migrate();
+      if (failure) throw failure;
+    })().catch(error => { preparation = null; throw error; });
     return preparation;
   }
   return { get, set, remove, rewrite, recover, erase, migrate, prepare };

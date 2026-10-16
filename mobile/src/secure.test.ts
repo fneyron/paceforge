@@ -111,6 +111,7 @@ test('a marker that cannot be created never erases a later pairing; a locked key
   await assert.rejects(open().prepare(), /disk/);
   assert.equal(k.entries.has(KEYS.pair), false, 'the reinstall is erased');
   assert.equal(k.entries.has(INSTALLED), false, 'no stamp without a marker');
+  assert.equal(k.entries.get(MIGRATED)?.value, '1', 'the migration still ran');
   await k.native.setItemAsync(KEYS.pair, 'new', { keychainAccessible: AFTER_FIRST_UNLOCK }); // paired again
   await assert.rejects(open().prepare(), /disk/);
   assert.equal(k.entries.get(KEYS.pair)?.value, 'new', 'kept: a disk that keeps failing is an update, never a reinstall');
