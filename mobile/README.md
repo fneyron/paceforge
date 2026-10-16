@@ -174,11 +174,15 @@ changement de compte et déconnexion. Les API natives y sont simulées : vérifi
   à l'intérieur des périodes de sommeil mesurées, du même auteur/appareil.
   Les intervalles sont envoyés à `/api/mobile/nights` puis réduits sur le serveur.
   Règle des sessions (`night-samples.ts`) : les relevés d’un même auteur/appareil
-  sont découpés en sessions ; un silence de plus de 90 min sépare deux sessions
-  quand l’auteur enregistre ses réveils (« awake »), de plus de 3 h sinon, ses
-  réveils étant des silences (un long réveil nocturne ne transforme pas le début
-  de la nuit en sieste ; le serveur ne compte que le sommeil mesuré, jamais un
-  silence). Sur un jour de réveil, la session la plus longue (≥ 3 h) est la nuit,
+  sont découpés en sessions par les silences de plus de 90 min ; deux sessions
+  consécutives à moins de 3 h l’une de l’autre sont réunies si aucune ne contient
+  de réveil (« awake ») et si chacune compte au moins une heure de sommeil (un
+  long réveil nocturne d’un auteur qui n’enregistre pas ses réveils ne transforme
+  pas le début de la nuit en sieste ; une somnolence avant le coucher ou une
+  sieste reste à part ; la règle ne regarde que deux sessions, la forme d’une
+  nuit ne dépend donc pas de la fenêtre lue ; le serveur ne compte que le
+  sommeil mesuré, jamais un silence). Sur un jour de réveil, la session la plus
+  longue (≥ 3 h) est la nuit,
   les autres (≤ 6 h) des siestes ; des siestes invraisemblables (plus de 12, ou
   plus de 10 h) sont écartées sans écarter la nuit.
   Les moyennes quotidiennes restent exclues. SDNN ne devient jamais RMSSD.
