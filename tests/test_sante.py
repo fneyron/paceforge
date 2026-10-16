@@ -451,9 +451,10 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert '<progress value="0" max="6" aria-label="Sorties faciles comparables">' in main
     assert 'href="/sante/lactate"' not in main
     assert 'class="pf-night-trend"' not in main
-    assert main.count('class="pf-measurement-head"') == 2
+    assert main.count('class="pf-measurement-head"') == 3  # VFC, FC de nuit and Tendances' FC de nuit
+    assert main.index('id="entrainement"') < main.index('id="tendance-hr_night"') < main.index('id="comprendre-indicateurs"')
     # no 14-day Récupération chart: none of his days has a state yet (owner, 2026-10-14: scientific basis)
-    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 5
+    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 6
     assert 'data-viz-key="recuperation"' not in main and "Récupération sur 14 jours" not in main
     assert 'data-viz-key="entrainement"' in main and "Entraînement sur 7 jours" in main
     assert '<details id="charge-detail" class="pf-chart-details pf-load-detail">' in main

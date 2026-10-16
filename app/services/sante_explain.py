@@ -89,8 +89,8 @@ def build(page):
             details.append(f"Source de la référence : {ref['source']}.")
             if metric == "hrv" and "SDNN" in measured["source"]:
                 details.append("Le dernier relevé est une SDNN, distincte de la tendance RMSSD ; il reste hors indice.")
-        text = interpretation["text"] if interpretation["key"] not in ("low_hrv", "high_hr", "latest_low", "different_series") else ""
-        items.append(_item(key, title, text, details, measured["source"], measured["date_label"], card["key"]))
+        items.append(_item(key, title, interpretation["text"], details, measured["source"], measured["date_label"],
+                           card["key"]))
     sleep = page.get("sleep") or {}
     hero = sleep.get("hero") or {}
     if hero or sleep.get("chart"):
@@ -104,7 +104,9 @@ def build(page):
                            ["100 % est un repère, pas un objectif. La charge tient compte de la durée et de l’intensité des activités importées.",
                             f"Le pourcentage apparaît après {sante_load.USUAL_LABEL_WEEKS} semaines actives "
                             f"parmi les {sante_load.USUAL_WEEKS} semaines précédentes."]))
-    for card in ([page["respiration"]] if page.get("respiration") else []) + page.get("daily", []):
+    # the night HR's trend is the FC de nuit card's (above)
+    for card in ([page["respiration"]] if page.get("respiration") else []) + [
+            t for t in page.get("trends", []) if t["key"] != "hr_night"]:
         respiratory = card["key"] == "resp_night"
         details = [card.get("trend")]
         if respiratory:

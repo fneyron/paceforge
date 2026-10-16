@@ -46,7 +46,9 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
 
     # No VFC in the seed. New accumulated load and fitness stay distinct from recovery.
     assert set(sante) == {"recuperation", "sommeil-14", "sommeil-90", "fc", "entrainement",
-                         "charge-accumulee", "forme-footing"}
+                         "charge-accumulee", "forme-footing", "trend-hr"}
+    # Tendances' night HR: last night's value is the FC de nuit card's, this one rests on its 7-night mean
+    assert sante["trend-hr"] == ("45\u00a0bpm", "moyenne 7 jours", "")
     # The new seven-day chart owns its duration; its section header does not repeat it.
     assert sante["entrainement"][1:] == ("7 derniers jours", "")
     training_heading = page.split('id="h-entrainement"')[1].split('</header>')[0]

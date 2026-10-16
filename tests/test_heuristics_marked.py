@@ -17,6 +17,7 @@ from app.services import sante_score as sc
 from app.services import sante_sleep as sl
 from app.services import sante_today as td
 from app.services import sante_training as st
+from app.services import sante_trends
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -137,10 +138,14 @@ HEURISTICS = [
     ("app/services/sante_training.py", "RATE_DEFAULT", 1.2),
     ("app/services/sante.py", "INTENSITY_SPREAD", 0.1),
     ("app/services/sante.py", "INTENSITY_READ", 0.5),
+    # 2026-10-16 (owner: « les tendances sur poids fc pas »): Tendances' trailing means and the change they head with
+    ("app/services/sante_trends.py", "MEAN_DAYS", {"weight": (14, 2), "body_fat": (14, 2), "steps": (7, 4)}),
+    ("app/services/sante_trends.py", "DELTA_DAYS", 28),
 ]
 MODULES = {"app/services/sante.py": sante, "app/services/sante_training.py": st, "app/services/nights.py": nt,
            "app/services/sante_sleep.py": sl, "app/services/race_prep.py": rp, "app/services/sante_score.py": sc,
-           "app/services/sante_today.py": td, "app/services/sante_load.py": sante_load}
+           "app/services/sante_today.py": td, "app/services/sante_load.py": sante_load,
+           "app/services/sante_trends.py": sante_trends}
 # owner, 2026-10-14: scientific basis — heuristics replaced by the rule-based state, the 8-h need and the one load
 # pipeline: each one's removal is a decision too
 GONE = [("app/services/sante_training.py", "EFFORT_RULES")] + [

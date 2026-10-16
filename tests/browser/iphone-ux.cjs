@@ -68,7 +68,7 @@ const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
       const key = 'pf-view:' + document.querySelector('#main-content').dataset.account + ':/sante';
       const saved = JSON.parse(sessionStorage.getItem(key));
       if (saved.charts[selected.key] !== selected.date) throw new Error('The dated chart selection was not remembered');
-      for (const id of ['sommeil', 'sommeil-detail', 'recuperation', 'entrainement', 'forme', 'mesures-nocturnes', 'au-quotidien']) saved.folds[id] = false;
+      for (const id of ['sommeil', 'sommeil-detail', 'recuperation', 'entrainement', 'forme', 'mesures-nocturnes', 'tendances']) saved.folds[id] = false;
       saved.folds['qualite-bilan'] = true;
       sessionStorage.setItem(key, JSON.stringify(saved));
     }, selected);
@@ -76,7 +76,7 @@ const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
     assert.equal(await page.locator('#charge-detail').evaluate(el => el.open), true, 'optional history still restores its state');
     assert.equal(await page.locator('#qualite-bilan').evaluate(el => el.open), false, 'method information must not reopen from an obsolete saved state');
     assert.equal(await page.locator('#vfc .pf-viz-range').getAttribute('aria-valuetext'), selected.aria, 'tab return restores the dated selection');
-    for (const selector of ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#recuperation-detail figure', '#vfc figure', '#fc figure', '#entrainement-semaine figure', '#au-quotidien figure']) {
+    for (const selector of ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#recuperation-detail figure', '#vfc figure', '#fc figure', '#entrainement-semaine figure', '#tendances figure']) {
       assert.ok(await page.locator(selector).first().isVisible(), `old fold state hid ${selector}`);
     }
     assert.ok(Math.abs(await page.evaluate(() => scrollY) - 720) < 20, 'tab return restores scroll');

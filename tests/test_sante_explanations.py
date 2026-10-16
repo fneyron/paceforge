@@ -87,7 +87,8 @@ def test_new_sdnn_point_is_never_explained_as_the_established_rmssd_trend():
     assert p["vfc"]["interpretation"]["key"] == "different_series"
     assert p["vfc"]["interpretation"]["text"] == "Ce relevé n’est pas comparable à la tendance affichée."
     item = next(i for i in p["explanations"]["items"] if i["key"] == "vfc")
-    assert not item["text"]  # the warning is beside the graph, not duplicated in the shared explanation
+    # the cards print no sentence (owner, 2026-10-16: « pas du texte »): the warning is in the shared explanation
+    assert item["text"] == "Ce relevé n’est pas comparable à la tendance affichée."
     details = " ".join(item["details"])
     assert "Tendance : RMSSD" in details
     assert "Le dernier relevé est une SDNN" in details
@@ -121,7 +122,7 @@ def test_explanations_group_interpretation_methods_reference_and_quality():
     assert p["synthesis"]["sleep_gap"]["label"] in items["sleep"]["details"]
     assert "100 % est un repère, pas un objectif" in " ".join(items["training"]["details"])
     assert f"après {sante_load.USUAL_LABEL_WEEKS} semaines actives" in " ".join(items["training"]["details"])
-    assert p["vfc"]["interpretation"]["text"] != items["vfc"]["text"]
+    assert p["vfc"]["interpretation"]["text"] == items["vfc"]["text"]  # said once, in the shared explanation
 
 
 @pytest.mark.asyncio
@@ -140,13 +141,14 @@ async def test_actual_nightly_respiration_moves_unchanged_and_phone_day_respirat
     assert p["respiration"] == expected
     assert p["respiration"]["latest"] == last_night.strftime("%d/%m/%Y")
     assert p["respiration"]["source"] == "Garmin (résumé)"
-    assert [c["key"] for c in p["daily"]] == ["resp_day"]
+    assert "daily" not in p and not any(t["key"] == "resp_day" for t in p["trends"])
     item = next(i for i in p["explanations"]["items"] if i["key"] == "resp_night")
     assert item["date"] == expected["latest"] and item["source"] == expected["source"]
     assert item["chart_key"] == expected["chart"]["key"]
     html = _env().get_template("partials/sante_page.html").render(page=p)
     assert html.count('id="respiration"') == 1
-    assert html.index('id="recuperation"') < html.index('id="respiration"') < html.index('id="au-quotidien"')
+    assert html.index('id="recuperation"') < html.index('id="respiration"')
+    assert "Respiration sur 24 h" not in html and 'id="au-quotidien"' not in html  # the phone's 24 h left the page
 
 
 @pytest.mark.asyncio
@@ -156,8 +158,7 @@ async def test_phone_daily_breathing_never_invents_a_nocturnal_card(db_session, 
     await db_session.flush()
     p = await sante.health_page(db_session, test_user.id, today=D)
     assert p["respiration"] is None
-    assert any(c["key"] == "resp_day" for c in p["daily"])
     assert not any(i["key"] == "resp_night" for i in p["explanations"]["items"])
     assert p["score"]["value"] is None
     html = _env().get_template("partials/sante_page.html").render(page=p)
-    assert 'id="respiration"' not in html
+    assert 'id="respiration"' not in html and "Respiration sur 24 h" not in html
