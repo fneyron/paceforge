@@ -32,6 +32,7 @@ x-env: &env
   ACTIVITY_ENV_FETCH: ${ACTIVITY_ENV_FETCH:-true}
   CYCLING_ENABLED: ${CYCLING_ENABLED:-false}
   SENTRY_DSN: ${SENTRY_DSN:-}
+  SESSION_LIFETIME_DAYS: ${SESSION_LIFETIME_DAYS:-90}
   DEBUG: "false"
   # glibc opens one malloc arena per thread by default: two cap what a worker keeps after a burst of pages
   MALLOC_ARENA_MAX: "2"
