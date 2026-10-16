@@ -4,12 +4,14 @@ import hashlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# What a deploy ships, and what shapes its image. The smoke test (deploy.yml) waits until /health reports the
-# fingerprint of the pushed tree: every file whose change calls for a new container must count, and the
-# Dockerfile copies the same files so the container computes the same value.
-DEPLOYED = ("app", "alembic", "alembic.ini", "Dockerfile", "docker-compose.prod.yml", "pyproject.toml",
+# What a deploy ships. The smoke test (deploy.yml) waits until /health reports the fingerprint of the pushed
+# tree, and the Dockerfile copies the same files so the container computes the same value. The Dockerfile and
+# the compose file are left out: Coolify rewrites them at build time (it adds ARG lines), so the container could
+# never report the tree's value. A deploy that changes only those two files is therefore not told apart by the
+# smoke test; the Coolify deployment log is the check then.
+DEPLOYED = ("app", "alembic", "alembic.ini", "pyproject.toml",
             "requirements.lock", "requirements-dev.lock", "requirements-research.lock")
-SUFFIXES = {".py", ".html", ".css", ".js", ".json", ".gz", ".ini", ".yml", ".toml", ".lock"}
+SUFFIXES = {".py", ".html", ".css", ".js", ".json", ".gz", ".ini", ".toml", ".lock"}
 
 
 def fingerprint(root: Path, parts: tuple[str, ...] = ("",)) -> str:

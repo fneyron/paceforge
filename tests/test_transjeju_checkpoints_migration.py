@@ -34,7 +34,6 @@ def test_official_checkpoints_keep_snapped_km_and_scale_the_rest():
         {"name": "Eseungak Oreum", "distance_km": 115.0}, {"name": "Healing Forest", "distance_km": 135.9},
     ]
     cps = mig.official_checkpoints(existing, 145.62)
-    by = {(c["name"], i): c for i, c in enumerate(cps)}
     kms = [c["distance_km"] for c in cps]
     assert kms == sorted(kms) and len(cps) == 11
     assert cps[0]["distance_km"] == 7.1 and cps[1]["distance_km"] == 20.2  # snapped km kept

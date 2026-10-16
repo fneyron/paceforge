@@ -215,7 +215,7 @@ async def test_a_strava_link_lands_on_sante_unless_it_said_where(client: AsyncCl
     from unittest.mock import AsyncMock
 
     from app.crypto import encrypt_secret
-    from app.services.auth import hash_password, verification_token
+    from app.services.auth import hash_password
     from app.services.strava import StravaService
     from tests.test_settings_links import _callback
 

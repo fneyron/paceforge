@@ -26,8 +26,9 @@ async def test_health_and_asset_urls_share_the_deployed_build(client):
 
 
 def test_build_covers_what_a_deploy_ships(tmp_path):
-    """The deploy's smoke test waits for this fingerprint: a change to the migrations, the image's definition or
-    a lock file must move it, a change to anything else (tests, docs) must not."""
+    """The deploy's smoke test waits for this fingerprint: a change to the code, the migrations or a lock file
+    must move it, a change to anything else (tests, docs, and the Dockerfile and compose file Coolify rewrites at
+    build time) must not."""
     from app.build import DEPLOYED
 
     (tmp_path / "app").mkdir()
@@ -43,9 +44,10 @@ def test_build_covers_what_a_deploy_ships(tmp_path):
     (tmp_path / "README.md").write_text("doc")
     (tmp_path / "app" / "__pycache__").mkdir()
     (tmp_path / "app" / "__pycache__" / "main.cpython-312.pyc").write_bytes(b"bytecode")
+    (tmp_path / "Dockerfile").write_text("FROM python\nARG COOLIFY_FQDN")  # what Coolify builds from
+    (tmp_path / "docker-compose.prod.yml").write_text("services: {}")
     assert fingerprint(tmp_path, DEPLOYED) == original
-    for name in ("app/main.py", "alembic/versions/0001_a.py", "Dockerfile", "docker-compose.prod.yml",
-                 "pyproject.toml", "requirements.lock"):
+    for name in ("app/main.py", "alembic/versions/0001_a.py", "pyproject.toml", "requirements.lock"):
         before = fingerprint(tmp_path, DEPLOYED)
         (tmp_path / name).write_text("new " + name)
         assert fingerprint(tmp_path, DEPLOYED) != before, name

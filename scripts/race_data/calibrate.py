@@ -9,7 +9,6 @@ were timed, so the shape compares running with running.
 """
 from __future__ import annotations
 
-import math
 import statistics
 import sys
 import pathlib
@@ -18,7 +17,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import app.services.race_simulator as rs  # noqa: E402
-from app.schemas.simulator import AthleteGradientProfile, CourseProfile, GpxPoint  # noqa: E402
+from app.schemas.simulator import AthleteGradientProfile, GpxPoint  # noqa: E402
 from app.services.gpx import build_course_profile  # noqa: E402
 
 # "production" in fit_results.txt is the app BEFORE it adopted the fit (hours
@@ -84,7 +83,7 @@ def prepare(race: dict) -> dict | None:
 
 def simulate(prep: dict, flat: float, fatigue, start_hour: float = 6.0) -> list[float]:
     """Moving time (s) at each checkpoint km."""
-    total, cum, gain, t_at = prep["total"], 0.0, 0.0, []
+    total, cum, gain = prep["total"], 0.0, 0.0
     ends = []
     for d, e, g, b in zip(prep["dist"], prep["end"], prep["gain"], prep["base"]):
         gain += g

@@ -720,7 +720,7 @@ def guard(race, xs, group=(16, 21)):
 
 
 def say_guard(say, g, models):
-    say(f"  mean |gap|: " + ", ".join(f"{k} {g[f'mean_abs_gap_{k}']}" for k in models))
+    say("  mean |gap|: " + ", ".join(f"{k} {g[f'mean_abs_gap_{k}']}" for k in models))
     say(f"  {'checkpoint':22s}{'km':>6s}   median signed gap (pred - actual), min: " + " / ".join(models) + "   | mean |gap|")
     for c in g["checkpoints"]:
         say(f"  {str(c['cp']):22s}{c['km']:6.1f}   " + " / ".join(f"{c.get(k + '_median_signed', float('nan')):6.1f}" for k in models)

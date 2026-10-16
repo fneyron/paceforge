@@ -10,7 +10,7 @@ from app.models.user import User
 from app.services import apple_nights as apple, nights
 from app.services.health import HRV_METHOD
 from app.services.sante import health_page
-from tests.test_mobile import paired, login
+from tests.test_mobile import paired
 
 
 def packet():
