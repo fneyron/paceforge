@@ -200,12 +200,51 @@ async def test_logout_ends_the_session_for_good(client: AsyncClient, db_session,
         before = c.cookies.get("paceforge_session")
         assert (await c.get("/settings")).status_code == 200
         r = await c.post("/auth/logout")
-        assert r.status_code == 303 and r.headers["location"] == "/"
+        # the POST signs out, then sends the browser through GET /auth/logout: the navigation the phone app keys
+        # its own sign-out on (Android reports no POST to it); a no-op on the dead session, then home
+        assert r.status_code == 303 and r.headers["location"] == "/auth/logout"
+        assert (await c.get("/settings")).headers["location"] == "/auth/login"  # dead after the first hop
+        r = await c.get("/auth/logout", headers={"Sec-Fetch-Site": "same-origin"})
+        assert r.status_code == 302 and r.headers["location"] == "/"
         assert (await c.get("/settings")).headers["location"] == "/auth/login"
+    assert user.session_version == 0  # the shared store took the id: no need to sign the account out everywhere
     async with AsyncClient(transport=client._transport, base_url="https://test",
                            cookies={"paceforge_session": before}) as old:
         assert (await old.get("/settings")).headers["location"] == "/auth/login"
         assert (await old.get("/")).status_code == 200  # the public home: nobody is signed in
+
+
+async def test_logout_without_redis_signs_the_account_out_everywhere(client: AsyncClient, db_session, no_commit,
+                                                                     monkeypatch):
+    """A revocation only this worker knows would not hold on the others: the account's session version is bumped
+    instead, durable, at the price of its other sessions."""
+    from app.config import settings
+    from app.services import sessions
+
+    monkeypatch.setattr(settings, "REDIS_URL", "redis://127.0.0.1:1/0")  # nothing listens there
+    monkeypatch.setattr(sessions, "_store", sessions.Revocations())
+    user = await _member(db_session)
+    async with AsyncClient(transport=client._transport, base_url="https://test") as here, \
+            AsyncClient(transport=client._transport, base_url="https://test") as other:
+        for c in (here, other):
+            assert (await _login(c, user.email)).status_code == 302
+        assert (await here.post("/auth/logout")).status_code == 303
+        assert user.session_version == 1
+        assert (await here.get("/settings")).headers["location"] == "/auth/login"
+        assert (await other.get("/settings")).headers["location"] == "/auth/login"  # signed out too
+        assert (await _login(other, user.email)).status_code == 302
+        assert (await other.get("/settings")).status_code == 200
+
+
+async def test_a_dead_session_is_dropped_on_public_pages_too(client: AsyncClient, db_session, no_commit):
+    """get_optional_user: a session without an id (made before this change) is cleared, so the browser's public
+    pages are not marked no-store for a session that no longer counts."""
+    user = await _member(db_session)
+    async with AsyncClient(transport=client._transport, base_url="https://test",
+                           cookies={"paceforge_session": _cookie(user.id)}) as c:
+        r = await c.get("/")
+        assert r.status_code == 200 and "cache-control" not in r.headers
+        assert "paceforge_session=null" in r.headers.get("set-cookie", "")  # the cookie is cleared
 
 
 async def test_an_old_logout_link_acts_only_on_the_browsers_own_navigation(client: AsyncClient, db_session, no_commit):
@@ -258,9 +297,21 @@ async def test_revocations_hold_in_this_process_when_redis_is_down(monkeypatch):
 
     monkeypatch.setattr(settings, "REDIS_URL", "redis://127.0.0.1:1/0")  # nothing listens there
     store = sessions.Revocations()
-    await store.revoke("gone", 60)
+    assert await store.revoke("gone", 60) is False  # this process only
     assert await store.is_revoked("gone") and not await store.is_revoked("other")
-    assert store.down_until > time.monotonic()  # Redis left alone for a minute, then tried again
+    assert store.down_until > time.monotonic() and store.redis is None  # Redis left alone for a minute
+
+    class Dropped:  # a client Redis stopped answering through: closed when dropped
+        closed = False
+
+        async def revoke(self, sid, ttl):
+            raise ConnectionError
+
+        async def aclose(self):
+            self.closed = True
+    store.down_until, store.redis = 0.0, Dropped()
+    dropped = store.redis
+    assert await store.revoke("x", 60) is False and dropped.closed and store.redis is None
     assert 89 * 86400 - 2 <= sessions.remaining_s(time.time() - 86400) <= 89 * 86400
     assert sessions.remaining_s(None) == 90 * 86400 and sessions.alive(time.time() - 10) and not sessions.alive("x")
 
@@ -382,6 +433,35 @@ async def test_the_webhook_answers_alike_and_queues_an_event_once(client: AsyncC
     assert (await client.post("/webhook/strava", json={**known, "aspect_type": "update"})).status_code == 200
     assert calls == [(7, test_user.strava_athlete_id), (8, test_user.strava_athlete_id),
                      (7, test_user.strava_athlete_id, "update")]
+    # not queued (a broker hiccup): the event is forgotten, so Strava's retry, or the next copy, goes through
+    calls.clear()
+
+    def broken(*a, **k):
+        raise ConnectionError("broker down")
+    monkeypatch.setattr(webhook_sync.sync_activity_from_webhook, "delay", broken)
+    assert (await client.post("/webhook/strava", json={**known, "object_id": 9})).status_code == 200
+    monkeypatch.setattr(webhook_sync.sync_activity_from_webhook, "delay", lambda *a, **k: calls.append(a))
+    assert (await client.post("/webhook/strava", json={**known, "object_id": 9})).status_code == 200
+    assert calls == [(9, test_user.strava_athlete_id)]
+
+
+async def test_a_counter_client_redis_dropped_is_closed(monkeypatch):
+    from app.services import auth as auth_service
+
+    class Dropped:
+        class r:  # noqa: N801 — the client's connection, as _RedisCounter keeps it
+            closed = False
+
+            @classmethod
+            async def aclose(cls):
+                cls.closed = True
+
+        async def incr(self, keys, window):
+            raise ConnectionError
+    counter = auth_service.FallbackCounter()
+    counter.shared = Dropped()
+    assert await counter.incr(["k"], 60) == [1]  # this process counted
+    assert Dropped.r.closed and counter.shared is None and counter.down_until > time.monotonic()
 
 
 def test_the_default_webhook_token_is_warned_about_outside_debug(monkeypatch, caplog):

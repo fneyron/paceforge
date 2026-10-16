@@ -76,7 +76,10 @@ async def get_optional_user(
     db: AsyncSession = Depends(get_db),
 ) -> User | None:
     user_id = request.session.get("user_id")
-    if not user_id or not await _live(request):
+    if not user_id:
+        return None
+    if not await _live(request):
+        request.session.clear()  # dropped here too: the public pages stop treating this browser as signed in
         return None
 
     result = await db.execute(select(User).where(User.id == user_id))

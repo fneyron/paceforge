@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
@@ -233,26 +233,31 @@ async def login(
     return RedirectResponse(url=f"/connections/{next}" if next else HOME, status_code=302)
 
 
-async def _sign_out(request: Request) -> None:
-    """The session ends for good: its id is refused from now on, whatever cookie still carries it."""
-    sid, iat = request.session.get("sid"), request.session.get("iat")
+async def _sign_out(request: Request, db: AsyncSession) -> None:
+    """The session ends for good: its id is refused from now on, whatever cookie still carries it. When the shared
+    store cannot take the id (Redis down), the account's session version is bumped instead: durable, seen by every
+    worker, at the price of signing out the account's other sessions too."""
+    sid, iat, user_id = request.session.get("sid"), request.session.get("iat"), request.session.get("user_id")
     request.session.clear()
-    if sid:
-        await sessions.revoke(sid, iat)
+    if sid and not await sessions.revoke(sid, iat) and user_id:
+        await db.execute(update(User).where(User.id == user_id).values(session_version=User.session_version + 1))
 
 
 @router.post("/auth/logout")
-async def logout(request: Request):
-    await _sign_out(request)
-    return RedirectResponse(url="/", status_code=303)
+async def logout(request: Request, db: AsyncSession = Depends(get_db)):
+    await _sign_out(request, db)
+    # The phone app keys its own sign-out on a navigation to /auth/logout, which Android reports for a GET only:
+    # the redirected GET is that navigation (a no-op on a session already dead), and it leads home.
+    return RedirectResponse(url="/auth/logout", status_code=303)
 
 
 @router.get("/auth/logout")
-async def logout_link(request: Request):
-    """An old link or bookmark: it signs out only when the browser says the navigation is its own (same-origin,
-    or none for a typed address), never from a link on another site; otherwise home, signed in as before."""
+async def logout_link(request: Request, db: AsyncSession = Depends(get_db)):
+    """An old link or bookmark, or the redirect after the POST: it signs out only when the browser says the
+    navigation is its own (same-origin, or none for a typed address), never from a link on another site; home
+    either way."""
     if request.headers.get("sec-fetch-site") in ("same-origin", "none"):
-        await _sign_out(request)
+        await _sign_out(request, db)
     return RedirectResponse(url="/", status_code=302)
 
 

@@ -49,9 +49,10 @@ class MemoryRevocations:
         if len(self.until) > 10000:
             self.until = {sid: at for sid, at in self.until.items() if at > now}
 
-    async def revoke(self, sid: str, ttl: int) -> None:
+    async def revoke(self, sid: str, ttl: int) -> bool:
         self._prune()
         self.until[sid] = time.monotonic() + ttl
+        return True  # the tests' stand-in for the shared store
 
     async def is_revoked(self, sid: str) -> bool:
         at = self.until.get(sid)
@@ -75,6 +76,9 @@ class _RedisRevocations:
     async def is_revoked(self, sid: str) -> bool:
         return bool(await self.r.exists(PREFIX + sid))
 
+    async def aclose(self) -> None:
+        await self.r.aclose()
+
 
 class Revocations:
     """Redis, shared by the workers, and this process: a revocation is written to both and read from either."""
@@ -89,16 +93,26 @@ class Revocations:
             self.redis = _RedisRevocations()
         return self.redis
 
-    def _down(self) -> None:
-        self.redis, self.down_until = None, time.monotonic() + RETRY_REDIS_AFTER_S
+    async def _down(self) -> None:
+        """Redis did not answer: left alone for a minute, its client closed (a new one is opened after)."""
+        client, self.redis, self.down_until = self.redis, None, time.monotonic() + RETRY_REDIS_AFTER_S
+        if client is not None:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
 
-    async def revoke(self, sid: str, ttl: int) -> None:
+    async def revoke(self, sid: str, ttl: int) -> bool:
+        """True when the shared store took the id (every worker refuses it from now on), False when this process
+        alone did: the caller then signs the account out another, durable way."""
         await self.memory.revoke(sid, ttl)
         try:
             await self._shared().revoke(sid, ttl)
+            return True
         except Exception:
-            self._down()
+            await self._down()
             logger.warning("Session revocations unavailable: a logout holds on this worker only for now")
+            return False
 
     async def is_revoked(self, sid: str) -> bool:
         if await self.memory.is_revoked(sid):
@@ -108,7 +122,7 @@ class Revocations:
         try:
             return await self._shared().is_revoked(sid)
         except Exception:
-            self._down()
+            await self._down()
             logger.warning("Session revocations unavailable: logouts from other workers not seen for a minute")
             return False
 
@@ -123,8 +137,9 @@ def store():
     return _store
 
 
-async def revoke(sid: str, iat) -> None:
-    await store().revoke(sid, remaining_s(iat))
+async def revoke(sid: str, iat) -> bool:
+    """Revoke `sid` until the session would have died anyway; True when every worker will refuse it."""
+    return await store().revoke(sid, remaining_s(iat))
 
 
 async def is_revoked(sid: str) -> bool:
