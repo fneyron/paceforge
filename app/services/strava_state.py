@@ -78,12 +78,36 @@ def read(name: str) -> str | None:
 
 EVENT_SEEN_S = 24 * 3600
 _seen: dict[str, float] = {}  # this process's own memory of them: the fallback when Redis does not answer
+# the webhook answers within 2 s on the event loop: its own async client, short timeouts, a minute's backoff
+_events = None
+_events_down_until = 0.0
+EVENTS_RETRY_AFTER_S = 60
 
 
-def event_first_seen(key: str, ttl: float = EVENT_SEEN_S) -> bool:
+def _events_client():
+    global _events
+    if _events is None:
+        import redis.asyncio as aioredis
+
+        _events = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_timeout=0.5,
+                                          socket_connect_timeout=0.5)
+    return _events
+
+
+async def _events_down() -> None:
+    global _events, _events_down_until
+    client, _events, _events_down_until = _events, None, time.monotonic() + EVENTS_RETRY_AFTER_S
+    if client is not None:
+        try:
+            await client.aclose()
+        except Exception:
+            pass
+
+
+async def event_first_seen(key: str, ttl: float = EVENT_SEEN_S) -> bool:
     """True the first time `key` (an event's digest) comes within `ttl` seconds: Redis, shared by the workers, and
     this process's memory whatever Redis says (alone when it does not answer: then each worker deduplicates its
-    own events only)."""
+    own events only). An event that is not queued after all is forgotten again (event_forget)."""
     now = time.monotonic()
     if _seen.get(key, 0.0) > now:
         return False
@@ -91,11 +115,26 @@ def event_first_seen(key: str, ttl: float = EVENT_SEEN_S) -> bool:
         for stale in [k for k, until in _seen.items() if until <= now]:
             del _seen[stale]
     _seen[key] = now + ttl
+    if time.monotonic() < _events_down_until:
+        return True
     try:
-        return bool(_redis().set(PREFIX + "event:" + key, "1", nx=True, ex=max(1, int(ttl))))
+        return bool(await _events_client().set(PREFIX + "event:" + key, "1", nx=True, ex=max(1, int(ttl))))
     except Exception:
+        await _events_down()
         logger.warning("Strava state unavailable: webhook events deduplicated in this worker only")
         return True
+
+
+async def event_forget(key: str) -> None:
+    """The event was not queued (a broker or database hiccup): the next copy of it, Strava's retry, goes through."""
+    _seen.pop(key, None)
+    if time.monotonic() < _events_down_until:
+        return
+    try:
+        await _events_client().delete(PREFIX + "event:" + key)
+    except Exception:
+        await _events_down()
+        logger.warning("Strava state unavailable: a webhook event not queued stays seen on other workers")
 
 
 # ── the app's quota (shared by every athlete of that app) ───────────────────

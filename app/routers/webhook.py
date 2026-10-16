@@ -133,13 +133,18 @@ async def strava_webhook_event(request: Request, db: AsyncSession = Depends(get_
     except Exception:
         logger.warning("Invalid webhook event payload ignored")
         return JSONResponse(status_code=200, content=ACK)
-    if not strava_state.event_first_seen(_event_key(event)):
+    key = _event_key(event)
+    if not await strava_state.event_first_seen(key):
         logger.info("Strava webhook: %s %s of athlete %d seen already, ignored", event.object_type, event.aspect_type,
                     event.owner_id)
         return JSONResponse(status_code=200, content=ACK)
 
     kind = _kind(event)
-    user, verified = await _athlete_of(db, event) if kind else (None, False)
+    try:
+        user, verified = await _athlete_of(db, event) if kind else (None, False)
+    except Exception:
+        await strava_state.event_forget(key)  # a database hiccup: this answers 500, Strava retries, it must go through
+        raise
     if user is None:
         logger.info("Strava webhook: %s %s of athlete %d ignored (subscription %d)", event.object_type,
                     event.aspect_type, event.owner_id, event.subscription_id)
@@ -163,5 +168,6 @@ async def strava_webhook_event(request: Request, db: AsyncSession = Depends(get_
             sync_activity_from_webhook.delay(event.object_id, event.owner_id, kind, **check)
     except Exception:
         logger.exception("Failed to enqueue webhook sync (broker unavailable?)")
+        await strava_state.event_forget(key)  # not queued: a later copy of the event must go through
 
     return JSONResponse(status_code=200, content=ACK)

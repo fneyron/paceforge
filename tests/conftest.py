@@ -301,7 +301,9 @@ def _revoked_sessions_in_memory(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _webhook_events_forgotten():
-    """The Strava events the webhook saw lately (strava_state.event_first_seen), fresh for each test."""
+    """The Strava events the webhook saw lately (strava_state.event_first_seen), fresh for each test; Redis is not
+    asked for them (the memory path is the one exercised)."""
     from app.services import strava_state
 
     strava_state._seen.clear()
+    strava_state._events_down_until = float("inf")

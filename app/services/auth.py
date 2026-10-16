@@ -86,11 +86,13 @@ TOO_MANY = "Trop de tentatives. Réessaie plus tard."  # windows of 15 minutes t
 # Quotas on the costly or sensitive requests (over_quota): one window each, counted per signed-in account
 # (user=) and/or per client address (ip=), each on its own key.
 QUOTAS = {  # action: (window in seconds, {scope: allowed in the window})
-    "exchange": (60 * 60, {"ip": 30}),  # phone pairing code exchanges (each a guess at a code)
-    "weather": (60 * 60, {"user": 60, "ip": 120}),  # forecasts (an Open-Meteo call each, when not cached)
+    # an address is often shared (a carrier's NAT, a club's Wi-Fi): its allowance is wide, the account's is the one
+    "exchange": (60 * 60, {"ip": 100}),  # phone pairing code exchanges (each a guess at a 32-byte code)
+    "weather": (60 * 60, {"user": 60, "ip": 600}),  # forecasts (an Open-Meteo call each, when not cached)
     "gpx": (60 * 60, {"user": 20}),  # GPX imports (parsed on the web worker)
     "export": (60 * 60, {"user": 60}),  # plan exports: GPX, TCX, CSV, the phone's offline copy
-    "webhook": (10 * 60, {"ip": 300}),  # Strava's events (a forged one costs a lookup; Strava sends a few a day)
+    # Strava's events all come from its few egress addresses: a ceiling on the flood only, never on its traffic
+    "webhook": (10 * 60, {"ip": 3000}),
     "resend": (60, {"user": 1}),  # verification emails: one a minute per account
 }
 RETRY_AFTER = "3600"
@@ -175,12 +177,21 @@ class FallbackCounter:
             self.shared = _RedisCounter()
         return self.shared
 
+    async def _down(self) -> None:
+        """Redis did not answer: left alone for a minute, its client closed (a new one is opened after)."""
+        client, self.shared, self.down_until = self.shared, None, time.monotonic() + RETRY_REDIS_AFTER_S
+        if client is not None:
+            try:
+                await client.r.aclose()
+            except Exception:
+                pass
+
     async def _call(self, name: str, *args):
         if time.monotonic() >= self.down_until:
             try:
                 return await getattr(self._redis(), name)(*args)
             except Exception:
-                self.shared, self.down_until = None, time.monotonic() + RETRY_REDIS_AFTER_S
+                await self._down()
                 logger.warning("Rate limit counters unavailable: this worker counts alone for a minute")
         return await getattr(self.memory, name)(*args)
 
