@@ -655,6 +655,8 @@ def build_bike_passage_sections(
             end_elevation=_elev_at_km(cycling, end_km),
             clock_time_s=int(start_offset_s + cum + stops_acc),
             adjusted_clock_time_s=int(start_offset_s + adj_cum + stops_acc) if adjusted is not None else None,
+            elapsed_s=int(start_offset_s + cum + stops_acc) - int(start_offset_s),
+            adjusted_elapsed_s=(int(start_offset_s + adj_cum + stops_acc) - int(start_offset_s)) if adjusted is not None else None,
             end_checkpoint_index=cp["cp_index"],
         ).model_dump())
         if stop_s_per_aid and cp["cp_index"] is not None and round(end_km, 1) in aid_set:

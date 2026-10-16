@@ -31,6 +31,39 @@ test('heart samples require the same device and real sleep, with explicit wake w
     {...reading('2026-10-25T02:00:00Z'),device:{localIdentifier:'other'}},reading('2026-10-25T12:00:00Z'),reading('2026-10-25T03:00:00Z',NaN)];
   assert.deepEqual(nightReadings(data,e,25,230),[{at:'2026-10-25T00:30:00.000Z',value:50}]);
 });
+test('implausible naps are left out, the night of that day is kept', () => {
+  // A writer that marks its wake periods (sessions stay apart): two sleeps of five hours
+  // in the day make more than ten hours of naps, which the server refuses with the night.
+  const awake = sample('2026-10-25T02:00:00Z', '2026-10-25T02:05:00Z', 2);
+  const inside = (hour: string) => sample(`2026-10-25T${hour}:00:00Z`, `2026-10-25T${hour}:05:00Z`, 2);
+  const dozes = [sample('2026-10-25T08:00:00Z', '2026-10-25T13:00:00Z'), inside('10'), sample('2026-10-25T15:00:00Z', '2026-10-25T20:30:00Z'), inside('17')];
+  const [night] = episodes([main, awake, ...dozes], 'UTC', now);
+  assert.equal(night.date, '2026-10-25'); assert.equal(night.sleep.length, 2); assert.deepEqual(night.naps, []);
+  // Under ten hours they are naps.
+  const [kept] = episodes([main, awake, dozes[0], inside('10'), sample('2026-10-25T15:00:00Z', '2026-10-25T19:30:00Z'), inside('17')], 'UTC', now);
+  assert.equal(kept.sleep.length, 2); assert.equal(kept.naps.length, 2);
+});
+test('a long wake inside a night is kept in it; a doze, short naps or an awake-marked session stay apart', () => {
+  // Two blocks of « asleep » around a two-hour wake: one night of eight hours, no nap.
+  const silent = [sample('2026-10-24T21:00:00Z', '2026-10-25T01:00:00Z', 1), sample('2026-10-25T03:00:00Z', '2026-10-25T07:00:00Z', 1)];
+  const [night] = episodes(silent, 'UTC', now);
+  assert.equal(night.sleep.length, 2); assert.deepEqual(night.naps, []);
+  // Less than an hour of sleep is never joined: a doze before bed stays a nap of its own day.
+  const dozed = Object.fromEntries(episodes([sample('2026-10-24T18:00:00Z', '2026-10-24T18:40:00Z', 1), ...silent], 'UTC', now).map(e => [e.date, e]));
+  assert.equal(dozed['2026-10-25'].sleep.length, 2); assert.deepEqual(dozed['2026-10-25'].naps, []);
+  assert.deepEqual(dozed['2026-10-24'].sleep, []); assert.equal(dozed['2026-10-24'].naps.length, 1);
+  // Four short naps less than three hours apart after the night: naps, never a 21-hour session.
+  const naps = ['09', '12', '15', '18'].map(hour => sample(`2026-10-25T${hour}:00:00Z`, `2026-10-25T${hour}:30:00Z`, 1));
+  const napped = episodes([...silent, ...naps], 'UTC', now);
+  assert.equal(napped.length, 1); assert.equal(napped[0].sleep.length, 2); assert.equal(napped[0].naps.length, 4);
+  // The same shape whatever the window read.
+  assert.deepEqual(episodes([...silent, ...naps], 'UTC', now, 7), episodes([...silent, ...naps], 'UTC', now, 60));
+  // The same gap from a writer that records its wake periods: two sessions, the shorter is a nap.
+  const marking = [sample('2026-10-24T22:00:00Z', '2026-10-25T01:00:00Z'), sample('2026-10-25T00:30:00Z', '2026-10-25T00:40:00Z', 2),
+    sample('2026-10-25T03:00:00Z', '2026-10-25T07:00:00Z')];
+  const [split] = episodes(marking, 'UTC', now);
+  assert.equal(split.sleep.length, 1); assert.equal(split.naps.length, 1);
+});
 test('local wake date follows the night timezone, and a short nap has no main-night summary', () => {
   const s=sample('2026-10-25T14:00:00Z','2026-10-25T22:00:00Z'); s.metadata={HKTimeZone:'Asia/Tokyo'};
   assert.equal(episodes([s],'UTC',now)[0].date,'2026-10-26');

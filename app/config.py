@@ -11,17 +11,14 @@ class Settings(BaseSettings):
     # the shared app's webhook subscription id; optional, discovered when empty
     STRAVA_SUBSCRIPTION_ID: str = ""
 
-    # Anthropic
-    ANTHROPIC_API_KEY: str = ""
-    CLAUDE_MODEL: str = "claude-sonnet-4-6"
-
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://paceforge:paceforge@localhost:5432/paceforge"
-    # Connection pools, against PostgreSQL's max_connections (100 by default, 3 of them kept for superusers):
-    # web: 4 uvicorn workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) = 40, twice while a deploy runs the old and
-    # the new container side by side = 80; Celery: 2 processes, one task each, every task its own engine of
-    # at most DB_TASK_POOL_SIZE + DB_TASK_MAX_OVERFLOW = 3 → 6, twice in a deploy = 12; Alembic at start: 1.
-    # 93 at worst. Raise them only with max_connections (or behind PgBouncer).
+    # Connection pools, against PostgreSQL's max_connections (150 in docker-compose.prod.yml, 3 of them kept
+    # for superusers): web: 4 uvicorn workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) = 40, twice while a deploy
+    # runs the old and the new container side by side = 80; Celery: two workers of 2 processes, one task each,
+    # every task its own engine of at most DB_TASK_POOL_SIZE + DB_TASK_MAX_OVERFLOW = 3 → 12, twice in a
+    # deploy = 24; Alembic at start: 1; the nightly pg_dump: 1. 106 at worst (tests/test_config.py). Raise
+    # them only with max_connections (or behind PgBouncer).
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 5
     DB_TASK_POOL_SIZE: int = 1
@@ -46,6 +43,8 @@ class Settings(BaseSettings):
     # all decrypt, and so does the key derived from SECRET_KEY used before them (app.crypto)
     ENCRYPTION_KEYS: str = ""
     APP_NAME: str = "PaceForge"
+    # a browser session ends this long after the sign-in, however often it is used (app.services.sessions)
+    SESSION_LIFETIME_DAYS: int = 90
     DEBUG: bool = False
     # Fetch each trace's road/track/trail surface from OpenStreetMap (off in tests)
     SURFACE_FETCH: bool = True
@@ -57,6 +56,8 @@ class Settings(BaseSettings):
     ACTIVITY_ENV_FETCH: bool = True
     # Bike and triathlon planning: hidden for now (code kept, routes and data untouched)
     CYCLING_ENABLED: bool = False
+    # Error reporting (Sentry) when set; nothing is loaded or sent while empty (app/sentry.py)
+    SENTRY_DSN: str = ""
 
     @property
     def strava_shared_ready(self) -> bool:

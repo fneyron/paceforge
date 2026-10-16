@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 PREFIX = "paceforge:strava:"
 WEBHOOK_FRESH_S = 24 * 3600  # an athlete the webhook reached within this is not polled hourly
 POLLED_EVERY_S = 24 * 3600  # every linked athlete is polled at least this often all the same (an event may be lost)
-INITIAL_RUN_S = 3 * 3600  # a first import running (a lost worker frees it after this)
+INITIAL_RUN_S = 65 * 60  # a first import running: just past the worker's hard limit (app.celery_app), a killed one frees it
 INITIAL_RETRY_S, INITIAL_RETRY_MAX_S = 3600, 24 * 3600  # a failed first import waits 1 h, 2 h, 4 h… 24 h at most
 _KEEP_FAILURE_S = 7 * 24 * 3600
 
@@ -71,7 +71,71 @@ def read(name: str) -> str | None:
     try:
         return _redis().get(PREFIX + name)
     except Exception:
+        logger.warning("Strava state unavailable: %s not read", name, exc_info=True)
         return None
+
+
+# ── the events the webhook saw lately: Strava's retries and replays are queued once ──
+
+EVENT_SEEN_S = 24 * 3600
+_seen: dict[str, float] = {}  # this process's own memory of them: the fallback when Redis does not answer
+# the webhook answers within 2 s on the event loop: its own async client, short timeouts, a minute's backoff
+_events = None
+_events_down_until = 0.0
+EVENTS_RETRY_AFTER_S = 60
+
+
+def _events_client():
+    global _events
+    if _events is None:
+        import redis.asyncio as aioredis
+
+        _events = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_timeout=0.5,
+                                          socket_connect_timeout=0.5)
+    return _events
+
+
+async def _events_down() -> None:
+    global _events, _events_down_until
+    client, _events, _events_down_until = _events, None, time.monotonic() + EVENTS_RETRY_AFTER_S
+    if client is not None:
+        try:
+            await client.aclose()
+        except Exception:
+            pass
+
+
+async def event_first_seen(key: str, ttl: float = EVENT_SEEN_S) -> bool:
+    """True the first time `key` (an event's digest) comes within `ttl` seconds: Redis, shared by the workers, and
+    this process's memory whatever Redis says (alone when it does not answer: then each worker deduplicates its
+    own events only). An event that is not queued after all is forgotten again (event_forget)."""
+    now = time.monotonic()
+    if _seen.get(key, 0.0) > now:
+        return False
+    if len(_seen) > 10000:
+        for stale in [k for k, until in _seen.items() if until <= now]:
+            del _seen[stale]
+    _seen[key] = now + ttl
+    if time.monotonic() < _events_down_until:
+        return True
+    try:
+        return bool(await _events_client().set(PREFIX + "event:" + key, "1", nx=True, ex=max(1, int(ttl))))
+    except Exception:
+        await _events_down()
+        logger.warning("Strava state unavailable: webhook events deduplicated in this worker only")
+        return True
+
+
+async def event_forget(key: str) -> None:
+    """The event was not queued (a broker or database hiccup): the next copy of it, Strava's retry, goes through."""
+    _seen.pop(key, None)
+    if time.monotonic() < _events_down_until:
+        return
+    try:
+        await _events_client().delete(PREFIX + "event:" + key)
+    except Exception:
+        await _events_down()
+        logger.warning("Strava state unavailable: a webhook event not queued stays seen on other workers")
 
 
 # ── the app's quota (shared by every athlete of that app) ───────────────────

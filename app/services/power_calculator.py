@@ -1,12 +1,13 @@
 """Cycling power/speed physics calculator."""
 
 import math
+from collections import OrderedDict
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
-from app.schemas.simulator import FtpEstimate, PowerCalcInput, PowerCalcResult
+from app.schemas.simulator import FtpEstimate
 
 
 def calculate_power(
@@ -48,56 +49,6 @@ def solve_speed_for_power(
             hi = mid
 
     return (lo + hi) / 2
-
-
-def calculate_from_input(input: PowerCalcInput) -> PowerCalcResult:
-    """Calculate power or time from input parameters."""
-    total_weight = input.rider_weight_kg + input.bike_weight_kg
-    length_m = input.length_km * 1000
-
-    if input.target_time_s:
-        # Given time, compute required power
-        speed_ms = length_m / input.target_time_s
-        watts = calculate_power(
-            speed_ms, total_weight, input.gradient_pct,
-            input.cda, input.crr, input.rho,
-        )
-        time_s = input.target_time_s
-    elif input.target_watts:
-        # Given power, compute time
-        speed_ms = solve_speed_for_power(
-            input.target_watts, total_weight, input.gradient_pct,
-            input.cda, input.crr, input.rho,
-        )
-        watts = input.target_watts
-        time_s = int(length_m / speed_ms) if speed_ms > 0 else 0
-    else:
-        raise ValueError("Spécifiez un temps cible ou une puissance cible.")
-
-    speed_kmh = speed_ms * 3.6
-
-    # VAM (vertical ascent meters per hour)
-    elevation_gain = length_m * (input.gradient_pct / 100)
-    vam = (elevation_gain / time_s * 3600) if time_s > 0 and elevation_gain > 0 else 0
-
-    hours, remainder = divmod(time_s, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if hours > 0:
-        time_fmt = f"{hours}h{minutes:02d}'{secs:02d}\""
-    else:
-        time_fmt = f"{minutes}'{secs:02d}\""
-
-    return PowerCalcResult(
-        gradient_pct=input.gradient_pct,
-        length_km=input.length_km,
-        total_weight_kg=total_weight,
-        speed_kmh=round(speed_kmh, 1),
-        power_watts=round(watts, 0),
-        time_s=time_s,
-        time_formatted=time_fmt,
-        vam=round(vam, 0),
-        watts_per_kg=round(watts / input.rider_weight_kg, 2) if input.rider_weight_kg > 0 else 0,
-    )
 
 
 def mean_max_power(streams: dict, window_s: int) -> float | None:
@@ -157,7 +108,15 @@ def ftp_from_mean_max(p5: float | None, p20: float | None, p60: float | None) ->
     return max(cands, key=lambda c: c[0])
 
 
-_FTP_CACHE: dict[int, tuple] = {}  # user_id → (expires_at, estimate): the mean-max crunch is not free
+FTP_CACHE_SIZE = 256  # athletes kept per worker; the least recently read goes first
+_FTP_CACHE: OrderedDict[int, tuple] = OrderedDict()  # user_id → (expires_at, estimate): the mean-max crunch is not free
+
+
+def _remember_ftp(user_id: int, expires_at, estimate) -> None:
+    _FTP_CACHE[user_id] = (expires_at, estimate)
+    _FTP_CACHE.move_to_end(user_id)
+    while len(_FTP_CACHE) > FTP_CACHE_SIZE:
+        _FTP_CACHE.popitem(last=False)
 
 
 def _best_ftp_from_rows(rows) -> tuple:
@@ -213,6 +172,7 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
     # ── tier 1: streams of power-meter rides (max_watts only exists with a meter) ──
     cached = _FTP_CACHE.get(user_id)
     if cached and cached[0] > now:
+        _FTP_CACHE.move_to_end(user_id)  # the least recently read goes first
         return cached[1]
     q = (
         select(Activity.id, Activity.name, Activity.start_date, Activity.streams_data)
@@ -243,7 +203,7 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
                 activity_name=name or "", activity_date=start_date, confidence=confidence,
                 is_stale=False, age_months=max(0, (now - sd).days // 30) if sd else 0, method=method, rides_used=n_with_power,
             )
-            _FTP_CACHE[user_id] = (now + timedelta(minutes=10), est)
+            _remember_ftp(user_id, now + timedelta(minutes=10), est)
             return est
 
     # ── tier 2: summary data — power-meter rides ONLY ──
@@ -272,7 +232,7 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
         if activities:
             break
     if not activities:
-        _FTP_CACHE[user_id] = (now + timedelta(minutes=10), None)
+        _remember_ftp(user_id, now + timedelta(minutes=10), None)
         return None
 
     def _scaled(a: Activity) -> float:
@@ -302,5 +262,5 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
         method="puissance normalisée des meilleures sorties",
         rides_used=len(activities),
     )
-    _FTP_CACHE[user_id] = (now + timedelta(minutes=10), est)
+    _remember_ftp(user_id, now + timedelta(minutes=10), est)
     return est

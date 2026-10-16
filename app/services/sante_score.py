@@ -12,7 +12,8 @@ Recorded efforts and training load remain contextual: their windows neither add 
 The displayed /100 is 100 × the mean of s_VFC = clip((z + 2.5)/2, 0, 1) and s_FC = clip((2.5 − z)/2, 0, 1),
 held to ≤ 69 when orange, ≤ 39 when red, ≥ 70 when green (H). This descriptive scale is not clinically
 validated. Missing data give a reason rather than a number. History is computed using events up to each day.
-Details: docs/sante-estimates.md and docs/recovery-cumulative.md.
+Details: docs/sante-estimates.md and docs/recovery-cumulative.md; the dated decisions behind the rules:
+docs/decisions.md.
 """
 import math
 import re
@@ -31,12 +32,9 @@ HOLD = {"ok": (70, 100), "warn": (0, 69), "danger": (0, 39)}  # (H) the number n
 HISTORY_DAYS = 14  # the Signaux nocturnes card
 HISTORY_NIGHTS = 160  # days of nights a past day reads: its baseline (days −67 → −8), its alert's, with room
 
-# « Comment je calcule » (the audit, 2026-10-09: one method fold, a few bullets for the three dials in their order,
-# the stages and the margin); v4.3 (owner: « c'est trop d'explication, simplifie et synthétise, ne mets pas les
-# citations »): plain words, no citation, no « (H) »; v4.4 (owner: « les explications en français ne sont pas
-# claires »): sentences of 15 words at most, « tes valeurs habituelles », never « ta normale ». Owner, 2026-10-14:
-# scientific basis — the bullets that described the old index (an adapted need, accumulated efforts) said something
-# false: corrected minimally (the full wording is a GUI proposal). The references are on /sante/sources.
+# « Comment je calcule »: one method fold, a few bullets for the three dials in their order, the stages and the
+# margin; plain words, no citation, no « (H) »; sentences of 15 words at most, « tes valeurs habituelles », never
+# « ta normale »; nothing the state no longer does. The references are on /sante/sources.
 METHOD = [
     "Sommeil compare tes 24 h, siestes comprises, au repère de 8 h. "
     "Ce repère ne mesure pas ton besoin personnel. L’écart estimé sur 7 jours est indiqué à part.",
@@ -127,8 +125,8 @@ def is_sdnn(trend: dict | None) -> bool:
 
 def usable(metric: str, trend: dict | None) -> bool:
     """A heart series the state reads: last night measured on it, a baseline (full from 14 nights; « provisoire »
-    from 7, read all the same and said so: owner, 2026-10-14, the score shows while the repères build, as it did
-    before the audit), 3 nights in the 7 days, never Apple's SDNN (descriptive only, no RMSSD rule applies to it)."""
+    from 7, read all the same and said so: the score shows while the repères build), 3 nights in the 7 days, never
+    Apple's SDNN (descriptive only, no RMSSD rule applies to it)."""
     return bool(trend and trend["last"] and trend["z"] is not None and trend["baseline"]
                 and not (metric == "hrv" and is_sdnn(trend)))
 
@@ -280,12 +278,12 @@ def quality(day: dict) -> dict:
 
 DIAL_WORDS = {"ok": "habituels", "warn": "à surveiller", "danger": "inhabituels"}
 NO_SCORE = "pas de score"  # the dial's word without a state (the line under the dials says why)
-NO_MEASURE = "pas de mesure ce jour-là"  # a day without a state: no bar, no dot, its readout says it (2026-10-08)
+NO_MEASURE = "pas de mesure ce jour-là"  # a day without a state: no bar, no dot, its readout says it
 
 
 def pct(v: int) -> str:
-    """The indice as the page prints it (v4.4, owner: « Mets des pourcentages plutôt que des valeurs (comme WHOOP /
-    Oura) »): « 65 % », the same number, a no-break space (the display font has no narrow one)."""
+    """The indice as the page prints it (a percentage, as WHOOP and Oura do): « 65 % », the same number, a no-break
+    space (the display font has no narrow one)."""
     return f"{v}{viz.NBSP}%"
 
 
@@ -294,8 +292,8 @@ def index_label(v: int) -> str:
 
 
 def dial(score: dict, state: dict | None, href: str | None = None) -> dict:
-    """The Récupération dial, the middle one of three (2026-10-08, owner: « Fais comme WHOOP, ça doit rester
-    simple »): the indice nocturne (« 65 % », the « % » smaller), its arc in its state's colour, its name under it
+    """The Récupération dial, the middle one of three (like WHOOP's, kept simple): the indice nocturne (« 65 % »,
+    the « % » smaller), its arc in its state's colour, its name under it
     and the state's word (« bonne », « en cours », « faible »: the name and the word say the state, never colour
     alone); « — » and « pas de score » without a state (an empty dial, like WHOOP). `href`: its card below, None
     when the page has none (a plain dial)."""
@@ -311,9 +309,9 @@ def dial(score: dict, state: dict | None, href: str | None = None) -> dict:
 def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> dict | None:
     """« Récupération · 14 jours »: one bar per day with a state, its indice in the state's colour, with faint 40
     and 70 lines labelled on the right (never colour alone), today's day on a disc; nothing on a day without a state
-    (owner, 2026-10-08: « s'il n'y a pas de mesure tu ne mets rien, pas de point »), whose readout says « pas de
-    mesure ce jour-là »; tap a bar → « 64 % » « ◐ Récupération en cours » / « mer. 7 oct. »: the date, the indice
-    and the state only (v4.3, owner: « mets juste les scores »). Nothing selected, no number: the card's title rests
+    (no point either), whose readout says « pas de mesure ce jour-là »; tap a bar → « 64 % » « ◐ Récupération en
+    cours » / « mer. 7 oct. »: the date, the indice and the state only. Nothing selected, no number: the card's
+    title rests
     in the readout's place. None under 2 days with a state."""
     days = [d for d, _, _ in history]
     with_score = [s["value"] for _, _, s in history if s.get("value") is not None]

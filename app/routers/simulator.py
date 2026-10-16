@@ -1,11 +1,15 @@
+import asyncio
+import html
 import json
 import logging
 import re
 import time
+import unicodedata
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
-from sqlalchemy import inspect, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
@@ -13,6 +17,9 @@ from app.dependencies import get_current_user, get_db
 from app.features import cycling_enabled, hidden_sports, require_cycling, sport_hidden
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
+from app.services.auth import RETRY_AFTER, client_ip, over_quota
+from app.services.gpx import GpxError, import_course
+from app.services.plan_clock import PlanClock
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -53,10 +60,13 @@ async def simulator_page(
         rt.profile_points = pts if isinstance(pts, list) else []
         rt.imported_estimate_s = imp if isinstance(imp, (int, float)) else 0  # the course's import estimate (_objective_s)
         rt.has_course = bool(rt.profile_points)  # every course has its elevation points (a triathlon has none)
-    # upcoming races first (soonest), then past ones (most recent first), then undated
+    # upcoming races first (soonest), then past ones (most recent first), then undated: on the athlete's day
+    # (sante_training.athlete_today, the day Santé reads), not the server's UTC one
     from datetime import date as _date
 
-    today = _date.today()
+    from app.services import sante_training as st
+
+    today = await st.athlete_today(db, user.id)
     for rt in saved_routes:
         try:
             rt.days_to = (_date.fromisoformat(str(rt.race_date)[:10]) - today).days if rt.race_date else None
@@ -109,7 +119,7 @@ async def simulator_page(
                 logger.exception("legacy objective check failed for route %s", rt.id)
     run = await _races_vs_plan([rt for rt in saved_routes if rt.result_json], db, user, profile=profile)
     for rt in saved_routes:
-        rt.card = _route_card(rt, *run.get(rt.id, (None, None)))
+        rt.card = _route_card(rt, *run.get(rt.id, (None, None)), today=today)
 
     return templates.TemplateResponse(
         request,
@@ -154,7 +164,7 @@ def _plan_finish_s(b: dict) -> int | None:
     if b.get("plan_total_s"):
         return int(b["plan_total_s"])
     end = b["sections"][-1] if b["sections"] else None
-    return int(end["clock_time_s"]) - int(b["start_offset_s"]) if end and end.get("clock_time_s") is not None else None
+    return b["clock"].elapsed_of(end, plan=False) if end else None
 
 
 async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User, profile=None) -> dict[int, tuple[int | None, int | None]]:
@@ -193,13 +203,15 @@ async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User, prof
     return out
 
 
-def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None) -> dict:
+def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None, today=None) -> dict:
     """What « Mes courses » shows for a race: the date in words, the objective, the real
-    time against the plan once run (the débrief's numbers: ``_races_vs_plan``), and a mini profile."""
+    time against the plan once run (the débrief's numbers: ``_races_vs_plan``), and a mini profile.
+    ``today``: the athlete's day (the year shows for another year, the past carries it)."""
     from datetime import date as _date
 
     from app.services.debrief import close_to_plan
 
+    today = today or _date.today()
     out: dict = {"date": None, "when": None, "objective": None, "real": None, "diff": None, "good": None, "profile": None}
     d = None
     try:
@@ -207,7 +219,7 @@ def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None)
     except ValueError:
         d = None
     if d:  # past races carry their year
-        out["date"] = _date_fr(d, d.year != _date.today().year or d < _date.today())
+        out["date"] = _date_fr(d, d.year != today.year or d < today)
     days = getattr(rt, "days_to", None)
     if days is not None and days >= 0:
         out["when"] = ("aujourd'hui" if days == 0 else "demain" if days == 1 else f"J-{days}" if days <= 14
@@ -238,6 +250,21 @@ def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None)
     return out
 
 
+# A GPX import is parsed on the web worker: a few an hour per account are plenty (QUOTAS); the answer goes in the
+# form's own error box (app.js swaps a 429 in). An export is cheap but is a file of the athlete's data.
+TOO_MANY_IMPORTS = "Trop d’imports pour l’instant. Réessaie dans une heure."
+TOO_MANY_EXPORTS = "Trop d’exports pour l’instant. Réessaie dans une heure."
+
+
+def _too_many_imports() -> HTMLResponse:
+    return HTMLResponse(f'<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{TOO_MANY_IMPORTS}</div>',
+                        status_code=429, headers={"Retry-After": RETRY_AFTER})
+
+
+def _too_many_exports() -> JSONResponse:
+    return JSONResponse({"error": TOO_MANY_EXPORTS}, status_code=429, headers={"Retry-After": RETRY_AFTER})
+
+
 @router.post("/partials/simulator/gpx-upload", response_class=HTMLResponse)
 async def gpx_upload(
     request: Request,
@@ -247,20 +274,16 @@ async def gpx_upload(
 ):
     """Parse an uploaded GPX, persist it as a new Route, then redirect (via
     HX-Redirect) to its own detail page — so refresh/share/back work natively."""
-    from app.services.gpx import (
-        build_course_profile,
-        parse_gpx,
-        snap_waypoints_to_route,
-    )
     from app.services.race_simulator import build_athlete_gradient_profile, predict_course
 
+    if await over_quota("gpx", user=user.id):
+        return _too_many_imports()
     try:
-        content = await gpx_file.read()
-        points, gpx_waypoints = parse_gpx(content)
-        course = build_course_profile(points, name=_gpx_title(content, gpx_file.filename, "Course"))
-
-        # Snap GPX waypoints to route
-        snapped_wpts = snap_waypoints_to_route(gpx_waypoints, points)
+        await _room_for_a_route(db, user)
+        content = await _read_gpx_upload(gpx_file)
+        # the parse, the profile and the snapping are CPU-bound: off the event loop
+        course, snapped_wpts, parsed = await asyncio.to_thread(
+            import_course, content, None, _file_title(gpx_file.filename, "Course"))
 
         # Build athlete profile and predict
         profile = await build_athlete_gradient_profile(db, user.id)
@@ -287,24 +310,15 @@ async def gpx_upload(
                 elevation=wpt.get("elevation"),
             ))
         await db.flush()
+        await _commit(db)
 
         logger.info("Route %d created from GPX for user %d", route.id, user.id)
-        # HTMX swaps nothing; it follows the redirect to the new detail page.
-        return HTMLResponse(
-            status_code=204,
-            headers={"HX-Redirect": f"/simulator/routes/{route.id}"},
-        )
-    except ValueError as e:
-        return HTMLResponse(
-            f'<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{e}</div>'
-        )
+        return _imported(route, parsed.notice)
+    except GpxError as exc:
+        return _gpx_error(str(exc))
     except Exception:
         logger.exception("GPX upload failed")
-        return HTMLResponse(
-            '<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
-            "Erreur lors de l'analyse du fichier GPX. Vérifiez le format du fichier."
-            "</div>"
-        )
+        return _gpx_error("Erreur lors de l'analyse du fichier GPX. Vérifiez le format du fichier.")
 
 
 def _script_json(obj) -> str:
@@ -398,6 +412,8 @@ async def _passage_table_context(
     total_km = course.total_distance_km
     clock = await _race_clock(db, user_id, route_obj, course, race_date=race_date, weather=weather_clock,
                               start_hour=start_hour, start_minute=start_minute)  # night by the sun once dated
+    start_offset_s = start_hour * 3600 + start_minute * 60
+    plan_clock = PlanClock(start_offset_s, clock.get("race_date"), clock.get("tz"))  # the rows' wall clock, a DST change included
     fine = _fine_terrain(course, profile)
     if estimate_s is None:  # the estimate now (these points, stops and weather): the hero and the field follow it
         course, est, _ = _estimate(course, profile, start_hour, start_minute, clock, checkpoints, stop_minutes, total_km,
@@ -414,9 +430,9 @@ async def _passage_table_context(
         course, checkpoints, target, heat_factor,
         start_hour, start_minute, hourly_weather,
         stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=aid_stops, objective=target_time_s is not None,
+        clock=plan_clock,
     )
     has_weather = any(s.get("temperature_c") is not None for s in sections)
-    start_offset_s = start_hour * 3600 + start_minute * 60
 
     # Race day: "I'm at <checkpoint> at <clock>" → re-plan the remainder.
     replan = None
@@ -426,25 +442,25 @@ async def _passage_table_context(
         anchor_clock_s = _clock_to_s(anchor_clock)
         if anchor_clock_s is not None:
             sections, replan = replan_from_passage(
-                sections, start_hour * 3600 + start_minute * 60, target,
+                sections, start_offset_s, target,
                 anchor_km, anchor_clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=aid_stops,
+                clock=plan_clock,
             )
     # Cutoff margins and autonomy legs read the (re)planned clocks, so they
     # come after the replan: on race day the margin is THE number he checks.
-    sections = annotate_cutoffs(sections, checkpoints, start_offset_s)
+    sections = annotate_cutoffs(sections, checkpoints, start_offset_s, clock=plan_clock)
     autonomy = autonomy_legs(checkpoints, course.total_distance_km, sections)
 
     from app.services.checkpoints import KINDS
-    from app.services.race_simulator import build_scenarios, is_pinned, plan_total_s
+    from app.services.race_simulator import build_scenarios, plan_total_s
 
-    # pinned checkpoints make a plan even without an objective
-    pinned = is_pinned(sections)
     sc_set = _scenario_settings(params, profile, course, await _known_course(db, user_id, route_obj))
     scenarios = None if replan else build_scenarios(
         sections, start_offset_s, target,
         fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=params.get("switch_km"),
         total_distance_km=course.total_distance_km,
+        clock=plan_clock,
     )
     # What the profile draws: night, terrain bands, clocks, cutoffs.
     from app.services.pacing_guide import build_pacing_guide, resolve_hr_caps
@@ -453,7 +469,7 @@ async def _passage_table_context(
 
     zones = await estimate_training_zones(db, user_id)
     rc = resolve_hr_caps(params, zones.get("max_hr"))
-    plan_s = plan_total_s(sections, start_offset_s, target)
+    plan_s = plan_total_s(sections, start_offset_s, target, clock=plan_clock)
     guide = build_pacing_guide(
         course, plan_s, hr_cap_climb=rc["climb"], hr_cap_flat=rc["flat"], hr_release_descent=rc["descent"],
         walk_grade=rc["walk_grade"], plan_sections=sections,
@@ -462,7 +478,8 @@ async def _passage_table_context(
 
     sun = sun_clock(course, clock.get("race_date"), start_hour, start_minute, clock.get("utc_offset_s")) if clock else None
     plan_data = build_plan_data(sections, start_offset_s, True, course.total_distance_km,
-                                guide["blocks"], scenarios, autonomy=autonomy, dark=sun.is_dark if sun else None)
+                                guide["blocks"], scenarios, autonomy=autonomy, dark=sun.is_dark if sun else None,
+                                clock=plan_clock)
     plan_data["estimate_s"] = estimate_s  # the page's « Estimation » now: its hero, field and slider follow it
     legs = _leg_details(guide, sections)
     return {
@@ -554,16 +571,15 @@ async def bike_gpx_upload(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.cycling_simulator import estimate_cda, predict_cycling_course
-    from app.services.gpx import build_course_profile, parse_gpx
     from app.services.power_calculator import ftp_for_user
 
+    if await over_quota("gpx", user=user.id):
+        return _too_many_imports()
     try:
-        from app.services.gpx import snap_waypoints_to_route
-
-        content = await gpx_file.read()
-        points, gpx_waypoints = parse_gpx(content)
-        course = build_course_profile(points, name=_gpx_title(content, gpx_file.filename, "Parcours vélo"))
-        snapped_wpts = snap_waypoints_to_route(gpx_waypoints, points)
+        await _room_for_a_route(db, user)
+        content = await _read_gpx_upload(gpx_file)
+        course, snapped_wpts, parsed = await asyncio.to_thread(
+            import_course, content, None, _file_title(gpx_file.filename, "Parcours vélo"))
 
         ftp = await ftp_for_user(db, user)
         rider_weight = await _rider_weight(db, user)
@@ -596,22 +612,14 @@ async def bike_gpx_upload(
         for wpt in snapped_wpts:
             db.add(RouteCheckpoint(route_id=route.id, name=wpt.get("name", ""), distance_km=wpt.get("distance_km", 0), elevation=wpt.get("elevation")))
         await db.flush()
+        await _commit(db)
         logger.info("Bike route %d created from GPX for user %d", route.id, user.id)
-        return HTMLResponse(
-            status_code=204,
-            headers={"HX-Redirect": f"/simulator/routes/{route.id}"},
-        )
-    except ValueError as e:
-        return HTMLResponse(
-            f'<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{e}</div>'
-        )
+        return _imported(route, parsed.notice)
+    except GpxError as exc:
+        return _gpx_error(str(exc))
     except Exception:
         logger.exception("Bike GPX upload failed")
-        return HTMLResponse(
-            '<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
-            "Erreur lors de l'analyse du fichier GPX velo."
-            "</div>"
-        )
+        return _gpx_error("Erreur lors de l'analyse du fichier GPX velo.")
 
 
 # ── Save / Load routes ──
@@ -672,6 +680,8 @@ async def save_route(
                 return JSONResponse({"error": "Parcours introuvable"}, status_code=404)
         if route is None and not course_data:  # a new route needs its course before its points are checked
             return JSONResponse({"error": "Parcours manquant"}, status_code=400)
+        if route is None:
+            await _room_for_a_route(db, user)
         total = course_data["total_distance_km"] if course_data else route.total_distance_km
         if any(cp["distance_km"] > total + 0.1 for cp in cps):
             return JSONResponse({"error": "Un passage dépasse la distance du parcours"}, status_code=422)
@@ -739,13 +749,11 @@ async def save_route(
         # A successful response must mean the plan is visible to the next
         # request (in particular an immediate export). Yield dependencies may
         # otherwise commit only after sending that response.
-        try:
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            raise
+        await _commit(db)
         logger.info("Route %d saved for user %d: %s", route.id, user.id, route.name)
         return JSONResponse({"id": route.id, "name": route.name})
+    except GpxError as exc:  # the account's routes are at their cap
+        return JSONResponse({"error": str(exc)}, status_code=422)
     except Exception:
         logger.exception("Failed to save route")
         return JSONResponse({"error": "Erreur lors de la sauvegarde"}, status_code=500)
@@ -765,16 +773,15 @@ async def reimport_route_gpx(
     Lets users fix routes imported before the full-resolution export fix without
     losing the checkpoints/aid-stations they already set up.
     """
-    from app.services.gpx import build_course_profile, parse_gpx
-
+    if await over_quota("gpx", user=user.id):
+        return _too_many_imports()
     route = await _get_owned_route(route_id, user, db)
     if not route:
         return HTMLResponse("Parcours non trouvé", status_code=404)
 
     try:
-        content = await gpx_file.read()
-        points, _ = parse_gpx(content)
-        course = build_course_profile(points, name=route.name)
+        content = await _read_gpx_upload(gpx_file)
+        course, _, parsed = await asyncio.to_thread(import_course, content, route.name)
         course_data = json.loads(course.model_dump_json())
 
         # Update only the geometry/elevation; leave everything else as-is.
@@ -783,20 +790,15 @@ async def reimport_route_gpx(
         route.total_elevation_gain = course.total_elevation_gain
         route.total_elevation_loss = course.total_elevation_loss
         await db.flush()
+        await _commit(db)
 
         logger.info("Route %d trace re-imported for user %d", route.id, user.id)
-        return HTMLResponse(status_code=204, headers={"HX-Redirect": f"/simulator/routes/{route.id}"})
-    except ValueError as e:
-        return HTMLResponse(
-            f'<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{e}</div>'
-        )
+        return _imported(route, parsed.notice, "p-3", reload=True)
+    except GpxError as exc:
+        return _gpx_error(str(exc), "p-3")
     except Exception:
         logger.exception("Route re-import failed")
-        return HTMLResponse(
-            '<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">'
-            "Erreur lors de la mise à jour de la trace."
-            "</div>"
-        )
+        return _gpx_error("Erreur lors de la mise à jour de la trace.", "p-3")
 
 
 _FR_WEEKDAYS = ("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim.")
@@ -894,8 +896,11 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         logger.exception("Initial passage table failed; the page will ask for it")
 
     p = route.params_json or {}
-    mode = debrief_mode(route.race_date, bool(route.result_json))
+    from app.services import sante_training as st
     from app.services.training_zones import estimate_training_zones
+
+    today = await st.athlete_today(db, user_id)  # the athlete's day: race day in Seoul is the 15th at 20:54 UTC on the 14th
+    mode = debrief_mode(route.race_date, bool(route.result_json), today=today)
 
     max_hr = (await estimate_training_zones(db, user_id)).get("max_hr")
     try:
@@ -909,7 +914,7 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         # the debrief is reachable (primary button or menu) in every mode but "before a dated race"
         "debrief_mode": mode,
         "show_debrief": mode is not None,
-        "race_date_label": fr_date_label(route.race_date),
+        "race_date_label": fr_date_label(route.race_date, today=today),
         "start_label": "%02d:%02d" % (route.start_hour if route.start_hour is not None else 6, route.start_minute or 0),
         "scenario": _scenario_settings(p, profile, course, await _known_course(db, user_id, route)),
         "course_json": course.model_dump_json(),
@@ -1025,7 +1030,7 @@ async def rename_route(
     route = _visible(result.scalar_one_or_none())
     if not route:
         return JSONResponse({"error": "Parcours non trouve"}, status_code=404)
-    route.name = name.strip() or route.name
+    route.name = name.strip()[:200] or route.name  # capped as save_route caps it
     await db.flush()
     return JSONResponse({"id": route.id, "name": route.name})
 
@@ -1040,6 +1045,8 @@ async def export_route_gpx(
     import gpxpy
     import gpxpy.gpx
 
+    if await over_quota("export", user=user.id):
+        return _too_many_exports()
     result = await db.execute(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
     )
@@ -1090,12 +1097,7 @@ async def export_route_gpx(
             description=f"km {cp.distance_km}",
         ))
 
-    safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in route.name).strip() or "parcours"
-    return Response(
-        content=gpx.to_xml(),
-        media_type="application/gpx+xml",
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}.gpx"'},
-    )
+    return Response(content=gpx.to_xml(), media_type="application/gpx+xml", headers=_attachment(route.name, ".gpx"))
 
 
 @router.post("/api/simulator/routes/{route_id}/live")
@@ -1321,13 +1323,11 @@ async def save_bike_plan(
 
 # ── Triathlon: swim + T1 + bike + T2 + run, one timeline, one fuel plan ──
 
-async def _create_run_route_from_gpx(content: bytes, filename: str, user: User, db: AsyncSession) -> Route:
-    from app.services.gpx import build_course_profile, parse_gpx, snap_waypoints_to_route
+async def _create_run_route_from_gpx(content: bytes, filename: str, user: User, db: AsyncSession) -> tuple[Route, str | None]:
+    """The route, and the import's notice when the file held several tracks."""
     from app.services.race_simulator import build_athlete_gradient_profile, predict_course
 
-    points, gpx_waypoints = parse_gpx(content)
-    course = build_course_profile(points, name=filename or "Course")
-    snapped = snap_waypoints_to_route(gpx_waypoints, points)
+    course, snapped, parsed = await asyncio.to_thread(import_course, content, None, _file_title(filename, "Course"))
     profile = await build_athlete_gradient_profile(db, user.id)
     course = predict_course(course, profile)
     route = Route(
@@ -1340,14 +1340,11 @@ async def _create_run_route_from_gpx(content: bytes, filename: str, user: User, 
     for wpt in snapped:
         db.add(RouteCheckpoint(route_id=route.id, name=wpt.get("name", ""), distance_km=wpt.get("distance_km", 0), elevation=wpt.get("elevation")))
     await db.flush()
-    return route
+    return route, parsed.notice
 
 
-async def _create_bike_route_from_gpx(content: bytes, filename: str, user: User, db: AsyncSession) -> Route:
-    from app.services.gpx import build_course_profile, parse_gpx
-
-    points, _ = parse_gpx(content)
-    course = build_course_profile(points, name=filename or "Parcours vélo")
+async def _create_bike_route_from_gpx(content: bytes, filename: str, user: User, db: AsyncSession) -> tuple[Route, str | None]:
+    course, _, parsed = await asyncio.to_thread(import_course, content, None, _file_title(filename, "Parcours vélo"))
     route = Route(
         user_id=user.id, name=course.name, total_distance_km=course.total_distance_km,
         total_elevation_gain=course.total_elevation_gain, total_elevation_loss=course.total_elevation_loss,
@@ -1355,7 +1352,7 @@ async def _create_bike_route_from_gpx(content: bytes, filename: str, user: User,
     )
     db.add(route)
     await db.flush()
-    return route
+    return route, parsed.notice
 
 
 _TRI_IF_BY_FORMAT = {"S": (0.90, 1.00), "M": (0.80, 0.90), "half": (0.75, 0.85), "full": (0.65, 0.75)}
@@ -1387,14 +1384,17 @@ async def create_triathlon(
     def err(msg: str) -> HTMLResponse:
         return HTMLResponse(f'<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{msg}</div>')
 
+    if (bike_gpx or run_gpx) and await over_quota("gpx", user=user.id):
+        return _too_many_imports()
     try:
-        bike = run = None
+        bike = run = bike_note = run_note = None
+        await _room_for_a_route(db, user)
         if bike_gpx is not None and bike_gpx.filename:
-            bike = await _create_bike_route_from_gpx(await bike_gpx.read(), bike_gpx.filename, user, db)
+            bike, bike_note = await _create_bike_route_from_gpx(await _read_gpx_upload(bike_gpx), bike_gpx.filename, user, db)
         elif bike_route_id.strip():
             bike = await _get_owned_route(int(bike_route_id), user, db)
         if run_gpx is not None and run_gpx.filename:
-            run = await _create_run_route_from_gpx(await run_gpx.read(), run_gpx.filename, user, db)
+            run, run_note = await _create_run_route_from_gpx(await _read_gpx_upload(run_gpx), run_gpx.filename, user, db)
         elif run_route_id.strip():
             run = await _get_owned_route(int(run_route_id), user, db)
         if not bike or bike.sport_type != "bike":
@@ -1423,8 +1423,9 @@ async def create_triathlon(
         )
         db.add(tri)
         await db.flush()
+        await _commit(db)
         logger.info("Triathlon %d created for user %d (bike %d, run %d)", tri.id, user.id, bike.id, run.id)
-        return HTMLResponse(status_code=204, headers={"HX-Redirect": f"/simulator/routes/{tri.id}"})
+        return _imported(tri, " ".join(n for n in (bike_note, run_note) if n), "p-3")
     except ValueError as e:
         return err(str(e))
     except Exception:
@@ -1557,6 +1558,8 @@ async def offline_route_plan(
     """A bounded, read-only snapshot. No HTML, map tiles, health readings or credentials."""
     from datetime import datetime, timezone
 
+    if await over_quota("export", user=user.id):
+        return _too_many_exports()
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json or route.sport_type == "triathlon":
         raise HTTPException(status_code=404)
@@ -1601,18 +1604,20 @@ async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dic
             sections, rp = replan_from_passage(
                 sections, start_offset_s, b["plan_target_s"],
                 float(live["anchor_km"]), clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=b.get("aid_stops"),
+                clock=b["clock"],
             )
             live_applied = rp is not None
             if live_applied:  # margins against the recalculated clocks
                 from app.services.checkpoints import annotate_cutoffs
 
-                sections = annotate_cutoffs(sections, cps, start_offset_s)
+                sections = annotate_cutoffs(sections, cps, start_offset_s, clock=b["clock"])
     pp = route.params_json or {}
     sc_set = _scenario_settings(pp, b["profile"], course, await _known_course(db, user.id, route), sport=b["sport"])
     scenarios = None if live_applied else build_scenarios(
         sections, start_offset_s, b["plan_target_s"],
         fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=pp.get("switch_km"), total_distance_km=course.total_distance_km,
+        clock=b["clock"],
     )
 
     guide = (await _pacing_guide_for(route, db, user, b)) if b["sport"] != "bike" else None
@@ -1695,19 +1700,66 @@ def _iso_date(value: str | None) -> str | None:
         return None
 
 
-def _gpx_title(content: bytes, filename: str | None, fallback: str) -> str:
-    """The GPX's own name (<metadata><name> or <trk><name>), else the file name without .gpx."""
-    try:
-        import gpxpy
+MAX_GPX_BYTES = 12 * 1024 * 1024  # an upload past this is refused unread
+MAX_ROUTES = 200  # routes stored per account
 
-        g = gpxpy.parse(content.decode("utf-8", "ignore"))
-        for cand in [g.name] + [t.name for t in g.tracks]:
-            if cand and cand.strip():
-                return cand.strip()[:120]
-    except Exception:
-        pass
+
+def _file_title(filename: str | None, fallback: str) -> str:
+    """A course name from the file's name without .gpx, for a GPX that carries none of its own."""
     base = (filename or "").rsplit("/", 1)[-1]
     return (re.sub(r"\.gpx$", "", base, flags=re.I).replace("_", " ").replace("-", " ").strip() or fallback)[:120]
+
+
+async def _read_gpx_upload(gpx_file: UploadFile) -> bytes:
+    """The upload's bytes, refused past MAX_GPX_BYTES without reading further."""
+    content = await gpx_file.read(MAX_GPX_BYTES + 1)
+    if len(content) > MAX_GPX_BYTES:
+        raise GpxError(f"Ce fichier GPX est trop lourd ({MAX_GPX_BYTES // 2**20} Mo au plus).")
+    return content
+
+
+async def _room_for_a_route(db: AsyncSession, user: User) -> None:
+    """An account stores MAX_ROUTES routes at most."""
+    n = (await db.execute(select(func.count(Route.id)).where(Route.user_id == user.id))).scalar() or 0
+    if n >= MAX_ROUTES:
+        raise GpxError(f"Tu as déjà {MAX_ROUTES} parcours enregistrés : supprime-en un avant d’en importer un autre.")
+
+
+async def _commit(db: AsyncSession) -> None:
+    """Explicit, before a redirect: the browser follows it at once, and the dependency's own commit comes
+    only after the response has been sent."""
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+
+def _gpx_error(text: str, padding: str = "p-4") -> HTMLResponse:
+    """The import's refusal, in the form's message box."""
+    return HTMLResponse(f'<div class="rounded-lg border border-red-200 bg-red-50 {padding} text-sm text-red-600">'
+                        f"{html.escape(text)}</div>")
+
+
+def _imported(route: Route, notice: str | None, padding: str = "p-4", reload: bool = False) -> HTMLResponse:
+    """HTMX follows the redirect to the route's page — unless the file had other tracks: then the form says
+    so, with the link (a redirect would lose the message). On the route's own page (a re-import), the link
+    reloads it so the new trace shows."""
+    url = f"/simulator/routes/{route.id}"
+    if not notice:
+        return HTMLResponse(status_code=204, headers={"HX-Redirect": url})
+    link = (f'<a href="{url}" class="underline" onclick="window.location.reload(); return false;">Voir la nouvelle trace</a>'
+            if reload else f'<a href="{url}" class="underline">Voir le parcours</a>')
+    return HTMLResponse(f'<div class="rounded-lg border border-amber-200 bg-amber-50 {padding} text-sm text-amber-700">'
+                        f"{html.escape(notice)} {link}</div>")
+
+
+def _attachment(name: str, suffix: str) -> dict[str, str]:
+    """Content-Disposition for « name + suffix »: an ASCII name (the header goes out latin-1) and, RFC 5987,
+    the full one for the browsers that read it."""
+    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    safe = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in plain).strip() or "parcours"
+    return {"Content-Disposition": f"attachment; filename=\"{safe}{suffix}\"; filename*=UTF-8''{quote(name + suffix, safe='')}"}
 
 
 # ── Weather ──
@@ -1730,6 +1782,7 @@ def _route_sample_points(route: Route, cps: list[dict]) -> list[list[float]]:
 
 @router.post("/api/simulator/weather")
 async def get_weather(
+    request: Request,
     lat: float = Form(...),
     lon: float = Form(...),
     date: str = Form(...),
@@ -1737,11 +1790,14 @@ async def get_weather(
     user: User = Depends(get_current_user),
 ):
     """The race-day forecast (or climate normals) for a signed-in athlete: never an open proxy to Open-Meteo,
-    and one upstream call per place, day and points for a while (weather.cached_forecast)."""
+    and one upstream call per place, day and points for a while (weather.cached_forecast); a quota per account
+    and per address besides (varying places would bypass the cache)."""
     from app.services.weather import cached_forecast
 
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return JSONResponse({"error": "position invalide"}, status_code=422)
+    if await over_quota("weather", user=user.id, ip=client_ip(request)):
+        return JSONResponse({"error": "trop de demandes"}, status_code=429, headers={"Retry-After": RETRY_AFTER})
     points = None
     if points_json:
         try:
@@ -1977,7 +2033,6 @@ def _estimate(course, profile, start_hour: int, start_minute: int, clock: dict, 
     course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, fine_terrain=fine,
                             own_weather=own_weather, **clock)
     finish, stops = float(course.predicted_total_time_s), {}
-    start = start_hour * 3600 + start_minute * 60
     for _ in range(ESTIMATE_PASSES):
         now = _aid_stops(cps, override_min, finish, total_km)
         if now != stops:
@@ -1986,7 +2041,7 @@ def _estimate(course, profile, start_hour: int, start_minute: int, clock: dict, 
                                     aid_stops=stops or None, own_weather=own_weather, **clock)
         secs = compute_passage_times(course, cps, None, heat_factor, start_hour, start_minute, hourly,
                                      stop_s_per_aid=(override_min or 0) * 60, aid_kms=aid_kms, aid_stops=stops)
-        new = float(secs[-1]["clock_time_s"] - start) if secs else finish
+        new = float(secs[-1]["elapsed_s"]) if secs else finish
         settled, finish = abs(new - finish) < 1.0, new
         if settled:
             break
@@ -2196,6 +2251,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
             "course": CourseProfile(**route.course_json), "profile": None, "cycling": cycling, "bike_ctx": bctx,
             "checkpoints": cps, "sections": sections, "predicted_total_s": int(cycling.predicted_total_time_s),
             "start_hour": bctx["start_hour"], "start_minute": bctx["start_minute"], "start_offset_s": start_offset_s,
+            "clock": PlanClock(start_offset_s),  # the bike plan reads the start's offset
             "stop_min": stop_min, "aid_kms": aid, "use_target": bool(route.target_time_s),
             "has_objective": bool(route.target_time_s), "objective_s": route.target_time_s,
             "estimate_s": int(cycling.predicted_total_time_s), "plan_target_s": route.target_time_s,
@@ -2211,6 +2267,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
         profile = await build_athlete_gradient_profile(db, user.id)
     total_km = course.total_distance_km
     clock = await _race_clock(db, user.id, route, course)
+    plan_clock = PlanClock(start_offset_s, clock.get("race_date"), clock.get("tz"))  # the rows' wall clock, a DST change included
     own_weather = bool(route.weather_json)  # without: the level at the heat his races were run in (predict_course)
     w = route.weather_json if isinstance(route.weather_json, dict) else {}
     heat, hourly = float(w.get("heat_factor") or 1.0), w.get("hourly")
@@ -2232,8 +2289,9 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     sections = compute_passage_times(
         course, cps, target, heat, start_hour, start_minute, hourly,
         stop_s_per_aid=stop_min * 60, aid_kms=aid, aid_stops=aid_stops, objective=objective_s is not None,
+        clock=plan_clock,
     )
-    sections = annotate_cutoffs(sections, cps, start_offset_s)
+    sections = annotate_cutoffs(sections, cps, start_offset_s, clock=plan_clock)
     from app.services.race_simulator import is_pinned, plan_total_s
 
     pinned = is_pinned(sections)
@@ -2242,6 +2300,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
         "predicted_total_s": int(course.predicted_total_time_s),  # the moving time at his level
         "estimate_s": estimate_s, "objective_s": objective_s, "plan_target_s": target,
         "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset_s,
+        "clock": plan_clock,  # the race's clock (plan_clock.PlanClock): the rows' wall clock across a DST change
         # the sections' plan (adjusted_*) is the one to follow: on the objective, else on the estimate, as the page
         "stop_min": stop_min, "aid_kms": aid, "use_target": True,
         # named a plan (« le plan », « Objectif », the phone's « plan enregistré ») only when he set one: an
@@ -2249,7 +2308,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
         "has_objective": objective_s is not None or pinned,
         "pinned": pinned,
         # the plan's finish (stops included): the objective, the estimate, or where the pins lead
-        "plan_total_s": plan_total_s(sections, start_offset_s, target),
+        "plan_total_s": plan_total_s(sections, start_offset_s, target, clock=plan_clock),
         "params": route.params_json or {}, "sport": "trail",
     }
 
@@ -2398,6 +2457,8 @@ async def export_pace_strategy(
     (Garmin Virtual Partner) or CSV (COROS pace strategy / spreadsheet)."""
     from app.services.pace_export import build_pace_csv, build_pace_gpx, build_pace_tcx
 
+    if await over_quota("export", user=user.id):
+        return _too_many_exports()
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json:
         return JSONResponse({"error": "Parcours non trouvé"}, status_code=404)
@@ -2411,19 +2472,20 @@ async def export_pace_strategy(
         from app.services.pacing_guide import leg_instructions
 
         leg_codes = [li["code"] for li in leg_instructions(await _pacing_guide_for(route, db, user, b), b["sections"])]
-    safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in route.name).strip() or "parcours"
     fmt = (fmt or "gpx").lower()
     if fmt == "csv":
-        body = build_pace_csv(route.name, b["sections"], b["use_target"], b["start_offset_s"], leg_codes=leg_codes)
-        return Response(content=body, media_type="text/csv; charset=utf-8",
-                        headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.csv"'})
+        body = build_pace_csv(route.name, b["sections"], b["use_target"], b["start_offset_s"], leg_codes=leg_codes, clock=b["clock"])
+        # the BOM: Excel reads a CSV as UTF-8 only with it (« Départ », not « DÃ©part »)
+        return Response(content="﻿" + body, media_type="text/csv; charset=utf-8",
+                        headers=_attachment(route.name, "-plan.csv"))
     if fmt == "tcx":
-        body = build_pace_tcx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes)
+        body = build_pace_tcx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes,
+                              clock=b["clock"])
         return Response(content=body, media_type="application/vnd.garmin.tcx+xml",
-                        headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.tcx"'})
-    body = build_pace_gpx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes)
-    return Response(content=body, media_type="application/gpx+xml",
-                    headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.gpx"'})
+                        headers=_attachment(route.name, "-plan.tcx"))
+    body = build_pace_gpx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes,
+                          clock=b["clock"])
+    return Response(content=body, media_type="application/gpx+xml", headers=_attachment(route.name, "-plan.gpx"))
 
 
 # ── Bike checkpoints (aid stations): server-side editing, plan re-rendered ──

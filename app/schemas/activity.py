@@ -15,7 +15,6 @@ class ActivitySummary(BaseModel):
     average_speed: float | None = None
     average_heartrate: float | None = None
     total_elevation_gain: float = 0.0
-    has_analysis: bool = False
     # Hygiene flags (see services/activity_dedupe): set by the list handler.
     is_duplicate: bool = False
     is_false_start: bool = False
@@ -53,7 +52,7 @@ class ActivitySummary(BaseModel):
     def pace_formatted(self) -> str | None:
         if not self.average_speed or self.average_speed == 0:
             return None
-        if self.sport_type in ("Ride", "VirtualRide", "EBikeRide"):
+        if self.sport_group == "bike":  # every bike sport (gravel, VTT, e-bike…): a speed, not a pace
             return f"{self.average_speed * 3.6:.1f} km/h"
         if self.sport_type in ("Swim",):
             pace_per_100m = 100 / self.average_speed

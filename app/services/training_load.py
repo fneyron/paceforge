@@ -5,16 +5,16 @@ The same sessions and the same daily load as Santé (sante_load: one pipeline): 
 (sante_training.load_sessions: copies and false starts left out, as Activités' list), each on the local day it
 ended, the 7 / 28 local days up to the athlete's today (sante_training.athlete_clock) and nothing that had not
 ended by `before_date`. The headline kilometres are every sport's, as Activités says them (« 7 j : X km · 28 j :
-Y km »: a cyclist's are a ride's) and as the analyses keep them (training_load_*_km); kilometres per sport too,
+Y km »: a cyclist's are a ride's); kilometres per sport too,
 the running's alone apart (run_km_*: Run, TrailRun, VirtualRun), hours of every sport, and the summed daily load
 with the day's heart-rate bounds.
 """
 import logging
 from datetime import datetime, timedelta, timezone
 
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.analysis import TrainingLoadResult
 from app.services import nights as nt
 from app.services import sante_load, timezones
 from app.services import sante_training as st
@@ -22,9 +22,16 @@ from app.services import sante_training as st
 logger = logging.getLogger(__name__)
 
 
-class TrainingLoad(TrainingLoadResult):
-    """TrainingLoadResult with what the one pipeline adds: the hours and loads of both windows, the 28 days' km per
-    sport, and the running's km alone (`run_km_*`; `volume_*_km` are every sport's)."""
+class TrainingLoad(BaseModel):
+    """The 7 / 28 days: every sport's km, hours and count, the km per sport, the loads of both windows, and the
+    running's km alone (`run_km_*`; `volume_*_km` are every sport's)."""
+    volume_7d_km: float = 0.0
+    volume_7d_hours: float = 0.0
+    count_7d: int = 0
+    volume_28d_km: float = 0.0
+    volume_28d_hours: float = 0.0
+    count_28d: int = 0
+    sport_breakdown_7d: dict[str, float] = Field(default_factory=dict)
     sport_breakdown_28d: dict[str, float] = {}
     run_km_7d: float = 0.0
     run_km_28d: float = 0.0

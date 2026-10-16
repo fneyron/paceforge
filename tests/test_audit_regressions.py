@@ -17,7 +17,7 @@ from app.models.nutrition import NutritionProduct
 from app.models.oauth_attempt import OAuthAttempt
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
-from app.services.auth import hash_password, verification_token, verify_password
+from app.services.auth import hash_password, hash_token, verification_token, verify_password
 from app.services.strava import StravaService
 from tests.test_race_plan_services import _course
 from tests.test_settings_links import _logged_in
@@ -82,13 +82,15 @@ async def test_unverified_registration_and_login_cannot_access_private_pages(cli
         response = await c.post("/auth/login", data={"email": "new@example.com", "password": "é" * 80})
         assert response.headers["location"] == "/sante"
         assert (await c.get("/settings")).status_code == 200
-        assert "Lien invalide" in (await c.get("/auth/verify-email", params={"token": sent[0][1]})).text
+        # the link opened again (a double click, a mail client that fetched it first): still verified, so home
+        assert (await c.get("/auth/verify-email", params={"token": sent[0][1]})).headers["location"] == "/sante"
 
 
 async def test_expired_verification_can_be_resent_after_login(client, db_session, monkeypatch):
     with patch("itsdangerous.TimestampSigner.get_timestamp", return_value=1):
         expired = verification_token()
-    user = User(email="waiting@example.com", password_hash=hash_password("password-123"), email_verify_token=expired)
+    user = User(email="waiting@example.com", password_hash=hash_password("password-123"),
+                email_verify_token=hash_token(expired))
     db_session.add(user)
     await db_session.flush()
     sent = []
@@ -228,17 +230,20 @@ async def test_invalid_weight_preserves_the_saved_value(as_user, test_user, weig
     assert test_user.weight_kg == 70
 
 
-async def test_account_deletion_removes_legacy_nutrition_only_for_that_user(as_user, db_session, test_user):
-    other = User()
-    db_session.add(other)
-    await db_session.flush()
-    db_session.add_all([NutritionProduct(user_id=test_user.id, name="Owned"),
-                        NutritionProduct(user_id=other.id, name="Other")])
-    await db_session.flush()
-    response = await as_user.post("/settings/delete-account", data={"confirmation": "SUPPRIMER"})
+async def test_account_deletion_removes_legacy_nutrition_only_for_that_user(committing_session, committing_client):
+    """Foreign keys enforced (as on PostgreSQL): the pantry goes with its owner, the other athlete keeps his."""
+    db = committing_session
+    user, other = User(), User()
+    db.add_all([user, other])
+    await db.flush()
+    db.add_all([NutritionProduct(user_id=user.id, name="Owned"), NutritionProduct(user_id=other.id, name="Other")])
+    await db.commit()
+    committing_client._transport.app.dependency_overrides[get_current_user] = lambda: user
+    response = await committing_client.post("/settings/delete-account", data={"confirmation": "SUPPRIMER"})
     assert response.status_code == 302
-    assert (await db_session.execute(select(User).where(User.id == test_user.id))).first() is None
-    assert [p.name for p in (await db_session.execute(select(NutritionProduct))).scalars()] == ["Other"]
+    await db.rollback()
+    assert (await db.execute(select(User).where(User.id == user.id))).first() is None
+    assert [p.name for p in (await db.execute(select(NutritionProduct))).scalars()] == ["Other"]
 
 
 def test_oauth_migration_round_trip_and_foreign_key():

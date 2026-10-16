@@ -1,0 +1,10 @@
+# Type-check targets, to paste into the Makefile (docs/quality.md); lint, test and test-pg come with the Makefile itself.
+PY ?= .venv/bin/python
+
+.PHONY: typecheck typecheck-baseline
+
+typecheck:  ## mypy, no new finding against mypy-baseline.txt
+	$(PY) scripts/mypy_baseline.py check
+
+typecheck-baseline:  ## accept today's findings as the baseline (review its diff before committing it)
+	$(PY) scripts/mypy_baseline.py update

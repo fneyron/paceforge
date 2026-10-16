@@ -1,7 +1,7 @@
 """The training model, from the sessions alone (Strava, Garmin, COROS): no
 night needed, so it works for an athlete who never wears the watch to bed.
-No brand value is read (v4.4: Strava's Relative Effort and the load model
-built on it are gone; nothing drew it since Santé v4.1).
+No brand value is read (not Strava's Relative Effort, nor a load model
+built on it).
 
 - the weeks exactly as Activités counts them (Monday on the athlete's clock,
   duplicates and false starts left out), so a bar's total is the week's total
@@ -10,20 +10,21 @@ built on it are gone; nothing drew it since Santé v4.1).
   model of Activités › FC en footing and Santé › Forme (Nuuttila 2022;
   Vesterinen 2014), read from their km splits after the first 10 min on flat
   ground (± 2 %) when the athlete's runs have them;
-- the big efforts (Santé v4, owner 2026-10-08: « tu te bases que sur les
-  activités passées pour juger de la récupération »): each activity sized by
-  its own time, stops included, whatever it was (a race marked on Strava is
+- the big efforts (recovery is judged from past activities only): each
+  activity sized by its own time, stops included, whatever it was (a race
+  marked on Strava is
   just an activity; activities chained without a real stop are one effort),
   and the recovery window it opens (`efforts`, `effort_window`); a Longue run
-  like a race keeps it longer, for every user (v4.4, R3: marked so on
-  Strava, rated 8/10 or more there, or its average HR at 80 % of the reserve);
-- each activity's heart-rate load (owner, 2026-10-09: « Oui vas-y »,
-  research_ind_train.md): its minutes weighted by their share of the
+  like a race keeps it longer, for every user (R3: marked so on Strava,
+  rated 8/10 or more there, or its average HR at 80 % of the reserve);
+- each activity's heart-rate load (research_ind_train.md): its minutes
+  weighted by their share of the
   heart-rate reserve (Banister 1991), from its laps when it has them, one
   pipeline for the Entraînement dial, the Charge accumulée and Activités
   (sante_load); shown only against the athlete's own usual week.
 Everything is computed on the fly; nothing is written to Activity. Activités
-(training_view), the race page (race_prep) and Santé read it.
+(training_view), the race page (race_prep) and Santé read it. The dated
+decisions behind these rules: docs/decisions.md.
 """
 import math
 import statistics
@@ -82,8 +83,8 @@ class Session:
     @property
     def end_day(self) -> date:
         """The local day it ended, stops included: an overnight race is its finish's day, as its recovery window's
-        (Effort.day). Santé's 7 days and usual weeks count a session there (owner, 2026-10-09: the Transjeju, started
-        on 02/10 at 21:00, ran 14 of its 17 hours on 03/10)."""
+        (Effort.day). Santé's 7 days and usual weeks count a session there (a race started at 21:00 that ran 14 of
+        its 17 hours the next day is that day's)."""
         return (local_start(self) + timedelta(minutes=self.elapsed)).date()
 
 
@@ -100,7 +101,7 @@ def monday(dt: datetime) -> datetime:
 
 def local_monday(dt: datetime, zone) -> date:
     """The Monday of a moment's week on the athlete's clock (`zone`: timezones.athlete_zone): Activités' weeks run
-    Monday to Sunday there, a run at 00:30 on a Monday is that week's (2026-10-14: they were UTC Mondays)."""
+    Monday to Sunday there, a run at 00:30 on a Monday is that week's (never UTC Mondays)."""
     d = _utc(dt).astimezone(zone).date()
     return d - timedelta(days=d.weekday())
 
@@ -357,7 +358,7 @@ async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = N
 def hr_max(sessions: list[Session], today: date) -> float:
     """98th percentile of the sessions' peaks over the 12 months up to `today`
     (wrist spikes left out by the percentile), clamped to 150–215; 190
-    without enough (COROS's own sessions have theirs from their laps, v4.4)."""
+    without enough (COROS's own sessions have theirs from their laps)."""
     lo = today - timedelta(days=365)
     peaks = sorted(s.hr_peak for s in sessions if s.hr_peak and lo <= s.day <= today)
     if len(peaks) < 10:
@@ -375,7 +376,7 @@ def hr_rest(night_rhr: dict[date, float], day_min: dict[date, float], today: dat
     return 50.0
 
 
-# ── heart-rate load: one pipeline for every view (owner, 2026-10-14: scientific basis) ──────────────────────
+# ── heart-rate load: one pipeline for every view ────────────────────────────────────────────────────────────
 # Each minute of an activity weighs x·0.64·e^(1.92x), x its share of the heart-rate reserve (Banister 1991; Morton,
 # Fitz-Clarke & Banister 1990): an easy minute at 60 % of the reserve about 1.2, a hard one at 90 % about 3.2.
 # Internal load is the consensus construct (Impellizzeri 2019; Bourdon 2017), yet never validated as an absolute
@@ -572,9 +573,8 @@ FLAG_REF_DAYS, FLAG_REF_MIN = 14, 2  # (H) each run against the cool runs of the
 LINE_DAYS, LINE_RUNS = 42, 6  # (H) the line needs ≥ 6 qualifying runs in 6 weeks (evidence row 16)
 HOT_C = 25  # (H) °C felt at the start (Open-Meteo's apparent temperature), else the device's (R4)
 EASY_KM, EASY_MIN_MIN, EASY_MAX_MIN, EASY_DPLUS_PER_KM, EASY_HR_SHARE = 5, 25, 150, 12, 0.82  # (H) a flat easy run
-# owner, 2026-10-14: scientific basis — a run's HR and speed from its km splits after its first 10 min (the warm-up's
-# rising HR left out) whose grade is within ± 2 % (Vesterinen 2014: HR at a fixed submaximal speed on flat ground);
-# 2 km of them at least (H)
+# a run's HR and speed from its km splits after its first 10 min (the warm-up's rising HR left out) whose grade is
+# within ± 2 % (Vesterinen 2014: HR at a fixed submaximal speed on flat ground); 2 km of them at least (H)
 STEADY_AFTER_MIN, FLAT_GRADE, STEADY_MIN_KM = 10, 0.02, 2
 
 
@@ -588,8 +588,8 @@ def easy_runs(sessions: list[Session], peak: float) -> list[Session]:
 
 
 def is_hot(s: Session) -> bool:
-    """A hot run (H, v4.4 R4): 25 °C or more felt at its start place and hour (Open-Meteo's apparent
-    temperature, looked up in the sync: every user with a GPS run), else its device's temperature as before
+    """A hot run (H, R4): 25 °C or more felt at its start place and hour (Open-Meteo's apparent
+    temperature, looked up in the sync: every user with a GPS run), else its device's temperature
     (Strava average_temp: the wrist reads body heat too); never indoors (a treadmill, a home trainer). Heat
     raises HR at a given pace (Racinais 2015): a hot run is drawn hollow, out of the slope and the normal;
     never a score nor a recovery modifier."""
@@ -727,8 +727,8 @@ def easy_watch(model: dict | None, today: date) -> dict | None:
             "flag": len(deltas) == 2 and all(v >= EASY_BPM for _, v in deltas)}
 
 
-# ── big efforts: the windows Santé reads (v4.2; a reason of the daily state since 2026-10-14) ────────────
-# Santé judges recovery from past activities only (owner, 2026-10-08): a planned race is never read. Each
+# ── big efforts: the windows Santé shows as context, neither a reason nor a cap of the nightly-signal index ──
+# Past activities only: a planned race is never read. Each
 # activity is sized by its own time, stops included (elapsed), whatever it was. No official body gives a number of
 # days (Kellmann 2018: « a clear categorization based on specific time frames cannot be provided »; Schwellnus 2016;
 # Meeusen 2013): every class, window and modifier below is (H), « fenêtres indicatives » anchored on
@@ -740,29 +740,29 @@ EFFORT_DPLUS = 1500  # (H) m on foot: « long » whatever its time (1 264 m of d
 STOPPED_WATCH = 2  # (H) elapsed over twice the moving time: a watch left running, the moving time counts
 CHAIN_GAP = timedelta(minutes=30)  # (H) an activity starting this soon after the last one ended: the same effort
 DAWN = time(6)  # (H) an effort ending before 06:00 ended in the night: that morning is the first one after it
-# owner, 2026-10-14: scientific basis — the window is a reason of the daily state, no cap any more (the 35/45/65
-# caps and their interpolation had no basis): orange through D+n, the lengths read from the studies (« fenêtres
-# indicatives », H): a Longue D+1, run like a race D+2 (power still −18 % at D+2 after a marathon: Petersen 2007), a
+# the window is context beside the daily index, never a reason nor a cap of it: orange through D+n, the lengths
+# read from the studies (« fenêtres indicatives », H): a Longue D+1, run like a race D+2 (power still −18 % at D+2
+# after a marathon: Petersen 2007), a
 # Très longue D+3, an Ultra D+5 (fatigue and soreness back by D+5: Fazackerley 2019; 400 m still 12 % slower at D+5:
 # Hoffman 2017), ≥ 24 h D+7; red only on D+0 and D+1 after an Ultra (26 % slower at D+3: Hoffman 2017). The day it
 # ends (D+0, once uploaded) is already in it: a big outing done today is never « pas de grosse sortie ».
 EFFORT_WINDOWS = {"ultra": 5, "very_long": 3, "long": 1}  # (H) the last day of the window, D+n
 ULTRA_RED_LAST = 1  # (H) red on D+0 and D+1 after an Ultra
 KINDS = ("ultra", "very_long", "long")  # the bigger effort first: two windows open, the bigger one names it
-LONG_RACE_LAST = 2  # (H) a Longue run like a race: through D+2 (Petersen 2007; owner, 2026-10-14: scientific basis)
-# v4.4 (R3): run like a race, whoever measured it: marked so on Strava, or rated 8/10 or more there (session RPE:
+LONG_RACE_LAST = 2  # (H) a Longue run like a race: through D+2 (Petersen 2007)
+# R3: run like a race, whoever measured it: marked so on Strava, or rated 8/10 or more there (session RPE:
 # Foster 2001; Haddad 2017), or its average HR ≥ 80 % of the heart-rate reserve as of its day (nights.VIGOROUS_HRR,
 # the « vigorous » test: harder efforts bring more damage, Martínez-Navarro 2021b; Bernat-Adell 2021)
 INTENSE_RPE = 8  # (H)
-ULTRA_LONG_MIN, ULTRA_LONG_LAST = 24 * 60, 7  # (H) an Ultra of 24 h or more: through D+7 (owner, 2026-10-14)
+ULTRA_LONG_MIN, ULTRA_LONG_LAST = 24 * 60, 7  # (H) an Ultra of 24 h or more: through D+7
 NIGHT_SPAN = (time(1), time(5))  # (H) an effort running from 01:00 to 05:00 local covered a night (no main sleep)
 RACE_TYPES = (1, 11)  # Strava's workout_type of a race (a run's, a ride's): part of the activity, never a plan
-# v4.3 (owner: « je ne comprends pas »): no unusual-climb modifier (M1) and no back-to-back days (M3) any more. Each
-# activity, or chain of activities less than 30 min apart, is its own effort; overlapping windows already extend
-# the recovery (effort_window keeps the strongest of the windows open)
+# no unusual-climb modifier (M1) and no back-to-back days (M3): each activity, or chain of activities less than
+# 30 min apart, is its own effort; overlapping windows already extend the recovery (effort_window keeps the
+# strongest of the windows open)
 LOWER = {"ultra": "very_long", "very_long": "long", "long": None}  # M4: a low-impact sport one class lower (H)
 # the nights after an effort, by its duration whatever the sport (M4): D+1 → D+n never fire the illness alert
-# (they count in the bands like any night, owner 2026-10-08) (H): a Longue night D+1 (« après une sortie
+# (they count in the bands like any night) (H): a Longue night D+1 (« après une sortie
 # longue »), a Très longue D+1 → D+3 (« après grosse sortie »: Hynynen 2010, nightly HR at 130 % after a
 # marathon), an Ultra D+1 → D+4 (« après ultra »: sleep fragmented through night 4, Fachan 2026; normal
 # wakefulness after 2.3 days, Kishi 2024)
@@ -947,15 +947,10 @@ def effort_of(s: Session) -> Effort | None:
     return _effort(_Unit([s], local_start(s), local_end(s)))
 
 
-def chains(sessions: list[Session]) -> list[list[Session]]:
-    """The sessions in runs that are one effort: each starts at most 30 min (H)
-    after the previous one ended (a watch restarted at an aid station, a
-    battery swapped: one ultra saved as two activities), by start."""
-    return [run for run, _, _ in _chains(sessions)]
-
-
 def _chains(sessions: list[Session]) -> list[tuple[list[Session], datetime, datetime]]:
-    """chains, each with its first start and last end (local), every span computed once."""
+    """The sessions in runs that are one effort, each with its first start and last end (local), every span
+    computed once: a session starts at most 30 min (H) after the previous one ended (a watch restarted at an
+    aid station, a battery swapped: one ultra saved as two activities), by start."""
     out: list[tuple[list[Session], datetime, datetime]] = []
     for start, end, s in sorted(((*_span(s), s) for s in sessions), key=lambda t: t[0]):
         if out and start - out[-1][2] <= CHAIN_GAP:
@@ -987,8 +982,8 @@ def efforts(sessions: list[Session], rest_of=None) -> list[Effort]:
 
 
 def effort_window(efs: list[Effort], d: date) -> dict | None:
-    """The window that holds day `d` (D+0 → D+last) (H), a reason of the daily state (C7; owner, 2026-10-14:
-    scientific basis — it was a cap on the score): red (`tone` danger) on D+0 and D+1 after an Ultra, orange
+    """The window that holds day `d` (D+0 → D+last) (H), shown as context beside the daily index (C7; neither a
+    reason nor a cap of it): red (`tone` danger) on D+0 and D+1 after an Ultra, orange
     (warn) else; the strongest of those open: red first, then the bigger effort (its class), then the latest.
     {effort, days (d − D), ago (d − the day it started: as Activités dates it), tone, last, until, text}; None
     outside any. An effort without a class (M4, 3–6 h) opens none."""

@@ -80,7 +80,6 @@ async def test_history_keeps_owner_duplicates_false_starts_and_totals_without_bu
     assert sum(week["dplus"] for week in weeks) == 100
     assert has_more
     _assert_light_summary_query(queries[0], splits=True)
-    assert not any("FROM analyses" in query for query in queries)
 
     filtered, _, _ = await dashboard._week_groups(db_session, test_user.id, 1, "trail")
     assert [row.id for week in filtered for row in week["activities"]] == [phone.id]
@@ -122,7 +121,6 @@ async def test_recent_summaries_match_training_totals_without_fetching_full_acti
     assert recent["dplus_formatted"] == "+100\u202fm"
     _assert_light_summary_query(queries[-1], splits=False)
     assert "activities.user_id =" in queries[-1]
-    assert not any("FROM analyses" in query for query in queries)
 
 
 async def test_gradient_profile_uses_owner_splits_once_without_unrelated_payloads(
@@ -166,9 +164,7 @@ async def test_detail_keeps_metrics_splits_and_owned_comparisons_without_bulk_pa
     await db_session.flush()
     when = datetime.now(UTC) - timedelta(days=1)
     activity = _activity(test_user.id, when, name="Detail with splits", average_heartrate=143,
-                         splits_metric=[{"distance": 1000, "moving_time": 300, "average_heartrate": 142}] * 2,
-                         computed_metrics={"cardiac_drift": {"drift_pct": 3.5,
-                                                             "first_half_avg": 140, "second_half_avg": 145}})
+                         splits_metric=[{"distance": 1000, "moving_time": 300, "average_heartrate": 142}] * 2)
     private = _activity(other.id, when, name="Private activity")
     db_session.add_all([activity, private])
     routes = []
@@ -188,7 +184,6 @@ async def test_detail_keeps_metrics_splits_and_owned_comparisons_without_bulk_pa
     assert response.status_code == 200
     html = response.text
     assert "Detail with splits" in html and "143" in html and "142" in html
-    assert "Dérive cardiaque" in html and "3.5%" in html
     expected = sorted(routes, key=lambda r: abs(r.total_distance_km - 10))[:5]
     links = [f'/simulator/routes/{r.id}?compare={activity.id}' for r in expected]
     assert all(link in html for link in links)

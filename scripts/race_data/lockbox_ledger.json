@@ -1,0 +1,42 @@
+{
+ "entries": [
+  {
+   "at": "2026-10-15T10:38:10+00:00",
+   "model_sha256": "4494fbf616c0403df3bbe54e8303c47561ee9822a3700889767899e1e0f6910d",
+   "forced": false,
+   "utmb": {
+    "races": 12,
+    "events": [
+     "100miles",
+     "chihuahuabyutmb",
+     "kentdowns50",
+     "tar",
+     "ultrapirineu",
+     "utmj"
+    ],
+    "runners": 1772,
+    "primary": 3.982,
+    "mean_abs_gap_min": 12.64,
+    "by_band": {
+     "140-180 km": 4.191,
+     "100-140 km": 3.74,
+     "60-100 km": 4.093,
+     "40-60 km": 4.029
+    }
+   },
+   "livetrail": null,
+   "level": {
+    "events": [
+     "100miles",
+     "chihuahuabyutmb",
+     "utmj"
+    ],
+    "finishers": 862,
+    "mae_pct": 14.6,
+    "median_actual_vs_pred_pct": 0.5,
+    "coverage_pct": 68.6,
+    "interval_score": 32.0
+   }
+  }
+ ]
+}

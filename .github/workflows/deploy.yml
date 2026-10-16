@@ -3,6 +3,18 @@ name: Deploy to Coolify
 on:
   push:
     branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# one run per branch at a time, the newest wins: a push to main while its predecessor still deploys cancels it
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 jobs:
   test:
@@ -15,11 +27,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
 
-      - name: Install dependencies
+      - name: Install the locked dependencies
+        run: pip install --require-hashes -r requirements-dev.lock
+
+      # uv.lock must match pyproject.toml, and the three hashed requirements files must be its exports: a bump
+      # of uv.lock alone (Dependabot) would otherwise leave what CI and the image install stale.
+      - name: Check the lock files agree with pyproject.toml
         run: |
-          pip install --upgrade pip
-          pip install .[dev]
+          pip install uv==0.8.17
+          uv lock --check
+          for extra in "" dev research; do
+            file="requirements${extra:+-$extra}.lock"
+            uv export --frozen --format requirements-txt --no-emit-project ${extra:+--extra "$extra"} \
+              | grep -v '^#' | diff - <(grep -v '^#' "$file") \
+              || { echo "::error::$file is stale: run make lock and commit the result"; exit 1; }
+          done
 
       - name: Run tests
         run: pytest tests/ -q
@@ -49,14 +74,21 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
 
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install .[dev]
+      - name: Install the locked dependencies
+        run: pip install --require-hashes -r requirements-dev.lock
 
       - name: Build the schema with the migrations
         run: alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/paceforge_test
+          SECRET_KEY: ci-only-not-a-secret
+          DEBUG: "true"
+
+      - name: Check the models against the migrated schema
+        run: alembic check
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/paceforge_test
           SECRET_KEY: ci-only-not-a-secret
@@ -67,17 +99,96 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/paceforge_test
 
+  # The backup scripts of the production stack, proven on every run: a dump of a migrated database, restored
+  # into a fresh one, must give the same tables, rows and Alembic revision (scripts/backup/drill.sh).
+  backup-drill:
+    name: Backup and restore drill
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: paceforge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Install the locked dependencies
+        run: pip install --require-hashes -r requirements.lock
+
+      - name: Install the PostgreSQL 16 client tools (pg_dump must not be older than the server)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-client-16
+
+      - name: Build the schema with the migrations
+        run: alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/paceforge_test
+          SECRET_KEY: ci-only-not-a-secret
+          DEBUG: "true"
+
+      - name: Back up, restore into a fresh database, compare
+        run: scripts/backup/drill.sh
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: paceforge_test
+
   deploy:
     name: Deploy to Coolify
-    needs: [test, test-postgres]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, test-postgres, backup-drill]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Trigger Coolify deployment
         run: |
           curl -s -X POST \
-            "${{ secrets.COOLIFY_WEBHOOK_URL }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
+            "$COOLIFY_WEBHOOK_URL" \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" \
             --fail-with-body
         env:
           COOLIFY_WEBHOOK_URL: ${{ secrets.COOLIFY_WEBHOOK_URL }}
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+
+      # The smoke test: the site must serve this commit. /health reports the deployed code's fingerprint
+      # (app/build.py), computed here on the checked-out tree; a failed Coolify build or a crash loop shows up
+      # as a red run instead of a silent miss.
+      - name: Wait for paceforge.fr to serve this commit
+        run: |
+          expected=$(python -c "from app.build import BUILD_ID; print(BUILD_ID)")
+          echo "expected build $expected"
+          for _ in $(seq 1 40); do  # every 15 s, 10 min at most
+            build=$(curl -fsS --max-time 10 https://paceforge.fr/health \
+              | python -c 'import json, sys; print(json.load(sys.stdin)["build"])' 2>/dev/null || true)
+            if [ "$build" = "$expected" ]; then
+              echo "deployed: /health serves build $build"
+              exit 0
+            fi
+            echo "live build: ${build:-unreachable}, waiting"
+            sleep 15
+          done
+          echo "::error::paceforge.fr did not serve build $expected within 10 min: see Coolify's deployment log (docs/ops-runbook.md)"
+          exit 1

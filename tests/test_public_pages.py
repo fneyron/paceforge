@@ -319,9 +319,8 @@ async def test_public_footer_links(client: AsyncClient, path):
     assert 'href="/methode"' in footer and 'href="/privacy"' in footer
 
 
-def test_manifest_and_share_image_make_no_ai_claim():
+def test_manifest_makes_no_ai_claim():
     from pathlib import Path
 
     static = Path(model_stats.__file__).resolve().parent.parent / "static"
     assert "IA" not in json.loads((static / "manifest.json").read_text(encoding="utf-8"))["description"]
-    assert not re.search(r"\bIA\b", (static / "img" / "og-image.svg").read_text(encoding="utf-8"))

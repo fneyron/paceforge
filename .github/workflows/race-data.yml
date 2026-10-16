@@ -45,12 +45,15 @@ jobs:
       ACTIVITY_ENV_FETCH: 'false'
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false  # the collectors parse remote data: no push credential on disk while they run
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
+          cache-dependency-path: requirements*.lock
       - name: Install collection dependencies
-        run: pip install .
+        run: pip install --require-hashes -r requirements.lock
       - name: Restore the persistent corpus
         run: |
           python -m scripts.race_data.state_store restore
@@ -82,12 +85,21 @@ jobs:
           read -r -a races <<< "$ONLY"
           python -m scripts.race_data.refresh --max-races "$MAX_RACES" --max-editions "$MAX_EDITIONS" \
             --max-runners "$MAX_RUNNERS" --only "${races[@]}"
+      - name: Allow the push to the race-data branch
+        # a fine-grained token of its own when the repository has one (docs/race-data-maintenance.md), else the
+        # workflow's token as before; either enters git's config only now, after the collectors ran
+        env:
+          TOKEN: ${{ secrets.RACE_DATA_TOKEN || github.token }}
+          DEDICATED: ${{ secrets.RACE_DATA_TOKEN != '' }}
+        run: |
+          [ "$DEDICATED" = true ] || echo '::notice::RACE_DATA_TOKEN is not set: race-data is pushed with the workflow token'
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
       - name: Persist complete archives and collection status
         if: always() && (steps.collect.outcome == 'success' || steps.collect.outcome == 'failure')
         run: python -m scripts.race_data.state_store save
       - name: Install scientific dependencies
         if: steps.mode.outputs.evaluate == 'true' && steps.collect.outcome == 'success'
-        run: pip install '.[research]'
+        run: pip install --require-hashes -r requirements-research.lock
       - name: Rebuild model inputs from the refreshed corpus
         if: steps.mode.outputs.evaluate == 'true' && steps.collect.outcome == 'success'
         run: |
@@ -109,6 +121,9 @@ jobs:
       - name: Persist the candidate and validation report
         if: steps.evaluate.outcome == 'success'
         run: python -m scripts.race_data.state_store save
+      - name: Forget the push credential
+        if: always()
+        run: git config --local --unset-all http.https://github.com/.extraheader || true
       - name: Attach reports
         if: always()
         uses: actions/upload-artifact@v4

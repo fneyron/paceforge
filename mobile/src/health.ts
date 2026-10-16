@@ -9,5 +9,5 @@ export async function protectedDataAvailable(): Promise<boolean> { return true; 
 export async function hasBackgroundAccess(): Promise<boolean> { return false; }
 export async function enableHealthBackground(): Promise<void> {}
 export async function disableHealthBackground(): Promise<void> {}
-export function watchHealthChanges(_onChange: () => void): () => void { return () => {}; }
+export function watchHealthChanges(_onChange: () => void, _onError?: (type: string, message: string) => void): () => void { return () => {}; }
 export async function changedMetrics(tokens: Record<string, string>, _budget?: ReadBudget): Promise<ChangePlan> { return { daysBack: 0, tokens }; }

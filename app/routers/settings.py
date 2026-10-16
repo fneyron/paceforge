@@ -243,43 +243,9 @@ async def delete_account(
     logger.warning("User %d requested account deletion", user_id)
     await _revoke_links(db, user)
 
-    # Delete all user data, explicitly: the database's cascades are not relied on (SQLite has none by default)
-    from app.models.analysis import Analysis
-    from app.models.chat_message import ChatMessage
-    from app.models.coros import CorosConnection
-    from app.models.garmin import GarminConnection
-    from app.models.generated_plan import GeneratedPlan
-    from app.models.health import HealthMetric, HealthSample
-    from app.models.lactate import LactateTest
-    from app.models.mobile import MobileDaily, MobileDevice
-    from app.models.nutrition import NutritionProduct
-    from app.models.oauth_attempt import OAuthAttempt
-    from app.models.route import Route, RouteCheckpoint, Simulation
-    from app.models.weekly_digest import WeeklyDigest
-
-    # Delete in order (foreign key constraints)
-    await db.execute(delete(Analysis).where(
-        Analysis.activity_id.in_(
-            select(Activity.id).where(Activity.user_id == user_id)
-        )
-    ))
-    await db.execute(delete(Activity).where(Activity.user_id == user_id))
-    await db.execute(delete(ChatMessage).where(ChatMessage.user_id == user_id))
-    await db.execute(delete(GeneratedPlan).where(GeneratedPlan.user_id == user_id))
-    routes = select(Route.id).where(Route.user_id == user_id)
-    await db.execute(delete(RouteCheckpoint).where(RouteCheckpoint.route_id.in_(routes)))
-    await db.execute(delete(Simulation).where((Simulation.user_id == user_id) | Simulation.route_id.in_(routes)))
-    await db.execute(delete(Route).where(Route.user_id == user_id))
-    await db.execute(delete(WeeklyDigest).where(WeeklyDigest.user_id == user_id))
-    await db.execute(delete(HealthSample).where(HealthSample.user_id == user_id))
-    await db.execute(delete(HealthMetric).where(HealthMetric.user_id == user_id))
-    await db.execute(delete(CorosConnection).where(CorosConnection.user_id == user_id))
-    await db.execute(delete(GarminConnection).where(GarminConnection.user_id == user_id))
-    await db.execute(delete(NutritionProduct).where(NutritionProduct.user_id == user_id))
-    await db.execute(delete(OAuthAttempt).where(OAuthAttempt.user_id == user_id))
-    await db.execute(delete(MobileDaily).where(MobileDaily.user_id == user_id))
-    await db.execute(delete(MobileDevice).where(MobileDevice.user_id == user_id))
-    await db.execute(delete(LactateTest).where(LactateTest.user_id == user_id))
+    # Every row of the athlete goes with the user: each table hangs on users.id by a foreign key ON DELETE
+    # CASCADE (checkpoints through routes; the legacy tables kept one more release cascade from users or routes where PostgreSQL has their key); migration h8e9f0a1b2c3 gave
+    # the last ones theirs, tests/test_account_deletion checks that none is missing.
     await db.execute(delete(User).where(User.id == user_id))
     await db.flush()
 

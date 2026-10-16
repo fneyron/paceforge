@@ -10,11 +10,12 @@ import { api } from './api';
 import { changedMetrics, collect, collectSleep, disableHealthBackground, enableHealthBackground, hasBackgroundAccess,
   protectedDataAvailable, watchHealthChanges } from './health';
 import { isLockedError, KEYS, readNow, secure } from './secure';
-import { Block, BackgroundState, createEngine, emptyState, fileLock, LOCK_MS, progressOf, readPair, readReceipt, readState,
-  TASK_INTERVAL_MINUTES, TASK_NAME } from './background-engine';
+import { Block, BackgroundProgress, BackgroundState, createEngine, emptyState, fileLock, foregroundSkip, LOCK_MS, progressOf,
+  readPair, readReceipt, readState, Stored, TASK_INTERVAL_MINUTES, TASK_NAME } from './background-engine';
 import type { SyncReport } from './sync';
 
 const id = Array.from(Crypto.getRandomBytes(8), b => b.toString(16).padStart(2, '0')).join('');
+const digest = (value: string) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value);
 // The file is created on use: nothing native may throw while this module is evaluated at launch.
 export const syncLock = fileLock(() => new File(Paths.document, 'paceforge-sync.lock'));
 
@@ -41,21 +42,26 @@ function control<T>(work: () => Promise<T>): Promise<T> {
 const generation = () => `${id}:${++controlGeneration}`;
 const listeners = new Set<(report: SyncReport) => void>();
 
+/** Everything a run reads, as the engine and the foreground sync see it. */
+async function loadStored(): Promise<Stored> {
+  await controlQueue;
+  // Shared with the app: a locked keychain surfaces on the reads below, as « locked ».
+  await secure.prepare().catch(() => {});
+  const [rawPair, auto, receipt, rawState, rawProgress] = await Promise.all([secure.recover(KEYS.pair), secure.get(KEYS.auto),
+    secure.get(KEYS.sync), secure.get(KEYS.background), secure.get(KEYS.progress)]);
+  const pair = readPair(rawPair), state = readState(rawState), progress = readState(rawProgress);
+  // Existing installations kept progress in the control entry. It is read until
+  // the first separate progress write; an old account/generation is never merged.
+  if (state.userId === null && pair) state.userId = pair.user_id;
+  if (rawProgress && progress.userId === state.userId && progress.generation === state.generation) Object.assign(state, progressOf(progress));
+  return { pair, automatic: auto === 'true', receipt: readReceipt(receipt), state };
+}
+const saveProgress = (progress: BackgroundProgress) => secure.set(KEYS.progress, JSON.stringify(progress));
+
 const engine = createEngine({
   id, now: Date.now,
-  load: async () => {
-    await controlQueue;
-    await secure.settled();
-    const [rawPair, auto, receipt, rawState, rawProgress] = await Promise.all([secure.recover(KEYS.pair), secure.get(KEYS.auto),
-      secure.get(KEYS.sync), secure.get(KEYS.background), secure.get(KEYS.progress)]);
-    const pair = readPair(rawPair), state = readState(rawState), progress = readState(rawProgress);
-    // Existing installations kept progress in the control entry. It is read until
-    // the first separate progress write; an old account/generation is never merged.
-    if (state.userId === null && pair) state.userId = pair.user_id;
-    if (rawProgress && progress.userId === state.userId && progress.generation === state.generation) Object.assign(state, progressOf(progress));
-    return { pair, automatic: auto === 'true', receipt: readReceipt(receipt), state };
-  },
-  saveProgress: progress => secure.set(KEYS.progress, JSON.stringify(progress)),
+  load: loadStored,
+  saveProgress,
   saveReceipt: async report => {
     await secure.set(KEYS.sync, JSON.stringify(report));
     if (report.lastReceivedAt) await secure.set(KEYS.last, report.lastReceivedAt);
@@ -67,7 +73,7 @@ const engine = createEngine({
   readDaily: (daysBack, budget, metrics) => collect(() => {}, daysBack, budget, metrics),
   readNights: (daysBack, budget) => collectSleep(() => {}, daysBack, budget),
   send: (path, body, token, timeout, readAt) => api(path, 'POST', body, token, { timeout, headers: { 'X-PaceForge-Read-At': readAt } }),
-  digest: value => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value),
+  digest,
   disable: () => disableNatively(),
   notify: report => listeners.forEach(listener => listener(report)),
   locked: isLockedError,
@@ -83,7 +89,9 @@ let unwatch = () => {};
 function watch() {
   try {
     unwatch();
-    unwatch = watchHealthChanges(() => { if (enabledHint !== false) void engine.request('healthkit'); });
+    unwatch = watchHealthChanges(() => { if (enabledHint !== false) void engine.request('healthkit'); },
+      // HealthKit's own message (no health value); the hourly task catches up.
+      (type, message) => console.warn(`HealthKit observer ${type}: ${message}`));
   } catch { unwatch = () => {}; } // no HealthKit here (some iPads): the app must still start
 }
 // iOS: at the top level, before the first render. HealthKit queues the changes that
@@ -161,6 +169,8 @@ export async function syncExclusively<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 export const backgroundPending = () => engine.pending();
+/** Inside syncExclusively: the foreground sync skips what a run already sent (and vice versa). */
+export const skipSent = (userId: number) => foregroundSkip(userId, { load: async () => (await loadStored()).state, save: saveProgress }, digest);
 /** Receipts written by a background run of this runtime (iOS: the same process as the screen). */
 export function onBackgroundReport(listener: (report: SyncReport) => void): () => void {
   listeners.add(listener);

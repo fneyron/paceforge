@@ -9,15 +9,15 @@
    class="pf-activity-row {% if dim %}opacity-60{% endif %}">
     <span class="pf-sport-icon pf-sport-{{ activity.sport_group }}" aria-hidden="true">
         {% if activity.sport_group == 'trail' %}
-        <i data-lucide="mountain" class="w-[18px] h-[18px]"></i>
+        <i data-lucide="mountain" class="w-[18px] h-[18px]" aria-hidden="true"></i>
         {% elif activity.sport_group == 'run' %}
-        <i data-lucide="footprints" class="w-[18px] h-[18px]"></i>
+        <i data-lucide="footprints" class="w-[18px] h-[18px]" aria-hidden="true"></i>
         {% elif activity.sport_group == 'bike' %}
-        <i data-lucide="bike" class="w-[18px] h-[18px]"></i>
+        <i data-lucide="bike" class="w-[18px] h-[18px]" aria-hidden="true"></i>
         {% elif activity.sport_type == 'Swim' %}
-        <i data-lucide="waves" class="w-[18px] h-[18px]"></i>
+        <i data-lucide="waves" class="w-[18px] h-[18px]" aria-hidden="true"></i>
         {% else %}
-        <i data-lucide="activity" class="w-[18px] h-[18px]"></i>
+        <i data-lucide="activity" class="w-[18px] h-[18px]" aria-hidden="true"></i>
         {% endif %}
     </span>
     <span class="pf-item-main">
@@ -36,7 +36,7 @@
     </span>
     <span class="pf-activity-mobile-stats tabular-nums">
         {% if distance_first %}
-        <b class="pf-activity-primary">{{ activity.distance_km }}<small> km</small></b>
+        <b class="pf-activity-primary">{{ activity.distance_km|fr_num }}<small> km</small></b>
         <span>{{ activity.duration_formatted }}</span>
         {% else %}
         <b class="pf-activity-primary">{{ activity.duration_formatted }}</b>
@@ -47,7 +47,7 @@
     {# Tablet: value over its label, « — » for a missing one. Desktop: one line, the unit inline; a missing value leaves its
        cell empty (.pf-act-none is not drawn there), and a column no row of the list fills is not drawn #}
     <span class="pf-act-stats hidden sm:flex items-center gap-6 shrink-0 text-right tabular-nums">
-        <span class="w-16">{% if distance_first %}<b class="block text-[16px] font-semibold text-ink">{{ activity.distance_km }}<small class="pf-act-u"> km</small></b><span class="pf-label">km</span>{% else %}<b class="pf-act-none block text-[16px] font-semibold text-gray-300">—</b><span class="pf-label">km</span>{% endif %}</span>
+        <span class="w-16">{% if distance_first %}<b class="block text-[16px] font-semibold text-ink">{{ activity.distance_km|fr_num }}<small class="pf-act-u"> km</small></b><span class="pf-label">km</span>{% else %}<b class="pf-act-none block text-[16px] font-semibold text-gray-300">—</b><span class="pf-label">km</span>{% endif %}</span>
         <span class="pf-act-dplus w-14">{% if activity.elevation_m %}<b class="block text-[16px] font-semibold text-ink">+{{ activity.elevation_m }}<small class="pf-act-u"> m</small></b>{% else %}<b class="pf-act-none block text-[16px] font-semibold text-gray-300">—</b>{% endif %}<span class="pf-label">D+</span></span>
         <span class="w-16"><b class="block text-[16px] font-semibold text-ink">{{ activity.duration_formatted }}</b><span class="pf-label">durée</span></span>
         {% set pace = activity.pace_formatted %}{% if pace %}{% set pv, pu = pace.rsplit(' ', 1) if ' ' in pace else pace.split('/', 1) %}{% set pu = (' ' if ' ' in pace else '/') ~ pu %}{% endif %}

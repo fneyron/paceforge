@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
-import { clockLabel, offlineAccountScript, OfflinePlan, offlineReply, readOfflinePlan, withPlan } from './offline';
+import { clockLabel, offlineAccountScript, OfflinePlan, offlineReply, readOfflinePlan, reconcileAccount, withPlan } from './offline';
 
 const plan: OfflinePlan = { version: 1, user_id: 1, route_id: 2, name: 'Course', saved_at: '2026-10-12T20:00:00Z', race_date: null,
   start_s: 75600, distance_km: 30, elevation_m: 1100, planned: true, points: [{ name: 'Col', km: 10, clock_s: 86460, kind: 'full', crew: false, drop_bag: true, cutoff_clock: '02:00', cutoff_margin_s: 7140, pinned: false, passed: false }] };
@@ -33,6 +33,16 @@ test('a bridge reply needs the current nonce, document, origin and message type'
   assert.equal(offlineReply({ ...task, nonce: 'new' }, raw, task.url), null);
   assert.equal(offlineReply(null, raw, task.url), null);
   assert.equal(offlineReply(task, ' '.repeat(256001), task.url), null);
+});
+
+test('an expired session keeps the plan copies; another account replaces them', () => {
+  const library = withPlan({ userId: null, plans: [] }, plan);
+  // The sign-in page reports nobody: the session died (90 days, or a deploy signed every phone out).
+  assert.equal(reconcileAccount(library, null), library, 'race morning: the plan must still be there');
+  assert.equal(reconcileAccount(library, 1), library);
+  assert.deepEqual(reconcileAccount(library, 2), { userId: 2, plans: [] });
+  assert.deepEqual(reconcileAccount({ userId: null, plans: [] }, 2), { userId: 2, plans: [] });
+  assert.equal(reconcileAccount({ userId: null, plans: [] }, null).plans.length, 0);
 });
 
 test('opening public privacy/help does not erase saved plans as a false logout', () => {

@@ -45,15 +45,19 @@ fast overall) from the races.
 
 from __future__ import annotations
 
+import copy
 import logging
 import math
 import re
+import time
+from collections import OrderedDict
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
+from app.models.route import Route
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +83,19 @@ MODEL_MONTHS = 30             # races older than this are not read
 STRAVA_DPLUS_FACTOR = 0.956
 DPLUS_CACHE_KEY = "paceforge_dplus"
 DPLUS_CACHE_VERSION = 1
+
+# ── the fitted model per athlete, per worker ──
+# A plan page asks for the athlete's profile two or three times (the route's context, its plan bundle, the older
+# page's objective), and each fit read every race or long effort of 30 months as a full row, its 18-KiB raw_data
+# included (594 ms a call, 36 MB decoded, on the audit's dataset; 2026-10-14). The candidates are read as columns
+# (candidate_columns) and the fitted model is kept per worker for RACE_MODEL_TTL_S, keyed on the candidate set's
+# count and last write: a sync that adds a race or rewrites one (its D+, its heat) replaces it at once; the TTL
+# bounds what that key cannot see: the day's recency weights, a write outside the ORM, and a long sync
+# transaction (its rows carry its start time, onupdate now()) that commits after a page read without moving
+# the maximum, whose fit is served until the TTL.
+RACE_MODEL_TTL_S = 300
+RACE_MODEL_CACHE_SIZE = 256  # athletes kept per worker; the least recently read goes first
+_RACE_MODELS: OrderedDict[int, tuple[float, tuple, dict | None]] = OrderedDict()  # user_id → (expires, key, model)
 
 
 def effort_km(distance_km: float, elevation_gain_m: float) -> float:
@@ -115,8 +132,8 @@ def course_dplus_src(course) -> tuple[float, str]:
     if gain is not None:
         try:
             course.dplus_effort = gain
-        except Exception:  # an object without the field: just don't cache
-            pass
+        except (AttributeError, TypeError, ValueError):  # an object without the field: just don't cache
+            logger.warning("Course D+ not cached on a %s", type(course).__name__, exc_info=True)
         return gain, "effort"
     return float(course.total_elevation_gain or 0), "total"
 
@@ -144,23 +161,32 @@ def dplus_from_streams(streams: dict | None, distance_m: float | None = None) ->
     return gain
 
 
-def activity_dplus(a: Activity) -> tuple[float, str]:
-    """(D+, source) of a past race: « stream » when recomputed from its
-    altitude stream, else « strava » (Strava's total × STRAVA_DPLUS_FACTOR)."""
+def cached_dplus(a) -> float | None:
+    """The D+ recomputed from the race's altitude stream and kept in raw_data (backfill_race_dplus), if any."""
     cached = (a.raw_data or {}).get(DPLUS_CACHE_KEY) or {}
     if cached.get("v") == DPLUS_CACHE_VERSION and cached.get("gain") is not None:
-        return float(cached["gain"]), "stream"
+        return float(cached["gain"])
+    return None
+
+
+def activity_dplus(a) -> tuple[float, str]:
+    """(D+, source) of a past race: « stream » when recomputed from its
+    altitude stream, else « strava » (Strava's total × STRAVA_DPLUS_FACTOR)."""
+    gain = cached_dplus(a)
+    if gain is not None:
+        return gain, "stream"
     if a.streams_data:
         try:
             g = dplus_from_streams(a.streams_data, a.distance)
         except Exception:
+            logger.warning("Race D+ not read from the streams of activity %d", a.id, exc_info=True)
             g = None
         if g is not None:
             return g, "stream"
     return float(a.total_elevation_gain or 0) * STRAVA_DPLUS_FACTOR, "strava"
 
 
-def _is_race(a: Activity) -> bool:
+def _is_race(a) -> bool:
     wt = (a.raw_data or {}).get("workout_type")
     return wt == 1
 
@@ -231,19 +257,76 @@ def candidate_query(user_id: int, months: int = MODEL_MONTHS):
     )
 
 
+def candidate_columns(user_id: int, months: int = MODEL_MONTHS):
+    """The candidates as the model reads them, newest first: a dozen scalars and three keys of raw_data, never
+    raw_data itself nor the streams (asked apart, for the races whose D+ is not cached yet: collect_race_points)."""
+    raw = Activity.raw_data
+    return (
+        candidate_query(user_id, months)
+        .with_only_columns(
+            Activity.id, Activity.name, Activity.sport_type, Activity.start_date, Activity.distance,
+            Activity.moving_time, Activity.elapsed_time, Activity.total_elevation_gain, Activity.average_heartrate,
+            raw["workout_type"].label("workout_type"),  # as JSON, no SQL cast: one odd value must not fail the page
+            raw[DPLUS_CACHE_KEY].label("dplus_cache"),
+            raw[HEAT_CACHE_KEY].label("heat_cache"),
+            Activity.splits_metric.is_not(None).label("has_splits"),  # the duplicate ranking's tie-breaker
+        )
+        .order_by(Activity.start_date.desc())
+    )
+
+
+class _Candidate:
+    """A candidate read from candidate_columns: what activity_dplus, activity_heat and the duplicate ranking read
+    on an Activity, from the columns alone (the streams come later, for the races that need them)."""
+
+    __slots__ = ("id", "name", "sport_type", "start_date", "distance", "moving_time", "elapsed_time",
+                 "total_elevation_gain", "average_heartrate", "splits_metric", "raw_data", "streams_data")
+
+    def __init__(self, row):
+        (self.id, self.name, self.sport_type, self.start_date, self.distance, self.moving_time, self.elapsed_time,
+         self.total_elevation_gain, self.average_heartrate, workout_type, dplus, heat, has_splits) = row
+        self.splits_metric = bool(has_splits)
+        self.raw_data = {"workout_type": workout_type, DPLUS_CACHE_KEY: dplus, HEAT_CACHE_KEY: heat}
+        self.streams_data = None
+
+
 async def build_race_effort_model(db: AsyncSession, user_id: int, months: int = MODEL_MONTHS) -> dict | None:
     """Collect the athlete's races and fit the effort-km/h decay model.
 
     Returns {"a", "b", "n", "fitted", "races": [...]} or None when no race is
-    usable (the caller then keeps the training-based prediction).
+    usable (the caller then keeps the training-based prediction). Kept per
+    worker while the candidate set is unchanged (its count and last write) and
+    no result link moved (a route's link confirms an outing as a race and names
+    it: activity_identity.confirmed_races), RACE_MODEL_TTL_S at most; every
+    caller gets its own copy.
     """
-    return model_from_points(await collect_race_points(db, user_id, months))
+    count, last_write = (await db.execute(
+        candidate_query(user_id, months).with_only_columns(func.count(Activity.id), func.max(Activity.updated_at))
+    )).one()
+    links, last_link = (await db.execute(
+        select(func.count(Route.result_activity_id), func.max(Route.updated_at)).where(Route.user_id == user_id)
+    )).one()
+    key = (months, count, last_write, links, last_link)
+    now = time.monotonic()
+    hit = _RACE_MODELS.get(user_id)
+    if hit and hit[0] > now and hit[1] == key:
+        _RACE_MODELS.move_to_end(user_id)
+        return copy.deepcopy(hit[2])
+    model = model_from_points(await collect_race_points(db, user_id, months))
+    _remember_model(user_id, key, model, now + RACE_MODEL_TTL_S)
+    return copy.deepcopy(model)
+
+
+def _remember_model(user_id: int, key: tuple, model: dict | None, expires: float) -> None:
+    _RACE_MODELS[user_id] = (expires, key, model)
+    _RACE_MODELS.move_to_end(user_id)
+    while len(_RACE_MODELS) > RACE_MODEL_CACHE_SIZE:
+        _RACE_MODELS.popitem(last=False)
 
 
 async def collect_race_points(db: AsyncSession, user_id: int, months: int = MODEL_MONTHS) -> list[dict]:
     """The athlete's races and long efforts as the model reads them (race_point; one per duplicate)."""
-    result = await db.execute(candidate_query(user_id, months).order_by(Activity.start_date.desc()))
-    acts = result.scalars().all()
+    acts = [_Candidate(row) for row in (await db.execute(candidate_columns(user_id, months))).all()]
 
     from app.services.activity_dedupe import duplicate_representatives
     from app.services.activity_identity import confirmed_races, races_on_retained_copies
@@ -251,14 +334,23 @@ async def collect_race_points(db: AsyncSession, user_id: int, months: int = MODE
     dups = duplicate_representatives(acts)
     confirmed = await confirmed_races(db, user_id, activity_ids=[a.id for a in acts])
     confirmed = races_on_retained_copies(confirmed, dups)
+    kept = [a for a in acts
+            if a.id not in dups and a.moving_time and a.moving_time >= MIN_RACE_H * 3600
+            and (_is_race(a) or a.id in confirmed or (a.distance or 0) / 1000 >= LONG_EFFORT_KM)]
+    # the altitude streams of the races whose D+ is not cached yet (backfill_race_dplus caches it once, out of
+    # the request path; until then, or without a Strava stream, the row's own): those rows alone
+    need = [a for a in kept if cached_dplus(a) is None]
+    if need:
+        streams = dict((await db.execute(
+            select(Activity.id, Activity.streams_data)
+            .where(Activity.id.in_([a.id for a in need]), Activity.streams_data.is_not(None))
+        )).all())
+        for a in need:
+            a.streams_data = streams.get(a.id)
     points = []
-    for a in acts:
-        if a.id in dups or not a.moving_time or a.moving_time < MIN_RACE_H * 3600:
-            continue
+    for a in kept:
         km = (a.distance or 0) / 1000
         is_race = _is_race(a) or a.id in confirmed
-        if not is_race and km < LONG_EFFORT_KM:
-            continue
         dplus, src = activity_dplus(a)
         heat = activity_heat(a)
         points.append(race_point(
@@ -381,14 +473,18 @@ def not_a_race_reason(name: str | None) -> str | None:
 # (RACE_LOG_SD): symmetric, so the level is not pulled fast as the former
 # « best effort per duration » selection did.
 OUTLIER_LOG = math.log(1.35)
+# The outlier loop refits the curve once per race per pass (O(n³)): 20 points 4 ms, 80 points 200 ms, 205 points
+# 2,9 s (measured 2026-10-14). The newest SELECT_MAX_POINTS of 30 months are read; an older one, past forty, would
+# move the level by less than the day's noise. (H)
+SELECT_MAX_POINTS = 40  # (H)
 
 
 def select_races(points: list[dict]) -> tuple[list[dict], list[dict]]:
     """The races the level is read on: everything tagged « race » that
     measures a standalone running race (no triathlon run leg, relay leg or
     abandon; a hike, a recce, a day pacing a friend only when nothing else is
-    left), then, from three races on, what sits far off the curve of the
-    others (either way) is set aside."""
+    left), the newest SELECT_MAX_POINTS of them, then, from three races on,
+    what sits far off the curve of the others (either way) is set aside."""
     kept, ignored, soft = [], [], []
     for p in points:
         why = not_a_race_reason(p.get("name"))
@@ -403,6 +499,8 @@ def select_races(points: list[dict]) -> tuple[list[dict], list[dict]]:
         # him slow), but a triathlon leg, a relay leg or an abandon never comes back
         kept = kept + soft
         ignored = [p for p in ignored if p["why"] != "pas une course"]
+    if len(kept) > SELECT_MAX_POINTS:
+        kept = sorted(kept, key=lambda p: p.get("day") or "", reverse=True)[:SELECT_MAX_POINTS]
     # one at a time, the farthest first (a very fast race must not make the others look slow), while
     # three races or more are left
     while len(kept) >= 3:
@@ -679,6 +777,7 @@ async def _backfill_dplus(db: AsyncSession, user, strava, limit: int) -> int:
         try:
             gain = dplus_from_streams(streams, a.distance)
         except Exception:
+            logger.warning("Race D+ backfill: streams of activity %d not read", a.id, exc_info=True)
             gain = None
         entry = {"v": DPLUS_CACHE_VERSION, "gain": round(gain, 1) if gain is not None else None,
                  "src": "stream" if gain is not None else "none"}
@@ -706,7 +805,7 @@ HEAT_CACHE_VERSION = 3  # 2: altitude-corrected, humidity from 15 °C; 3: humidi
 HEAT_LOOKUPS_PER_PASS = 10
 
 
-def activity_heat(a: Activity) -> float | None:
+def activity_heat(a) -> float | None:
     """The race's mean heat factor when looked up (≥ 1), else None."""
     c = (a.raw_data or {}).get(HEAT_CACHE_KEY) or {}
     if c.get("v") == HEAT_CACHE_VERSION and c.get("h"):

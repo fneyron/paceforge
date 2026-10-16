@@ -26,12 +26,14 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
+from app.csrf import check_csrf, csrf
 from app.dependencies import get_current_user, get_db
 from app.models.mobile import MobileDaily, MobileDevice
 from app.models.user import User
 from app.models.health import HealthMetric
 from app.services import apple_nights
 from app.services.apple_nights import AppleNight
+from app.services.auth import RETRY_AFTER, TOO_MANY, client_ip, over_quota
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["mobile"])
@@ -137,17 +139,6 @@ def utc(dt: datetime) -> datetime:
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
 
 
-def csrf(request: Request) -> str:
-    if "mobile_csrf" not in request.session:
-        request.session["mobile_csrf"] = secrets.token_urlsafe(32)
-    return request.session["mobile_csrf"]
-
-
-def check_csrf(request: Request, token: str) -> None:
-    if not secrets.compare_digest(request.session.get("mobile_csrf", ""), token) or not token:
-        raise HTTPException(403, "Recharge la page puis réessaie.")
-
-
 def page(request: Request, **context):
     return templates.TemplateResponse(request, "mobile.html", context=context, headers=HEADERS)
 
@@ -222,7 +213,10 @@ class Exchange(BaseModel):
 
 
 @router.post("/api/mobile/exchange")
-async def exchange(body: Exchange, db: AsyncSession = Depends(get_db)):
+async def exchange(body: Exchange, request: Request, db: AsyncSession = Depends(get_db)):
+    # each exchange is a guess at a pairing code: a few an hour per address are plenty for the phones behind it
+    if await over_quota("exchange", ip=client_ip(request)):
+        raise HTTPException(429, TOO_MANY, headers={"Retry-After": RETRY_AFTER})
     now = datetime.now(timezone.utc)
     token = secrets.token_urlsafe(48)
     # Atomic consume: two concurrent exchanges cannot create two valid credentials.

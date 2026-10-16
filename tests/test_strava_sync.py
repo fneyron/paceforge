@@ -795,7 +795,9 @@ def test_long_syncs_have_their_queue_and_are_never_redelivered_while_running():
     one queue, a long sync holding the 2 slots while the 5-min poll waited."""
     from app.celery_app import celery_app
 
-    assert celery_app.conf.broker_transport_options["visibility_timeout"] >= 4 * 3600
+    # no task outlives the hard time limit: twice it, and a task lost with its worker runs again within 2 h, not 6
+    assert celery_app.conf.task_soft_time_limit < celery_app.conf.task_time_limit
+    assert celery_app.conf.broker_transport_options["visibility_timeout"] >= 2 * celery_app.conf.task_time_limit
     route = celery_app.amqp.router.route
     for name in ("paceforge.initial_sync", "paceforge.sync_coros", "paceforge.sync_garmin"):
         assert route({}, name)["queue"].name == "long", name
@@ -833,11 +835,12 @@ def queued(monkeypatch):
 async def test_the_webhook_acts_only_on_subscriptions_it_knows(client: AsyncClient, db_session, test_user,
                                                                 queued, monkeypatch):
     """Base code: any POST was queued, whatever its subscription (anyone knowing an athlete id could make PaceForge
-    call Strava with that athlete's token)."""
+    call Strava with that athlete's token). The reply is « ok » whatever the event (an « ignored » told a probe which
+    athletes and subscriptions are known): what matters is what gets queued."""
     await _own_app(db_session, test_user, sub=55)
     for sub in (999, 56):
         r = await client.post("/webhook/strava", json=_event(test_user, sub=sub))
-        assert r.status_code == 200 and r.json()["status"] == "ignored"
+        assert r.status_code == 200 and r.json()["status"] == "ok"
     assert queued == []
     assert (await client.post("/webhook/strava", json=_event(test_user, sub=55, obj=7))).json()["status"] == "ok"
     assert queued == [(7, test_user.strava_athlete_id)]  # a create as the previous worker takes it
@@ -849,8 +852,8 @@ async def test_the_webhook_acts_only_on_subscriptions_it_knows(client: AsyncClie
     monkeypatch.setenv("STRAVA_SUBSCRIPTION_ID", "777")
     shared = await _athlete(db_session, 5001, strava_client_id="90001", initial_sync_done=True)
     queued.clear()
-    assert (await client.post("/webhook/strava", json=_event(shared, sub=55))).json()["status"] == "ignored"
-    assert (await client.post("/webhook/strava", json=_event(test_user, sub=777))).json()["status"] == "ignored"
+    assert (await client.post("/webhook/strava", json=_event(shared, sub=55))).json()["status"] == "ok"
+    assert (await client.post("/webhook/strava", json=_event(test_user, sub=777))).json()["status"] == "ok"
     assert (await client.post("/webhook/strava", json=_event(shared, sub=777, obj=8))).json()["status"] == "ok"
     assert queued == [(8, 5001)]
     # the owner's own app became the shared one: its stored subscription is the shared app's
@@ -864,9 +867,9 @@ async def test_the_webhook_acts_only_on_subscriptions_it_knows(client: AsyncClie
     stranger = User(strava_athlete_id=6000)
     for body in (_event(stranger, sub=55), {**_event(test_user), "object_type": "club"}, {"bad": 1}):
         r = await client.post("/webhook/strava", json=body)
-        assert r.status_code == 200 and r.json()["status"] == "ignored"
+        assert r.status_code == 200 and r.json()["status"] == "ok"
     r = await client.post("/webhook/strava", content=b"not json", headers={"content-type": "application/json"})
-    assert r.status_code == 200 and r.json()["status"] == "ignored"
+    assert r.status_code == 200 and r.json()["status"] == "ok"
 
 
 @pytest.fixture
@@ -920,7 +923,7 @@ async def test_the_shared_apps_subscription_is_learnt_from_strava(client: AsyncC
     assert (await client.post("/webhook/strava", json=_event(athlete, sub=123456, obj=778))).json()["status"] == "ok"
     assert queued == [(778, 5001)]
     # another id right after a lookup: ignored at once; a forged event never gets to the athlete's token
-    assert (await client.post("/webhook/strava", json=_event(athlete, sub=999, obj=779))).json()["status"] == "ignored"
+    assert (await client.post("/webhook/strava", json=_event(athlete, sub=999, obj=779))).json()["status"] == "ok"
     detail.reset_mock()
     assert (await _run_webhook_sync(780, 5001, "create", 999))["status"] == "unknown_subscription"
     assert detail.await_count == 0 and len(lookups) == 1
@@ -935,7 +938,7 @@ async def test_the_shared_apps_subscription_is_learnt_from_strava(client: AsyncC
     monkeypatch.setenv("STRAVA_SUBSCRIPTION_ID", "999")
     queued.clear()
     assert (await client.post("/webhook/strava", json=_event(athlete, sub=999, obj=782))).json()["status"] == "ok"
-    assert (await client.post("/webhook/strava", json=_event(athlete, sub=123456))).json()["status"] == "ignored"
+    assert (await client.post("/webhook/strava", json=_event(athlete, sub=123456))).json()["status"] == "ok"
     assert queued == [(782, 5001)] and len(lookups) == 2
 
     # 12 h later the round reads it again; Strava failing, the id known is kept (re-review N3: a real event of the
@@ -1059,7 +1062,7 @@ async def test_the_webhook_queues_edits_deletions_and_revocations(client: AsyncC
     inspect.signature(previous_worker).bind(*queued[0])
     queued.clear()
     athlete_update = {**_event(test_user, "deauth"), "updates": {"authorized": "true"}}
-    assert (await client.post("/webhook/strava", json=athlete_update)).json()["status"] == "ignored"
+    assert (await client.post("/webhook/strava", json=athlete_update)).json()["status"] == "ok"
     assert queued == []
 
 
@@ -1250,8 +1253,8 @@ async def test_every_sync_saves_an_activity_alike(db_session, test_user, task_se
                    average_speed=3.0, average_watts=180.0)  # in the list too
     extra = dict(summary, calories=640.0, max_watts=300.0, weighted_average_watts=210.0, suffer_score=40,
                  laps=[{"lap_index": 1}], splits_metric=[{"split": 1}], best_efforts=[{"name": "1k"}])
-    fields = [c for c in Activity.__table__.columns.keys()
-              if c not in {"id", "created_at", "strava_activity_id", "raw_data", "name"}]
+    fields = [c for c in Activity.__table__.columns.keys()  # created_at and updated_at: the database's, not a sync's
+              if c not in {"id", "created_at", "updated_at", "strava_activity_id", "raw_data", "name"}]
 
     def saved(row: Activity) -> dict:
         return {c: getattr(row, c) for c in fields}
@@ -1392,7 +1395,7 @@ async def test_synchroniser_says_what_it_saved_and_when_one_is_running(as_user, 
     r = await as_user.post("/api/sync")
     saved = (await db_session.execute(select(func.count(Activity.id)).where(
         Activity.user_id == test_user.id))).scalar()
-    assert "30 nouvelle(s) activité(s) importée(s)." in r.text and "location.reload" in r.text and saved == 30
+    assert "30 nouvelles activités importées." in r.text and "location.reload" in r.text and saved == 30
     assert strava_state.read(f"manual:{test_user.id}") is None  # failed: may be tried again at once
     # failed before saving anything: said so (the pull-to-refresh's wording), not « Déjà à jour »
     monkeypatch.setattr(StravaService, "get_recent_activities", AsyncMock(side_effect=httpx.ConnectError("down")))

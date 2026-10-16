@@ -51,6 +51,20 @@ test('a process killed mid-read leaves a pending receipt eligible on the next co
   }
 });
 
+test('a full reread attempted less than ten minutes ago is not repeated, even incomplete', async () => {
+  const { deps } = fixture();
+  deps.sleep = async () => ({ nights: [night], notices: ['Sommeil : lecture interrompue.'], complete: false });
+  const report = await syncHealth(deps);
+  assert.equal(report.retryFull, true); assert.equal(report.fullAttemptAt, at);
+  assert.equal(fullDue(report, Date.parse(at) + 9 * 60000), false);
+  assert.equal(fullDue(report, Date.parse(at) + 10 * 60000), true);
+  // A short sync meanwhile keeps the attempt time and the retry; a clock set back does not block.
+  const short = await syncHealth({ ...fixture().deps, full: false, previous: report, now: () => new Date(Date.parse(at) + 5 * 60000).toISOString() });
+  assert.equal(short.fullAttemptAt, at); assert.equal(short.retryFull, true);
+  assert.equal(fullDue(short, Date.parse(at) + 9 * 60000), false);
+  assert.equal(fullDue(short, Date.parse(at) - 3600000), true);
+});
+
 test('failed sleep preserves the successful weighing and schedules a full retry', async () => {
   const { deps } = fixture();
   deps.sleep = async () => { throw Error('HealthKit unavailable'); };

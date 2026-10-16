@@ -1,7 +1,7 @@
-"""Activity detail page — light version (metrics, laps, splits).
+"""Activity detail page — light version (laps, splits).
 
-The AI-analysis flow that used to live here is disabled product-wide; this
-page must never promise it. What it does offer: a bridge to the simulator
+The AI-analysis flow that used to live here is gone; this page must never
+promise it. What it does offer: a bridge to the simulator
 ("Comparer à un parcours"), which is what feeds the prediction calibration.
 """
 
@@ -20,9 +20,11 @@ from app.models.route import Route
 from app.models.user import User
 from app.schemas.activity import ActivityDetail
 from app.services.activity_dedupe import sport_group
+from app.services.viz import fr_num
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
+templates.env.filters["fr_num"] = fr_num
 
 router = APIRouter(tags=["activity"])
 
@@ -52,15 +54,15 @@ async def activity_detail(
         raise ActivityNotFoundError(activity_id)
 
     detail = ActivityDetail.model_validate(activity)
-    metrics = activity.computed_metrics or {}
 
-    # Routes worth comparing against (foot activities only), closest first.
-    compare_routes = []
+    # Routes worth comparing against (foot activities only), closest first: their id, name and distance (a
+    # course_json weighs up to 300 KiB a route; the link needs none of it).
+    compare_routes: list = []
     if sport_group(activity.sport_type) in ("run", "trail") and activity.distance:
         dist_km = activity.distance / 1000
         routes_q = await db.execute(
-            select(Route.id, Route.name, Route.total_distance_km).where(
-                Route.user_id == user.id, Route.sport_type.notin_(("bike", "triathlon")))
+            select(Route.id, Route.name, Route.total_distance_km)
+            .where(Route.user_id == user.id, Route.sport_type.notin_(("bike", "triathlon")))
         )
         candidates = [
             r for r in routes_q.all()
@@ -75,7 +77,6 @@ async def activity_detail(
         context={
             "user": user,
             "activity": detail,
-            "metrics": metrics,
             "compare_routes": compare_routes,
         },
     )

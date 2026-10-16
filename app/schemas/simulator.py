@@ -68,30 +68,6 @@ class AthleteGradientProfile(BaseModel):
     race_calibration: dict | None = None
 
 
-class PowerCalcInput(BaseModel):
-    gradient_pct: float
-    length_km: float
-    rider_weight_kg: float
-    bike_weight_kg: float = 9.0
-    target_time_s: int | None = None
-    target_watts: float | None = None
-    cda: float = 0.35
-    crr: float = 0.005
-    rho: float = 1.225
-
-
-class PowerCalcResult(BaseModel):
-    gradient_pct: float
-    length_km: float
-    total_weight_kg: float
-    speed_kmh: float
-    power_watts: float
-    time_s: int
-    time_formatted: str
-    vam: float  # vertical ascent m/h
-    watts_per_kg: float
-
-
 class FtpEstimate(BaseModel):
     estimated_ftp: float
     best_20min_power: float
@@ -166,11 +142,6 @@ class CyclingProfile(BaseModel):
     tss: float | None = None
 
 
-class CheckpointInput(BaseModel):
-    name: str
-    distance_km: float
-
-
 class PassageTimeSection(BaseModel):
     start_name: str
     end_name: str
@@ -187,6 +158,10 @@ class PassageTimeSection(BaseModel):
     end_elevation: float | None = None
     clock_time_s: int | None = None
     adjusted_clock_time_s: int | None = None
+    # seconds after the start at the section's end, stops included: the model's currency (the clocks above are
+    # the race's wall clock, which a daylight-saving change moves — services/plan_clock.py)
+    elapsed_s: int | None = None
+    adjusted_elapsed_s: int | None = None
     end_checkpoint_index: int | None = None
     temperature_c: float | None = None
     heat_factor: float | None = None

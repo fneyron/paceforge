@@ -33,7 +33,8 @@ async def test_webhook_validation_invalid_token(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_webhook_event_create_activity(client: AsyncClient):
     # An athlete and a subscription PaceForge does not know: acknowledged (Strava wants a 200), nothing queued
-    # (tests/test_strava_sync: the events of known subscriptions).
+    # (tests/test_strava_sync: the events of known subscriptions). The reply is the same for a known one: a probe
+    # learns nothing (tests/test_security).
     response = await client.post(
         "/webhook/strava",
         json={
@@ -47,7 +48,7 @@ async def test_webhook_event_create_activity(client: AsyncClient):
     )
 
     assert response.status_code == 200
-    assert response.json()["status"] == "ignored"
+    assert response.json() == {"status": "ok"}
 
 
 @pytest.mark.asyncio
@@ -65,7 +66,7 @@ async def test_webhook_event_ignores_non_create(client: AsyncClient):
         },
     )
     assert response.status_code == 200
-    assert response.json()["status"] == "ignored"
+    assert response.json() == {"status": "ok"}
 
 
 @pytest.mark.asyncio
@@ -75,4 +76,4 @@ async def test_webhook_event_invalid_payload(client: AsyncClient):
         json={"invalid": "data"},
     )
     assert response.status_code == 200
-    assert response.json()["status"] == "ignored"
+    assert response.json() == {"status": "ok"}

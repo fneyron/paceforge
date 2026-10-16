@@ -43,6 +43,7 @@ button:disabled { cursor: wait; opacity: .55; }
 .pf-ic.hidden { display: none; }
 .pf-ibtn { width: 40px; height: 40px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; color: rgb(var(--pf-gray-600)); flex: none; }
 .pf-ibtn:hover { background: rgb(var(--pf-soft)); color: rgb(var(--pf-ink)); }
+.pf-logout-form { display: contents; } /* the logout button is a form (a POST): the form itself takes no room */
 .pf-avatar { width: 34px; height: 34px; border-radius: 50%; background: rgb(var(--pf-soft)); color: rgb(var(--pf-gray-700)); font-weight: 600; font-size: 0.875rem; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; margin-left: 4px; flex: none; }
 .pf-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .pf-main { min-width: 0; }
@@ -274,7 +275,7 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-hero { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "heat" "act"; margin-top: 24px; }
 .pf-hero-main { grid-area: main; min-width: 0; }
 .pf-hero-btn { display: inline-flex; align-items: baseline; gap: 10px; margin-top: 2px; text-align: left; border-radius: 12px; }
-.pf-hero-num { font-size: 5rem; }
+.pf-hero-num { font-size: clamp(2.5rem, 25vw, 5rem); }  /* bounded by the screen: 80 px from 320 px up, « 38h30 » fits a 390 px phone at 200 % text */
 .pf-hero-pen { width: 20px; height: 20px; color: rgb(var(--pf-accent)); flex: none; }
 .pf-hero-btn:hover .pf-hero-num { color: rgb(var(--pf-gray-700)); }
 #hero-edit { margin-top: 2px; }
@@ -334,12 +335,13 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-pass { margin-top: 4px; transition: opacity .15s; }
 .pf-pass > * { border-bottom: 1px solid rgb(var(--pf-line)); }
 .pf-day { font-size: 0.75rem; font-weight: 600; color: rgb(var(--pf-gray-500)); padding: 18px 0 6px; }
-.pf-prow-head { display: grid; grid-template-columns: 68px minmax(0, 1fr) 18px; align-items: center; column-gap: 10px; padding: 14px 0; cursor: pointer; border-radius: 12px; }
+/* columns in rem: the clock column follows the text size (a 200 % clock never runs under the name) */
+.pf-prow-head { display: grid; grid-template-columns: 4.25rem minmax(0, 1fr) 1.125rem; align-items: center; column-gap: 10px; padding: 14px 0; cursor: pointer; border-radius: 12px; }
 /* the three plans side by side (owner, 2026-10-09): Cible big, Optimiste and Sécurité small in two fixed columns, named once above the list */
-.pf-pass.has-alt .pf-prow-head { grid-template-columns: 68px minmax(0, 1fr) auto 18px; }
+.pf-pass.has-alt .pf-prow-head { grid-template-columns: 4.25rem minmax(0, 1fr) auto 1.125rem; }
 .pf-prow-alt { display: inline-grid; grid-auto-flow: column; column-gap: 8px; font-size: 0.8125rem; color: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pf-prow-alt > span { min-width: 52px; text-align: right; }
-.pf-pass-cols { display: grid; grid-template-columns: 68px minmax(0, 1fr) auto 18px; column-gap: 10px; margin-top: 10px; padding-bottom: 4px; font-size: 0.6875rem; color: rgb(var(--pf-gray-400)); }
+.pf-pass-cols { display: grid; grid-template-columns: 4.25rem minmax(0, 1fr) auto 1.125rem; column-gap: 10px; margin-top: 10px; padding-bottom: 4px; font-size: 0.6875rem; color: rgb(var(--pf-gray-400)); }
 .pf-pass-cols .pf-prow-alt { font-size: 0.6875rem; color: inherit; }
 .pf-prow-head:focus-visible { outline-offset: -2px; }
 .pf-clk { position: relative; font-family: var(--pf-font-display); font-size: 1.3125rem; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); display: inline-flex; align-items: center; white-space: nowrap; }
@@ -396,20 +398,20 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 /* sheets: bottom sheets on the phone, centred 460 px modals on desktop */
 .pf-sheet { box-shadow: 0 -8px 40px rgb(0 0 0 / .18); }
 .pf-race-row { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 12px; margin-top: 14px; }
-.pf-toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 90; max-width: calc(100vw - 40px); padding: 12px 18px; border-radius: 14px; background: rgb(var(--pf-ink)); color: rgb(var(--pf-bg)); font-size: 0.875rem; box-shadow: 0 8px 24px rgb(0 0 0 / .2); }
+.pf-toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 90; pointer-events: none; max-width: calc(100vw - 40px); padding: 12px 18px; border-radius: 14px; background: rgb(var(--pf-ink)); color: rgb(var(--pf-bg)); font-size: 0.875rem; box-shadow: 0 8px 24px rgb(0 0 0 / .2); }
 
 @media (min-width: 640px) {
     /* one line per row: clock · name (+ a close cutoff) · km · chevron; the open detail sits under the name */
-    .pf-prow-head { grid-template-columns: 84px minmax(0, 1fr) auto 18px; min-height: 60px; padding: 8px 0; }
-    .pf-pass.has-alt .pf-prow-head { grid-template-columns: 84px minmax(0, 1fr) auto auto 18px; }
-    .pf-pass-cols { grid-template-columns: 84px minmax(0, 1fr) auto 18px; }
+    .pf-prow-head { grid-template-columns: 5.25rem minmax(0, 1fr) auto 1.125rem; min-height: 60px; padding: 8px 0; }
+    .pf-pass.has-alt .pf-prow-head { grid-template-columns: 5.25rem minmax(0, 1fr) auto auto 1.125rem; }
+    .pf-pass-cols { grid-template-columns: 5.25rem minmax(0, 1fr) auto 1.125rem; }
     .pf-prow-alt { font-size: 0.875rem; }
     .pf-prow-main { display: contents; }
     .pf-prow-sub { margin: 0; font-size: 0.875rem; text-align: right; }
     .pf-clk { font-size: 1.375rem; }
     .pf-bar-d { display: inline; }
     .pf-bar-m { display: none; }
-    .pf-det { padding-left: 94px; }
+    .pf-det { padding-left: 5.875rem; }
 }
 @media (min-width: 900px) {
     .pf-h1-plan { font-size: 2.5rem; padding-top: 2px; }
@@ -1223,7 +1225,7 @@ body:has(.pf-sante4) { background: #f4f6f8; }
   .pf-ibtn, .pf-avatar { width: 44px; height: 44px; }
   .pf-auth a { min-height: 44px; display: inline-flex; align-items: center; }
   .pf-btn { white-space: normal; padding-block: 10px; text-align: center; }
-  .pf-input, .sim-num, select, textarea { font-size: max(16px, 1rem); min-height: 44px; }
+  .pf-input, .sim-num:not(.pf-hero-in), select, textarea { font-size: max(16px, 1rem); min-height: 44px; }  /* the objective's own fields keep the size of the number */
   .pf-set-id > div { flex-wrap: wrap; }
   #export-sheet > .pf-sheet { max-height: 88dvh; overflow-y: auto; }
 }
@@ -1243,6 +1245,18 @@ body:has(.pf-sante4) { background: #f4f6f8; }
 .pf-large-text .pf-sante-head, .pf-large-text .pf-night, .pf-large-text .pf-head { flex-wrap: wrap; }
 .pf-large-text .pf-seg { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .pf-large-text .pf-seg > :is(a, button) { white-space: normal; }
+/* 200 % text: the clock takes its own line above the name, the small clocks beside it; nothing overlaps */
+.pf-large-text .pf-prow-head, .pf-large-text .pf-pass.has-alt .pf-prow-head { grid-template-columns: minmax(0, 1fr) auto 1.125rem; grid-template-areas: "clk alt chev" "main main chev"; row-gap: 2px; }
+.pf-large-text .pf-prow-head > .pf-clk { grid-area: clk; }
+.pf-large-text .pf-prow-head > .pf-prow-main { grid-area: main; }
+.pf-large-text .pf-prow-head > .pf-prow-alt { grid-area: alt; }
+.pf-large-text .pf-prow-head > .pf-prow-chev { grid-area: chev; }
+.pf-large-text .pf-pass-cols { grid-template-columns: minmax(0, 1fr) auto 1.125rem; }
+.pf-large-text .pf-pass-cols > span:first-child { display: none; }
+.pf-large-text .pf-pin { position: static; transform: none; margin-right: 4px; }
+/* 200 % text: a pill may take two lines, and a section head lets its status pill drop under the title */
+.pf-large-text .pf-pill { white-space: normal; }
+.pf-large-text .pf-section > div:has(> .pf-pill) { flex-wrap: wrap; }
 
 /* Health dashboard: measured curves are primary; methods open on demand.
    These rules also apply inside the native iPhone WebView. */

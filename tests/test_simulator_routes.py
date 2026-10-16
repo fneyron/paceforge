@@ -34,6 +34,14 @@ async def _create_route(client: AsyncClient, cps: list[dict] = CPS) -> int:
     return r.json()["id"]
 
 
+async def test_the_forecast_credits_open_meteo(as_user: AsyncClient):
+    """Open-Meteo's data (CC BY 4.0) asks for a credit: the forecast's small-print line carries it, and the script
+    keeps updating the line's own text."""
+    page = (await as_user.get(f"/simulator/routes/{await _create_route(as_user)}")).text
+    assert '<span id="wx-when">Prévision disponible 16 jours avant la course.</span>' in page
+    assert '<a href="https://open-meteo.com/" target="_blank" rel="noopener" class="underline">Prévisions Open-Meteo</a>' in page
+
+
 @pytest.mark.asyncio
 async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
     route_id = await _create_route(as_user)
@@ -105,7 +113,7 @@ async def test_pace_exports(as_user: AsyncClient):
     assert gpx.status_code == 200 and gpx.text.count("<wpt") >= 4 and "<time>2026-10-02T21:00:00Z</time>" in gpx.text
     assert "ARR " in gpx.text and "CP2 " in gpx.text
     tcx = await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=tcx")
-    assert tcx.status_code == 200 and "<CoursePoint>" in tcx.text and tcx.headers["content-disposition"].endswith('plan.tcx"')
+    assert tcx.status_code == 200 and "<CoursePoint>" in tcx.text and 'filename="Jeju test-plan.tcx"' in tcx.headers["content-disposition"]
 
 
 @pytest.mark.asyncio

@@ -3,8 +3,8 @@
 {% block title %}{{ route.name }} — PaceForge{% endblock title %}
 
 {% block head %}
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link rel="stylesheet" href="/static/vendor/maplibre-gl/maplibre-gl.css?v={{ request.app.state.build_id }}" />
+<script src="/static/vendor/maplibre-gl/maplibre-gl.js?v={{ request.app.state.build_id }}"></script>
 <script src="/static/js/elevation_profile.js?v=2"></script>
 <style>
 .maplibregl-popup-content { font-family: Inter, system-ui, sans-serif; border-radius: 10px; padding: 12px; }
@@ -18,7 +18,7 @@ summary::-webkit-details-marker { display: none; }
 {% block content %}
 <div class="space-y-4">
     <a href="/simulator" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
+        <svg width="16" height="16" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
         Mes courses
     </a>
     <div class="flex gap-1 bg-gray-100 rounded-lg p-1">

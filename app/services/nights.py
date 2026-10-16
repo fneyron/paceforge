@@ -7,12 +7,12 @@ context that keeps a night from firing the illness alert. Pure functions on
 those rows; `load_nights` reads them.
 
 Rules, with where they come from (evidence_final.md; (H) = a PaceForge
-heuristic, never shown as a finding):
+heuristic, never shown as a finding; the dated decisions behind them:
+docs/decisions.md):
 - Naps count in the 24-h total only, never in timing, regularity, nightly
   HR/HRV or the hypnogram (Mollicone 2008; Romyn 2018). A nap is stored under
   the day it ends, and each nap is counted by one morning only (day_naps, H;
-  Craven 2022 counts sleep per 24 h; owner's report 2026-10-09: an afternoon
-  nap counted in two mornings' 24 h): a morning counts its own naps that
+  Craven 2022 counts sleep per 24 h): a morning counts its own naps that
   ended before its wake, its « rendormi » ones (part of its night) and those
   without times; a later nap of the day (an afternoon nap) is the next
   morning's, its minutes inside the 24 h before that wake. What no next
@@ -26,10 +26,9 @@ heuristic, never shown as a finding):
   (« sieste seule, pas de nuit mesurée »): the next morning counts its naps
   (on that morning's bar), the rest stays drawn on its own bar.
 - A « nap » that overlaps the main window or ends ≤ 30 min before it starts
-  is the night's start (H, health.fold_naps; owner's report 2026-10-09:
-  COROS's 23:03 → 00:09 « nap » of a 23:57 → 04:58 night showed as
-  « + sieste » over it): folded into the night when read (build_nights),
-  whichever watch stored it (health.nap_guard keeps it for COROS and Garmin
+  is the night's start (H, health.fold_naps): folded into the night when read
+  (build_nights), whichever watch stored it (health.nap_guard keeps it for
+  COROS and Garmin
   alike; only COROS's sync deletes its stale rows, never Garmin's): its start
   is the bedtime, its minutes asleep outside the window are added once,
   never over the watch's own daily total (COROS's « Daily Sleep », plus a
@@ -48,9 +47,8 @@ heuristic, never shown as a finding):
   16:00) on the evening before a night annotates it (H; Mograss 2022 for the
   7 h; Walsh 2021's 13:00–16:00 window); it does not exclude it and never
   judges the nap (Ohayon 2017).
-- Every measured night counts (owner, 2026-10-08: « Tous les relevés VFC
-  doivent compter en fait, pareil pour la FC », like WHOOP's and Oura's
-  rolling baselines): in the bands, the 7-night means and the timing. The
+- Every measured night counts (like WHOOP's and Oura's rolling baselines):
+  in the bands, the 7-night means and the timing. The
   context tags only keep a night from firing the illness alert (a rise is
   expected there), and the nights' table names them (H): a session ≥ 90 min
   the day before (Myllymäki 2012), a vigorous session ending ≤ 2 h before
@@ -71,15 +69,15 @@ heuristic, never shown as a finding):
   Kishi 2024; D is the day before the first morning after it, H:
   anchor_efforts), and the race page's « alcool hier » (Pietilä 2018). The
   nights of an alert episode are « FC de nuit haute » in the table (H; heart
-  rate alone is never a diagnosis: evidence row 3). Santé (v4) reads nothing
-  else: no planned race, no check-in (owner, 2026-10-08). The race page keeps
+  rate alone is never a diagnosis: evidence row 3). Santé reads nothing
+  else: no planned race, no check-in. The race page keeps
   the « alcool hier » and « malade » chips a check-in stored before v4 holds,
   and the nights after its race never fire the alert.
 - COROS nightly HR on a day with a nap counts like any night, but never fires
   the illness alert until it is shown that COROS leaves the nap out of its
   « Sleep HR » line (docs/sante-v3-data-notes.md: consistent with the main
   sleep only).
-- Baselines (owner, 2026-10-14: scientific basis): one series per (metric,
+- Baselines: one series per (metric,
   watch, method), the nights from day −67 to day −8 (60 days; the 7 nights a
   trend judges are never in its own baseline: a design choice, H, so a week is
   not compared to a mean that holds it), every measured night whatever its
@@ -138,19 +136,18 @@ from app.services.health import fold_naps, main_window, nap_windows
 from app.services.night_measurements import measurement_note, series_source
 
 BAND_DAYS = 60  # (H)
-# owner, 2026-10-14: scientific basis — the baseline stops 7 days before the day read: the 7 nights its trend
-# judges are never in it (it was the 60 days up to and including last night: a week compared to a mean holding it);
-# a design choice, not a published rule
+# the baseline stops 7 days before the day read: the 7 nights its trend judges are never in it (a week is not
+# compared to a mean holding it); a design choice, not a published rule
 BASELINE_LAG = 7  # (H)
 MIN_BAND_NIGHTS = 14  # (H) a full normal
-MIN_PROVISIONAL_NIGHTS = 7  # (H) a « provisoire » normal (owner decision 2026-10-07), until 14: dashed, said so
+MIN_PROVISIONAL_NIGHTS = 7  # (H) a « provisoire » normal, until 14: dashed, said so
 MIN_MEAN_NIGHTS = 3  # of the last 7 (Plews 2014; Lau 2022)
 WEEK_DAYS = 7
-# owner, 2026-10-14: scientific basis — the 0.5 SD band of HRV-guided training (Vesterinen 2016; Javaloyes 2019),
-# for night HR too (it was ± 3 bpm, a fixed width with no basis), widened to SWC_Z standard errors (threshold)
+# the 0.5 SD band of HRV-guided training (Vesterinen 2016; Javaloyes 2019), for night HR too, widened to SWC_Z
+# standard errors (threshold)
 SWC = 0.5
 SWC_Z = 1.28  # the standard errors the trend's threshold spans (threshold: ≈ 10 % false « outside » at ρ = 0.3)
-SERIES_DAYS, SERIES_ACTIVE_DAYS = 28, 7  # (H) owner, 2026-10-14: scientific basis — the most measured device
+SERIES_DAYS, SERIES_ACTIVE_DAYS = 28, 7  # (H) the most measured device of the last 7 days, over 28 (_series_source)
 SERIES_LOOKBACK = 400  # days a tie between series reads back for the one used the day before (the history read)
 DEVICE_ORDER = ("COROS", "Garmin")  # (H) the last tie: these watches first, then the others by name
 TREND_RHO = 0.3  # (H) the lag-1 correlation of a stable athlete's nights the trend's threshold assumes
@@ -162,9 +159,9 @@ HR_SD_PRIOR = 0.04  # (H) σ0 as a share of the median (nocturnal HR CV ≈ 4.1 
 SLEEP_BAND_MIN = 30  # (H) the race page's 24-h sleep band
 ALERT_SD, ALERT_MIN_BPM = 2, 5  # (H)
 ALERT_END_BPM = 3  # (H) an alert episode ends on a night at or under the median + 3 bpm (the old ± 3 bpm band's top)
-# the breathing rate's usual line (owner, 2026-10-09: « utilise la respiration aussi si tu l'as »; research_ind_
-# sleep_resp.md B3): its night-to-night SD is small (0.51 ± 0.20 /min: Miller 2020, 25,000 WHOOP members), so the
-# line is the median + the larger of 1 /min and 2 SD, the SD shrunk towards 0.5 /min (H); one-sided, never a lower one
+# the breathing rate's usual line (research_ind_sleep_resp.md B3): its night-to-night SD is small (0.51 ± 0.20 /min:
+# Miller 2020, 25,000 WHOOP members), so the line is the median + the larger of 1 /min and 2 SD, the SD shrunk
+# towards 0.5 /min (H); one-sided, never a lower one
 RESP_UP_MIN = 1.0  # (H) breaths/min
 RESP_UP_SD = 2  # (H)
 RESP_SD_PRIOR = 0.5  # (H) σ0, breaths/min (Miller 2020)
@@ -273,7 +270,7 @@ class Night:
     def value(self, metric: str):
         """hr, hrv or resp (read on every night of every band: no dict built per call); the 24-h sleep needs the
         day before: night_value. A measured value counts in the bands and the 7-night means, whatever the night's
-        tags (owner, 2026-10-08)."""
+        tags."""
         return getattr(self, _VALUE[metric])
 
     def source_of(self, metric: str) -> str | None:
@@ -726,11 +723,10 @@ def _latest_source(nights: dict[date, Night], metric: str, until: date) -> str |
 
 
 def _series_source(nights: dict[date, Night], metric: str, until: date) -> str | None:
-    """The series `metric` reads as of `until` (owner, 2026-10-14: scientific basis — it was the latest night's,
-    then the most measured device with ties broken by the latest night: two devices taking turns swapped the
-    series, its baseline and its trend, night after night, and one Garmin night without stages switched to an
-    empty « Garmin (nuit sans phases) » baseline). Among the devices that measured it in the last 7 days (else in
-    the 28), the one with the most measured nights in the 28 days; within it, among its series measured in the
+    """The series `metric` reads as of `until`, never the latest night's (two devices taking turns would swap the
+    series, its baseline and its trend, night after night; one night without stages would switch to an empty
+    series). Among the devices that measured it in the last 7 days (else in the 28), the one with the most
+    measured nights in the 28 days; within it, among its series measured in the
     last 7 days, the one with the most nights in the 28 (a one-off night of another calculation is no upgrade; a
     real upgrade takes over a week after the old calculation stops). Ties: the larger baseline (nights from day
     −67 to −8 on the series), then the series used the day before (read back to the last day the counts decide,
@@ -769,8 +765,8 @@ def share_series(target: dict[date, Night], source: dict[date, Night], until: da
     """Inside memo(): `target`, a copy of `source`'s nights cut short (the 14-day history's, HISTORY_NIGHTS days),
     reads `source`'s series choice for the `days` days up to `until`. A day's series reads the nights up to it
     only, so `source`'s answer is the one that day had, however long a tie between series ran before the copy's
-    first night (the tie reads back SERIES_LOOKBACK days; the second statistics review, 2026-10-14: after 200 days
-    of two watches in turn, the history read COROS where the live page read Garmin). Both stay unchanged: frozen."""
+    first night (the tie reads back SERIES_LOOKBACK days, else after months of two watches in turn the history
+    could read one where the live page read the other). Both stay unchanged: frozen."""
     kept = _kept(target)
     if kept is None:
         return
@@ -895,7 +891,7 @@ def reference_min_nights(metric: str, source: str | None, *, full: bool = False)
 def _band(nights: dict[date, Night], metric: str, until: date, source: str | None = None,
           full: bool = False) -> dict | None:
     """The reference of `metric` (hr, hrv, tst24, resp) from every measured night of the 60 days before `until`
-    (excluded), whatever its tags (owner, 2026-10-08), on one series (the one read the day before `until` unless
+    (excluded), whatever its tags, on one series (the one read the day before `until` unless
     `source`): None under 7 nights, `provisional` from 7 to 13 nights (« provisoire », H); `full`: None under 14
     nights. {center, sd (σ̂, the module docstring), lo, hi (± 0.5 σ̂: the smallest worthwhile change; tst24 ± 30
     min), mean (ln, HRV), alert (HR's illness line), up (breathing's line)}. Santé's baseline of a day is the one
@@ -923,10 +919,9 @@ def _band(nights: dict[date, Night], metric: str, until: date, source: str | Non
     med = statistics.median(vals)
     sd = 1.4826 * statistics.median(abs(v - med) for v in vals)  # robust
     if metric == "hr":
-        # owner, 2026-10-14: scientific basis — the trend compares a 7-night MEAN, so its centre is the baseline's
-        # mean and its spread the SD, shrunk towards 4 % of the centre (H): against the median of a right-skewed
-        # HR (a few hot nights) the week read « above » on 26–32 % of ordinary mornings. The illness alert keeps
-        # the median + max(2 robust σ̂, 5 bpm) (it was ± 3 bpm around the median before that)
+        # the trend compares a 7-night MEAN, so its centre is the baseline's mean and its spread the SD, shrunk
+        # towards 4 % of the centre (H): against the median of a right-skewed HR (a few hot nights) the week would
+        # read « above » on 26–32 % of ordinary mornings. The illness alert keeps the median + max(2 robust σ̂, 5 bpm)
         robust = shrunk_sd(sd, len(vals), HR_SD_PRIOR * med)
         mean = statistics.fmean(vals)
         sd = shrunk_sd(statistics.stdev(vals) if len(vals) > 1 else 0.0, len(vals), HR_SD_PRIOR * mean)
@@ -947,17 +942,16 @@ def baseline_until(d: date) -> date:
 
 def normal(nights: dict[date, Night], metric: str, d: date) -> dict | None:
     """The usual values day `d` reads (Santé's cards, their status lines and the daily state): the baseline of the
-    nights from d − 67 to d − 8 (owner, 2026-10-14: scientific basis — it held the very week its trend judges) on
-    the series its trend reads (mean_source)."""
+    nights from d − 67 to d − 8 (never the very week its trend judges) on the series its trend reads
+    (mean_source)."""
     return band(nights, metric, baseline_until(d), source=mean_source(nights, metric, d))
 
 
 def drawn_band(nights: dict[date, Night], metric: str, d: date) -> dict | None:
     """The usual values day `d`'s card draws: its baseline (normal: the nights from d − 67 to d − 8), else, while
-    that window holds too few nights (a watch newer than a fortnight: the owner's COROS, 2026-10-14, drew no band
-    at all where the cards drew a dashed one before the lag), a provisional one from the 60 nights up to and
-    including last night, dashed, read by the trend and the state as « provisoire » (owner, 2026-10-14: a score
-    shows while the repères build, as before the audit); `lagged` False then."""
+    that window holds too few nights (a watch newer than a fortnight), a provisional one from the 60 nights up to
+    and including last night, dashed, read by the trend and the state as « provisoire » (a score shows while the
+    repères build); `lagged` False then."""
     b = normal(nights, metric, d)
     if b is not None:
         return b
@@ -1037,8 +1031,8 @@ def threshold(offsets, nb: int) -> float:
     """T = max(0.5, 1.28·√(Σᵢⱼ ρ^|tᵢ − tⱼ| / n7² + (1 + ρ)/((1 − ρ)·n_b))), ρ = 0.3 (H): 1.28 standard errors of
     the difference between the week's mean and the baseline's, for nights correlated from one to the next (an
     AR(1) of lag-1 correlation ρ), the week's n7 nights at their own days `offsets` (tᵢ, in days) and the
-    baseline's `nb` nights (owner, 2026-10-14: scientific basis — it was max(0.5, 1.28/√n7), which ignored both
-    the correlation and the baseline's own error: 17 % of a stable athlete's mornings read « below »). T ≈ 0.67
+    baseline's `nb` nights (1.28/√n7 alone would ignore both the correlation and the baseline's own error: 17 %
+    of a stable athlete's mornings would read « below »). T ≈ 0.67
     for 7 nights in a row against 60, never under the 0.5 SD band of Vesterinen 2016 and Javaloyes 2019. Under
     ρ = 0.3 a stable athlete reads « outside » on about 10–11 % of mornings; more if their nights are more
     correlated (≈ 15 % at ρ = 0.5), fewer if less (≈ 5 % at 0)."""
@@ -1072,7 +1066,7 @@ def _trend(nights: dict[date, Night], metric: str, d: date) -> dict | None:
     n = nights.get(d)
     last = n is not None and n.source_of(metric) == source and n.value(metric) is not None
     # the lagged baseline, else (a series younger than its window) the provisional one the card draws: the state
-    # reads it too, flagged « provisoire » (owner, 2026-10-14: a score shows while the repères build, as before)
+    # reads it too, flagged « provisoire » (a score shows while the repères build)
     b = drawn_band(nights, metric, d)
     out = {"metric": metric, "source": source, "n": len(vals), "last": last, "baseline": b, "value": None,
            "z": None, "T": None, "status": None,
@@ -1208,7 +1202,7 @@ def timing(nights: dict[date, Night], today: date, days: int = 28) -> dict:
     spread (SD of the onset, the regularity measure of ANSI/CTA/NSF-2052.1-A)
     and `bed_near`, the nights whose onset is within 1 h of the median (the
     RU-SATED window: Ravyts 2021), what the page shows. Every night counts,
-    whatever its tags (owner, 2026-10-08); a « rendormi » wake counts in
+    whatever its tags; a « rendormi » wake counts in
     neither the wake median nor its spread (H)."""
     ns = [n for d, n in nights.items() if today - timedelta(days=days - 1) <= d <= today and n.start]
     beds = [clock_min(n.start) for n in ns]
@@ -1264,8 +1258,8 @@ def _two_nights(nights: dict[date, Night], metric: str, today: date) -> tuple[li
 
 
 def resp_up_nights(nights: dict[date, Night], today: date) -> dict | None:
-    """The breathing flag (C4; owner, 2026-10-14: scientific basis — it capped a « recovery » score at 69, now an
-    illness signal, its own reason): the mean of last night and the night before, on one series, neither
+    """The breathing flag (C4, an illness signal, its own reason of the state): the mean of last night and the
+    night before, on one series, neither
     context-tagged, ≥ the median + max(1 /min, 2 σ̂) of that series' full baseline (14 nights, days −67 to −8;
     Miller 2020: night-to-night SD ≈ 0.5 /min, a rise precedes illness). {days, values, mean, line}; None otherwise
     (about 5 % of healthy days cross a 2-SD line by chance: never an illness sentence on its own)."""
@@ -1310,8 +1304,8 @@ def _illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | N
 def alert_episodes(nights: dict[date, Night], today: date, races=(), days: int = BAND_DAYS + 7) -> set[date]:
     """The nights of the alert episodes of the last `days` days (H): from the first of the 2 nights, while the
     measured nights stay above the median + 3 bpm of the alert's baseline (ALERT_END_BPM; 14 days at most). Not
-    the trend band's top (mean + 0.5 σ̂, often within a beat of the mean): the « FC de nuit haute » tag then ran
-    its 14 days on nights already back to usual (review, 2026-10-14)."""
+    the trend band's top (mean + 0.5 σ̂, often within a beat of the mean): the « FC de nuit haute » tag would then
+    run its 14 days on nights already back to usual."""
     out: set[date] = set()
     d = today - timedelta(days=days)
     while d <= today:

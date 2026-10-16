@@ -143,7 +143,7 @@ async def test_failed_logins_are_limited_per_address_and_email(client, db_sessio
         for _ in range(9):
             await _login(c, user.email)
         assert (await _login(c, user.email, "pw-12345678")).status_code == 302
-        await c.get("/auth/logout")
+        await c.post("/auth/logout")
         for _ in range(9):
             assert (await _login(c, user.email)).status_code == 200
 
@@ -186,16 +186,21 @@ async def test_a_reset_email_is_sent_after_the_answer(client, db_session, no_com
     assert r.status_code == 200 and order == ["email"] and user.password_reset_token
 
 
-async def test_without_redis_nobody_is_held_back(client, db_session, no_commit, monkeypatch):
+async def test_without_redis_the_limits_hold_on_each_worker(client, db_session, no_commit, monkeypatch):
+    """Base code: with Redis down nobody was held back (40 wrong logins, 40 answers). Each worker now counts
+    alone meanwhile: N workers give at most N times the allowance, never an open door."""
     from app.config import settings
 
     monkeypatch.setattr(settings, "REDIS_URL", "redis://127.0.0.1:1/0")  # nothing listens there
     monkeypatch.setattr(auth_service, "_counter", None)  # the production counters, unreachable
     user = await _member(db_session)
     async with AsyncClient(transport=client._transport, base_url="https://test") as c:
-        for _ in range(12):
+        for _ in range(10):
             assert (await _login(c, user.email)).status_code == 200
-        assert (await _login(c, user.email, "pw-12345678")).status_code == 302
+        assert (await _login(c, user.email)).status_code == 429
+        assert (await _login(c, user.email, "pw-12345678")).status_code == 429
+    assert isinstance(auth_service.counter(), auth_service.FallbackCounter)
+    assert auth_service.counter().down_until > 0  # Redis left alone for a minute, then tried again
 
 
 async def test_a_verification_link_verifies_but_never_signs_the_browser_in(client, db_session, no_commit, monkeypatch):
@@ -210,7 +215,7 @@ async def test_a_verification_link_verifies_but_never_signs_the_browser_in(clien
         assert r.status_code == 200 and "Email vérifié" in r.text
         assert (await victim.get("/settings")).headers["location"] == "/auth/login"  # not signed in
     user = (await db_session.execute(select(User).where(User.email == "attacker@x.fr"))).scalar_one()
-    assert user.email_verified and user.email_verify_token is None
+    assert user.email_verified and user.email_verify_token  # the token stays: opened again, the link says verified
 
 
 async def test_a_password_reset_signs_out_every_other_session(client, db_session, no_commit):
@@ -222,7 +227,7 @@ async def test_a_password_reset_signs_out_every_other_session(client, db_session
         for c in (other, here):
             assert (await _login(c, user.email, "pw-12345678")).status_code == 302
             assert (await c.get("/settings")).status_code == 200
-        user.password_reset_token = "reset-token"
+        user.password_reset_token = auth_service.hash_token("reset-token")  # stored hashed; the email has the token
         user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         await db_session.flush()
         r = await here.post("/auth/reset-password", data={"token": "reset-token", "password": "pw-87654321"})
@@ -344,7 +349,7 @@ async def test_a_login_that_works_is_not_charged_to_the_address(client, db_sessi
     async with AsyncClient(transport=client._transport, base_url="https://test") as c:
         for _ in range(5):  # five good logins from the address: none counts against it
             assert (await _login(c, user.email, "pw-12345678")).status_code == 302
-            await c.get("/auth/logout")
+            assert (await c.post("/auth/logout")).status_code == 303
         for i in range(3):
             assert (await _login(c, f"x{i}@x.fr")).status_code == 200
         assert (await _login(c, "x9@x.fr")).status_code == 429
@@ -397,9 +402,10 @@ async def test_the_limits_count_the_address_the_proxy_saw(db_session, no_commit,
 # ── auth forms posted from another site are refused (login CSRF) ────────────
 
 CROSS_SITE = [{"Sec-Fetch-Site": "cross-site"}, {"Origin": "https://evil.example"}, {"Origin": "null"},
-              {"Sec-Fetch-Site": "same-site", "Origin": "https://evil.example"}]
+              {"Sec-Fetch-Site": "same-site", "Origin": "https://evil.example"},
+              {"Sec-Fetch-Site": "same-site"}]  # another subdomain: not this site either (app.middleware.security)
 OWN_SITE = [{}, {"Sec-Fetch-Site": "same-origin", "Origin": "https://test"}, {"Sec-Fetch-Site": "none"},
-            {"Sec-Fetch-Site": "same-site"}, {"Origin": "http://localhost:8000"}]  # BASE_URL in the tests
+            {"Origin": "http://localhost:8000"}]  # BASE_URL in the tests
 
 
 @pytest.mark.parametrize("headers", CROSS_SITE)
@@ -410,7 +416,8 @@ async def test_an_auth_form_posted_from_another_site_is_refused(client, db_sessi
     monkeypatch.setattr("app.routers.auth.send_verification_email", lambda *a: sent.append(a) or True)
     monkeypatch.setattr("app.routers.auth.send_password_reset_email", lambda *a: sent.append(a))
     user = await _member(db_session)
-    user.password_reset_token, user.password_reset_expires_at = "reset-1", datetime.now(timezone.utc) + timedelta(hours=1)
+    user.password_reset_token = auth_service.hash_token("reset-1")
+    user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
     await db_session.flush()
     async with AsyncClient(transport=client._transport, base_url="https://test", headers=headers) as c:
         for path, form in (("/auth/login", {"email": user.email, "password": "pw-12345678"}),
@@ -419,7 +426,8 @@ async def test_an_auth_form_posted_from_another_site_is_refused(client, db_sessi
                            ("/auth/forgot-password", {"email": user.email})):
             assert (await c.post(path, data=form)).status_code == 403, path
         assert (await c.get("/settings")).headers["location"] == "/auth/login"  # not signed in
-    assert user.password_reset_token == "reset-1" and auth_service.verify_password("pw-12345678", user.password_hash)
+    assert user.password_reset_token == auth_service.hash_token("reset-1")
+    assert auth_service.verify_password("pw-12345678", user.password_hash)
     assert not sent and (await db_session.execute(select(User).where(User.email == "new@x.fr"))).first() is None
 
 

@@ -44,9 +44,12 @@ export async function disableHealthBackground(): Promise<void> {
   await clearBackgroundTypes();
   await disableAllBackgroundDelivery();
 }
-/** One callback per type, the last one wins natively: subscribe only from background.ts. */
-export function watchHealthChanges(onChange: () => void): () => void {
-  const subscriptions = backgroundTypes.map(type => subscribeToChanges(type, () => onChange()));
+/** One callback per type, the last one wins natively: subscribe only from background.ts.
+ * An observer query that fails reports its message instead of a change: nothing is read. */
+export function watchHealthChanges(onChange: () => void, onError?: (type: string, message: string) => void): () => void {
+  const subscriptions = backgroundTypes.map(type => subscribeToChanges(type, ({ errorMessage }) => {
+    if (errorMessage) onError?.(type, errorMessage); else onChange();
+  }));
   return () => subscriptions.forEach(s => s.remove());
 }
 /** HealthKit wakes the app on a change: every background run reads the short window. */

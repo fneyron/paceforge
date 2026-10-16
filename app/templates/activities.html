@@ -13,9 +13,9 @@
         <button hx-post="/api/sync" hx-target="#sync-msg" hx-swap="innerHTML" hx-indicator="#sync-spinner" hx-disabled-elt="this"
                 aria-label="Synchroniser les activités Strava" title="Synchroniser les activités Strava"
                 class="pf-btn pf-btn-secondary pf-btn-sm pf-activity-sync shrink-0">
-            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            <i data-lucide="refresh-cw" class="w-4 h-4" aria-hidden="true"></i>
             <span class="hidden sm:inline">Synchroniser</span>
-            <span id="sync-spinner" class="htmx-indicator"><svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg></span>
+            <span id="sync-spinner" class="htmx-indicator"><svg width="12" height="12" class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg></span>
         </button>
         {% endif %}
     </div>
