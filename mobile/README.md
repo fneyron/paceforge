@@ -200,8 +200,10 @@ changement de compte et déconnexion. Les API natives y sont simulées : vérifi
   deux cas, lecture des 7 derniers jours avec recouvrement ; historique complet
   à la connexion du téléphone puis toutes les 6 h. Les jours et les nuits déjà
   confirmés par le serveur (au premier plan ou en arrière-plan, condensats
-  oubliés chaque jour) ne sont pas renvoyés : quatre gestes en dix minutes
-  restent loin de la limite de 200 requêtes. Une tentative partielle redevient
+  couvrant les 60 jours relus, oubliés chaque jour) ne sont pas renvoyés, et
+  une relecture complète n’est jamais retentée dans les dix minutes, même
+  incomplète : quatre gestes en dix minutes restent sous la limite de 200
+  requêtes (au plus 182 avec trois auteurs de sommeil). Une tentative partielle redevient
   éligible après 5 min, au prochain retour/ouverture. Un historique incomplet
   est relu entièrement à la reprise. Avec cette option, la synchronisation
   continue aussi en arrière-plan (section suivante) ; une tentative restée en

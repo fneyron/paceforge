@@ -23,8 +23,10 @@ const SLEEP: Required<ReadBudget> = { total: 10000, perRead: 3000 };
 const CHANGES: Required<ReadBudget> = { total: 4000, perRead: 3000 };
 const SEND_MS = 8000;
 // Hashes only skip identical re-sends: forgotten daily, so a loss on the server heals.
-// Shared with the foreground sync (foregroundSkip), whose 7-day window fits in HASH_DAYS.
-const HASHES_MS = 24 * 3600000, HASH_DAYS = 10;
+// Shared with the foreground sync (foregroundSkip): they cover its full reread (60 nights,
+// 30 days), so an incomplete one is not sent again whole. At most about 35 KB in the
+// keychain progress entry with three sleep writers.
+const HASHES_MS = 24 * 3600000, HASH_DAYS = 60;
 
 // resume: a wake the foreground sync kept waiting, run once it is over.
 export type Wake = 'healthkit' | 'task' | 'resume';
