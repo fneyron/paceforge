@@ -619,11 +619,17 @@ def hrv_answer_read(text: str) -> bool:
     """
     parts = re.split(r"^.*Time Series.*$", text or "", maxsplit=1, flags=re.M)
     empty = r"No (?:HRV )?(?:readings|data)(?: available)?(?: for (?:this|the|selected) period)?\.?"
+    # A real COROS answer (2026-09-28) explicitly omits raw readings on a
+    # day without an official value. It is an understood empty day, not an
+    # unreadable range: rejecting it also discards other nights in the chunk.
+    omitted = (r"\d{4}-\d{2}-\d{2}:\s*no official sleep HRV value for this day;\s*"
+               r"raw HRV points omitted\.?")
     if len(parts) == 2:
         for line in parts[1].splitlines():
             line = line.strip()
             if (not line or re.fullmatch(r"[=─-]+", line)
                     or re.fullmatch(r"\d{4}-\d{2}-\d{2}:", line)
+                    or re.fullmatch(omitted, line, re.I)
                     or re.fullmatch(r"(?:\d{4}-\d{2}-\d{2}:\s*)?" + empty, line, re.I)):
                 continue
             if not re.match(r"timestamp=\d+,\s*timezone=-?\d+,\s*hrv=" + _NUM + r"\s*ms\b", line):
@@ -2096,6 +2102,8 @@ def link_flags(conn: CorosConnection) -> tuple[bool, str | None]:
 
 
 async def coros_status(db: AsyncSession, user_id: int) -> dict:
+    from app.services.watch_sync_status import sync_notice
+
     conn = await connection_for(db, user_id)
     if conn is None:
         return {"connected": False}
@@ -2113,6 +2121,7 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
         "syncing": bool((claimed := _as_utc(conn.sync_claimed_at))
                         and datetime.now(timezone.utc) - claimed < CLAIM_TTL),
         "last_error": error,
+        "sync_notice": sync_notice("COROS", error, needs_reauth),
         "retryable_partial": _has_partial(error, PARTIAL, HRV_PARTIAL, SLEEP_PARTIAL, PHASES_PARTIAL,
                                          ACTIVITIES_PARTIAL) and conn.last_sync_at is not None,
         "partial": _has_partial(error, PARTIAL, HRV_PARTIAL, HRV_UNREADABLE, SLEEP_PARTIAL, PHASES_PARTIAL,

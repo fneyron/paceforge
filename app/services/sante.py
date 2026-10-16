@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.health import HealthMetric
 from app.services import nights as nt
 from app.services import sante_load
+from app.services import sante_explain
 from app.services import sante_score as sc
 from app.services import sante_sleep as sl
 from app.services import sante_today as td
@@ -96,6 +97,11 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     samples = await _timeline(db, user_id, nights, hero_day) if hero_day else {}
     out.update(await anyio.to_thread.run_sync(partial(
         _compute, nights, sessions, today, until, r, samples, bool(sources), peak, day_alt, sex)))
+    # The same real nightly respiratory card lives with Recovery. A phone's
+    # resp_day aggregate remains in daily context and is never promoted to a night.
+    out["respiration"] = next((c for c in daily if c["key"] == "resp_night"), None)
+    out["daily"] = [c for c in daily if c["key"] != "resp_night"]
+    out["explanations"] = sante_explain.build(out)
     return out
 
 
@@ -140,6 +146,7 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
         c["data"] = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
         # The measured values are available on touch, without repeating Activités' latest readout.
         viz.rest(c, ["", "Tes sorties comparables", ""], c["summary"])
+    out["explanations"] = sante_explain.build(out)
     return out
 
 
@@ -576,12 +583,20 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
         prov.append(bool(b and b["provisional"]))
     means = [m.get("value") for m in averages]
     sources = [nights[d].source_of(metric) if d in nights else None for d in days]
+    # The method remains visible when the brand is hidden: RMSSD and SDNN are
+    # incompatible measurements. Only label the known import pipelines.
+    methods = [
+        "SDNN" if src and "(SDNN sommeil)" in src else
+        "RMSSD" if src in ("COROS", "Garmin") or (src and src.startswith("Garmin (")) else None
+        for src in sources
+    ] if metric == "hrv" else None
     notes = [nights[d].measurement_notes.get(metric) if d in nights else None for d in days]
     key, name, unit, unit_long = CARDS[metric]
     c = viz.night_card(key, days, values, band=bands, prov=prov, mean=means, unit=unit, unit_long=unit_long,
                        name=name, min_span=_span(metric, values, bands), sources=sources,
                        mean_sources=[nt.mean_source(nights, metric, d) for d in days],
-                       mean_counts=[m.get("n", 0) for m in averages], notes=notes, label_nights=True, compact=True)
+                       mean_counts=[m.get("n", 0) for m in averages], notes=notes, label_nights=True, compact=True,
+                       show_source=False, method_labels=methods)
     c["status"] = card_status(nights, metric, day)
     current = nights.get(today)
     value = current.value(metric) if current else None
@@ -618,6 +633,9 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
                           "none": "Repères en cours", "few": "Peu de données"}[c["status"]["key"]])
     c["legend"] = ([LEGEND_DOT] + ([LEGEND_MEAN] if c["mean"] else []) + ([LEGEND_BAND] if c["band"] else [])
                    + ([LEGEND_PROV] if c["band_prov"] else []))
+    c["interpretation"] = sante_explain.nightly(
+        metric, c, day["trends"].get(metric), same_series=sources[last] == source,
+        latest_below=bool(bands[-1] and value is not None and value < bands[-1][0]))
     return c
 
 

@@ -305,7 +305,7 @@ def test_activites_a_raised_easy_pace_hr_after_an_ultra_is_annotated_not_flagged
     assert tv.footing(runs + [old], T, 185)["flagged"]
     long_ride = S(11, minutes=700, km=300, dplus=2000, sport="Ride", id=99_997, name="Vélo")  # Très longue (M4)
     assert tv.footing(runs + [long_ride], T, 185)["flagged"]
-    html = (ROOT / "app/templates/partials/activity_training.html").read_text()
+    html = (ROOT / "app/templates/partials/activity_easy.html").read_text()
     assert '{% elif e.after_ultra %} <span class="pf-train-soft">· après ultra</span>' in html
 
 

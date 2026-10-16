@@ -37,7 +37,7 @@ longer yields for the days its parsers read, never a Garmin one):
                the sleepHeartRate readings selected like HRV ("points", scope);
                COROS: its « Sleep HR » line, which sits in the summary of the
                main sleep ("coros_sleep_summary", see docs/sante-v3-data-notes.md).
-- resp_night : overnight respiration (Garmin only); {method}.
+- resp_night : overnight respiration (Garmin or Apple Santé); {method}.
 - hr_day     : average heart rate of the day; {min, max} (a « watch worn » marker)
 - steps      : steps of the day; {kcal, exercise (min)} (same)
 - feel       : the morning check-in (source "PaceForge"): 1 mieux, 2 comme

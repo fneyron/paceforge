@@ -5,25 +5,23 @@ CONTEXT_DAYS = 28  # Display lookback only, not a physiological recovery window.
 
 
 def recent_effort(efforts, sessions, today):
-    """One recorded ultra or explicitly recorded race; a planned date cannot create an event."""
+    """One long recorded effort or provider-tagged race, using only imported activity data."""
     candidates = []
     for e in efforts:
         day = e.end.date()  # display calendar days since the real finish, not the sleep cycle's anchor
         ago = (today - day).days
         if e.kind == "ultra" and e.end.date() <= today and 0 <= ago <= CONTEXT_DAYS:
-            recorded_name = next((s.race_name for s in sessions if s.id in (e.ids | {e.session_id})
-                                  and s.race_confirmed and s.race_name), None)
-            candidates.append((day, e.session_id, recorded_name or e.name or "un ultra", "ultra"))
+            candidates.append((day, e.session_id, e.name or "un effort long", "effort"))
     for s in sessions:
         finished = st.local_end(s)
         day = finished.date()
         ago = (today - day).days
         if s.is_race and finished.date() <= today and 0 <= ago <= CONTEXT_DAYS:
-            candidates.append((day, s.id, s.race_name or s.name or "une course", "race"))
+            candidates.append((day, s.id, s.name or "une course enregistrée", "race"))
     if not candidates:
         return []
-    day, sid, name, kind = max(candidates, key=lambda x: (x[0], x[3] == "ultra", x[1]))
-    return [{"key": "after_race", "label": f"Après {name} · J+{(today - day).days}",
+    day, sid, name, kind = max(candidates, key=lambda x: (x[0], x[3] == "effort", x[1]))
+    return [{"key": "after_effort", "label": f"Après {name} · J+{(today - day).days}",
              "detail": "Une tendance nocturne habituelle ne mesure pas la récupération des muscles et des tendons après cet effort.",
              "tone": "neutral", "source": "Activité enregistrée", "activity_id": sid,
              "date": day.isoformat(), "kind": kind}]

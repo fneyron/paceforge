@@ -309,10 +309,10 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     page = await sante.health_page(db_session, test_user.id, today=D8)
     assert [(d["key"], d["value"], d["unit"], d["label"], d["sub"], d["tone"], d["href"]) for d in page["dials"]] == [
         ("sommeil", "100", "%", "Sommeil", "suffisant", "sleep", "#sommeil"),
-        ("recup", "—", None, "Signaux nocturnes", "pas de score", "none", "#recuperation"),
+        ("recup", "—", None, "Récupération", "pas de score", "none", "#recuperation"),
         ("entrainement", "15h35", None, "Entraînement", "7 derniers jours", "accent", "#entrainement")]
     assert [d["aria"] for d in page["dials"]] == [
-        "Sommeil 100\u00a0% du repère de 8 heures, suffisant.", "Signaux nocturnes : pas d’indice pour cette nuit.",
+        "Sommeil 100\u00a0% du repère de 8 heures, suffisant.", "Récupération : pas d’indice nocturne pour cette nuit.",
         "Entraînement : 15 heures 35 d'activité ces 7 derniers jours, pas encore d'habitude."]
     assert [d["dash"] for d in page["dials"]][2] == 0 and "ring" not in page and "facts" not in page
     assert "rows" not in page and page["line"] == "Pas de score ce matin : repères en construction (5/7)."
@@ -374,9 +374,9 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
     vfc, fc = page["vfc"], page["fc"]
     # a no-break space: the display font has no narrow one (« 100ms » glued, UX11)
     assert (vfc["title"], vfc["n"], vfc["read"]) == ("VFC · 14 nuits", 14,
-                                                     ["100\u00a0ms", "Dernière nuit", "7 → 8 oct. · COROS", "nuit du mer. 7 au jeu. 8 · COROS · éveils intermédiaires possibles"])
+                                                     ["100\u00a0ms", "Dernière nuit", "7 → 8 oct. · RMSSD", "nuit du mer. 7 au jeu. 8 · COROS · éveils intermédiaires possibles"])
     assert (fc["title"], fc["n"], fc["read"]) == ("FC de nuit · 14 nuits", 14,
-                                                  ["35\u00a0bpm", "Dernière nuit", "7 → 8 oct. · COROS", "nuit du mer. 7 au jeu. 8 · COROS · moyenne COROS : exclusion des éveils non vérifiable · moyenne 7 jours : 36 bpm (3 nuits)"])
+                                                  ["35\u00a0bpm", "Dernière nuit", "7 → 8 oct.", "nuit du mer. 7 au jeu. 8 · COROS · moyenne COROS : exclusion des éveils non vérifiable · moyenne 7 jours : 36 bpm (3 nuits)"])
     assert fc['trend']['value'] == '36\u202fbpm' and fc['trend']['n'] == 3
     assert [t["label"] for t in vfc["xt"]] == ["25", "26", "27", "28", "29", "30", "1", "2", "3", "4", "5", "6", "7",
                                                "8"]
@@ -612,7 +612,7 @@ async def test_rich_wearer_a_lowish_hrv_is_orange(db_session: AsyncSession, test
     # « bien ou pas bien ? »: each card opens on its status line, its row's percentage, word and colour
     assert page["vfc"]["status"] == {"key": "below", "value": vfc, "word": "plus basse que d'habitude",
                                      "text": f"{vfc} plus basse que d'habitude", "tone": "warn",
-                                     "meaning": "Ça arrive avec la fatigue, le stress, l'alcool ou un début de maladie."}
+                                     "meaning": "Une VFC plus basse que tes habitudes sur plusieurs nuits peut accompagner une fatigue ou un stress accru. À lire avec ton sommeil, ta FC nocturne et ton ressenti."}
     assert page["fc"]["status"] == {"key": "in", "value": None, "word": "comme d'habitude", "text": "comme d'habitude",
                                     "tone": "ok", "meaning": None}
     assert page["vfc"]["read"][3].startswith(

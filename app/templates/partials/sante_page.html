@@ -15,21 +15,12 @@
     {% if sy.context %}<ul class="pf-synthesis-context" aria-label="Contexte du bilan">
         {% for context in sy.context %}<li data-context="{{ context.key }}">{{ context.label }}</li>{% endfor %}
     </ul>{% endif %}
-    {% if sy.more_reasons or sy.context or sy.methods or sy.detail %}
-    <details class="pf-chart-details pf-synthesis-details" data-transient>
-        <summary>Ce qui est pris en compte</summary>
-        {% if sy.detail %}<p class="pf-card-meaning">{{ sy.detail }}</p>{% endif %}
-        {% for reason in sy.reasons if reason.text %}<p class="pf-card-meaning"><b>{{ reason.label }}</b> · {{ reason.text }}</p>{% endfor %}
-        {% for reason in sy.more_reasons %}<p class="pf-card-meaning"><b>{{ reason.label }}</b>{% if reason.text %} · {{ reason.text }}{% endif %}</p>{% endfor %}
-        {% for context in sy.context if context.detail %}<p class="pf-card-meaning">{{ context.detail }}</p>{% endfor %}
-        {% for method in sy.methods %}<p class="pf-card-meaning"><b>{{ method.label }} · {{ method.source }}</b><br>{{ method.detail }}</p>{% endfor %}
-        {% if sy.freshness.source %}<p class="pf-card-meaning">Mesures reçues · {{ sy.freshness.source }}</p>{% endif %}
-    </details>
-    {% endif %}
+    {% include "partials/sante_explanations.html" %}
 </section>
 {% else %}
 {% if p.state and p.state.text %}<p class="pf-state-text">{{ p.state.text }}</p>{% endif %}
 {% if not p.state %}<p class="pf-state-line">{{ p.line }}</p>{% endif %}
+{% include "partials/sante_explanations.html" %}
 {% endif %}
 {% if p.connect %}<p class="pf-state-links"><a class="pf-native-only" data-phone-connect href="paceforge://devices">Connecter <span data-phone-health>Apple Santé</span> ›</a><span class="pf-browser-only"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></span></p>{% endif %}
 {% include "partials/sante_checkin.html" %}
@@ -39,7 +30,7 @@
 {% if s and s.state != "never" %}
 <section id="sommeil" class="pf-health-panel" aria-labelledby="h-sommeil">
     <header class="pf-health-panel-heading">
-        <h2 id="h-sommeil" class="pf-health-panel-title">Sommeil{% if s.hero %}<small>{{ s.hero.label }}{% if s.hero.source %} · {{ s.hero.source }}{% endif %}</small>{% endif %}</h2>
+        <h2 id="h-sommeil" class="pf-health-panel-title">Sommeil{% if s.hero %}<small>{{ s.hero.label }}</small>{% endif %}</h2>
         <span class="pf-panel-value">{{ s.hero.total if s.hero else 'Pas de nuit récente' }}</span>
     </header>
     <div class="pf-panel-body">
@@ -70,12 +61,6 @@
             </div>
             {% endfor %}
         </div>
-        {% if p.synthesis and p.synthesis.sleep_gap %}{% set gap = p.synthesis.sleep_gap %}
-        <details class="pf-chart-details pf-sleep-gap" data-transient>
-            <summary>{{ gap.label|capitalize }}</summary>
-            <p class="pf-card-meaning">{{ gap.detail }}</p>
-        </details>
-        {% endif %}
         {% if s.habits %}
         <details id="sommeil-habitudes" class="pf-chart-details">
             <summary>Mes horaires habituels</summary>
@@ -89,38 +74,40 @@
 </section>
 {% endif %}
 
-{% if p.recup or p.vfc or p.fc or p.score.value is not none %}
+{% if p.recup or p.vfc or p.fc or p.respiration or p.score.value is not none %}
 <section id="recuperation" class="pf-health-panel" aria-labelledby="h-recuperation">
     <header class="pf-health-panel-heading">
-        <h2 id="h-recuperation" class="pf-health-panel-title">Signaux nocturnes</h2>
-        {% if p.score.value is not none and p.quality and (p.quality.partial or p.quality.provisional) %}
-        <a class="pf-health-status" href="#qualite-bilan" aria-label="Signaux nocturnes : {{ p.quality.label }}. Voir les mesures utilisées.">{{ 'Indice partiel' if p.quality.partial else 'Détails de l’indice' }} <span aria-hidden="true">›</span></a>
+        <h2 id="h-recuperation" class="pf-health-panel-title">Récupération</h2>
+        {% if p.score.value is not none and p.quality and p.quality.partial %}
+        <span class="pf-health-status">Indice partiel</span>
         {% endif %}
     </header>
     <div class="pf-panel-body">
         {% if p.recup %}<div id="recuperation-detail" class="pf-card pf-recup14">
             {{ viz.viz_day_bars(p.recup, "Signaux nocturnes sur 14 jours", quiet=True) }}
         </div>{% endif %}
-        {% if p.vfc or p.fc %}
+        {% if p.vfc or p.fc or p.respiration %}
         <div id="mesures-nocturnes" class="pf-health-nights" role="group" aria-label="Mesures nocturnes">
             {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
             <article id="{{ key }}" class="pf-card" aria-labelledby="h-{{ key }}">
                 <div class="pf-measurement-head"><h3 id="h-{{ key }}" class="pf-card-h">{{ c.title }}</h3></div>
                 {% if c.status.tone in ('warn', 'danger') %}<p class="pf-card-status is-{{ c.status.tone }}"><i class="pf-dot" aria-hidden="true"></i>{% if c.period != '2 nuits' %}Tendance 7 j · {% endif %}{{ c.status_short }}</p>{% endif %}
+                {% if c.interpretation and c.interpretation.key in ('low_hrv', 'high_hr', 'latest_low', 'different_series') %}<p class="pf-measurement-insight">{{ c.interpretation.text }}</p>{% endif %}
                 {% if c.measurement and c.measurement.missing_label %}<p class="pf-measurement-meta">{{ c.measurement.missing_label }}</p>{% endif %}
-                {{ viz.viz_night_card(c, c.title, legend=c.legend, legend_details=True,
-                    detail_label=c.reference.label if c.reference else 'Repère personnel',
-                    explanations=[c.status.text, c.reference.detail] if c.reference else [c.status.text]) }}
+                {{ viz.viz_night_card(c, c.title, legend=c.legend, central_details=True) }}
             </article>
             {% endfor %}
+            {% if p.respiration %}{% set c = p.respiration %}
+            <article id="respiration" class="pf-card" aria-labelledby="h-respiration">
+                <div class="pf-measurement-head"><h3 id="h-respiration" class="pf-card-h">{{ c.title }}</h3></div>
+                {% if c.interpretation and c.interpretation.key == 'high_resp' %}<p class="pf-measurement-insight">{{ c.interpretation.text }}</p>{% endif %}
+                {% if c.stale %}<p class="pf-measurement-meta">Donnée ancienne</p>{% endif %}
+                {% if c.chart %}
+                {{ viz.viz_night_card(c.chart, c.title, legend=[("is-ref", c.chart.ref.label)] if c.chart.ref else [], central_details=True) }}
+                {% else %}<p class="pf-daily-value">{{ c.value }}</p><p class="pf-measurement-meta">{{ c.latest }}</p>{% endif %}
+            </article>
+            {% endif %}
         </div>
-        {% endif %}
-        {% if p.score.value is not none and p.quality %}
-        <details id="qualite-bilan" class="pf-bilan-quality" data-transient>
-            <summary>Mesures utilisées pour l’indice</summary>
-            <dl>{% for row in p.quality.rows %}<div><dt>{{ row.name }}</dt><dd>{{ row.state }}</dd></div>{% endfor %}</dl>
-            <p>Disponibilité des mesures, pas une garantie de précision de l’indice.</p>
-        </details>
         {% endif %}
     </div>
 </section>
@@ -175,7 +162,6 @@
 </div>
 {% if p.daily|rejectattr("archived")|list %}{% include "partials/sante_daily.html" %}{% endif %}
 <div class="pf-folds">
-    <a class="pf-link pf-health-help" href="/sante/aide">Comprendre mes indicateurs ›</a>
     {% if s and s.rows %}
     <details class="pf-fold pf-ntable-fold">
         <summary>Les chiffres de chaque nuit</summary>

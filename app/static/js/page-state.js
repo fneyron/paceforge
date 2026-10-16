@@ -1,55 +1,67 @@
-// Preserve presentation within this signed-in WebView session; never cache health data.
+// Presentation only; measurements stay out of persistent browser storage.
 (function () {
     'use strict';
-    var main = document.getElementById('main-content');
-    if (!main) return;
-    var url = new URL(location.href), returning = url.searchParams.has('app_nav'); url.searchParams.delete('app_nav');
-    var key = 'pf-view:' + main.dataset.account + ':' + url.pathname + url.search;
-    function remember() {
-        var folds = {}, charts = {};
-        document.querySelectorAll('details[id]').forEach(function (el) {
+    function currentMain() { return document.getElementById('main-content'); }
+    function key() {
+        var main = currentMain(), url = new URL(location.href); url.searchParams.delete('app_nav');
+        return main && 'pf-view:' + main.dataset.account + ':' + url.pathname + url.search;
+    }
+    function capture() {
+        var main = currentMain(), folds = {}, charts = {};
+        if (!main) return null;
+        main.querySelectorAll('details[id]').forEach(function (el) {
             if (!el.hasAttribute('data-transient') && !el.closest('[role="dialog"]') && el.id !== 'plan-more') folds[el.id] = el.open;
         });
-        // Only explicit selections persist; a default dated readout must follow
-        // the newest measurement on the next visit, including after midnight.
-        document.querySelectorAll('figure[data-viz-key].is-inspecting').forEach(function (fig) {
+        main.querySelectorAll('figure[data-viz-key].is-inspecting').forEach(function (fig) {
             try {
                 var data = JSON.parse(fig.querySelector('.pf-viz-data').textContent);
                 charts[fig.dataset.vizKey] = data.d[Number(fig.querySelector('.pf-viz-range').value)];
             } catch (_) {}
         });
-        try { sessionStorage.setItem(key, JSON.stringify({ y: scrollY, folds: folds, charts: charts })); } catch (_) {}
+        return { y: scrollY, folds: folds, charts: charts };
     }
-    window.paceforgeRememberPage = remember;
-    function restore() {
+    function remember() {
+        var state = capture(), name = key();
+        if (name && state) try { sessionStorage.setItem(name, JSON.stringify(state)); } catch (_) {}
+        return state;
+    }
+    function restore(state, returning) {
+        var main = currentMain();
+        if (!main) return;
+        if (returning === undefined) returning = new URL(location.href).searchParams.has('app_nav');
         try {
-            var saved = JSON.parse(sessionStorage.getItem(key));
-            if (!saved) return;
-            Object.keys(saved.folds || {}).forEach(function (id) {
-                // Old fold IDs may now name permanently visible sections.
-                // Help and method disclosures open only on an explicit action.
-                var el = document.getElementById(id);
-                if (el?.tagName === 'DETAILS' && !el.hasAttribute('data-transient')) el.open = saved.folds[id];
-            });
-            document.querySelectorAll('figure[data-viz-key]').forEach(function (fig) {
-                try {
-                    var date = saved.charts?.[fig.dataset.vizKey];
-                    var data = JSON.parse(fig.querySelector('.pf-viz-data').textContent);
-                    var index = data.d.indexOf(date), input = fig.querySelector('.pf-viz-range');
-                    if (index >= 0 && input) { input.value = index; input.dispatchEvent(new Event('input')); }
-                } catch (_) {}
-            });
+            if (state === undefined) state = JSON.parse(sessionStorage.getItem(key()));
+            if (state) {
+                Object.keys(state.folds || {}).forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el?.tagName === 'DETAILS' && !el.hasAttribute('data-transient')) el.open = state.folds[id];
+                });
+                main.querySelectorAll('figure[data-viz-key]').forEach(function (fig) {
+                    try {
+                        var date = state.charts?.[fig.dataset.vizKey];
+                        var data = JSON.parse(fig.querySelector('.pf-viz-data').textContent);
+                        var index = data.d.indexOf(date), input = fig.querySelector('.pf-viz-range');
+                        if (index >= 0 && input) { input.value = index; input.dispatchEvent(new Event('input')); }
+                    } catch (_) {}
+                });
+            }
             if (location.hash && !returning) {
-                var target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+                var id = decodeURIComponent(location.hash.slice(1));
+                var target = document.getElementById(id === 'forme' ? 'fc-facile' : id);
                 for (var parent = target; parent; parent = parent.parentElement) if (parent.tagName === 'DETAILS') parent.open = true;
-                if (target) requestAnimationFrame(function () { target.scrollIntoView({ block: 'start', behavior: 'instant' }); });
-            } else requestAnimationFrame(function () { scrollTo({ top: saved.y, behavior: 'instant' }); });
+                if (target) { window.PFViz?.scan(target); scrollTo({ top: scrollY + target.getBoundingClientRect().top, behavior: 'instant' }); }
+            } else if (state) scrollTo({ top: state.y, behavior: 'instant' });
         } catch (_) {}
     }
+    window.paceforgeRememberPage = remember;
+    window.PFPageState = { capture: capture, remember: remember, restore: restore };
     window.addEventListener('pagehide', remember);
     document.addEventListener('visibilitychange', function () { if (document.hidden) remember(); });
-    window.addEventListener('load', restore, { once: true });
-    // Wait for the debounced plan save before an ordinary link leaves the document.
+    // PFViz's DOM-ready setup completes before this frame; distant images do
+    // not postpone restoration or leave a previously visited page at its top.
+    function ready() { requestAnimationFrame(function () { restore(); }); }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready, { once: true }); else ready();
+    window.addEventListener('hashchange', function () { restore(null, false); });
     var leaving = false;
     document.addEventListener('click', function (event) {
         var a = event.target.closest('a[href]');

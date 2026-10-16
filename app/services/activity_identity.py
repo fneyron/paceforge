@@ -1,9 +1,11 @@
-"""Shared identity of an imported activity and a race linked to a saved plan."""
+"""Import revisions, and result links used only by the optional race planner.
+
+Santé reads recorded activities directly; planner links never establish its race identity.
+"""
 from sqlalchemy import BigInteger, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
-from app.models.route import Route
 
 
 def races_on_retained_copies(races: dict[int, str], duplicates: dict[int, int]) -> dict[int, str]:
@@ -26,11 +28,13 @@ def revision_sum(db: AsyncSession):
 
 
 async def confirmed_races(db: AsyncSession, user_id: int, *, since=None, activity_ids=None) -> dict[int, str]:
-    """Only a real activity linked as a result, with both records owned by this athlete.
+    """Planner calibration only: a result link, with both records owned by this athlete.
 
     No calendar date or planned duration can declare that the athlete ran a race.
     Keep the provider's tag untouched; unlinking the result removes this identity.
     """
+    from app.models.route import Route
+
     q = select(Activity.id, Route.name).join(Route, Route.result_activity_id == Activity.id).where(
         Activity.user_id == user_id, Route.user_id == user_id,
         Activity.sport_type.in_(("Run", "TrailRun", "VirtualRun")),
