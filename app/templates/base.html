@@ -115,7 +115,8 @@
     </script>
     <script>
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+        // update(): the installed worker is refetched at once, so a new worker reaches existing installs
+        navigator.serviceWorker.register('/static/sw.js').then((r) => r.update()).catch(() => {});
     }
     </script>
     <script src="/static/js/app.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>

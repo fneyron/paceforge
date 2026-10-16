@@ -74,4 +74,4 @@ def test_decorative_icons_are_hidden_from_readers_and_inline_icons_carry_a_size(
 def test_the_service_worker_precaches_nothing_stale():
     sw = _read("app/static/sw.js")
     assert "interface.css?v=2" not in sw and "addAll" not in sw and "STATIC_ASSETS" not in sw
-    assert "navigator.serviceWorker.register('/static/sw.js')" in _read("app/templates/base.html")
+    assert "navigator.serviceWorker.register('/static/sw.js').then((r) => r.update())" in _read("app/templates/base.html")
