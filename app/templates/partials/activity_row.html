@@ -9,15 +9,15 @@
    class="pf-activity-row {% if dim %}opacity-60{% endif %}">
     <span class="pf-sport-icon pf-sport-{{ activity.sport_group }}" aria-hidden="true">
         {% if activity.sport_group == 'trail' %}
-        <i data-lucide="mountain" class="w-[18px] h-[18px]"></i>
+        <i data-lucide="mountain" class="w-[18px] h-[18px]" aria-hidden="true"></i>
         {% elif activity.sport_group == 'run' %}
-        <i data-lucide="footprints" class="w-[18px] h-[18px]"></i>
+        <i data-lucide="footprints" class="w-[18px] h-[18px]" aria-hidden="true"></i>
         {% elif activity.sport_group == 'bike' %}
-        <i data-lucide="bike" class="w-[18px] h-[18px]"></i>
+        <i data-lucide="bike" class="w-[18px] h-[18px]" aria-hidden="true"></i>
         {% elif activity.sport_type == 'Swim' %}
-        <i data-lucide="waves" class="w-[18px] h-[18px]"></i>
+        <i data-lucide="waves" class="w-[18px] h-[18px]" aria-hidden="true"></i>
         {% else %}
-        <i data-lucide="activity" class="w-[18px] h-[18px]"></i>
+        <i data-lucide="activity" class="w-[18px] h-[18px]" aria-hidden="true"></i>
         {% endif %}
     </span>
     <span class="pf-item-main">

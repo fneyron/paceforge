@@ -5,7 +5,7 @@
     <div class="w-full max-w-sm text-center">
         <a href="/" class="pf-logo pf-auth-logo" aria-label="PaceForge, accueil">{% include "partials/_logo_mark.html" %}<span>PaceForge</span></a>
         <div class="w-16 h-16 rounded-2xl bg-accent-soft text-accent flex items-center justify-center mx-auto mb-6">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+            <svg class="w-8 h-8" width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/>
             </svg>
         </div>
@@ -16,9 +16,9 @@
         <p class="mt-6 text-xs text-gray-500">Le lien est valable 24 h. Pense à vérifier les spams.</p>
         {% if failed %}<p role="alert" class="mt-4 text-sm text-danger">L’email n’a pas pu être envoyé. Réessaie dans une minute.</p>{% endif %}
         {% if can_resend %}<form method="post" action="/auth/resend-verification" class="mt-4">
-            <button type="submit" class="pf-btn">Renvoyer le lien</button>
+            <button type="submit" class="pf-btn pf-btn-secondary">Renvoyer le lien</button>
             <p class="mt-2 text-xs text-gray-500">Un nouvel envoi est possible chaque minute.</p>
-        </form>{% else %}<a href="/auth/login" class="pf-btn mt-4">Me connecter pour renvoyer le lien</a>{% endif %}
+        </form>{% else %}<a href="/auth/login" class="pf-btn pf-btn-secondary mt-4">Me connecter pour renvoyer le lien</a>{% endif %}
     </div>
 </div>
 {% endblock %}

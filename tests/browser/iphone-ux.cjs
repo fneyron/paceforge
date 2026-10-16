@@ -97,16 +97,29 @@ const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
           document.documentElement.classList.toggle('pf-large-text', scale >= 1.4);
           scrollTo({ top: 0, behavior: 'instant' });
         }, scale);
-        const sizes = await page.evaluate(() => ({ viewport: innerWidth, page: document.documentElement.scrollWidth }));
-        assert.ok(sizes.page <= sizes.viewport + 1, `${path} ${width}px at ${scale * 100}% overflows: ${JSON.stringify(sizes)}`);
+        // measured against the screen, not innerWidth: a page that overflows widens the layout viewport with it
+        const fits = async state => { const sizes = await page.evaluate(() => ({ viewport: innerWidth, page: document.documentElement.scrollWidth })); assert.ok(sizes.page <= width + 1, `${path} ${width}px at ${scale * 100}%${state} overflows the screen: ${JSON.stringify(sizes)}`); };
+        await fits('');
         if (width === 393) await page.screenshot({ path: `${out}/${path.replaceAll('/', '_')}-${scale}.png`, fullPage: true });
+        if (path === '/simulator/routes/1') { await page.waitForFunction(() => window._sim?.heroEdit); await page.evaluate(() => window._sim.heroEdit()); await fits(' with the objective open'); }
       }
     }
+    // The objective's own fields keep the size of the number on a coarse pointer (the 16 px rule for phone inputs spares them).
+    // On a page of its own: after a full-page screenshot the page above no longer emulates touch, so (pointer: coarse) is false there.
+    const phone = await browser.newPage({ viewport: { width: 393, height: 680 }, isMobile: true, hasTouch: true });
+    await phone.goto(base + '/simulator/routes/1', { waitUntil: 'networkidle' });
+    await phone.waitForFunction(() => window._sim?.heroEdit);
+    await phone.evaluate(() => window._sim.heroEdit());
+    const hero = await phone.evaluate(() => ({ coarse: matchMedia('(pointer: coarse)').matches, input: getComputedStyle(document.getElementById('target-h')).fontSize, number: getComputedStyle(document.getElementById('hero-num')).fontSize }));
+    assert.equal(hero.coarse, true, 'the phone context emulates a coarse pointer');
+    assert.equal(hero.input, hero.number, `the objective inputs are as big as the number: ${JSON.stringify(hero)}`);
+    assert.ok(parseFloat(hero.number) >= 60, `the number stays a hero: ${hero.number}`);
+    await phone.close();
     await page.goto(base + '/settings', { waitUntil: 'networkidle' });
     assert.equal(await page.locator('#strava').isVisible(), false);
     assert.equal(await page.getByRole('link', { name: 'Gérer mes connexions ›' }).isVisible(), true);
     assert.deepEqual(errors, []);
     await page.close();
-    console.log('iPhone UX: save ordering/failure/retry, old fold migration, restored chart dates/history/scroll, explicit help links, exports and 320/393px at 100/200% text passed.');
+    console.log('iPhone UX: save ordering/failure/retry, old fold migration, restored chart dates/history/scroll, explicit help links, exports, 320/393px at 100/200% text and the objective editor on a coarse pointer passed.');
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exit(1); });
