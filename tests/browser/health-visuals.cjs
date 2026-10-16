@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const base = process.env.PF_PREVIEW_URL || 'http://127.0.0.1:8853';
 const output = process.env.PF_HEALTH_SCREENSHOTS || '/tmp/paceforge-health-visuals';
 const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#recuperation-detail figure',
-  '#vfc figure', '#fc figure', '#entrainement-semaine figure', '#au-quotidien figure'];
+  '#vfc figure', '#fc figure', '#entrainement-semaine figure', '#tendances figure'];
 
 (async () => {
   fs.mkdirSync(output, { recursive: true });

@@ -1,11 +1,11 @@
 {% if p.explanations %}
-<details id="comprendre-indicateurs" class="pf-chart-details pf-synthesis-details pf-health-explanations" data-transient>
+<details id="comprendre-indicateurs" class="pf-fold pf-health-explanations" data-transient>
     <summary>{{ p.explanations.title }}</summary>
     {% if p.explanations.intro %}<p class="pf-card-meaning">{{ p.explanations.intro }}</p>{% endif %}
     {% for item in p.explanations['items'] %}
     {% set chart = p.vfc if item.key == 'vfc' else p.fc if item.key == 'fc' else p.respiration.chart if item.key == 'resp_night' and p.respiration else none %}
-    {% set daily = p.daily|selectattr('key', 'equalto', item.key)|first %}
-    {% if not chart and daily %}{% set chart = daily.chart %}{% endif %}
+    {% set trend = (p.trends or [])|selectattr('key', 'equalto', item.key)|first %}
+    {% if not chart and trend %}{% set chart = trend.chart %}{% endif %}
     <section class="pf-indicator-explanation" aria-labelledby="explain-{{ item.key }}">
         <h3 id="explain-{{ item.key }}">{{ item.title }}</h3>
         {% if item.text %}<p>{{ item.text }}</p>{% endif %}

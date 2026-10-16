@@ -626,7 +626,6 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-card-status.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }
 .pf-card-status.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
 .pf-card-meaning { font-size: 0.8125rem; line-height: 1.4; color: rgb(var(--pf-gray-600)); margin-top: 1px; }
-.pf-measurement-insight { margin: 6px 0 10px; font-size: 0.875rem; line-height: 1.45; color: rgb(var(--pf-gray-700)); }
 .pf-health-explanations .pf-indicator-explanation { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-indicator-explanation h3 { font-size: 0.875rem; font-weight: 650; color: rgb(var(--pf-ink)); }
 .pf-indicator-explanation p { margin-top: 6px; font-size: 0.8125rem; line-height: 1.5; color: rgb(var(--pf-gray-600)); }
@@ -1300,6 +1299,7 @@ body:has(.pf-sante4) { background: #f4f6f8; }
 .pf-measurement-head { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; }
 .pf-measurement-value { font-size: 1.625rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pf-measurement-meta, .pf-measurement-reference { font-size: .75rem; line-height: 1.5; color: rgb(var(--pf-gray-600)); }
+.pf-trend-delta { font-size: .8125rem; color: rgb(var(--pf-gray-600)); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pf-health-status { font-size: .6875rem; font-weight: 500; color: rgb(var(--pf-gray-600)); border-radius: 6px; padding: 3px 0; }
 a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; }
 .pf-sante4 .pf-bilan-quality { border-top: 1px solid rgb(var(--pf-line)); margin-top: 14px; }

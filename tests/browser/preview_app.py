@@ -42,8 +42,8 @@ async def lifespan(app):
                 timeline=False,stages=dict(awake=20,light=280,deep=90,rem=90))),
                 ('hr_night',50+i%5,{}),('hrv',62+i%7,dict(method=HRV_METHOD,n=20))]:
                 db.add(HealthMetric(user_id=user.id,date=day,metric=metric,value=value,source='COROS',details=det))
-            if i < 30:
-                for metric,value in [('weight',64.2+(i%7)/10),('body_fat',17.4+(i%4)/10),('steps',8240+i%8*350)]:
+            if i < 90:
+                for metric,value in [('weight',64.2+(i%7)/10+i/90),('body_fat',17.4+(i%4)/10),('steps',8240+i%8*350)]:
                     db.add(HealthMetric(user_id=user.id,date=day,metric=metric,value=value,source='COROS',details={}))
             if i%3==1:
                 minutes=50+i%4*4

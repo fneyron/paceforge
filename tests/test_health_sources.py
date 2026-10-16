@@ -166,8 +166,8 @@ async def test_coros_stress_is_never_shown_even_when_recent(db_session, test_use
     from unittest.mock import AsyncMock
     monkeypatch.setattr(sante, "athlete_today", AsyncMock(return_value=D))
     html = (await as_user.get("/sante")).text
-    assert 'id="daily-stress-title">Stress</h3>' in html
-    assert "Stress COROS" not in html and 'id="daily-stress_archive-title"' not in html
+    # no stress card on the page at all since Tendances (owner, 2026-10-16: « les tendances sur poids fc pas »)
+    assert "daily-stress" not in html and "Stress" not in html
 
 
 

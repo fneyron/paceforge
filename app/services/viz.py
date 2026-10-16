@@ -654,7 +654,8 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
                unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132,
                sources=None, mean_counts=None, mean_sources=None, notes=None, daytime: bool = False,
                zero_base: bool = False, label_nights: bool = False, reference=None,
-               compact: bool = False, show_source: bool = True, method_labels=None) -> dict:
+               compact: bool = False, show_source: bool = True, method_labels=None,
+               mean_label: str = "moyenne 7 jours", count_word: str = "nuits") -> dict:
     """One nightly signal over the days (Santé's VFC and FC de nuit cards): a
     filled dot per measured night — every one counts toward the athlete's
     usual values (owner, 2026-10-08: « Tous les relevés VFC doivent compter
@@ -667,7 +668,8 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     from 14 nights, dashed edges and a lighter fill while provisional (7 to
     13 nights, H; `band_prov`, `edge_prov_lo/hi`). With `sources`, break both
     curves and bands at watch changes. With `mean_counts`, the readout adds
-    the 7-day mean and its measured-night count, distinct from the nightly value.
+    the 7-day mean and its measured-night count, distinct from the nightly value
+    (`mean_label`, `count_word`: another window's, « moyenne 14 jours … (3 pesées) »).
     Readout: [« 100 ms », "", « nuit du mer. 7 au jeu. 8 · d'habitude 85–110 »]
     (« … (provisoire) » from 7 to 13 nights); the latest measured night is
     selected: its value is the card's. `min_span`: the y axis never narrower
@@ -693,7 +695,7 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     last = max((i for i, v in enumerate(values) if v is not None), default=None)
     for i, d in enumerate(days):
         v, b = values[i], band[i]
-        detail = (f"moyenne 7 jours : {num(mean[i], digits)} {unit} ({mean_counts[i]} nuits)"
+        detail = (f"{mean_label} : {num(mean[i], digits)} {unit} ({mean_counts[i]} {count_word})"
                   if mean[i] is not None and mean_counts is not None else None)
         if v is None:
             context = f"{label(d)} · pas de mesure"

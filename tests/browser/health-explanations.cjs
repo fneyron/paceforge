@@ -39,10 +39,12 @@ const brands = /COROS|Garmin|Apple Santé|Apple Watch|Health Connect/;
         assert.equal(await details.evaluate(el => el.open), false, key + ': details start closed');
         assert.doesNotMatch(await page.locator('#main-content').innerText(), brands,
           key + ': primary readouts do not repeatedly name providers');
-        assert.equal(await page.locator('#vfc details, #fc details, #respiration details, #au-quotidien details').count(), 0,
+        assert.equal(await page.locator('#vfc details, #fc details, #respiration details, #tendances details').count(), 0,
           key + ': no scattered card explanations');
         assert.equal(await page.locator('#qualite-bilan').count(), 0, key + ': old explanation block removed');
-        const insight = (await page.locator('#vfc .pf-measurement-insight').allTextContents()).join(' ');
+        // the cards print no sentence (owner, 2026-10-16: « pas du texte »): the VFC's is the explanation's first line
+        assert.equal(await page.locator('.pf-measurement-insight').count(), 0, key + ': no sentence on the cards');
+        const insight = (await page.locator('section[aria-labelledby="explain-vfc"] > p').first().textContent()).trim();
         assert.match(await page.locator('#vfc .pf-viz-read').innerText(), /\bms\b/);
         assert.match(await page.locator('#vfc .pf-viz-read').innerText(), scenario === 'mixed' ? /SDNN/ : /RMSSD/);
         assert.match(await page.locator('#fc .pf-viz-read').innerText(), /\bbpm\b/);
@@ -52,7 +54,7 @@ const brands = /COROS|Garmin|Apple Santé|Apple Watch|Health Connect/;
           assert.match(await page.locator('#vfc .pf-card-status').innerText(), /Tendance 7 j.*En dessous/);
         } else if (scenario === 'mixed') {
           assert.equal(insight, 'Ce relevé n’est pas comparable à la tendance affichée.',
-            'Different HRV methods need a visible explanation next to the graph');
+            'Different HRV methods keep their explanation in the shared disclosure');
           assert.doesNotMatch(insight, /fatigue|stress|baisse/i,
             'Changing HRV method must not look like a physiological drop');
         } else {
@@ -61,7 +63,7 @@ const brands = /COROS|Garmin|Apple Santé|Apple Watch|Health Connect/;
         }
         if (scenario === 'respiration') {
           assert.equal(await page.locator('#mesures-nocturnes #respiration').count(), 1);
-          assert.equal(await page.locator('#au-quotidien #daily-resp_night-title').count(), 0);
+          assert.equal(await page.locator('#tendances #trend-resp_night-title').count(), 0);
           assert.match(await page.locator('#respiration .pf-viz-read').innerText(), /18[\s\S]*resp\.\/min/);
           assert.equal(await page.locator('#sommeil .pf-tl-seg').count(), 10);
         } else {
@@ -69,7 +71,8 @@ const brands = /COROS|Garmin|Apple Santé|Apple Watch|Health Connect/;
           assert.equal(await page.locator('#sommeil .pf-tl').count(), 0, key + ': COROS totals do not manufacture stage chronology');
         }
         if (scenario === 'day-only') {
-          assert.match(await page.locator('#au-quotidien').innerText(), /Respiration sur 24 h/);
+          assert.doesNotMatch(await page.locator('#main-content').innerText(), /Respiration sur 24 h/,
+            key + ': the phone\u2019s 24-h breathing left the page');
           assert.doesNotMatch(await page.locator('#recuperation').innerText(), /Respiration/);
         }
         for (const selector of ['#sommeil-detail figure:visible', '#recuperation-detail figure', '#vfc figure', '#fc figure']) {
@@ -79,7 +82,7 @@ const brands = /COROS|Garmin|Apple Santé|Apple Watch|Health Connect/;
         await page.locator('#vfc').screenshot({ path: `${output}/${key}-vfc.png` });
         if (scenario === 'respiration') await page.locator('#respiration').screenshot({ path: `${output}/${key}-respiration.png` });
         if (width === 393 && scale === 1 && !dark) await page.screenshot({ path: `${output}/${key}-full.png`, fullPage: true });
-        for (const fig of await page.locator('#vfc figure, #fc figure, #respiration figure, #au-quotidien figure').all()) {
+        for (const fig of await page.locator('#vfc figure, #fc figure, #respiration figure, #tendances figure').all()) {
           const selected = await fig.evaluate(el => {
             const data = JSON.parse(el.querySelector('.pf-viz-data').textContent);
             const index = Math.max(0, data.sel - 2), input = el.querySelector('.pf-viz-range');
@@ -92,7 +95,8 @@ const brands = /COROS|Garmin|Apple Santé|Apple Watch|Health Connect/;
             key + ': the selected historical RMSSD is distinct from a current SDNN');
           assert.ok(readout.includes(selected.date), key + ': selected date remains visible');
           assert.equal(await fig.locator('.pf-viz-range').getAttribute('aria-valuetext'), selected.spoken);
-          assert.equal(await page.locator(`[data-viz-detail-for="${selected.key}"]`).textContent(), selected.detail,
+          // Tendances' night HR has no provenance of its own: the FC de nuit card's is the one explained
+          if (selected.key !== 'trend-hr') assert.equal(await page.locator(`[data-viz-detail-for="${selected.key}"]`).textContent(), selected.detail,
             key + ': central provenance follows selected chart point');
         }
         for (const fig of await page.locator('#sommeil-detail figure:visible, #recuperation-detail figure, #entrainement-semaine figure').all()) {
@@ -112,12 +116,12 @@ const brands = /COROS|Garmin|Apple Santé|Apple Watch|Health Connect/;
         assert.match(await details.innerText(), /RMSSD|moyenne des logarithmes|logarithm/);
         assert.match(await details.innerText(), /n’indique pas la cause|ne permet pas, seule, de diagnostiquer/);
         assert.ok(await page.locator('#explain-vfc').isVisible());
-        if (scenario === 'day-only') assert.match(await details.innerText(), /Apple Santé.*Apple Watch/);
+        if (scenario === 'day-only') assert.doesNotMatch(await details.innerText(), /Respiration sur 24 h/);
         if (width === 393 && scale === 1 && !dark) await details.screenshot({ path: `${output}/${key}-details.png` });
         const layout = await page.evaluate(() => {
           const failures = [];
           if (document.documentElement.scrollWidth > innerWidth + 1) failures.push('horizontal page overflow');
-          for (const el of document.querySelectorAll('.pf-measurement-insight, .pf-viz-read, .pf-viz-legend, #comprendre-indicateurs > summary')) {
+          for (const el of document.querySelectorAll('.pf-viz-read, .pf-trend-delta, .pf-viz-legend, #comprendre-indicateurs > summary')) {
             if (!el.getClientRects().length) continue;
             const box = el.getBoundingClientRect();
             if (box.left < -1 || box.right > innerWidth + 1) failures.push(el.className + ' outside viewport');

@@ -44,7 +44,7 @@ const scenarios = [
           assert.ok(await synthesis.locator('[data-signal="hr"]').isVisible());
           assert.doesNotMatch(await synthesis.locator('.pf-synthesis-reasons').innerText(), /fatigue|chaleur|alcool|maladie/i,
             'The primary synthesis names the measured change without the generic explanatory paragraph');
-          assert.match(await synthesis.locator('.pf-synthesis-details').textContent(), /fatigue|chaleur|alcool|maladie/i,
+          assert.match(await page.locator('#comprendre-indicateurs').textContent(), /fatigue|chaleur|alcool|maladie/i,
             'The explanation remains accessible in the disclosure');
           assert.equal(await synthesis.locator('[data-signal="hrv"]').count(), 0, 'The HRV fixture must remain habitual');
           assert.match(await page.locator('#fc .pf-viz-read').innerText(), /56/);

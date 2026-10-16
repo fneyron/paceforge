@@ -39,9 +39,10 @@ from app.services import sante_score as sc
 from app.services import sante_sleep as sl
 from app.services import sante_today as td
 from app.services import sante_training as st
+from app.services import sante_trends
 from app.services import viz
 from app.services.health import HRV_METHOD, WATCH_SOURCES, fmt_minutes
-from app.services.sante_daily import daily_context
+from app.services.sante_daily import daily_and_trends
 
 logger = logging.getLogger(__name__)
 
@@ -81,10 +82,9 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     # the night awaited is the calendar day's (how soon the page syncs again); the page reads the cycle's day
     night_state = await _night_state(db, user_id, today, sources & set(WATCH_SOURCES))
     until, today = today, cycle_day(nights, today, clock)
-    daily = await daily_context(db, user_id, until, now=now, zone=zone)
+    daily, trends = await daily_and_trends(db, user_id, until, now=now, zone=zone)
     out = {
         "has_data": bool(sources) or bool(sessions) or bool(daily),
-        "daily": daily,
         "has_watch_data": bool(sources),
         "today": today,
         "calendar_day": until,
@@ -98,10 +98,12 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     samples = await _timeline(db, user_id, nights, hero_day) if hero_day else {}
     out.update(await anyio.to_thread.run_sync(partial(
         _compute, nights, sessions, today, until, r, samples, bool(sources), peak, day_alt, sex)))
-    # The same real nightly respiratory card lives with Recovery. A phone's
-    # resp_day aggregate remains in daily context and is never promoted to a night.
+    # The same real nightly respiratory card lives with Recovery; a phone's resp_day aggregate is never promoted to
+    # a night. The other daily cards (FC sur 24 h, stress, respiration sur 24 h) left the page (owner, 2026-10-16:
+    # « les tendances sur poids fc pas »): Tendances, 90 days of the weight, the body fat, the night HR, the steps.
     out["respiration"] = next((c for c in daily if c["key"] == "resp_night"), None)
-    out["daily"] = [c for c in daily if c["key"] != "resp_night"]
+    out["trends"] = [t for t in (trends.get("weight"), trends.get("body_fat"), out.pop("hr_trend", None),
+                                 trends.get("steps")) if t]
     out["explanations"] = sante_explain.build(out)
     return out
 
@@ -129,6 +131,7 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
             out["sleep"]["hero"]["label"] = viz.night_label(out["sleep"]["hero"]["day"]).capitalize()
         out["vfc"] = _night_card(nights, "hrv", today, day)
         out["fc"] = _night_card(nights, "hr", today, day)
+        out["hr_trend"] = sante_trends.night_trend(nights, today)
         # one load for every view (sante_load): today's bounds, the nights' resting HR and the sessions' peak
         rest = nt.rest_hr(nights, until)
         load = st.loads(sessions, until, rest, peak, sex)

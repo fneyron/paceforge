@@ -1,0 +1,20 @@
+{% import "partials/_viz.html" as viz %}
+<section id="tendances" class="pf-health-panel pf-health-context" aria-labelledby="h-tendances">
+    <header class="pf-health-panel-heading"><h2 id="h-tendances" class="pf-health-panel-title">Tendances<small>3 mois</small></h2></header>
+    <div class="pf-panel-body">
+    <div class="pf-daily-grid">
+        {% for c in page.trends %}
+        <article id="tendance-{{ c.key }}" class="pf-card" aria-labelledby="trend-{{ c.key }}-title">
+            <div class="pf-measurement-head"><h3 class="pf-card-h" id="trend-{{ c.key }}-title">{{ c.title }}</h3>{% if c.delta %}<span class="pf-trend-delta">{{ c.delta }}</span>{% endif %}</div>
+            {% if c.stale %}<p class="pf-measurement-meta">Donnée ancienne</p>{% endif %}
+            {% if c.chart %}
+            {{ viz.viz_night_card(c.chart, c.title, daytime=c.key != 'hr_night', legend=c.chart.legend, central_details=True) }}
+            {% else %}
+            <p class="pf-daily-value">{{ c.value }}</p>
+            <p class="pf-measurement-meta">{{ c.latest or 'Valeur du profil' }}</p>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+    </div>
+</section>
