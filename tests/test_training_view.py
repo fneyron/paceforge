@@ -139,14 +139,14 @@ async def test_a_week_reads_the_same_in_a1_and_in_its_list_heading(client: Async
     heading = re.search(r'<section id="week-' + last_monday.isoformat() + r'">.*?<p class="pf-label[^>]*>(.*?)</p>',
                         html, re.S).group(1)
     heading = re.sub(r"[ \n]+", " ", re.sub(r"<[^>]+>", "", heading)).strip()
-    assert heading == "60 km · +2\u202f401\u202fm · 5h00"
+    assert heading == "5h00 · 60 km · +2\u202f401\u202fm"
 
     def week(key):
         d = json.loads(re.search(r'data-viz-key="semaines-' + key + r'".*?<script type="application/json" '
                                  r'class="pf-viz-data">(.*?)</script>', html, re.S).group(1))
         return d["r"][d["d"].index(last_monday.isoformat())][1].replace(" ", " ")
     assert (week("duree"), week("distance"), week("dplus")) == ("5h00", "60 km", "+2 401 m")
-    assert heading.replace(" ", " ") == f"{week('distance')} · {week('dplus')} · {week('duree')}"
+    assert heading.replace(" ", " ") == f"{week('duree')} · {week('distance')} · {week('dplus')}"
 
 
 async def test_the_weeks_run_monday_to_sunday_on_the_athletes_clock(db_session: AsyncSession, test_user: User):
@@ -308,11 +308,13 @@ async def test_activities_page_semaines_then_fc_en_footing_on_page_one(client: A
     for gone in ('id="fatigue"', "Fond et fatigue", "Affûtage", "Trail des Crêtes", "#prep", "Récupération",
                  "volume bas", "c'est voulu", "semaine type"):
         assert gone not in html, gone
-    assert html.count("7 j :") == 1 and "28 j :" in html  # the header stays, once
-    semaines = html.split('id="semaines"')[1].split("</details>")[0]
-    # The sport filter remains visible above the folded trends; measures still work without JS.
+    assert "7 j :" not in html and "28 j :" not in html  # the graphical summary owns the overview
+    semaines = html.split('id="semaines"')[1].split("</section>")[0]
+    # The graph stays visible, with its sport filter and measure choices; no opening action is needed.
     assert html.index('aria-label="Filtrer les activités par sport"') < html.index('id="semaines"')
-    assert '<summary id="semaines-h">Tendances sur 12 semaines</summary>' in semaines
+    assert '<section id="semaines"' in html and '<details id="semaines"' not in html
+    assert '<h2 id="semaines-h" class="pf-h2">12 semaines</h2>' in semaines
+    assert html.index('id="activity-list"') < html.index('id="fc-facile"')
     toggle = semaines.split('data-viz-key="semaines-duree"')[0]
     assert re.search(r'<form class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges data-viz-param="m" role="group" '
                      r'aria-label="Mesure" method="get" action="/activities#semaines">', toggle)

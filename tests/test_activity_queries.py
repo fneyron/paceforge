@@ -7,9 +7,12 @@ import pytest
 from sqlalchemy import event
 
 from app.models.activity import Activity
+from app.models.route import Route
 from app.models.user import User
+from app.dependencies import get_current_user
 from app.routers import dashboard
 from app.services import race_simulator
+from app.services import sante_training as st
 
 
 @pytest.fixture
@@ -152,3 +155,80 @@ async def test_gradient_profile_uses_owner_splits_once_without_unrelated_payload
     assert profile.sport_types_used == ["Run"]
     _assert_light_summary_query(queries[0], splits=True)
     assert len(queries) == 1
+
+
+async def test_detail_keeps_metrics_splits_and_owned_comparisons_without_bulk_payloads(
+    client, db_session, test_user, queries,
+):
+    client._transport.app.dependency_overrides[get_current_user] = lambda: test_user
+    other = User(firstname="Other")
+    db_session.add(other)
+    await db_session.flush()
+    when = datetime.now(UTC) - timedelta(days=1)
+    activity = _activity(test_user.id, when, name="Detail with splits", average_heartrate=143,
+                         splits_metric=[{"distance": 1000, "moving_time": 300, "average_heartrate": 142}] * 2,
+                         computed_metrics={"cardiac_drift": {"drift_pct": 3.5,
+                                                             "first_half_avg": 140, "second_half_avg": 145}})
+    private = _activity(other.id, when, name="Private activity")
+    db_session.add_all([activity, private])
+    routes = []
+    for distance in (8, 9, 10, 10.2, 10.4, 11, 14):
+        route = Route(user_id=test_user.id, name=f"Owned route {distance}", total_distance_km=distance,
+                      sport_type="trail", course_json={"unused": "x" * 20000},
+                      weather_json={"unused": "x" * 20000})
+        routes.append(route)
+        db_session.add(route)
+    db_session.add_all([
+        Route(user_id=other.id, name="Private route", total_distance_km=10, sport_type="trail"),
+        Route(user_id=test_user.id, name="Bike route", total_distance_km=10, sport_type="bike"),
+    ])
+    await db_session.flush()
+    queries.clear()
+    response = await client.get(f"/activity/{activity.id}")
+    assert response.status_code == 200
+    html = response.text
+    assert "Detail with splits" in html and "143" in html and "142" in html
+    assert "Dérive cardiaque" in html and "3.5%" in html
+    expected = sorted(routes, key=lambda r: abs(r.total_distance_km - 10))[:5]
+    links = [f'/simulator/routes/{r.id}?compare={activity.id}' for r in expected]
+    assert all(link in html for link in links)
+    assert [html.index(link) for link in links] == sorted(html.index(link) for link in links)
+    assert html.count(f'?compare={activity.id}"') == 5
+    assert "Private route" not in html and "Bike route" not in html
+    for query in queries:
+        projection = query.partition("FROM")[0]
+        assert not any(f"activities.{field}" in projection for field in ("raw_data", "streams_data", "best_efforts"))
+        assert not any(f"routes.{field}" in projection for field in
+                       ("course_json", "weather_json", "live_json", "result_json"))
+        assert "FROM analyses" not in query
+    assert (await client.get(f"/activity/{private.id}")).status_code == 404
+
+
+async def test_activity_page_reads_the_day_and_sessions_once_but_refreshes_changes_next_request(
+    client, db_session, test_user, monkeypatch, queries,
+):
+    client._transport.app.dependency_overrides[get_current_user] = lambda: test_user
+    when = datetime.now(UTC) - timedelta(days=1)
+    activity = _activity(test_user.id, when, name="Fresh activity", average_heartrate=140)
+    db_session.add(activity)
+    await db_session.flush()
+    today = AsyncMock(wraps=st.athlete_today)
+    sessions = AsyncMock(wraps=st.load_sessions)
+    monkeypatch.setattr(st, "athlete_today", today)
+    monkeypatch.setattr(st, "load_sessions", sessions)
+
+    for name, distance in (("Fresh activity", 10000), ("Updated activity", 12000)):
+        activity.name, activity.distance = name, distance
+        await db_session.flush()
+        queries.clear()
+        response = await client.get("/activities")
+        assert response.status_code == 200 and name in response.text
+        assert today.await_count == 1 and sessions.await_count == 1
+        # The revision-aware cache key is checked once, even when both the
+        # spikes and the easy-run chart consume the sessions.
+        assert sum("SELECT count(activities.id)" in q and "max(activities.created_at)" in q for q in queries) == 1
+        assert sum("SELECT max(health_metrics.date)" in q for q in queries) == 1
+        assert sum("SELECT max(mobile_daily.date)" in q for q in queries) == 1
+        assert (st._CACHE[test_user.id][1][0].km) == distance / 1000
+        today.reset_mock()
+        sessions.reset_mock()

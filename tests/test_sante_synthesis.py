@@ -34,8 +34,8 @@ def test_high_nightly_hr_cannot_be_hidden_by_usual_hrv():
 def test_index_and_history_do_not_claim_a_recovery_percentage():
     day = _day(_rich())
     dial = sc.dial(day["score"], day["state"])
-    assert (dial["label"], dial["unit"]) == ("Signaux nocturnes", "/100")
-    assert "%" not in dial["aria"] and "récupération" not in dial["aria"]
+    assert (dial["label"], dial["unit"]) == ("Récupération", "/100")
+    assert "%" not in dial["aria"] and "indice nocturne" in dial["aria"]
     chart = sc.history_card([(D - timedelta(days=1), day["state"], day["score"]),
                              (D, day["state"], day["score"])], D)
     assert "/100" in chart["data"] and "%" not in chart["data"]
@@ -74,16 +74,14 @@ def test_even_a_first_day_ultra_is_context_not_a_nightly_signal_cap():
     assert not any(r["key"] == "effort" for r in after["reasons"] + after["more_reasons"])
 
 
-def test_post_course_calendar_date_does_not_change_when_the_result_is_confirmed():
+def test_post_effort_calendar_date_uses_actual_finish_not_the_sleep_cycle_anchor():
     race = _session(D - timedelta(days=1), 700, elapsed=700, hour=21, sid=914)
     effort = st.effort_of(race)
     assert effort.end.date() == D
     anchored = replace(effort, day=D - timedelta(days=1))  # sleep after a morning finish can move the cycle
-    before = context.recent_effort([anchored], [race], D)
-    confirmed = replace(race, race_confirmed=True, race_name="Ultra terminé ce matin")
-    after = context.recent_effort([anchored], [confirmed], D)
-    assert before[0]["date"] == after[0]["date"] == D.isoformat()
-    assert before[0]["label"].endswith("J+0") and after[0]["label"].endswith("J+0")
+    after = context.recent_effort([anchored], [race], D)
+    assert after[0]["date"] == D.isoformat()
+    assert after[0]["label"].endswith("J+0") and after[0]["kind"] == "effort"
 
 
 def test_a_recorded_short_race_has_context_but_an_ordinary_run_does_not():
@@ -91,10 +89,16 @@ def test_a_recorded_short_race_has_context_but_an_ordinary_run_does_not():
     easy = _session(D - timedelta(days=1), 50)
     assert context.recent_effort([], [race, easy], D)[0]["activity_id"] == 41
     assert not context.recent_effort([], [easy], D)
-    confirmed = replace(easy, race_confirmed=True, race_name="Course associée au résultat")
-    linked = context.recent_effort([], [confirmed], D)
-    assert linked[0]["label"] == "Après Course associée au résultat · J+1"
-    assert linked[0]["activity_id"] == easy.id
+    assert context.recent_effort([], [replace(easy, name="TransJeju")], D) == []
+
+
+def test_a_long_ordinary_run_is_an_effort_not_a_recorded_race():
+    long_run = _session(D - timedelta(days=1), 200, name="Sortie longue")
+    assert not long_run.is_race
+    assert not context.recent_effort(st.efforts([long_run]), [long_run], D)
+    day_out = replace(long_run, minutes=650, elapsed=650)
+    context_after = context.recent_effort(st.efforts([day_out]), [day_out], D)
+    assert context_after[0]["kind"] == "effort" and context_after[0]["key"] == "after_effort"
 
 
 def test_pending_or_missing_night_remains_explicitly_dated():

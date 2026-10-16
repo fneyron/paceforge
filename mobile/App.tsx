@@ -12,7 +12,7 @@ import { KEYS, KeychainLocked, secure } from './src/secure';
 import { backgroundBlock, backgroundPending, blockBackgroundSync, cancelBackgroundSync, disableBackgroundSync, enableBackgroundSync,
   onBackgroundReport, resetBackgroundState, skipSent, syncExclusively } from './src/background';
 import type { Block } from './src/background-engine';
-import { appShellScript, destinations, isBridgeUrl, prepareNavigationScript, presentationScript, refreshable, sameScreen, screenUrl, Tab, tabForUrl, tabs } from './src/navigation';
+import { appShellScript, destinations, isBridgeUrl, messagePageUrl, prepareNavigationScript, presentationScript, refreshable, sameScreen, screenUrl, Tab, tabForUrl, tabNavigationScript, tabs } from './src/navigation';
 import { Connections, Provider } from './src/connections';
 import { acknowledge, inlineConnectionsScript, inlineSessionScript, Pending, retryBridgeScript, takeReply } from './src/bridge';
 import { DeviceDetail, DevicesScreen } from './src/DevicesScreen';
@@ -26,15 +26,19 @@ function Companion() {
   const systemDark = useColorScheme() === 'dark';
   const { fontScale } = useWindowDimensions();
   const [leaving, setLeaving] = useState(false);
-  const nextNavigation = useRef<{ nonce: string; from: string; go: () => void; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const nextNavigation = useRef<{ nonce: string; from: string; go: () => void; timer: ReturnType<typeof setTimeout>; cancelledReading?: { from: string; target: string } } | null>(null);
   const retryNavigation = useRef<(() => void) | null>(null);
   const tabLocations = useRef<Record<string, string>>({});
+  const softNavigation = useRef<{ nonce: string; target: string; from: string } | null>(null);
+  const suppressReadingNavigation = useRef(false);
+  const cancelledReadingContext = useRef<{ from: string; target: string } | null>(null);
   const [tab, setTab] = useState<Tab>('health');
   const [url, setUrl] = useState(ORIGIN + '/sante');
   const [pair, setPair] = useState<Pair | null>(null);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pageRefreshing, setPageRefreshing] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [userRefreshing, setUserRefreshing] = useState(false);
   const [refreshIssue, setRefreshIssue] = useState('');
   const [healthIssue, setHealthIssue] = useState('');
@@ -81,17 +85,20 @@ function Companion() {
   const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
   const webLocation = useRef(ORIGIN + '/sante');
   const documentUrl = useRef(ORIGIN + '/sante');
+  const frameUrl = useRef(ORIGIN + '/sante');
+  const frameLoading = useRef(true);
   const navigationId = useRef(0);
   const recoveringBridge = useRef(false);
   const syncReturn = useRef<{ tab: Tab; url: string; showWeb: boolean } | null>(null);
   // The site's effective theme, once it reported it, wins over the system scheme.
   const webAppearance = useRef(false);
   const canGoBack = useRef(false);
-  // Real documents loaded since the last bridge document (pairing, session or connections
-  // check): the back key walks only these. A bridge document is never a place to go back
-  // to: its load is refused, or it reloads the screen on top of it and the history never
-  // ends, so the app could not be left any more.
+  // History entries since the last bridge document (pairing, session or connections
+  // check), counted from the navigation events: the back key walks only these. A bridge
+  // document is never a place to go back to: its load is refused, or it reloads the
+  // screen on top of it and the history never ends, so the app could not be left any more.
   const documents = useRef(0);
+  const lastDocument = useRef('');
 
   // A locked phone (background launch) cannot read the keychain: this is never « not
   // paired ». The read is retried on the first return to the foreground.
@@ -148,7 +155,7 @@ function Companion() {
     const change = backgroundRefresh.current;
     if (!change) return;
     if (!pair || block || change.userId !== pair.user_id) { backgroundRefresh.current = null; return; }
-    if (AppState.currentState !== 'active' || lock.current || cloudRefresh.current || !documentReady.current ||
+    if (AppState.currentState !== 'active' || lock.current || softNavigation.current || cloudRefresh.current || !documentReady.current ||
       !webVisible || offline.view !== null || !refreshable(documentUrl.current)) return;
     backgroundRefresh.current = null;
     // Reuse the page's deferred DOM replacement: no provider sync, navigation,
@@ -190,15 +197,46 @@ function Companion() {
   });
 
   function finish() { lock.current = false; pending.current = null; setBusy(false); if (watchdog.current) clearTimeout(watchdog.current); }
+  function cancelSoftNavigation() {
+    if (!softNavigation.current) {
+      if (documentReady.current && refreshable(documentUrl.current)) {
+        suppressReadingNavigation.current = true;
+        web.current?.injectJavaScript('window.paceforgeTabs?.cancel?.(); true;');
+      }
+      return false;
+    }
+    // Invalidate the reply before the web cancellation: a queued old ready
+    // cannot select a reading tab over Settings or another native screen.
+    cancelledReadingContext.current = { from: softNavigation.current.from, target: softNavigation.current.target };
+    softNavigation.current = null;
+    // A web history commit may already precede its native callback. Until a
+    // deliberate return, use the existing routed account bridge, never bind an
+    // inline identity request to the previous logical URL.
+    documentReady.current = false; suppressReadingNavigation.current = true;
+    web.current?.injectJavaScript('window.paceforgeTabs?.cancel?.(); true;');
+    return true;
+  }
   function loadScreen(destination: string) {
-    if (documentReady.current && sameScreen(destination, documentUrl.current)) return;
+    suppressReadingNavigation.current = !refreshable(destination);
+    if (!softNavigation.current && documentReady.current && sameScreen(destination, documentUrl.current)) return;
     // WKWebView's actual document may differ from its last React source prop.
     // A fresh URL guarantees a real navigation, even when returning to that prop.
     const target = new URL(screenUrl(destination));
     target.searchParams.set('app_nav', `${Date.now()}-${++navigationId.current}`);
+    if (documentReady.current && refreshable(documentUrl.current) && refreshable(target.href)) {
+      const nonce = random();
+      softNavigation.current = { nonce, target: target.href, from: documentUrl.current };
+      setLoadError('');
+      web.current?.injectJavaScript(tabNavigationScript(target.href, nonce));
+      return;
+    }
+    loadFullScreen(target.href);
+  }
+  function loadFullScreen(target: string) {
+    cancelledReadingContext.current = null; softNavigation.current = null;
+    web.current?.injectJavaScript('window.paceforgeTabs?.clear(); true;');
     documentReady.current = false;
-    setLoadError('');
-    setUrl(target.href);
+    setLoadError(''); setPageLoading(true); setUrl(target);
   }
   function refreshPage(sources = false) {
     backgroundRefresh.current = null;
@@ -253,6 +291,8 @@ function Companion() {
   }
   function cancelAccountWork(release = false) {
     accountEpoch.current++;
+    cancelledReadingContext.current = null; softNavigation.current = null;
+    web.current?.injectJavaScript('window.paceforgeTabs?.clear(); true;');
     backgroundRefresh.current = null;
     pending.current = null;
     syncReturn.current = null;
@@ -358,17 +398,80 @@ function Companion() {
     }
   }
   async function message(event: WebViewMessageEvent) {
+    const transportUrl = event.nativeEvent.url;
+    // The transport frame stays bound to its last full load. Logical reading
+    // URLs are accepted only with explicit page metadata and existing nonces.
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      const task = softNavigation.current, save = nextNavigation.current;
+      const cancelledSavePage = data?.type === 'navigation-ready' && save?.cancelledReading && data.nonce === save.nonce &&
+        [save.cancelledReading.from, save.cancelledReading.target].includes(data.page_url) ? data.page_url : null;
+      let logical = documentUrl.current;
+      if (cancelledSavePage) logical = cancelledSavePage;
+      else if (data?.type === 'tab-navigation' && data.status === 'ready' && task && data.nonce === task.nonce) logical = task.target;
+      else if (data?.type === 'tab-location' && data.page_url === data.url && refreshable(data.url)) logical = data.url;
+      const mapped = messagePageUrl(event.nativeEvent.url, logical, frameUrl.current, data);
+      if (mapped !== event.nativeEvent.url) event = { ...event, nativeEvent: { ...event.nativeEvent, url: mapped } };
+    } catch { /* Unrecognized payloads keep their original strict URL guards. */ }
     if (offline.receive(event.nativeEvent.data, event.nativeEvent.url)) return;
     if (trusted(event.nativeEvent.url)) {
       try {
         const data = JSON.parse(event.nativeEvent.data);
         const navigation = nextNavigation.current;
         if (data?.type === 'navigation-ready') {
-          if (!navigation || data.nonce !== navigation.nonce || event.nativeEvent.url !== navigation.from) return;
+          if (!navigation || data.nonce !== navigation.nonce) return;
+          // A cancelled reading transition may have committed its history before
+          // its native callback. Only its two captured URLs and this save nonce
+          // can acknowledge the actual pane; ordinary plan guards stay exact.
+          const cancelled = navigation.cancelledReading;
+          const cancelledPage = cancelled && [cancelled.from, cancelled.target].includes(data.page_url) &&
+            refreshable(transportUrl) && (sameScreen(transportUrl, frameUrl.current) || transportUrl === data.page_url)
+            ? data.page_url as string : null;
+          // Ordinary links can also start a soft reading navigation without a
+          // native task. This fresh save nonce binds its current logical page
+          // to the original reading frame before an inline account check.
+          const readingPage = !cancelled && refreshable(navigation.from) && typeof data.page_url === 'string' &&
+            refreshable(data.page_url) && refreshable(transportUrl) &&
+            (sameScreen(transportUrl, frameUrl.current) || transportUrl === data.page_url) ? data.page_url as string : null;
+          if (cancelled ? !cancelledPage : !readingPage && event.nativeEvent.url !== navigation.from) return;
+          const actualPage = cancelledPage || readingPage;
+          if (actualPage) {
+            documentUrl.current = actualPage; webLocation.current = actualPage; cancelledReadingContext.current = null;
+            if (data.tabs_ready === false) documentReady.current = false;
+          }
           clearTimeout(navigation.timer); nextNavigation.current = null; setLeaving(false);
           if (data.ok === true) navigation.go();
-          else { retryNavigation.current = navigation.go; setError('Ton plan n’a pas été enregistré. Réessaie avant de quitter cet écran.'); }
+          else {
+            if (cancelledPage) {
+              documentReady.current = true; suppressReadingNavigation.current = false;
+              setTab(tabForUrl(cancelledPage) || 'health');
+            }
+            retryNavigation.current = navigation.go; setError(new URL(navigation.from).pathname.startsWith('/simulator') ? 'Ton plan n’a pas été enregistré. Réessaie avant de quitter cet écran.' : 'Les modifications n’ont pas pu être enregistrées. Réessaie avant de quitter cet écran.'); }
           return;
+        }
+        if (data?.type === 'tab-location' && data.url === event.nativeEvent.url &&
+          refreshable(data.url) && !softNavigation.current && !pending.current) {
+          documentUrl.current = data.url; webLocation.current = data.url;
+          const current = tabForUrl(data.url);
+          if (current && current !== 'devices') tabLocations.current[current] = data.url;
+          return;
+        }
+        if (data?.type === 'tab-navigation') {
+          const task = softNavigation.current;
+          if (!task || data.nonce !== task.nonce || data.url !== task.target) return;
+          if (data.status === 'fallback' && sameScreen(event.nativeEvent.url, task.from)) {
+            loadFullScreen(task.target); return;
+          }
+          if (data.status === 'cancelled' && sameScreen(event.nativeEvent.url, task.from)) {
+            softNavigation.current = null; setTab(tabForUrl(task.from) || 'health');
+            setError('La sauvegarde du ressenti prend trop de temps. Réessaie dans un instant.'); return;
+          }
+          if (data.status !== 'ready' || !sameScreen(event.nativeEvent.url, task.target)) return;
+          softNavigation.current = null; documentReady.current = true;
+          documentUrl.current = event.nativeEvent.url; webLocation.current = event.nativeEvent.url;
+          const next = tabForUrl(event.nativeEvent.url);
+          if (next && next !== 'devices') { tabLocations.current[next] = event.nativeEvent.url; setTab(next); }
+          setLoadError(''); onForeground(); return;
         }
         if (data?.type === 'appearance' && typeof data.dark === 'boolean') { webAppearance.current = true; setDark(data.dark); return; }
       } catch { /* Other messages are validated by the account bridge below. */ }
@@ -471,6 +574,7 @@ function Companion() {
   }
   function openProvider(provider: Provider) {
     if (lock.current) return;
+    cancelSoftNavigation();
     if (provider === 'garmin') { openSettings('/connections/garmin'); return; }
     externalReturn.current = true;
     setShowWeb(false); setTab('devices'); setDetail(null); setError('');
@@ -494,7 +598,7 @@ function Companion() {
   }
   const onForeground = useEffectEvent(() => {
     // Never during a background launch: the screen is not shown, nothing to verify.
-    if (AppState.currentState !== 'active' || lock.current || !ready || offline.view !== null) return;
+    if (AppState.currentState !== 'active' || lock.current || softNavigation.current || !ready || offline.view !== null) return;
     flushBackgroundRefresh();
     if (externalReturn.current) {
       externalReturn.current = false; setTab('devices'); setShowWeb(false); setDetail(null); refreshConnections();
@@ -547,37 +651,42 @@ function Companion() {
   }
   function afterSave(go: () => void) {
     if (nextNavigation.current) return;
+    const cancelledReading = softNavigation.current || cancelledReadingContext.current;
+    const cancelledReadingNavigation = cancelSoftNavigation() || cancelledReading !== null;
     retryNavigation.current = null; setError('');
-    if (!webVisible || !documentReady.current || isBridgeUrl(documentUrl.current)) { go(); return; }
+    if (!webVisible || (!documentReady.current && !cancelledReadingNavigation) || isBridgeUrl(documentUrl.current)) { go(); return; }
     const nonce = random();
     const timer = setTimeout(() => {
       nextNavigation.current = null; setLeaving(false);
       retryNavigation.current = go;
       setError('La sauvegarde prend trop de temps. Vérifie ta connexion, puis réessaie.');
     }, 20000);
-    nextNavigation.current = { nonce, from: documentUrl.current, go, timer }; setLeaving(true);
+    nextNavigation.current = { nonce, from: documentUrl.current, go, timer,
+      ...(cancelledReading ? { cancelledReading: { from: cancelledReading.from, target: cancelledReading.target } } : {}) }; setLeaving(true);
     web.current?.injectJavaScript(prepareNavigationScript(nonce));
   }
   function openHealth() {
     if (lock.current) return;
     afterSave(() => { setTab('devices'); setShowWeb(false); setDetail('health'); setError(''); setStatus(''); });
   }
-  function openSettings(path = '/settings') { setTab('devices'); setUrl(ORIGIN + path); setShowWeb(true); }
+  function openSettings(path = '/settings') { cancelSoftNavigation(); setTab('devices'); loadFullScreen(ORIGIN + path); setShowWeb(true); }
   function openSyncDetails() {
     if (healthIssue && !refreshIssue && pair && !needsReconnect) {
+      cancelSoftNavigation();
       // The phone receipt is local: reading it needs neither a connection check
       // nor another bridge navigation, especially after a network failure.
       setTab('devices'); setShowWeb(false); setDetail('health'); setStatus(''); setError('');
     } else openTab('devices');
   }
   function pageFailed(message: string) {
-    pageLoadFailed.current = true;
+    pageLoadFailed.current = true; setPageLoading(false);
     documentReady.current = false;
     if (pending.current) fail(new Error(message));
     else setLoadError(message);
   }
   const webVisible = (tab !== 'devices' || showWeb) && offline.view === null;
   const concealBridge = bridgeDocument && pending.current?.kind !== 'pair';
+  const concealLoading = pageLoading && pending.current === null;
   const checkingConnectionsInline = pending.current?.kind === 'connections' && !!pending.current.pageUrl;
   const navigationLocked = leaving || offline.busy || (busy && !checkingConnectionsInline && (!inlineSync.current || pending.current !== null));
   const visibleIssue = retryNavigation.current ? error : [healthIssue, refreshIssue].filter(Boolean).join('\n') || error;
@@ -614,10 +723,10 @@ function Companion() {
     {webVisible && loadError ? <View style={styles.unavailable}>
       <Text accessibilityRole="header" style={[styles.brand, night && styles.darkInk]}>Écran indisponible</Text>
       <Text style={[styles.syncText, night && styles.darkMuted]}>{loadError}</Text>
-      <Button text="Plans hors connexion" secondary onPress={() => { setTab('courses'); offline.setView('list'); }} />
+      {tab === 'courses' && <Button text="Plans hors connexion" secondary onPress={() => offline.setView('list')} />}
       <Button text="Réessayer" onPress={() => { setLoadError(''); recoveringProcess.current = true; web.current?.reload(); }} />
-    </View> : webVisible && concealBridge ? <View style={styles.returning} accessibilityLabel="Chargement de PaceForge"><ActivityIndicator color="#0b5f6e" /></View> : null}
-    <View style={[styles.web, (!webVisible || concealBridge || !!loadError) && styles.hidden]} pointerEvents={webVisible && !concealBridge && !loadError ? 'auto' : 'none'} accessibilityElementsHidden={!webVisible || concealBridge || !!loadError} importantForAccessibility={webVisible && !concealBridge && !loadError ? 'auto' : 'no-hide-descendants'}>
+    </View> : webVisible && (concealBridge || concealLoading) ? <View style={styles.returning} accessibilityLabel="Chargement de PaceForge"><ActivityIndicator color="#0b5f6e" /></View> : null}
+    <View style={[styles.web, (!webVisible || concealBridge || concealLoading || !!loadError) && styles.hidden]} pointerEvents={webVisible && !concealBridge && !concealLoading && !loadError ? 'auto' : 'none'} accessibilityElementsHidden={!webVisible || concealBridge || concealLoading || !!loadError} importantForAccessibility={webVisible && !concealBridge && !concealLoading && !loadError ? 'auto' : 'no-hide-descendants'}>
       {showWeb && <Button text="Retour aux connexions" disabled={busy && !pending.current} onPress={() => { if (pending.current) { web.current?.stopLoading(); restoreSync(); finish(); setShowWeb(false); setTab('devices'); setDetail(null); setStatus(''); } else openTab('devices'); }} secondary />}
       {webStarted && <WebView ref={web} source={{ uri: url }} style={styles.web} sharedCookiesEnabled thirdPartyCookiesEnabled={false}
         pullToRefreshEnabled={Platform.OS === 'ios' && webVisible && !concealBridge && refreshable(documentUrl.current) && !busy && !pageRefreshing}
@@ -626,22 +735,23 @@ function Companion() {
         originWhitelist={['https://*', 'paceforge://*']} mixedContentMode="never" allowFileAccess={false} setSupportMultipleWindows
         onMessage={message} onError={() => pageFailed('Cet écran nécessite une connexion. Tes données déjà enregistrées restent conservées. Réessaie lorsque le réseau revient.')}
         onLoadStart={() => {
-          documentReady.current = false; pageLoadFailed.current = false; setLoadError('');
+          frameLoading.current = true; cancelledReadingContext.current = null; softNavigation.current = null; setPageLoading(true); documentReady.current = false; pageLoadFailed.current = false; setLoadError('');
           if (nextNavigation.current) { clearTimeout(nextNavigation.current.timer); nextNavigation.current = null; setLeaving(false); }
           if (retryNavigation.current) { retryNavigation.current = null; setError(''); }
         }}
         onLoadEnd={event => {
+          if (suppressReadingNavigation.current && refreshable(event.nativeEvent.url)) return;
+          setPageLoading(false);
+          if (frameLoading.current) { frameUrl.current = event.nativeEvent.url; frameLoading.current = false; }
           if (pageLoadFailed.current) return;
           if (!isBridgeUrl(event.nativeEvent.url)) offline.loaded(event.nativeEvent.url);
           if (isBridgeUrl(event.nativeEvent.url)) {
-            documents.current = 0;
             documentUrl.current = event.nativeEvent.url; documentReady.current = false; setBridgeDocument(true);
             if (pending.current) web.current?.injectJavaScript(retryBridgeScript);
             else recoverBridge();
             return;
           }
           documentReady.current = true;
-          documents.current++;
           if (refreshable(event.nativeEvent.url)) {
             documentUrl.current = event.nativeEvent.url; setBridgeDocument(false); recoveringBridge.current = false;
             documentReady.current = true;
@@ -657,6 +767,9 @@ function Companion() {
         onHttpError={event => { if ([url, documentUrl.current].includes(event.nativeEvent.url)) pageFailed(`PaceForge ne répond pas pour le moment (${event.nativeEvent.statusCode}). Réessaie dans quelques instants.`); }}
         onShouldStartLoadWithRequest={request => {
           if (trusted(request.url)) {
+            // A real top-level request can intentionally leave Settings. A
+            // delayed pushState callback cannot clear this cancellation guard.
+            if (request.isTopFrame !== false && refreshable(request.url)) suppressReadingNavigation.current = false;
             if (isBridgeUrl(request.url) && (!pending.current || (pending.current.kind !== 'pair' && pending.current.pageUrl))) return false;
             if (request.navigationType === 'reload' && request.isTopFrame !== false && refreshable(request.url)) {
               if (recoveringProcess.current) recoveringProcess.current = false;
@@ -682,7 +795,7 @@ function Companion() {
         }}
         onNavigationStateChange={nav => {
           canGoBack.current = nav.canGoBack;
-          if (!trusted(nav.url)) return;
+          if (!trusted(nav.url) || (suppressReadingNavigation.current && refreshable(nav.url))) return;
           documentUrl.current = nav.url;
           if (nav.loading) {
             documentReady.current = false; cloudRefresh.current = false; setPageRefreshing(false);
@@ -698,7 +811,7 @@ function Companion() {
           // Bridge completion can arrive before the final navigation event.
           // Those hidden pages must never turn into a visible device detail.
           if (isBridgeUrl(nav.url)) {
-            documents.current = 0;
+            documents.current = 0; lastDocument.current = nav.url;
             documentReady.current = false; setBridgeDocument(true);
             if (pending.current) guard();
             if (pending.current?.kind === 'check') setShowWeb(false);
@@ -706,6 +819,9 @@ function Companion() {
             return;
           }
           if (!nav.loading) { setBridgeDocument(false); recoveringBridge.current = false; }
+          // Every history entry is reported here: full loads, the reading tabs' pushState
+          // navigations and hash changes, and the entries gone back to (not a reload).
+          if (!nav.loading && nav.url !== lastDocument.current) { documents.current++; lastDocument.current = nav.url; }
           if (!nav.loading && !pending.current && (!lock.current || inlineSync.current) && webVisible) {
             webLocation.current = nav.url;
             const next = tabForUrl(nav.url);

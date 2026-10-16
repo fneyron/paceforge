@@ -2,6 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from time import perf_counter
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -9,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
+from starlette.datastructures import MutableHeaders
 
 from app.build import BUILD_ID
 from app.config import settings
@@ -22,6 +24,37 @@ logger = logging.getLogger(__name__)
 # httpx logs every request URL at INFO, query string included (Strava's
 # deauthorize and webhook calls carry a token or the app secret there)
 logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+class PageTimingMiddleware:
+    """Expose page preparation separately from network/rendering in Web Inspector.
+
+    Only a duration is sent: no measurement, account, query or provider data.
+    Use ASGI directly so timing does not add a task or buffer the response.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get("path", "")
+        if scope["type"] != "http" or not (
+            path in {"/sante", "/activities", "/simulator"}
+            or path.startswith(("/activity/", "/simulator/routes/"))
+        ):
+            return await self.app(scope, receive, send)
+        started = perf_counter()
+
+        async def timed_send(message):
+            if message["type"] == "http.response.start":
+                duration = (perf_counter() - started) * 1000
+                MutableHeaders(scope=message).append("Server-Timing", f"app;dur={duration:.1f}")
+                if duration >= 1000:
+                    route = getattr(scope.get("route"), "path", "page")
+                    logger.warning("Slow page %s: %.0f ms before response", route, duration)
+            await send(message)
+
+        await self.app(scope, receive, timed_send)
 
 
 class VersionedStaticFiles(StaticFiles):
@@ -128,6 +161,7 @@ def create_app() -> FastAPI:
 
     # Middleware
     app.add_middleware(GZipMiddleware, minimum_size=1024)
+    app.add_middleware(PageTimingMiddleware)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.SECRET_KEY,

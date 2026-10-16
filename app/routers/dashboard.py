@@ -19,7 +19,6 @@ from app.services.model_stats import load_model_stats
 from app.services.strava import StravaService
 from app.services.strava_activities import adopt_zone, import_recent
 from app.services.timezones import athlete_zone, local_date, zone_of
-from app.services.training_load import calculate_training_load
 from app.services.training_view import MEASURES, spike_ids, training_top
 from app.services.viz import d_short, hm
 from app.services.viz import dplus as dplus_fmt
@@ -101,23 +100,30 @@ async def activities_page(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Training log: the 7 / 28-day volume at the top, « Semaines » on page 1 (one measure, `m`: duree, distance
+    """Training log: « Semaines » visible on page 1 (one measure, `m`: duree, distance
     or dplus; the sport filter applies to it and to the list), then the activities grouped by week. `depuis` (a
     day of the last month, Santé's Entraînement card's link): only the activities from that day, as the card
     counts them."""
     sport = sport if sport in _FILTER_KEYS else None
     m = m if m in {k for k, _, _ in MEASURES} else None
-    now, zone = await _clock(db, user)  # the athlete's clock, read once and passed down
-    training_load = await calculate_training_load(db, user.id, now, zone=zone)
+    now, zone, today = await _clock(db, user)  # one day and clock for every part of this request
     recent = await _recent(db, user.id, depuis, zone) if depuis else None
     if recent is not None:
         return templates.TemplateResponse(request, "activities.html", context={
-            "user": user, "recent": recent, "training_load": training_load, "weeks": [], "has_more": False,
+            "user": user, "recent": recent, "weeks": [], "has_more": False,
             "page": 1, "sport": None, "filters": FILTERS, "training": None, "spikes": set()})
 
-    weeks, has_more, spikes = await _week_groups(db, user.id, page, sport, now, zone)
+    sessions = None
+    if page == 1:
+        try:
+            sessions = await st.load_sessions(db, user.id, today, zone=zone)
+        except Exception:  # the optional training context must never hide the history
+            logger.exception("Activités: the training sessions failed for user %d", user.id)
+    weeks, has_more, spikes = await _week_groups(db, user.id, page, sport, now, zone,
+                                                today=today, sessions=sessions)
     # Semaines and FC en footing: on the first page, for the sport chosen
-    training = await training_top(db, user.id, now, sport, m, zone=zone) if page == 1 else None
+    training = await training_top(db, user.id, now, sport, m, zone=zone,
+                                   today=today, sessions=sessions) if page == 1 else None
 
     return templates.TemplateResponse(
         request, "activities.html",
@@ -128,7 +134,6 @@ async def activities_page(
             "page": page,
             "sport": sport,
             "filters": FILTERS,
-            "training_load": training_load,
             "training": training,
             "spikes": spikes,
         },
@@ -144,8 +149,8 @@ async def activities_partial(
     db: AsyncSession = Depends(get_db),
 ):
     sport = sport if sport in _FILTER_KEYS else None
-    now, zone = await _clock(db, user)
-    weeks, has_more, spikes = await _week_groups(db, user.id, page, sport, now, zone)
+    now, zone, today = await _clock(db, user)
+    weeks, has_more, spikes = await _week_groups(db, user.id, page, sport, now, zone, today=today)
     return templates.TemplateResponse(
         request, "partials/activity_weeks.html",
         context={"weeks": weeks, "has_more": has_more, "page": page, "sport": sport, "oob": True, "spikes": spikes},
@@ -210,7 +215,7 @@ async def manual_sync(
 RECENT_MAX_DAYS = 31  # how far back Santé's link may open the list (its 7 days, a cycle's 8 at most)
 
 
-async def _clock(db: AsyncSession, user: User) -> tuple[datetime, tzinfo]:
+async def _clock(db: AsyncSession, user: User) -> tuple[datetime, tzinfo, date]:
     """Activités' « now » and the athlete's clock (sante_training.athlete_clock, Santé's: their weeks run Monday to
     Sunday there; read once, then passed to every part of the page). « now » comes from the source of « today »
     (st.athlete_today, the day Santé reads, and the one tests pin): the wall clock, unless that day is further from
@@ -222,10 +227,11 @@ async def _clock(db: AsyncSession, user: User) -> tuple[datetime, tzinfo]:
         today = await st.athlete_today(db, user.id, now, zone=zone)
     except Exception:
         logger.exception("Activités: the athlete's day failed for user %d", user.id)
-        return now, athlete_zone(user)
+        zone = athlete_zone(user)
+        return now, zone, local_date(now, zone)
     if abs((today - local_date(now, zone)).days) > 1:
         now = datetime.combine(today, time(12), tzinfo=zone).astimezone(timezone.utc)
-    return now, zone
+    return now, zone, today
 
 
 async def _recent(db: AsyncSession, user_id: int, depuis: str, zone: tzinfo | None = None) -> dict | None:
@@ -318,7 +324,7 @@ def _activity_to_summary(activity: Activity | Row, duplicate_ids: frozenset | se
 
 async def _week_groups(
     db: AsyncSession, user_id: int, page: int, sport: str | None, now: datetime | None = None,
-    zone: tzinfo | None = None,
+    zone: tzinfo | None = None, *, today: date | None = None, sessions: list[st.Session] | None = None,
 ) -> tuple[list[dict], bool, set[int]]:
     """Activities of a WEEKS_PER_PAGE window, grouped by week (newest first), and the ids of the single-run
     spikes among them (their rows say « plus longue que d'habitude », training_view.spike_ids). The athlete's
@@ -372,7 +378,8 @@ async def _week_groups(
     )
     has_more = ((await db.execute(older)).scalar() or 0) > 0
     shown = {a.id for a in activities}
-    spikes = (await spike_ids(db, user_id, start, now, zone=zone)) & shown if shown else set()
+    spikes = (await spike_ids(db, user_id, start, now, zone=zone, today=today,
+                               sessions=sessions)) & shown if shown else set()
     return weeks, has_more, spikes
 
 

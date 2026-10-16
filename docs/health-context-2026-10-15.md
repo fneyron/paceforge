@@ -5,11 +5,21 @@ Cette évolution distingue les mesures nocturnes, les activités enregistrées e
 ## Ce qui est affiché
 
 - Les trois anneaux, les tendances VFC/FC, le sommeil et son historique restent graphiques. L’hypnogramme exige des intervalles horaires réellement reçus ; des totaux par phase ne permettent pas de reconstruire leur chronologie.
-- « Signaux nocturnes » est un indice sur 100, pas un pourcentage de récupération. La FC nocturne élevée reste un signal même lorsque la VFC est habituelle. Les règles de transformation numérique restent des heuristiques PaceForge, sans validation clinique de cet indice composite.
+- La rubrique et l’anneau « Récupération » présentent un indice des signaux nocturnes sur 100, pas un pourcentage de récupération. La FC nocturne élevée reste un signal même lorsque la VFC est habituelle. Les règles de transformation numérique restent des heuristiques PaceForge, sans validation clinique de cet indice composite.
 - La synthèse montre la date des mesures et deux raisons au maximum. Les méthodes, sources et autres explications sont disponibles dans le volet de détail. La FC nocturne n’est pas assimilée à la FC de repos ; le RMSSD recalculé sur les points nocturnes COROS n’est pas assimilé à son « HRV Avg » ou à sa plage fabricant.
-- Le contexte après-course exige une activité reçue, éventuellement liée comme résultat d’un parcours. Une course seulement prévue ne suffit pas. J+n compte les jours calendaires depuis la fin locale réelle. Les 28 jours d’affichage sont une limite de présentation, pas un délai de guérison.
+- Le contexte après effort vient exclusivement des activités reçues de Strava, Garmin ou COROS : le planner, facultatif, ne fournit ni nom, ni date, ni qualification de course à Santé. Un type « course » transmis par une activité reste distinct d’un effort long détecté par sa durée. J+n compte les jours calendaires depuis la fin locale réelle. Les 28 jours d’affichage sont une limite de présentation, pas un délai de guérison.
 - Les fenêtres après effort ne plafonnent plus l’indice nocturne. Les informations sur l’effort restent disponibles séparément. Aucun seuil absolu VFC 70/72 ms, FC 43/46 bpm, plafond 135 bpm ou prescription de 30 minutes n’a été ajouté.
 - Le repère de 8 h de sommeil est indiqué comme tel, sans prétendre mesurer le besoin individuel. L’écart sur 7 jours précise les nuits documentées ; les nuits absentes ne valent pas zéro.
+
+## Lecture des indicateurs
+
+« Comprendre mes indicateurs » rassemble les définitions, références personnelles, limites du bilan et provenances. Les sources ne sont plus répétées dans les titres et dates de la lecture principale ; elles restent disponibles dans les détails et la lecture accessible des points des graphiques. Les dates, unités et trous de mesure restent visibles.
+
+Une phrase près du graphique explique une baisse de VFC lorsqu’elle est observée : elle peut accompagner fatigue ou stress, sans en déterminer la cause. Une dernière valeur basse n’est pas assimilée à une tendance basse sur plusieurs nuits. Les repères provisoires, les données anciennes ou insuffisantes et la VFC SDNN restent distingués. Une VFC élevée ne prouve pas davantage une récupération complète.
+
+La respiration nocturne reçue est présentée avec les graphiques de récupération. Garmin et Apple Santé peuvent la fournir ; le connecteur COROS actuel ne la fournit pas. La moyenne respiratoire quotidienne, incluant l’éveil, reste séparée. Le déplacement du graphique et les explications ne changent ni les seuils ni le calcul de l’indice.
+
+Les formulations suivent notamment [Buchheit, 2014](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2014.00073/full) pour la VFC et les limites de son interprétation, et [Miller et al., 2020](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0243693) pour la respiration nocturne. L’association observée avec une infection dans cette dernière étude ne constitue pas un diagnostic individuel ni une validation des seuils de PaceForge.
 
 ## Ressenti et conservation
 
@@ -19,7 +29,7 @@ Les réponses ne changent ni l’indice ni les anciens indicateurs de maladie/al
 
 ## Fiabilité des imports
 
-COROS distingue une réponse vide reconnue d’un format non lu et découpe les fenêtres saturées. La progression n’est mémorisée qu’après validation de la transaction. Strava poursuit une réconciliation bornée de l’historique ; une première page déjà connue ne prouve plus que tout l’historique est complet. Une révision persistante invalide les caches après une correction, y compris à taille de JSON identique.
+COROS distingue une réponse vide reconnue d’un format non lu et découpe les fenêtres saturées. La réponse « no official sleep HRV value for this day; raw HRV points omitted » désigne une absence de mesure, pas un format illisible ; elle ne doit pas empêcher la lecture des autres nuits du lot. Un import réussi mais partiel reste distingué d’un échec de synchronisation ou d’une connexion expirée. La progression n’est mémorisée qu’après validation de la transaction. Strava poursuit une réconciliation bornée de l’historique ; une première page déjà connue ne prouve plus que tout l’historique est complet. Une révision persistante invalide les caches après une correction, y compris à taille de JSON identique.
 
 Les séances stationnaires courtes restent des activités. Une association course/résultat suit la copie conservée lors du dédoublonnage, sans changer le type fourni par la montre. Les vérifications portent sur le code et des données de test ; elles ne prouvent pas qu’une course précise absente des fournisseurs a été récupérée.
 

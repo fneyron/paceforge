@@ -76,7 +76,7 @@ export function offlineAccountScript(nonce: string): string {
     const account = document.querySelector('[data-account]');
     // Public help/privacy pages omit identity even when the session is signed in.
     if (account || ['/', '/auth/login', '/auth/register', '/auth/check-email'].includes(location.pathname)) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({type:'offline-account',nonce:${JSON.stringify(nonce)},user_id:Number(account?.dataset.account)||null}));
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:'offline-account',page_url:location.href,nonce:${JSON.stringify(nonce)},user_id:Number(account?.dataset.account)||null}));
     }
   } true;`;
 }

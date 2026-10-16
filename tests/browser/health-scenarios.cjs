@@ -34,7 +34,7 @@ const scenarios = [
         const key = `synthetic-${scenario}-${width}-${scale}-${dark ? 'dark' : 'light'}`;
         const synthesis = page.locator('#synthese-sante');
         assert.ok(await synthesis.isVisible(), key);
-        assert.match(await synthesis.locator('[data-context="after_race"]').innerText(), /Ultra synthétique · J\+13/);
+        assert.match(await synthesis.locator('[data-context="after_effort"]').innerText(), /Ultra synthétique · J\+13/);
         assert.ok(await synthesis.locator('.pf-synthesis-reasons > li').count() <= 2);
         assert.doesNotMatch(await synthesis.innerText(), /\bNone\b|prêt à|tu peux courir/i);
         if (scenario === 'conflict') {
