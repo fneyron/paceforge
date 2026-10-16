@@ -31,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install .[dev]
+          pip install --require-hashes -r requirements-dev.lock
 
       - name: ruff
         run: ruff check --output-format github .

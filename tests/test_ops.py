@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.config import Settings, settings
 
 ROOT = Path(__file__).resolve().parent.parent
-AI_SETTINGS = {"ANTHROPIC_API_KEY", "CLAUDE_MODEL"}  # the AI chain's, deleted with it: neither wired nor documented
+AI_SETTINGS = {"ANTHROPIC_API_KEY", "CLAUDE_MODEL"}  # the AI chain's, deleted: they must never come back in config, compose or .env.example
 
 
 class _Redis:
