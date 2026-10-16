@@ -1,12 +1,11 @@
-// Launch screen in the app's colour, colour only: the bare template shows a white
-// storyboard on iOS and its sample logo as the Android window background.
+// Launch screen in the app's colour (the icon background of app.json), colour only: the
+// bare template shows a white storyboard on iOS and its sample logo as the Android window
+// background.
 const fs = require('fs');
 const path = require('path');
 const { AndroidConfig, withAndroidColors, withAndroidStyles, withDangerousMod } = require('@expo/config-plugins');
 
-const COLOR = '#0B5F6E'; // the icon background (app.json android.adaptiveIcon.backgroundColor)
-const [red, green, blue] = [1, 3, 5].map(i => parseInt(COLOR.slice(i, i + 2), 16) / 255);
-const storyboard = `<?xml version="1.0" encoding="UTF-8"?>
+const storyboard = ([red, green, blue]) => `<?xml version="1.0" encoding="UTF-8"?>
 <document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="22155" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="EXPO-VIEWCONTROLLER-1">
     <device id="retina6_12" orientation="portrait" appearance="light"/>
     <dependencies>
@@ -35,14 +34,17 @@ const storyboard = `<?xml version="1.0" encoding="UTF-8"?>
 `;
 
 module.exports = config => {
+  const color = config.android?.adaptiveIcon?.backgroundColor;
+  if (!/^#[0-9A-Fa-f]{6}$/.test(color || '')) throw new Error('Launch screen: app.json android.adaptiveIcon.backgroundColor (#RRGGBB) is required');
+  const channels = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16) / 255);
   config = withDangerousMod(config, ['ios', result => {
     const { platformProjectRoot, projectName } = result.modRequest;
     // Named by UILaunchStoryboardName in the generated Info.plist.
-    fs.writeFileSync(path.join(platformProjectRoot, projectName, 'SplashScreen.storyboard'), storyboard);
+    fs.writeFileSync(path.join(platformProjectRoot, projectName, 'SplashScreen.storyboard'), storyboard(channels));
     return result;
   }]);
   config = withAndroidColors(config, result => {
-    result.modResults = AndroidConfig.Colors.assignColorValue(result.modResults, { name: 'splashscreen_background', value: COLOR });
+    result.modResults = AndroidConfig.Colors.assignColorValue(result.modResults, { name: 'splashscreen_background', value: color });
     return result;
   });
   // Also what Android 12+ shows behind the icon (windowSplashScreenBackground follows a colour windowBackground).

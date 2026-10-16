@@ -137,7 +137,10 @@ def verify_prebuilt(folder: Path, config: dict) -> None:
     if not privacy_path.is_file():
         raise SystemExit(f"{privacy_path}: missing (app.json ios.privacyManifests).")
     privacy = plistlib.loads(privacy_path.read_bytes())
-    entitlements = plistlib.loads(next(folder.glob("*.entitlements")).read_bytes())
+    entitlements_path = next(folder.glob("*.entitlements"), None)
+    if entitlements_path is None:
+        raise SystemExit(f"{folder}: no .entitlements file (HealthKit plugin with \"background\": true).")
+    entitlements = plistlib.loads(entitlements_path.read_bytes())
     errors = check_info(info, config, built=False) + check_privacy(privacy, info)
     if entitlements.get("com.apple.developer.healthkit") is not True or entitlements.get(DELIVERY) is not True:
         errors.append(f"The entitlements lack HealthKit or {DELIVERY}.")
