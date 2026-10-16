@@ -17,7 +17,7 @@ from app.models.nutrition import NutritionProduct
 from app.models.oauth_attempt import OAuthAttempt
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
-from app.services.auth import hash_password, verification_token, verify_password
+from app.services.auth import hash_password, hash_token, verification_token, verify_password
 from app.services.strava import StravaService
 from tests.test_race_plan_services import _course
 from tests.test_settings_links import _logged_in
@@ -89,7 +89,8 @@ async def test_unverified_registration_and_login_cannot_access_private_pages(cli
 async def test_expired_verification_can_be_resent_after_login(client, db_session, monkeypatch):
     with patch("itsdangerous.TimestampSigner.get_timestamp", return_value=1):
         expired = verification_token()
-    user = User(email="waiting@example.com", password_hash=hash_password("password-123"), email_verify_token=expired)
+    user = User(email="waiting@example.com", password_hash=hash_password("password-123"),
+                email_verify_token=hash_token(expired))
     db_session.add(user)
     await db_session.flush()
     sent = []

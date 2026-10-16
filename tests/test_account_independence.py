@@ -76,7 +76,7 @@ async def test_register_plan_export_and_login_without_any_provider(client, db_se
             },
         )
         assert response.status_code == 200
-        await c.get("/auth/logout")
+        await c.post("/auth/logout")
         response = await c.post("/auth/login", data=credentials)
         assert response.headers["location"] == "/sante"
         assert (await c.get(page_url)).status_code == 200
@@ -149,7 +149,7 @@ async def test_watch_data_and_account_survive_strava_disconnect(
         await db_session.flush()
         response = await c.post("/settings/strava/disconnect")
         assert response.status_code == 303 and not user.has_strava_linked
-        await c.get("/auth/logout")
+        await c.post("/auth/logout")
         response = await c.post(
             "/auth/login", data={"email": user.email, "password": "pw-12345678"}
         )

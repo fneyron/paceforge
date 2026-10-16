@@ -196,7 +196,7 @@
                 </form>
                 <div id="wx-block" class="pt-4 border-t border-line{% if not has_date %} hidden{% endif %}">
                     <span class="{{ lbl }}">Météo</span>
-                    <p id="wx-when">Prévision disponible 16 jours avant la course.</p>
+                    <p><span id="wx-when">Prévision disponible 16 jours avant la course.</span> <a href="https://open-meteo.com/" target="_blank" rel="noopener" class="underline">Prévisions Open-Meteo</a></p>
                     <button type="button" id="wx-refresh" onclick="window._sim && window._sim.fetchWeather()" class="pf-btn pf-btn-secondary pf-btn-sm mt-2 hidden">Actualiser la météo</button>
                 </div>
             </div>
@@ -247,18 +247,23 @@ window._sim = {};
     function idxAtKm(km) { var n = routeCoords.length, lo = 0, hi = n - 1; while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (routeCoords[mid][2] <= km) lo = mid; else hi = mid; } return lo; }
 
     // ── MAP ──
-    // MapLibre (800 KB) loads only when the map is asked for
-    var mapLibLoading = null;
+    // MapLibre (800 KB), served from here like every other asset (no CDN runs code in the session), loads only when the map is asked for
+    var mapLibLoading = null, MAP_LIB = '/static/vendor/maplibre-gl/maplibre-gl', ASSET_V = '{{ request.app.state.build_id if request is defined and request else 0 }}';
     function loadMapLib(cb) {
         if (window.maplibregl) { cb(); return; }
         if (!mapLibLoading) {
             mapLibLoading = new Promise(function (resolve) {
-                var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css'; document.head.appendChild(l);
-                var sc = document.createElement('script'); sc.src = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js'; sc.onload = resolve; sc.onerror = resolve; document.head.appendChild(sc);
+                var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = MAP_LIB + '.css?v=' + ASSET_V; document.head.appendChild(l);
+                var sc = document.createElement('script'); sc.src = MAP_LIB + '.js?v=' + ASSET_V; sc.onload = resolve; sc.onerror = resolve; document.head.appendChild(sc);
             });
         }
         mapLibLoading.then(cb);
     }
+    // the credits their terms ask for: the styles carry OpenStreetMap's, CARTO's and OpenFreeMap's, the relief source its own;
+    // MapLibre's standard control shows them all (the « i » at the bottom right, closed until touched)
+    var MAP_CREDIT = '<a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a>';
+    var DEM_CREDIT = 'Relief : <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles</a> (Mapzen, AWS)';
+    function closeAttribution(el) { var d = el.querySelector('details.maplibregl-ctrl-attrib'); if (d) { d.removeAttribute('open'); d.classList.remove('maplibregl-compact-show'); } }
     function tok(n, fb) { try { var v = getComputedStyle(document.documentElement).getPropertyValue('--pf-' + n).trim().split(/\s+/); if (v.length === 3) return 'rgb(' + v.join(',') + ')'; } catch (e) {} return fb; }
     var DEM_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
     var terrain3d = false, ctl3dBtn = null;
@@ -287,6 +292,8 @@ window._sim = {};
             pixelRatio: Math.min(2, window.devicePixelRatio || 1), maxTileCacheSize: isCompact() ? 40 : 120,
         });
         map.addControl(new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }), 'top-left');
+        map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: MAP_CREDIT }), 'bottom-right');
+        closeAttribution(el);  // MapLibre opens it on its first credits: closed, the « i » is enough
         if (!isCompact()) map.addControl({
             onAdd: function () { var d = document.createElement('div'); d.className = 'maplibregl-ctrl'; var b = document.createElement('button'); b.type = 'button'; b.className = 'map-ctl'; b.textContent = '3D'; b.title = 'Relief en 3D'; b.setAttribute('aria-pressed', terrain3d ? 'true' : 'false'); b.onclick = function () { setTerrain3d(!terrain3d); }; d.appendChild(b); ctl3dBtn = b; return d; },
             onRemove: function () { ctl3dBtn = null; }
@@ -295,7 +302,8 @@ window._sim = {};
         hoverEl.style.cssText = 'width:14px;height:14px;background:' + tok('accent', '#2F6B4F') + ';border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:none;';
         hoverMarker = new maplibregl.Marker({ element: hoverEl }).setLngLat([0, 0]).addTo(map);
         map.on('load', function() {
-            map.addSource('dem', { type: 'raster-dem', tiles: [DEM_TILES], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
+            map.addSource('dem', { type: 'raster-dem', tiles: [DEM_TILES], encoding: 'terrarium', tileSize: 256, maxzoom: 15, attribution: DEM_CREDIT });
+            closeAttribution(el);
             var firstSymbol = (map.getStyle().layers || []).filter(function (l) { return l.type === 'symbol'; })[0];
             if (!isCompact()) map.addLayer({ id: 'hillshade', type: 'hillshade', source: 'dem', paint: { 'hillshade-exaggeration': isDark ? 0.25 : 0.32, 'hillshade-shadow-color': '#475569', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#94a3b8' } }, firstSymbol ? firstSymbol.id : undefined);
             // contour lines from the same DEM (Komoot / Gaia look), when the plugin is there

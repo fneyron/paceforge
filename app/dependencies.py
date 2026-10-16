@@ -1,3 +1,4 @@
+import time
 from collections.abc import AsyncGenerator
 
 from fastapi import Depends, HTTPException, Request
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_factory
 from app.models.user import User
+from app.services import sessions
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -19,10 +21,13 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 def sign_in(request: Request, user: User) -> None:
-    """This browser's session for `user`, carrying the account's session version: a password reset bumps it,
-    and every session holding an older one is refused (get_current_user)."""
+    """This browser's session for `user`, carrying the account's session version (a password reset bumps it, and
+    every session holding an older one is refused, get_current_user), its own id (logout revokes it,
+    app.services.sessions) and its birth time (no session outlives SESSION_LIFETIME_DAYS)."""
     request.session["user_id"] = user.id
     request.session["session_version"] = user.session_version or 0
+    request.session["sid"] = sessions.new_id()
+    request.session["iat"] = int(time.time())
 
 
 def _current(request: Request, user: User | None) -> bool:
@@ -31,12 +36,24 @@ def _current(request: Request, user: User | None) -> bool:
     return user is not None and request.session.get("session_version", 0) == (user.session_version or 0)
 
 
+async def _live(request: Request) -> bool:
+    """Whether this browser's session may still be used: born with an id (one without, made before logout could
+    revoke anything, is signed out once), within its absolute lifetime, and not signed out since."""
+    sid = request.session.get("sid")
+    if not sid or not sessions.alive(request.session.get("iat")):
+        return False
+    return not await sessions.is_revoked(sid)
+
+
 async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> User:
     user_id = request.session.get("user_id")
     if not user_id:
+        raise _redirect_to_login()
+    if not await _live(request):
+        request.session.clear()
         raise _redirect_to_login()
 
     result = await db.execute(select(User).where(User.id == user_id))
@@ -59,6 +76,9 @@ async def get_optional_user(
 ) -> User | None:
     user_id = request.session.get("user_id")
     if not user_id:
+        return None
+    if not await _live(request):
+        request.session.clear()  # dropped here too: the public pages stop treating this browser as signed in
         return None
 
     result = await db.execute(select(User).where(User.id == user_id))

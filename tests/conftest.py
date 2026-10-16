@@ -354,3 +354,21 @@ def _rate_limits_in_memory(monkeypatch):
     from app.services import auth
 
     monkeypatch.setattr(auth, "_counter", auth.MemoryCounter())
+
+
+@pytest.fixture(autouse=True)
+def _revoked_sessions_in_memory(monkeypatch):
+    """The sessions logout revoked, in this process and fresh for each test (Redis in production)."""
+    from app.services import sessions
+
+    monkeypatch.setattr(sessions, "_store", sessions.MemoryRevocations())
+
+
+@pytest.fixture(autouse=True)
+def _webhook_events_forgotten():
+    """The Strava events the webhook saw lately (strava_state.event_first_seen), fresh for each test; Redis is not
+    asked for them (the memory path is the one exercised)."""
+    from app.services import strava_state
+
+    strava_state._seen.clear()
+    strava_state._events_down_until = float("inf")

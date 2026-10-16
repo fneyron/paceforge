@@ -15,6 +15,7 @@ from starlette.datastructures import MutableHeaders
 from app.build import BUILD_ID
 from app.config import settings
 from app.exceptions import register_exception_handlers
+from app.middleware.security import CrossSiteRequestMiddleware, SecurityHeadersMiddleware
 from app.sentry import init_sentry
 
 logging.basicConfig(
@@ -74,11 +75,13 @@ class VersionedStaticFiles(StaticFiles):
 
 
 DEFAULT_SECRET_KEYS = {"change-me-to-a-random-secret-key"}  # config.py's and .env.example's
+DEFAULT_WEBHOOK_VERIFY_TOKEN = type(settings).model_fields["STRAVA_WEBHOOK_VERIFY_TOKEN"].default
 
 
 def check_secrets() -> None:
     """No start with a SECRET_KEY anyone can guess (it signs the sessions: a forged one is any account),
-    unless DEBUG, nor with an ENCRYPTION_KEYS entry that is not a Fernet key."""
+    unless DEBUG, nor with an ENCRYPTION_KEYS entry that is not a Fernet key. A webhook verify token left at its
+    default is warned about (anyone can then validate a subscription against this server), not refused."""
     from app.crypto import check_keys
 
     if not settings.DEBUG and (not settings.SECRET_KEY.strip() or settings.SECRET_KEY in DEFAULT_SECRET_KEYS):
@@ -86,6 +89,9 @@ def check_secrets() -> None:
             "SECRET_KEY is empty or a known default: set a long random value. If tokens were stored under the "
             "old one, first append legacy_key(old SECRET_KEY) to ENCRYPTION_KEYS (app.crypto), or they become "
             "unreadable.")
+    if not settings.DEBUG and settings.STRAVA_WEBHOOK_VERIFY_TOKEN == DEFAULT_WEBHOOK_VERIFY_TOKEN:
+        logger.warning("STRAVA_WEBHOOK_VERIFY_TOKEN is the default: anyone can validate a Strava webhook subscription "
+                       "against this server. Set a random value in the environment")
     try:
         check_keys()
     except ValueError as e:
@@ -186,13 +192,19 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         version="1.0.0",
+        # the schema and its docs are for development: in production they listed every route to anyone
+        openapi_url="/openapi.json" if settings.DEBUG else None,
         docs_url="/docs" if settings.DEBUG else None,
         redoc_url=None,
         lifespan=lifespan,
     )
     app.state.build_id = BUILD_ID
 
-    # Middleware
+    # Middleware, innermost first (the last added runs first): the session is read before the headers middleware
+    # answers, which needs it to tell a signed-in page; the cross-site check refuses before any route runs, and its
+    # answer gets the headers too
+    app.add_middleware(CrossSiteRequestMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.add_middleware(PageTimingMiddleware)
     app.add_middleware(

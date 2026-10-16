@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
@@ -16,14 +16,18 @@ from app.config import settings
 from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db, sign_in
 from app.models.user import User
+from app.services import sessions
 from app.services.auth import (
     DUMMY_HASH,
     PASSWORD_PREFIX,
     TOO_MANY,
+    client_ip,
     count_attempt,
     forget_attempts,
     generate_token,
     hash_password_async,
+    hash_token,
+    over_quota,
     valid_email,
     valid_verification_token,
     verification_token,
@@ -52,17 +56,6 @@ def _same_site(request: Request) -> None:
         ours = {host for host in (urlsplit(settings.BASE_URL).netloc, request.headers.get("host")) if host}
         if urlsplit(origin).netloc not in ours:  # another site's, or « null » (a sandboxed frame)
             raise HTTPException(status_code=403)
-
-
-def _client_ip(request: Request) -> str:
-    """The client's address for the attempt limits. Deployed behind exactly one proxy (Traefik), which appends
-    the address it saw as the last X-Forwarded-For hop: that hop is used. uvicorn's --proxy-headers with
-    --forwarded-allow-ips='*' takes the first hop instead, which the client writes itself. Another proxy in
-    front (a CDN) would make its own address the last hop: then trust its header instead."""
-    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
-    if hops:
-        return hops[-1]
-    return request.client.host if request.client else ""
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +92,7 @@ async def register(
             context={"error": "Le mot de passe doit contenir entre 8 et 1 024 caractères.", "email": email, "firstname": firstname, "lastname": lastname},
         )
 
-    if await count_attempt("register", _client_ip(request), email):
+    if await count_attempt("register", client_ip(request), email):
         return templates.TemplateResponse(
             request, "auth/register.html", status_code=429,
             context={"error": TOO_MANY, "email": email, "firstname": firstname, "lastname": lastname},
@@ -119,7 +112,7 @@ async def register(
         password_hash=await hash_password_async(password),
         firstname=firstname or None,
         lastname=lastname or None,
-        email_verify_token=verify_token,
+        email_verify_token=hash_token(verify_token),  # the email gets the token, the table its hash
     )
     db.add(user)
     try:
@@ -131,6 +124,7 @@ async def register(
             context={"error": "Un compte existe déjà avec cet email.", "email": email, "firstname": firstname, "lastname": lastname},
         )
     await db.refresh(user)
+    await over_quota("resend", user=user.id)  # this first email counts for the resend's minute
     # committed before the email goes and before the redirect: the link is never dead on arrival, and get_db's
     # own commit comes only after the response (the browser follows the redirect at once)
     await db.commit()
@@ -157,11 +151,12 @@ async def check_email_page(request: Request):
 async def resend_verification(request: Request, db: AsyncSession = Depends(get_db)):
     user_id = request.session.get("pending_user_id")
     user = await db.get(User, user_id) if user_id else None
-    recent = user and user.email_verify_token and valid_verification_token(user.email_verify_token, max_age=60)
-    if user and user.email and not user.email_verified and not recent:
-        user.email_verify_token = verification_token()
+    # one email a minute per account, the sign-up's own counted (the stored token is a hash: it tells no age)
+    if user and user.email and not user.email_verified and not await over_quota("resend", user=user.id):
+        token = verification_token()
+        user.email_verify_token = hash_token(token)
         await db.flush()
-        sent = await run_in_threadpool(send_verification_email, user.email, user.email_verify_token)
+        sent = await run_in_threadpool(send_verification_email, user.email, token)
         request.session["verification_failed"] = not sent
     return RedirectResponse("/auth/check-email", status_code=303)
 
@@ -173,7 +168,7 @@ async def verify_email(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(User).where(User.email_verify_token == token)
+        select(User).where(User.email_verify_token == hash_token(token))
     )
     user = result.scalar_one_or_none()
 
@@ -217,7 +212,7 @@ async def login(
 ):
     email = email.strip().lower()
     next = next if next in ("coros", "garmin", "strava") else ""
-    ip = _client_ip(request)
+    ip = client_ip(request)
     # counted before anything else: parallel attempts cannot slip past the limit, and a refused one costs
     # neither a database connection nor a password check
     if await count_attempt("login", ip, email):
@@ -251,9 +246,31 @@ async def login(
     return RedirectResponse(url=f"/connections/{next}" if next else HOME, status_code=302)
 
 
-@router.get("/auth/logout")
-async def logout(request: Request):
+async def _sign_out(request: Request, db: AsyncSession) -> None:
+    """The session ends for good: its id is refused from now on, whatever cookie still carries it. When the shared
+    store cannot take the id (Redis down), the account's session version is bumped instead: durable, seen by every
+    worker, at the price of signing out the account's other sessions too."""
+    sid, iat, user_id = request.session.get("sid"), request.session.get("iat"), request.session.get("user_id")
     request.session.clear()
+    if sid and not await sessions.revoke(sid, iat) and user_id:
+        await db.execute(update(User).where(User.id == user_id).values(session_version=User.session_version + 1))
+
+
+@router.post("/auth/logout")
+async def logout(request: Request, db: AsyncSession = Depends(get_db)):
+    await _sign_out(request, db)
+    # The phone app keys its own sign-out on a navigation to /auth/logout, which Android reports for a GET only:
+    # the redirected GET is that navigation (a no-op on a session already dead), and it leads home.
+    return RedirectResponse(url="/auth/logout", status_code=303)
+
+
+@router.get("/auth/logout")
+async def logout_link(request: Request, db: AsyncSession = Depends(get_db)):
+    """An old link or bookmark, or the redirect after the POST: it signs out only when the browser says the
+    navigation is its own (same-origin, or none for a typed address), never from a link on another site; home
+    either way."""
+    if request.headers.get("sec-fetch-site") in ("same-origin", "none"):
+        await _sign_out(request, db)
     return RedirectResponse(url="/", status_code=302)
 
 
@@ -273,7 +290,7 @@ async def forgot_password(
     email: str = Form(...),
 ):
     email = email.strip().lower()
-    if await count_attempt("forgot", _client_ip(request), email):  # no more emails for now; nothing revealed
+    if await count_attempt("forgot", client_ip(request), email):  # no more emails for now; nothing revealed
         return templates.TemplateResponse(request, "auth/forgot_password.html", context={"sent": True},
                                           status_code=429)
 
@@ -283,7 +300,7 @@ async def forgot_password(
     email_task = None
     if user and user.password_hash:
         token = generate_token()
-        user.password_reset_token = token
+        user.password_reset_token = hash_token(token)  # the email gets the token, the table its hash
         user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         # saved before the email goes (get_db commits only after the response and its background work): the
         # link is never dead on arrival, and no row lock is held through SMTP
@@ -320,7 +337,7 @@ async def reset_password(
         )
 
     result = await db.execute(
-        select(User).where(User.password_reset_token == token)
+        select(User).where(User.password_reset_token == hash_token(token))
     )
     user = result.scalar_one_or_none()
 
