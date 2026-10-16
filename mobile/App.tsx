@@ -87,6 +87,11 @@ function Companion() {
   // The site's effective theme, once it reported it, wins over the system scheme.
   const webAppearance = useRef(false);
   const canGoBack = useRef(false);
+  // Real documents loaded since the last bridge document (pairing, session or connections
+  // check): the back key walks only these. A bridge document is never a place to go back
+  // to: its load is refused, or it reloads the screen on top of it and the history never
+  // ends, so the app could not be left any more.
+  const documents = useRef(0);
 
   // A locked phone (background launch) cannot read the keychain: this is never « not
   // paired ». The read is retried on the first return to the foreground.
@@ -166,7 +171,10 @@ function Companion() {
   useEffect(() => { if (!webAppearance.current) setDark(systemDark); }, [systemDark]);
   // Android hardware back: the WebView's own history first, then the system default.
   const onHardwareBack = useEffectEvent(() => {
-    if (webVisible && !concealBridge && !loadError && canGoBack.current) { web.current?.goBack(); return true; }
+    if (webVisible && !concealBridge && !loadError && canGoBack.current && documents.current > 1) {
+      documents.current -= 2; // the document gone back to is counted again once it has loaded
+      web.current?.goBack(); return true;
+    }
     return false;
   });
   useEffect(() => {
@@ -616,12 +624,14 @@ function Companion() {
           if (pageLoadFailed.current) return;
           if (!isBridgeUrl(event.nativeEvent.url)) offline.loaded(event.nativeEvent.url);
           if (isBridgeUrl(event.nativeEvent.url)) {
+            documents.current = 0;
             documentUrl.current = event.nativeEvent.url; documentReady.current = false; setBridgeDocument(true);
             if (pending.current) web.current?.injectJavaScript(retryBridgeScript);
             else recoverBridge();
             return;
           }
           documentReady.current = true;
+          documents.current++;
           if (refreshable(event.nativeEvent.url)) {
             documentUrl.current = event.nativeEvent.url; setBridgeDocument(false); recoveringBridge.current = false;
             documentReady.current = true;
@@ -677,6 +687,7 @@ function Companion() {
           // Bridge completion can arrive before the final navigation event.
           // Those hidden pages must never turn into a visible device detail.
           if (isBridgeUrl(nav.url)) {
+            documents.current = 0;
             documentReady.current = false; setBridgeDocument(true);
             if (pending.current) guard();
             if (pending.current?.kind === 'check') setShowWeb(false);
