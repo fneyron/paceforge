@@ -108,10 +108,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     feels = await sante_checkin.feels(db, user_id, feel_days[0], until)
     out["feel_track"] = viz.feel_track("ressenti-30", feel_days, feels) if feels else None
     out["respiration"] = next((c for c in daily if c["key"] == "resp_night"), None)
-    marks = out.pop("race_marks", [])
-    for c in (out.get("vfc"), out.get("fc"), (out["respiration"] or {}).get("chart"), out["feel_track"],
-              *((out.get("sleep") or {}).get("bars") or {}).values()):
-        viz.flag_days(c, marks)
+    out.pop("race_marks", None)
     out["trends"] = [t for t in (trends.get("weight"), trends.get("body_fat"), out.pop("hr_trend", None),
                                  trends.get("steps")) if t]
     out["explanations"] = sante_explain.build(out)
@@ -155,6 +152,12 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
         out["race_marks"] = sante_context.race_marks(efforts, sessions, until - timedelta(days=89), until)
         out["race_note"] = context[0]["label"] if context else None
     done = [s for s in sessions if s.end_day <= until]
+    out["recent_activities"] = [
+        {"id": s.id, "name": s.name or s.sport, "date": viz.selection_date(st.local_start(s).date()),
+         "duration": viz.hm(s.minutes), "distance": viz.num(s.km, 1, "km") if s.km else None}
+        for s in sorted(sante_load.valid(sessions), key=lambda s: s.start, reverse=True)
+        if until - timedelta(days=6) <= s.end_day <= until
+    ]
     out["hr_zones"] = running_zones(done, until)
     out["load"] = sante_load.card(sessions, until, load)
     out["fitness"] = training_view.footing(done, until, peak)
@@ -495,7 +498,7 @@ BUILDS = "Une référence apparaît dès {n} nuits mesurées avec la même sourc
 # the cards' legend: every measured night is a filled dot (each one counts); the band solid, or dashed while
 # provisional
 LEGEND_DOT = ("is-dot", "nuit")
-LEGEND_MEAN = ("is-mean", "moyenne 7 j")
+LEGEND_MEAN = ("is-mean", "moyenne glissante")
 LEGEND_BAND = ("is-band", "repère habituel")
 LEGEND_PROV = ("is-band-prov", "repère provisoire")
 
@@ -657,7 +660,7 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     c["interpretation"] = sante_explain.nightly(
         metric, c, day["trends"].get(metric), same_series=sources[last] == source,
         latest_below=bool(bands[-1] and value is not None and value < bands[-1][0]))
-    return c
+    return viz.card_average(c, values, unit=unit)
 
 
 # ── reading ─────────────────────────────────────────────────────────────────

@@ -126,11 +126,15 @@ def card(sessions, today: date, load: dict | None = None, rest: float = 50.0, pe
     data['a'] = [' · '.join(r) for r in readouts]
     chart['aria_now'] = data['a'][-1]
     chart['data'] = json.dumps(data, ensure_ascii=False).replace('</', '<\\/')
-    chart['date_now'] = viz.d_short(today)
+    chart['date_now'] = viz.selection_date(today)
+    lo, hi = viz.span_of([v for r in rows for v in (r['recent'], r['usual'])], 1)
+    lo = min(lo, 0)
+    y = viz.scale(lo, hi, 16, 120)
+    chart['ticks'] = [{"y": y(t), "label": viz.num(t)} for t in viz.nice_ticks(lo, hi, 3)]
     chart['ready'] = rows[-1]['usual'] is not None
     chart['estimated'] = sum(r['estimated'] for r in rows)
     chart['recorded'] = sum(r['measured']+r['estimated'] for r in rows)
-    return viz.rest(chart, ["", "Récente et habituelle" if chart["ready"] else "Charge récente", ""], chart["summary"])
+    return viz.card_average(chart, [r["recent"] for r in rows], unit="u.a.")
 
 
 def usual_weeks(sessions, since: date, value=None) -> list[float] | None:

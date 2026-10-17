@@ -169,7 +169,9 @@
       i = Math.max(0, Math.min(top, i | 0));
       // The visible dated readout and an explicit historical selection are
       // distinct: page-state must never pin an untouched default to yesterday.
-      fig.classList.toggle("is-inspecting", !opts.silent && i !== END);
+      fig.classList.toggle("is-inspecting", i !== END && (!opts.silent || opts.follow));
+      var average = fig.querySelector("[data-average]");
+      if (average) average.hidden = i === END;
       if (i === cur) return;
       if (rest && i === END) { resting(); return; }
       mark(cur, false);
@@ -189,7 +191,7 @@
       }
       var r = (D.r && D.r[i]) || [];
       for (var k = 0; k < slots.length; k++) {
-        slots[k].textContent = quiet && k === 2 ? (D.dateLabels || [])[i] || "" : r[k] || "";
+        slots[k].textContent = quiet && k === 2 ? ((D.selectionDates || D.dateLabels || [])[i] || "") : r[k] || "";
       }
       detail(r[3]);
       tone(i);
@@ -342,7 +344,7 @@
         var g = e.detail || {};
         if (g.src === fig || g.group !== group || !document.body.contains(fig)) return;
         var i = D.d ? D.d.indexOf(g.date) : -1;
-        if (i >= 0) select(i, { silent: true }); else blank(g.date);
+        if (i >= 0) select(i, { silent: true, follow: true }); else blank(g.date);
       };
       document.addEventListener("pfviz:sel", follow);
     }
@@ -407,6 +409,20 @@
     root.querySelectorAll("figure[data-viz]").forEach(setup);
   }
 
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+    document.querySelectorAll(".pf-help:hover, .pf-help:focus-within, .pf-phase-segment:hover, .pf-phase-segment:focus")
+      .forEach(function (el) { el.classList.add("is-tip-dismissed"); });
+    if (e.target.matches(".pf-help-button, .pf-phase-segment")) e.target.blur();
+  });
+  document.addEventListener("pointerout", function (e) {
+    var tip = e.target.closest(".pf-help, .pf-phase-segment");
+    if (tip && !tip.contains(e.relatedTarget)) tip.classList.remove("is-tip-dismissed");
+  });
+  document.addEventListener("focusin", function (e) {
+    var tip = e.target.closest(".pf-help, .pf-phase-segment");
+    if (tip) tip.classList.remove("is-tip-dismissed");
+  });
   window.PFViz = { scan: scan, dispose: function (root) {
     root.querySelectorAll('figure[data-viz]').forEach(function (fig) { fig.__pfvizDestroy?.(); });
   } };

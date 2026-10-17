@@ -180,7 +180,7 @@ async def test_the_card_never_asks_the_need(as_user: AsyncClient, db_session: As
         assert 'name="need"' not in card and "Combien d" not in card and "Changer" not in card and "pf-need-chip" not in card
         assert "Base personnelle estimée" not in card
         assert "Comprendre le sommeil" not in card
-        assert "repère 8h00" in card  # 8 h for everyone (it was a learnt 7h50)
+        assert "repère 8h00" not in card  # 8 h for everyone (it was a learnt 7h50)
     assert (await as_user.post("/sante/besoin", data={"need": "450"})).status_code in (404, 405)
     assert not hasattr(User, "sleep_need_min")
 

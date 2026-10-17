@@ -30,7 +30,8 @@ def test_sparse_trends_zoom_without_hiding_points_or_their_age(offsets, expected
     assert c["n"] == expected and len(c["dots"]) == len(offsets)
     assert payload["d"][-1] == TODAY.isoformat()
     assert payload["d"][0] == (TODAY - timedelta(days=expected - 1)).isoformat()
-    assert payload["d"][payload["sel"]] == (TODAY - timedelta(days=min(offsets))).isoformat()
+    assert payload["sel"] == len(payload["d"])
+    assert c["read"][:2] == ["70,0\u00a0kg", "en moyenne"]
     assert f"{expected} jours" in c["period_label"]
 
 
@@ -90,13 +91,13 @@ async def test_the_page_draws_three_months_of_weight_body_fat_and_steps(db_sessi
     assert list(trends) == ["weight", "body_fat", "steps"]
     weight = trends["weight"]
     assert (weight["title"], weight["value"], weight["chart"]["n"]) == ("Poids", "70,7 kg", 90)
-    assert weight["chart"]["legend"] == [("is-dot", "pesée"), ("is-mean", "moyenne 14 jours")]
+    assert weight["chart"]["legend"] == [("is-dot", "pesée"), ("is-mean", "moyenne glissante")]
     assert weight["delta"] == "−0,4 kg en 4 sem."
     assert len(weight["chart"]["dots"]) == 13
     assert weight["chart"]["mean"].count("M") == 1  # a weekly weigh-in: one line, never a dash a week
     assert trends["body_fat"]["delta"] == "0,0 % en 4 sem."
     steps = trends["steps"]
-    assert steps["chart"]["legend"] == [("is-dot", "jour"), ("is-mean", "moyenne 7 jours")]
+    assert steps["chart"]["legend"] == [("is-dot", "jour"), ("is-mean", "moyenne glissante")]
     assert steps["delta"] == "0 pas en 4 sem."  # today's 1 200 steps, a day in progress, never lower the mean
     html = _env().get_template("partials/sante_page.html").render(page=p)
     assert 'id="tendances"' in html and "Au quotidien" not in html
@@ -123,5 +124,5 @@ def test_the_night_hr_trend_is_the_fc_card_s_line_over_ninety_nights():
     hr = p["hr_trend"]
     assert (hr["key"], hr["title"], hr["chart"]["n"]) == ("hr_night", "FC de nuit", 90)
     assert hr["chart"]["summary"] == "FC de nuit, 90 nuits : 60 enregistrées"
-    assert hr["chart"]["legend"] == [("is-dot", "nuit"), ("is-mean", "moyenne 7 jours")]
+    assert hr["chart"]["legend"] == [("is-dot", "nuit"), ("is-mean", "moyenne glissante")]
     assert hr["value"] == p["fc"]["measurement"]["value"]

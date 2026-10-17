@@ -1,15 +1,14 @@
 {% import "partials/_viz.html" as viz %}
 <section id="tendances" class="pf-health-panel pf-health-context" aria-labelledby="h-tendances">
-    <header class="pf-health-panel-heading"><h2 id="h-tendances" class="pf-health-panel-title">Tendances<small>Jusqu’à 3 mois</small></h2></header>
+    <header class="pf-health-panel-heading"><h2 id="h-tendances" class="pf-health-panel-title">Tendances</h2></header>
     <div class="pf-panel-body">
     <div class="pf-daily-grid">
         {% for c in page.trends %}
         <article id="tendance-{{ c.key }}" class="pf-card" aria-labelledby="trend-{{ c.key }}-title">
-            <div class="pf-measurement-head"><h3 class="pf-card-h" id="trend-{{ c.key }}-title">{{ c.title }}</h3>{% if c.delta %}<span class="pf-trend-delta">{{ c.delta }}</span>{% endif %}</div>
+            <div class="pf-measurement-head"><h3 class="pf-card-h" id="trend-{{ c.key }}-title">{{ c.title }}</h3>{{ viz.help('tendance-' ~ c.key, 'Les points montrent les mesures enregistrées, la ligne leur moyenne glissante. La moyenne affichée porte sur les mesures visibles, sans remplacer les jours manquants par des zéros. Sélectionne un point pour voir sa valeur datée.') }}{% if c.delta %}<span class="pf-trend-delta">{{ c.delta }}</span>{% endif %}</div>
             {% if c.stale %}<p class="pf-measurement-meta">Donnée ancienne</p>{% endif %}
             {% if c.chart %}
-            <p class="pf-measurement-meta">{{ c.chart.period_label }}</p>
-            {{ viz.viz_night_card(c.chart, c.title, daytime=c.key != 'hr_night', legend=c.chart.legend, central_details=True) }}
+            {{ viz.viz_night_card(c.chart, c.title, daytime=c.key != 'hr_night', legend=c.chart.legend, central_details=True, quiet=True) }}
             {% else %}
             <p class="pf-daily-value">{{ c.value }}</p>
             <p class="pf-measurement-meta">{{ c.latest or 'Valeur du profil' }}</p>

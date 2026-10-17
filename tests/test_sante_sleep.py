@@ -40,9 +40,9 @@ def test_sleep_reference_is_the_same_need_as_the_hero(monkeypatch):
     monkeypatch.setattr(viz, "day_bars", capture)
     section = sl.sleep_section(nights, D)
     assert section["hero"]["need"] == "repère 8h00"
-    assert captured[0]["targets"] == [480] * 30  # the short range spans 30 nights (2026-10-17)
+    assert captured[0].get("targets") is None  # the short range spans 30 nights (2026-10-17)
     assert section["bars"]["14"]["ref"] is None
-    assert "repère 8h00" in json.loads(section["bars"]["14"]["data"])["r"][-1][2]
+    assert "repère 8h00" not in json.loads(section["bars"]["14"]["data"])["r"][-1][2]
     assert section["deficit"]["minutes"] == 280 and "need" not in section and "baseline" not in section
 
 
@@ -135,8 +135,8 @@ def test_the_bars_rest_on_the_mean_and_print_a_night_on_a_tap():
     mean = round((13 * 440 + 516) / 14 / 5) * 5
     # one line at rest, never the toggle's « 14 nuits » nor the title's « sur 24 h » again
     assert c["read"] == [viz.hm(mean), "en moyenne", "Sur 14 nuits mesurées · 30 nuits"]
-    assert d["r"][-1] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · repère 8h00"]
-    assert c["ref"] is None and c["targets"] and c["bars"][-1]["today"] and c["trend"] is None
+    assert d["r"][-1] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30"]
+    assert c["ref"] is None and c["targets"] is None and c["bars"][-1]["today"] and c["trend"] is None
     assert all(not b.get("miss") for b in c["bars"][-14:])  # the 14 measured nights of the 30
     gap = sl.bars(_nights(night_rows([0, 2])), D, "14")
     assert gap["bars"][-2]["miss"] and json.loads(gap["data"])["r"][-2] == ["—", "", "nuit du mar. 6 au mer. 7 · "
@@ -148,7 +148,7 @@ def test_a_short_main_night_is_said_plainly():
     a nap without a night says so plainly."""
     rows = night_rows([0], asleep=150, start=(4, 0), end=(6, 40))
     d = json.loads(sl.bars(_nights(rows), D, "14")["data"])
-    assert d["r"][-1] == ["2h30", "", "nuit du mer. 7 au jeu. 8 · 04:00 → 06:40 · repère 8h00"]
+    assert d["r"][-1] == ["2h30", "", "nuit du mer. 7 au jeu. 8 · 04:00 → 06:40"]
     nap = {"nap": {D: (82, {"windows": [[f"{D}T01:23", f"{D}T02:52"]]}, "COROS")}}
     d = json.loads(sl.bars(_nights(nap), D, "14")["data"])
     assert d["r"][-1] == ["1h22", "sieste seule", "nuit du mer. 7 au jeu. 8 · nuit non enregistrée"]
@@ -161,9 +161,10 @@ def test_three_months_draws_the_7_night_mean_over_faint_bars():
     rows["nap"][D - timedelta(days=3)] = (60, {"windows": [[f"{D - timedelta(days=3)}T13:00",
                                                             f"{D - timedelta(days=3)}T14:00"]]}, "Garmin")
     c = sl.bars(_nights(rows), D, "90")
-    assert c["trend"].startswith("M") and not any(b.get("top") for b in c["bars"])
+    assert c["trend"].startswith("M") and any(b.get("top") for b in c["bars"])
     # the afternoon nap of D-3 is in the next morning's 24 h: D-2's one bar, never two
-    assert c["bars"][-3]["h"] > c["bars"][-4]["h"] == c["bars"][-5]["h"]
+    assert c["bars"][-3]["top"]["h"] > 0
+    assert c["bars"][-3]["h"] == c["bars"][-4]["h"] == c["bars"][-5]["h"]
     assert c["read"][1] == "en moyenne"
 
 

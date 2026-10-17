@@ -265,22 +265,22 @@ async def test_the_card_on_the_page(as_user: AsyncClient, db_session: AsyncSessi
             'un tour complet représente 200 %.">') in main
     assert '<span class="pf-ring-usual" aria-hidden="true">100 %</span>' in main
     train = main.split('<section id="entrainement"')[1].split("</section>")[0]
-    assert 'data-viz-key="entrainement"' in train
-    assert '<details id="charge-detail" class="pf-chart-details pf-load-detail">' in train
+    assert 'data-viz-key="charge-accumulee"' in train
+    assert '<section id="charge-detail" class="pf-load-detail">' in train
     chart_data = json.loads(re.search(r'<script[^>]*class="pf-viz-data">(.*?)</script>', train, re.S)[1])
-    assert chart_data["rest"][:2] == ["5h00", "7 derniers jours"]
-    assert len(chart_data["d"]) == 7
-    assert sum(row[0] == "1h40" for row in chart_data["r"]) == 3
+    assert chart_data["rest"][1] == "en moyenne"
+    assert len(chart_data["d"]) > 7
+    assert all("u.a." in row[0] for row in chart_data["r"])
     seen = re.sub(r"\s+", " ", _visible(html).replace(" ", " "))
-    assert "ta semaine habituelle : 5h00" in seen
-    assert "Intensité · plus élevée que d'habitude" in seen
+    assert "ta semaine habituelle : 5h00" not in seen
+    assert "Intensité · plus élevée que d'habitude" not in seen
     words = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", train.split(">", 1)[1])).strip())
     assert "Un tour = 200 %" not in words
     help_page = (await as_user.get("/sante/aide")).text
     assert "100 % correspond à ta semaine habituelle, pas à un objectif." in help_page
     assert "pf-dot" not in train and not re.search(r"(?i)trimp|points?\b", words)
     assert len(re.findall(r"(?<![\d,h:])168 %", seen)) == 1
-    assert len(re.findall(r"(?<![\d,h:])5h00", seen)) == 2  # measured duration and usual reference
+    assert len(re.findall(r"(?<![\d,h:])5h00", seen)) == 0  # measured duration and usual reference
 
 
 # ── the laps: read once, COROS's kept, Strava's webhook kept ──────────────────

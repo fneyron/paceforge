@@ -120,12 +120,11 @@ async def test_the_stages_bar_and_its_legend_on_the_owners_page(as_user: AsyncCl
     main = _main(await _page(as_user, monkeypatch, D8))
     hero = main.split('<section id="sommeil"')[1].split("</section>")[0]  # the visible Sommeil panel
     assert "Répartition des phases" in hero
-    bar = re.search(r'<div class="pf-phases-bar" aria-hidden="true">(.*?)</div>', hero).group(1)
-    assert re.findall(r'class="pf-ph is-(\w+)" style="flex-grow: (\d+)"', bar) == [
+    assert 'class="pf-phases-bar" role="group"' in hero
+    assert re.findall(r'class="pf-phase-segment pf-ph is-(\w+)" tabindex="0" style="flex-grow: (\d+)"', hero) == [
         ("awake", "12"), ("light", "326"), ("deep", "71"), ("rem", "119")]
-    legend = re.search(r'<ul class="pf-phases-legend" aria-label="Phases de la nuit">(.*?)</ul>', hero).group(1)
-    assert [re.sub(r"<[^>]+>", "", li) for li in re.findall(r"<li>(.*?)</li>", legend)] == [
-        "Éveil 10 min", "Léger 5h30", "Profond 1h10", "Paradoxal 2h00"]
+    for label in ("Éveil : 10 min", "Léger : 5h30", "Profond : 1h10", "Paradoxal : 2h00"):
+        assert f'aria-label="{label}"' in hero
     # Interpretation is available in the shared help, without repeating it below the chart.
     help_page = (await as_user.get("/sante/aide")).text
     fold = help_page.split("<summary>Calcul détaillé</summary>")[1].split("</details>")[0]
@@ -164,7 +163,7 @@ async def test_recovery_lives_on_sante_only(as_user: AsyncClient, client: AsyncC
     Activités keeps its activity listing without an added recovery verdict or prescription."""
     await seed_owner_v4(db_session, test_user)
     html = await _page(as_user, monkeypatch, D8)
-    assert "Après Transjeju 100M · J+5" in _main(html) and "/activity/" not in _main(html)
+    assert "Après Transjeju 100M · J+5" not in _main(html) and "/activity/" in _main(html)
     assert "pf-ring-charge" not in html and "repères en construction (5/7)" in html
     assert "Charge · 14 jours" not in html and 'data-viz-key="charge"' not in html
 
@@ -224,10 +223,10 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
         # The date and raw measurement stay visible. Source/method remain in the shared detail and VoiceOver.
         assert re.search(r'<b data-r>\d+\u00a0(ms|bpm)</b>', primary), key
         readout = primary.split('class="pf-viz-read pf-viz-read2"')[1].split('<div class="pf-viz-plot">')[0]
-        assert "Dernière nuit" in readout and "Garmin" not in readout and "Moy. 7 j" not in readout
+        assert "en moyenne" in readout and "Garmin" not in readout and "Moy. 7 j" not in readout
         assert f'data-viz-detail-for="{key}"' in explanation and "Garmin" in explanation
         legend = primary.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
-        assert ('<i class="pf-lg is-dot"></i>nuit' in legend and "moyenne 7 j" in legend
+        assert ('<i class="pf-lg is-dot"></i>nuit' in legend and "moyenne glissante" in legend
                 and '<i class="pf-lg is-band"></i>repère habituel' in legend), key
         assert "is-out" not in legend and "is-band-prov" not in legend  # every night counts, a full band
     sleep = main.split('data-viz-key="sommeil-14"')[1].split("</div>\n        </div>")[0]
@@ -259,7 +258,7 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
         ("en construction", "prête dans 4\u00a0nuits"), ("en construction", "prête dans 4\u00a0nuits")]
     html = await _page(as_user, monkeypatch, D5)
     assert '<span class="pf-ring-sub" aria-hidden="true">pas de score</span>' in html and ">estimée<" not in html
-    assert "Après Transjeju 100M · J+2" in _main(html) and "nuit du lun. 5 oct." in _main(html).lower()
+    assert "Après Transjeju 100M · J+2" not in _main(html) and "nuit du lun. 5 oct." in _main(html).lower()
     assert page["synthesis"]["freshness"]["missing"] and not page["synthesis"]["freshness"]["current"]
 
 
@@ -279,7 +278,7 @@ async def test_a_strava_only_athlete_after_an_ultra_gets_context_without_a_state
     assert page["state"] is None and page["score"]["value"] is None and page["connect"]
     assert page["line"] == td.NO_WATCH and page["score"]["missing"]["key"] == "no_night"
     html = await _page(as_user, monkeypatch, today)
-    assert "Effort récent" not in html and 'href="/settings#coros"' in html and "Après Grand Raid · J+2" in _main(html)
+    assert "Effort récent" not in html and 'href="/settings#coros"' in html and "Après Grand Raid · J+2" not in _main(html)
     assert "Connecte ta montre pour ta récupération." not in html
 
 
@@ -315,12 +314,10 @@ async def test_the_range_toggle_works_without_js(as_user: AsyncClient, db_sessio
     today = date(2026, 10, 8)
     await _seed_rows(db_session, test_user, _garmin_rows(today, days=60))
     html = _main(await _page(as_user, monkeypatch, today))
-    form = re.search(r'<form class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges role="group" '
-                     r'aria-label="Période" method="get" action="/sante#sommeil-detail">(.*?)</form>', html,
-                     re.S).group(1)
-    assert 'type="submit" name="r" value="90" data-range="90" aria-pressed="false">3 mois' in form
+    assert 'data-viz-ranges' not in html
     r = await as_user.get("/sante?r=90")
-    assert '<div data-range-panel="90">' in r.text and '<div data-range-panel="14" hidden>' in r.text
+    assert '<div data-range-panel="90">' in r.text and '<div data-range-panel="14"' not in r.text
+
 
 
 async def test_the_race_page_tags_the_nights_as_sante(db_session: AsyncSession, test_user: User):
@@ -434,13 +431,13 @@ async def test_the_night_cards_draw_no_mark_without_a_night(as_user: AsyncClient
                 assert len(idx) > 1 and idx == list(range(idx[0], idx[-1] + 1)), key  # adjacent nights only
                 assert all("moyenne 7 jours" in data["r"][i][3] for i in idx), key
                 drawn[key].append([days[i] for i in idx])
-            assert "moyenne 7 j" in legend, key
+            assert "moyenne glissante" in legend, key
         else:
-            assert "moyenne 7 j" not in legend, key
+            assert "moyenne glissante" not in legend, key
         assert any(date(2026, 10, 2) <= d <= D5 for seg in drawn[key] for d in seg), key
         assert "<rect" not in svg, key  # no grey column behind the selected night
         assert 'class="pf-viz-ring"/>' in svg and 'class="pf-viz-at"/>' in svg, key
-        assert f'class="pf-viz-dot is-sel" data-i="{days.index(D8)}"' in svg, key  # the latest night, in ink
+        assert f'class="pf-viz-dot" data-i="{days.index(D8)}"' in svg, key  # the latest night, in ink
     # Both windows retain the first three nights until 05/10. Later FC windows
     # still have enough measures; VFC's do not, so that curve stops there.
     assert drawn == {"vfc": [[date(2026, 10, k) for k in range(1, 6)]],

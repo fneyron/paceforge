@@ -330,9 +330,9 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
         r.append([index_label(v), f"{st['glyph']} {st['word']}", viz.d_short(d)])
         a.append(f"{viz.d_long(d)} : indice {v} sur 100, {st['word'].lower()}.")
     c = viz.day_bars("recuperation", days, values, readouts=r, arias=a, classes=classes, tones=tones, y_max=100,
-                     lines=((70, index_label(70)), (40, index_label(40))), today=len(days) - 1 if days and days[-1] == today else None,
+                     lines=((70, "70"), (40, "40"), (0, "0")), today=len(days) - 1 if days and days[-1] == today else None,
                      summary=f"Historique des signaux nocturnes : {len(with_score)} indices sur {len(days)} jours")
     title = f"Signaux nocturnes · {len(days)} jours"
-    c = viz.rest(c, ["", f"Historique · {len(days)} jours", ""], f"Historique des scores quotidiens sur {len(days)} jours. Choisis un jour pour voir son "
+    c = viz.rest(c, [index_label(rounded(statistics.fmean(with_score))), "en moyenne", ""], f"Historique des scores quotidiens sur {len(days)} jours. Choisis un jour pour voir son "
                  "score et son état.", back=len(days) - 1)
-    return {**c, "title": title}
+    return {**c, "title": title, "average": index_label(rounded(statistics.fmean(with_score)))}

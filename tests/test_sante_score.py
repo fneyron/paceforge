@@ -474,13 +474,13 @@ def test_the_history_card_rests_on_its_title_and_shows_the_bands():
         hist = sante._history(nights, _runs(), [], D) + [(D, day["state"], day["score"])]
     c = sc.history_card(hist, D)
     d = json.loads(c["data"])
-    assert c["read"] == d["rest"] == ["", "Historique · 14 jours", ""] and d["sel"] == 14 and d["back"] == 13
-    assert c["title"] == "Signaux nocturnes · 14 jours" and "moyenne" not in c["data"]
+    assert c["read"] == d["rest"] == ["100\u00a0/100", "en moyenne", ""] and d["sel"] == 14 and d["back"] == 13
+    assert c["title"] == "Signaux nocturnes · 14 jours" and "en moyenne" in c["data"]
     assert d["r"][-1] == ["100\u00a0/100", "● Signaux habituels", "jeu. 8 oct."] and d["t"][-1] == "ok"
     assert d["a"][-1] == "jeudi 8 octobre : indice 100 sur 100, signaux habituels."
     assert all(b["cls"] == "ok" and not b["est"] for b in c["bars"]) and c["bars"][-1]["today"]
     assert c["hatched"] == []  # every day measured: no hatched bar, no legend for it
-    assert [ln["label"] for ln in c["lines"]] == ["70\u00a0/100", "40\u00a0/100"] and c["lines"][0]["y"] < c["lines"][1]["y"]
+    assert [ln["label"] for ln in c["lines"]] == ["70", "40", "0"] and c["lines"][0]["y"] < c["lines"][1]["y"]
     assert c["xt"][-1]["today"] and c["tone_now"] == ""
 
 
