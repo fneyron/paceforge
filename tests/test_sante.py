@@ -309,7 +309,7 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     page = await sante.health_page(db_session, test_user.id, today=D8)
     assert [(d["key"], d["value"], d["unit"], d["label"], d["sub"], d["tone"], d["href"]) for d in page["dials"]] == [
         ("sommeil", "100", "%", "Sommeil", "suffisant", "sleep", "#sommeil"),
-        ("recup", "—", None, "Récupération", "pas de score", "none", "#recuperation"),
+        ("recup", "—", None, "Récupération", "pas de score", "none", "#vfc"),  # no index day: its stacked curve
         ("entrainement", "15h35", None, "Entraînement", "7 derniers jours", "accent", "#entrainement")]
     assert [d["aria"] for d in page["dials"]] == [
         "Sommeil 100\u00a0% du repère de 8 heures, suffisant.", "Récupération : pas d’indice nocturne pour cette nuit.",
@@ -349,15 +349,15 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
         ("Éveil", 12, "10 min"), ("Léger", 326, "5h30"), ("Profond", 71, "1h10"), ("Paradoxal", 119, "2h00")]
     assert h["phases"]["aria"] == ("Phases estimées par ta montre : éveil 10 minutes, léger 5 heures 30, profond "
                                    "1 heure 10, paradoxal 2 heures.")
-    assert [k for k, _ in s["ranges"]] == ["14"] and s["r"] == "14"  # nothing 14 to 90 days old: no « 3 mois »
+    assert [k for k, _ in s["ranges"]] == ["14"] and s["r"] == "14"  # nothing 30 to 90 days old: no « 3 mois »
     bars = s["bars"]["14"]
     d = json.loads(bars["data"])
     # it rests on the mean (the latest night is the Sommeil row's); a tap: the 24 h, its parts, the night and its
     # times
-    assert bars["read"] == ["8h20", "en moyenne", "Sur 6 nuits mesurées · 14 nuits"]
-    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · repère 8h00"]
-    assert d["r"][12] == ["8h10", "nuit 5h50 + sieste 2h20", "nuit du mar. 6 au mer. 7 · 23:35 → 05:40 · repère 8h00"]
-    assert d["r"][0] == ["1h22", "sieste seule", "nuit du jeu. 24 au ven. 25 · nuit non enregistrée"]  # no « ? »
+    assert bars["read"] == ["8h20", "en moyenne", "Sur 6 nuits mesurées · 30 nuits"]
+    assert d["r"][-1] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · repère 8h00"]
+    assert d["r"][-2] == ["8h10", "nuit 5h50 + sieste 2h20", "nuit du mar. 6 au mer. 7 · 23:35 → 05:40 · repère 8h00"]
+    assert d["r"][-14] == ["1h22", "sieste seule", "nuit du jeu. 24 au ven. 25 · nuit non enregistrée"]  # no « ? »
     assert "?" not in json.dumps(d["r"], ensure_ascii=False)
     # every night counts in the medians (owner, 2026-10-08), the jet-lagged and the post-ultra ones too: 6 nights in
     # 28 days (5 at least, H); the « rendormi » 05:40 of 07/10 left out of the wake; no regularity yet (8, H)
@@ -440,11 +440,16 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     main = _main(html)
     # Rings lead to visible charts; only secondary explanations and charge are folded.
     assert re.findall(r'class="pf-ring pf-ring-(\w+)', main) == ["sommeil", "recup", "entrainement"]
-    for ident in ("sommeil", "recuperation", "entrainement"):
+    for ident in ("sommeil", "entrainement"):
         assert f'<section id="{ident}" class="pf-health-panel" aria-labelledby="h-{ident}">' in main
         assert f'<details id="{ident}"' not in main
         assert f'href="#{ident}"' in main
-    assert main.index('class="pf-dials"') < main.index('id="sommeil"') < main.index('id="vfc"') < main.index('id="fc"')
+    # no index day yet: no empty Récupération card, its ring leads to the stacked FC de nuit curve (owner, 2026-10-17:
+    # the curves stacked on the same days, under the rings)
+    assert 'id="recuperation"' not in main and 'href="#vfc"' in main
+    assert main.index('class="pf-dials"') < main.index('id="courbes"') < main.index('id="sommeil-detail"') \
+        < main.index('id="fc"') < main.index('id="sommeil"')
+    assert main.count('data-viz-group="jours"') == 3  # Sommeil sur 24 h, VFC and FC de nuit follow each other
     assert 'data-viz-key="charge-accumulee"' in main
     assert 'id="forme"' not in main  # no empty panel before qualifying runs exist
     assert 'class="pf-fitness-progress"' in main and "0/6 sorties comparables" in main
@@ -736,7 +741,7 @@ async def test_the_dials_link_to_a_section_the_page_has(db_session: AsyncSession
     await _seed_rows(db_session, test_user, night_rows([5], **kw))
     page = await sante.health_page(db_session, test_user.id, today=today)
     assert [page[k]["status"]["word"] for k in ("vfc", "fc")] == ["en construction", "en construction"]
-    assert page["dials"][1]["href"] == "#recuperation"
+    assert page["dials"][1]["href"] == "#vfc"  # no index day yet: the stacked VFC curve (2026-10-17)
 
 
 # ── opening Santé syncs a stale link ────────────────────────────────────────

@@ -269,6 +269,16 @@ def test_hrv_answer_requires_readable_raw_lines_not_only_a_successful_response()
     assert not coros.hrv_answer_read("")
 
 
+def test_real_coros_empty_hrv_week_is_an_empty_answer_not_an_unreadable_one():
+    """A week the watch was not worn (COROS, 2026-10-17): kept unreadable, it was owed again at every daily read and
+    said « import incomplet » for good."""
+    week = ("Sleep HRV — 2026-08-19 to 2026-08-25\n========================\nNote: dates are wake-up days (each value "
+            "comes from the night that ended that morning).\n\nHRV Assessment — Last 7 days\n========================\n\n"
+            "2026-08-19:\n  No data\n\nNo sleep HRV time series data found in the last 7 days.")
+    assert coros.hrv_answer_read(week) and coros.parse_hrv_points(week) == []
+    assert not coros.hrv_answer_read(week.replace("No sleep HRV time series data found", "Sleep HRV series moved"))
+
+
 def test_real_coros_omitted_hrv_day_is_understood_without_accepting_unknown_raw_lines():
     assert coros.hrv_answer_read(oc.HRV_2026_09_28)
     assert coros.parse_hrv_points(oc.HRV_2026_09_28) == []

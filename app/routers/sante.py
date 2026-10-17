@@ -195,6 +195,7 @@ async def sante_checkin(
     request: Request,
     day: str = Form(...),
     action: Literal["save", "clear"] = Form(default="save"),
+    feel: Literal["good", "ok", "bad"] | None = Form(default=None),
     fatigue: Literal["usual", "high"] | None = Form(default=None),
     pain: Literal["none", "present"] | None = Form(default=None),
     effort: Literal["usual", "harder", "not_done"] | None = Form(default=None),
@@ -205,21 +206,27 @@ async def sante_checkin(
     from app.services.sante import athlete_today
 
     today = await athlete_today(db, user.id)
-    answers = {key: value for key, value in (("fatigue", fatigue), ("pain", pain), ("effort", effort))
+    answers = {key: value for key, value in (("feel", feel), ("fatigue", fatigue), ("pain", pain), ("effort", effort))
                if value is not None}
     error = None
     if day != today.isoformat():
         error = "Le jour a changé. Vérifie tes réponses pour aujourd’hui."
     elif action == "save" and not answers:
-        error = "Choisis au moins une réponse, ou laisse ce volet fermé."
+        error = "Choisis ton ressenti."
     if error:
         checkin = await checkins.read(db, user.id, today)
     else:
         checkin = await checkins.save(db, user.id, today, answers if action == "save" else None)
         await db.commit()
     if request.headers.get("HX-Request"):
-        return templates.TemplateResponse(request, "partials/sante_checkin.html",
-                                          context={"checkin": checkin, "checkin_error": error})
+        from app.services import viz
+        from app.services.sante import CARD_NIGHTS
+        days = [today - timedelta(days=CARD_NIGHTS - 1 - i) for i in range(CARD_NIGHTS)]
+        feels = await checkins.feels(db, user.id, days[0], today)
+        # the curves' track of dots follows the tap (out of band), as the page draws it
+        return templates.TemplateResponse(request, "partials/sante_checkin.html", context={
+            "checkin": checkin, "checkin_error": error, "feel_oob": True,
+            "feel_track": viz.feel_track("ressenti-30", days, feels) if feels else None})
     if error:
         context = await _health_context(db, user)
         context["checkin_error"] = error

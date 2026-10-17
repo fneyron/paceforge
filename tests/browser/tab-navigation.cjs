@@ -56,17 +56,14 @@ async function sameDocument(page) {
     await sameDocument(page);
     await page.evaluate(() => { history.replaceState(null, '', '/sante'); scrollTo({ top: 0, behavior: 'instant' }); });
     const originalAccount = await page.locator('#main-content').getAttribute('data-account');
-    if (await page.locator('.pf-checkin-form button[value="clear"]').count()) {
-      await page.locator('#ressenti').evaluate(el => { el.open = true; });
-      await page.locator('.pf-checkin-form button[value="clear"]').click();
-      await page.waitForFunction(() => document.querySelector('.pf-checkin-summary')?.textContent === 'Facultatif');
+    if (await page.locator('#ressenti button[value="clear"]').count()) {
+      await page.locator('#ressenti button[value="clear"]').click();
+      await page.waitForFunction(() => !document.querySelector('#ressenti [aria-pressed="true"]'));
     }
     // One existing tab remains immediately readable while the next one is requested.
     await page.evaluate(() => {
       document.querySelector('#main-content').dataset.cachedMarker = 'health-visited';
       document.querySelector('#sommeil-habitudes').open = true;
-      document.querySelector('#ressenti').open = true;
-      document.querySelector('.pf-checkin-form input[name="pain"][value="present"]').checked = true;
       scrollTo({ top: 650, behavior: 'instant' });
     });
     await page.waitForTimeout(100);
@@ -98,14 +95,12 @@ async function sameDocument(page) {
     await waiting.promise;
     assert.equal(await page.locator('#main-content').getAttribute('data-cached-marker'), 'health-visited', 'Visited page waited for the delayed GET');
     assert.equal(await page.locator('#sommeil-habitudes').evaluate(el => el.open), true);
-    assert.ok(await page.locator('.pf-checkin-form input[name="pain"][value="present"]').isChecked(), 'Draft check-in disappeared on tab return');
     assert.ok(Math.abs((await page.evaluate(() => scrollY)) - savedY) < 4, 'Tab return lost the scroll position');
-    await page.locator('.pf-checkin-form button[value="save"]').click();
-    await page.waitForFunction(() => document.querySelector('.pf-checkin-summary')?.textContent === 'Douleur signalée');
+    await page.locator('#ressenti').getByRole('button', { name: 'Cassé' }).click();
+    await page.waitForFunction(() => document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim() === 'Cassé');
     release.resolve();
     await page.waitForFunction(() => document.querySelector('#main-content')?.dataset.serverSeq === '2');
-    assert.ok(await page.locator('.pf-checkin-form input[name="pain"][value="present"]').isChecked(), 'Background revalidation replaced the saved answer');
-    assert.match(await page.locator('.pf-checkin-summary').innerText(), /Douleur signalée/, 'Late GET replaced a completed save');
+    assert.equal(await page.evaluate(() => document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim()), 'Cassé', 'Late GET replaced a completed tap');
     await page.unroute('**/sante');
     await go(page, rememberedActivities);
     assert.equal(await page.locator('#main-content').getAttribute('data-measure-marker'), 'distance-visited', 'Measure toggle lost the cached URL');
@@ -122,13 +117,11 @@ async function sameDocument(page) {
     });
     await go(page, '/sante');
     await clearWaiting.promise;
-    await page.locator('#ressenti').evaluate(el => { el.open = true; });
-    await page.locator('.pf-checkin-form button[value="clear"]').click();
-    await page.waitForFunction(() => document.querySelector('.pf-checkin-summary')?.textContent === 'Facultatif');
+    await page.locator('#ressenti button[value="clear"]').click();
+    await page.waitForFunction(() => !document.querySelector('#ressenti [aria-pressed="true"]'));
     releaseClearGet.resolve();
     await page.waitForFunction(() => document.querySelector('#main-content')?.dataset.clearRevalidated === 'yes');
-    assert.equal(await page.locator('.pf-checkin-summary').innerText(), 'Facultatif', 'Late GET replaced a completed clear');
-    assert.equal(await page.locator('.pf-checkin-form input:checked').count(), 0);
+    assert.equal(await page.locator('#ressenti [aria-pressed="true"]').count(), 0, 'Late GET replaced a completed clear');
     await page.unroute('**/sante');
     await go(page, rememberedActivities);
     await sameDocument(page);
@@ -219,9 +212,7 @@ async function sameDocument(page) {
       const response = await route.fetch(); posted.resolve(); await releasePost.promise;
       await route.fulfill({ response });
     });
-    await writingPage.locator('#ressenti').evaluate(el => { el.open = true; });
-    await writingPage.locator('.pf-checkin-form input[name="pain"][value="present"]').check();
-    await writingPage.locator('.pf-checkin-form button[value="save"]').click();
+    await writingPage.locator('#ressenti').getByRole('button', { name: 'Cassé' }).click();
     await posted.promise;
     await writingPage.evaluate(() => { window.leaveDuringWrite = window.paceforgeTabs.navigate('/activities'); });
     await writingPage.waitForTimeout(200);
@@ -230,8 +221,7 @@ async function sameDocument(page) {
     assert.equal(await writingPage.evaluate(() => window.leaveDuringWrite), true);
     await writingPage.waitForURL(base + '/activities');
     await go(writingPage, '/sante');
-    assert.match(await writingPage.locator('#ressenti .pf-checkin-summary').innerText(), /Douleur signalée/);
-    assert.ok(await writingPage.locator('.pf-checkin-form input[name="pain"][value="present"]').isChecked(), 'Completed save disappeared on tab return');
+    assert.equal(await writingPage.evaluate(() => document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim()), 'Cassé', 'Completed tap disappeared on tab return');
     await sameDocument(writingPage);
     await writingPage.close();
 

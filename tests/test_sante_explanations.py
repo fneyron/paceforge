@@ -147,7 +147,7 @@ async def test_actual_nightly_respiration_moves_unchanged_and_phone_day_respirat
     assert item["chart_key"] == expected["chart"]["key"]
     html = _env().get_template("partials/sante_page.html").render(page=p)
     assert html.count('id="respiration"') == 1
-    assert html.index('id="recuperation"') < html.index('id="respiration"')
+    assert html.index('id="courbes"') < html.index('id="respiration"')  # with the stacked curves (2026-10-17)
     assert "Respiration sur 24 h" not in html and 'id="au-quotidien"' not in html  # the phone's 24 h left the page
 
 

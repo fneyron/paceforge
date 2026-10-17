@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "partials/_viz.html" as viz %}
 {% set ds = stats.dataset if stats is defined and stats else {} %}
 {% set va = stats.validation if stats is defined and stats else {} %}
 {% set has_dataset = stats is defined and stats and stats.has_dataset %}
@@ -14,7 +15,7 @@
             <div>
                 <p class="pf-eyebrow">Trail et ultra</p>
                 <h1 class="pf-lh1">Ta forme et tes courses, calées sur <em>tes vraies données.</em></h1>
-                <p class="pf-llead">Prépare tes courses avec un GPX. Relie ta montre COROS ou Garmin pour suivre ton sommeil et ta récupération, ou importe tes activités depuis Strava. Chaque connexion est facultative.</p>
+                <p class="pf-llead">Chaque matin, ton sommeil, ta récupération et ton entraînement en trois anneaux. Pour tes courses, des temps de passage calés sur tes données.</p>
                 <div class="pf-lctas">
                     <a href="/auth/register" class="pf-btn pf-btn-primary">Créer mon compte
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
@@ -25,7 +26,14 @@
                 <div class="pf-note !text-danger mt-4" role="alert">La connexion a échoué. Réessaie.</div>
                 {% endif %}
             </div>
-            {# what you get: the plan, in miniature #}
+            <div class="pf-lpreviews">
+            {# what you get: the morning's rings, then the plan, in miniature #}
+            {% if rings %}
+            <div class="pf-lrings" role="group" aria-label="Exemple d’un matin dans Santé">
+                <p class="pf-label">Exemple · ce matin</p>
+                <div class="pf-dials">{% for r in rings %}{{ viz.viz_ring(r) }}{% endfor %}</div>
+            </div>
+            {% endif %}
             <div class="pf-panel pf-lpreview" aria-label="Exemple de plan">
                 <div class="flex items-end justify-between gap-3">
                     <div><p class="pf-label">Exemple · 42 km · 2 400 m D+ · objectif</p><p class="pf-big pf-lpv-big">5h30</p></div>
@@ -43,6 +51,7 @@
                     <div><span>Arrivée <span class="pf-label">km 42</span></span><b class="tabular-nums text-accent">11:30</b></div>
                 </div>
             </div>
+            </div>
         </section>
 
         {% if has_dataset %}
@@ -59,7 +68,7 @@
 
         <section class="pf-lsteps" aria-label="En 3 étapes">
             <div><p class="pf-lstep-i">01</p><h2 class="pf-h2">Crée ton compte</h2><p>Inscris-toi avec ton email. Tu peux utiliser PaceForge sans Strava et sans montre connectée.</p></div>
-            <div><p class="pf-lstep-i">02</p><h2 class="pf-h2">Suis ta forme</h2><p>Si tu relies ta montre COROS ou Garmin, retrouve ton sommeil et ta récupération. Strava peut aussi importer tes sorties.</p></div>
+            <div><p class="pf-lstep-i">02</p><h2 class="pf-h2">Suis ta forme</h2><p>Relie ta montre COROS ou Garmin&nbsp;: chaque matin tes anneaux, tes courbes sur 30 jours et tes tendances sur 3 mois. Strava importe aussi tes sorties.</p></div>
             <div><p class="pf-lstep-i">03</p><h2 class="pf-h2">Prépare ta course</h2><p>Importe le GPX&nbsp;: tes temps de passage calés sur tes courses et tes longues sorties. Sur ta montre, imprimé ou sur ton téléphone.</p></div>
         </section>
 

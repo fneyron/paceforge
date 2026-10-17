@@ -101,6 +101,11 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     # The same real nightly respiratory card lives with Recovery; a phone's resp_day aggregate is never promoted to
     # a night. The other daily cards (FC sur 24 h, stress, respiration sur 24 h) left the page (owner, 2026-10-16:
     # « les tendances sur poids fc pas »): Tendances, 90 days of the weight, the body fat, the night HR, the steps.
+    # The one-tap feel's dots, under the stacked curves (owner, 2026-10-17), on the days it is asked (the calendar's)
+    from app.services import sante_checkin
+    feel_days = [until - timedelta(days=CARD_NIGHTS - 1 - i) for i in range(CARD_NIGHTS)]
+    feels = await sante_checkin.feels(db, user_id, feel_days[0], until)
+    out["feel_track"] = viz.feel_track("ressenti-30", feel_days, feels) if feels else None
     out["respiration"] = next((c for c in daily if c["key"] == "resp_night"), None)
     out["trends"] = [t for t in (trends.get("weight"), trends.get("body_fat"), out.pop("hr_trend", None),
                                  trends.get("steps")) if t]
@@ -425,9 +430,9 @@ def _top(day: dict, sessions, has_watch: bool, page: dict, until: date, load: di
     sleep = page.get("sleep") or {}
     sleep_href = ("#sommeil" if sleep.get("state") == "old" or sleep.get("hero") else
                   "#sommeil-detail" if sleep.get("state") == "ok" else None)
-    recup_href = "#recuperation" if (
-        page.get("recup") or page.get("vfc") or page.get("fc") or score["value"] is not None
-    ) else None
+    # the Récupération card holds the index's days; without them, the stacked VFC and FC de nuit curves
+    recup_href = ("#recuperation" if page.get("recup") or score["value"] is not None else
+                  "#vfc" if page.get("vfc") else "#fc" if page.get("fc") else None)
     train = training(sessions, day["day"], until, load=load)
     train["chart"] = st.training_days(sessions, day["day"], until)
     train["dial"]["note"] = "7 jours" if train["usual"] is not None else None

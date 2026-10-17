@@ -637,9 +637,13 @@ def hrv_answer_read(text: str) -> bool:
         return True
     if re.search(r"\btimestamp\s*=", text or ""):
         return False
+    # A week the watch was not worn (2026-10-17: « No data » under its assessment, then « No sleep HRV time series
+    # data found in the last 7 days. »): an explicit empty answer, never an unreadable one kept owed every day.
     return bool(re.search(r"\bHRV Avg:\s*" + _NUM + r"\s*ms\b", text or "")
                 or re.search(r"\bNo (?:HRV )?(?:readings|data)(?: available)? for (?:this|the|selected) period\b",
-                             text or "", re.I))
+                             text or "", re.I)
+                or re.search(r"^\s*No sleep HRV time series data found in the last \d+ days?\.?\s*$", text or "",
+                             re.I | re.M))
 
 
 def local_time(ts: int, tz: int) -> datetime:
@@ -853,6 +857,10 @@ def sport_records_readable(text: str | None, records: list[dict]) -> bool:
     In particular an unknown answer and a recognised zero-record answer are
     different. Keep valid rows from a partially understood answer, but retry it.
     """
+    # COROS's answer for a window without any activity (2026-10-17), else the day stayed owed at every sync
+    if not records and re.fullmatch(r"No sport records found from \d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}\.?",
+                                    (text or "").strip()):
+        return True
     if _sport_records_count(text) != len(records):
         return False
     numbered = re.findall(r"^\s*\d+\.\s+", text or "", re.M)
@@ -1902,8 +1910,11 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     result["backfill_partial"] = ((bool(data.get("health_stopped")) or result["hrv_incomplete"]
                                    or result["sleep_incomplete"] or result["phases_incomplete"])
                                   and days == BACKFILL_DAYS) or deferred
-    logger.info("COROS sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s",
-                conn.user_id, days, calls, failed, ", stopped" if stopped else "", result["by_metric"], sessions)
+    flags = [k for k in ("hrv_unreadable", "hrv_incomplete", "sleep_incomplete", "phases_incomplete",
+                         "backfill_partial", "activities_incomplete") if result.get(k)]
+    logger.info("COROS sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s%s",
+                conn.user_id, days, calls, failed, ", stopped" if stopped else "", result["by_metric"], sessions,
+                f", incomplete: {', '.join(flags)}" if flags else "")
     return result
 
 

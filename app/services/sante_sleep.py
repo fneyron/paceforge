@@ -30,7 +30,7 @@
   gets its hypnogram above it (lanes, the same colours). A night without
   stage minutes: its plain bar on a clock axis (bed → wake, the naps on their
   own lane: never in the night's timing, HR or HRV).
-- 14 nuits / 3 mois: one bar per day of 24-h sleep (the main night solid, the
+- 30 nuits / 3 mois: one bar per day of 24-h sleep (the main night solid, the
   naps its 24 h counts lighter on top: nights.day_naps, each nap on one bar
   only, the ring's and the score's figure; a day without a main night: its
   naps the next morning does not count, « sieste seule », the others on that
@@ -62,7 +62,9 @@ from datetime import date, timedelta
 from app.services import nights as nt
 from app.services import viz
 
-RANGES = {"14": (14, "14 nuits"), "90": (90, "3 mois")}
+# The short range spans 30 nights since the stacked curves (owner, 2026-10-17: the VFC and FC de nuit cards' days);
+# « 14 » stays its id (?r=14 links, saved selections, sommeil-14 charts read elsewhere)
+RANGES = {"14": (30, "30 nuits"), "90": (90, "3 mois")}
 USUAL_NIGHTS = 5  # (H) nights of 28 days before a median bedtime and wake are shown
 TABLE_DAYS = 30
 REF_MIN = 7 * 60  # lower threshold for sufficient sleep (Watson 2015a; Hirshkowitz 2015)
@@ -112,8 +114,8 @@ def _measured(n) -> bool:
 
 
 def offered_ranges(nights: dict, today: date) -> list[str]:
-    """« 14 nuits », and « 3 mois » when a measured day is 14 to 90 days old."""
-    mid = any(today - timedelta(days=90) < d <= today - timedelta(days=14) and _measured(n) for d, n in nights.items())
+    """« 30 nuits », and « 3 mois » when a measured day is 30 to 90 days old."""
+    mid = any(today - timedelta(days=90) < d <= today - timedelta(days=30) and _measured(n) for d, n in nights.items())
     return ["14"] + (["90"] if mid else [])
 
 
@@ -122,7 +124,7 @@ def choose(nights: dict, today: date, r: str | None) -> str:
     offered = offered_ranges(nights, today)
     if r in offered:
         return r
-    recent = any(today - timedelta(days=14) < d <= today and _measured(n) for d, n in nights.items())
+    recent = any(today - timedelta(days=30) < d <= today and _measured(n) for d, n in nights.items())
     return "14" if recent or len(offered) == 1 else "90"
 
 
@@ -159,7 +161,7 @@ def bars(nights: dict, today: date, key: str) -> dict:
     tst = [nt.day_tst24(nights, d) for d in days]  # the 24 h before each wake, each nap once (day_naps)
     values = [nights[d].asleep if d in nights else None for d in days]
     stack = [nt.bar_nap_min(nights, d) or None for d in days]
-    if n_days > 14:  # 90 slivers: each day's 24 h in one faint bar, the 7-night mean is the mark
+    if n_days > 31:  # 90 slivers: each day's 24 h in one faint bar, the 7-night mean is the mark
         values = tst
         stack = None
     r, a = [], []
@@ -173,7 +175,7 @@ def bars(nights: dict, today: date, key: str) -> dict:
         a.append(said)
     totals = [v for v in tst if v is not None]
     trend, trend_sources = None, None
-    if n_days > 14:  # the long range: the 7-night mean over faint bars
+    if n_days > 31:  # the long range: the 7-night mean over faint bars
         averages = [nt.mean7(nights, "tst24", d) for d in days]
         trend = [m["value"] if m else None for m in averages]
         trend_sources = [nt.mean_source(nights, "tst24", d) for d in days]
@@ -383,7 +385,7 @@ def sleep_section(nights: dict, today: date, r: str | None = None, samples: dict
     h = hero(nights, today, samples)
     offered = offered_ranges(nights, today)
     if h is None and "90" not in offered and not any(
-            today - timedelta(days=14) < d <= today and _measured(n) for d, n in nights.items()):
+            today - timedelta(days=30) < d <= today and _measured(n) for d, n in nights.items()):
         return {"state": "old", "rows": rows(nights, today)}
     chosen = choose(nights, today, r)
     return {"state": "ok", "hero": h, "ranges": [(k, RANGES[k][1]) for k in offered], "r": chosen,

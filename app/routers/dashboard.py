@@ -60,8 +60,21 @@ async def landing(
     if user:  # signed in: the daily dashboard
         return RedirectResponse(url=HOME, status_code=302)
     return templates.TemplateResponse(
-        request, "login.html", context={"error": error, "stats": load_model_stats()}
+        request, "login.html", context={"error": error, "stats": load_model_stats(), "rings": _example_rings()}
     )
+
+
+def _example_rings() -> list[dict]:
+    """The marketing page's morning, as Santé draws it (an example, said so): Sommeil, Récupération, Entraînement."""
+    from app.services import viz
+
+    training = viz.ring("entrainement", .41, "82", "Entraînement", "comme d’habitude", unit="%",
+                        aria="Exemple : entraînement à 82 % de ta semaine habituelle")
+    training["usual_marker"] = True
+    return [viz.ring("sommeil", .96, "96", "Sommeil", "suffisant", unit="%", tone="sleep",
+                     aria="Exemple : sommeil à 96 % du repère de 8 heures"),
+            viz.ring("recup", .72, "72", "Récupération", "habituelle", unit="/100", tone="ok",
+                     aria="Exemple : récupération 72 sur 100"), training]
 
 
 @router.get("/landing", response_class=HTMLResponse)
@@ -69,7 +82,7 @@ async def landing_page(request: Request, error: str | None = None):
     """Page marketing, accessible même connecté."""
     return templates.TemplateResponse(
         request, "login.html",
-        context={"error": error, "force_public": True, "stats": load_model_stats()},
+        context={"error": error, "force_public": True, "stats": load_model_stats(), "rings": _example_rings()},
     )
 
 
