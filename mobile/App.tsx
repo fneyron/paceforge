@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { api, ApiError, authorized, Credentials, ORIGIN, rotateToken, rotationDue, trusted } from './src/api';
-import { authorize, collect, collectSleep } from './src/health';
+import { authorizationNeeded, authorize, collect, collectSleep } from './src/health';
 import { Pair } from './src/types';
 import { due, fullDue, reportText, syncIssue, SyncReport, syncHealth, Trigger } from './src/sync';
 import { KEYS, KeychainLocked, secure } from './src/secure';
@@ -50,7 +50,6 @@ function Companion() {
   const [loadError, setLoadError] = useState('');
   const [last, setLast] = useState('');
   const [report, setReport] = useState<SyncReport | null>(null);
-  const [automatic, setAutomatic] = useState(false);
   const [detail, setDetail] = useState<DeviceDetail>(null);
   const [connections, setConnections] = useState<Connections | null>(null);
   const [needsReconnect, setNeedsReconnect] = useState(false);
@@ -105,12 +104,12 @@ function Companion() {
   const readStored = useEffectEvent(async () => {
     try {
       await secure.prepare().catch(e => { if (e instanceof KeychainLocked) throw e; });
-      const [saved, time, auto, receipt, blocked] = await Promise.all([secure.recover(KEYS.pair), secure.get(KEYS.last),
-        secure.get(KEYS.auto), secure.get(KEYS.sync), backgroundBlock()]);
+      const [saved, time, receipt, blocked] = await Promise.all([secure.recover(KEYS.pair), secure.get(KEYS.last),
+        secure.get(KEYS.sync), backgroundBlock()]);
       const account = saved ? JSON.parse(saved) as Pair : null;
       const previous = receipt ? JSON.parse(receipt) as SyncReport : null;
       stored.current = true;
-      setPair(account); setLast(time || ''); setAutomatic(auto === 'true'); setBlock(blocked);
+      setPair(account); setLast(time || ''); setBlock(blocked);
       if (previous && previous.userId === account?.user_id) {
         seenReceipt.current = { userId: previous.userId, at: previous.lastReceivedAt };
         setReport(previous); setNeedsReconnect(!!previous?.reconnect);
@@ -315,7 +314,8 @@ function Companion() {
       setUrl(target); setShowWeb(true); setStatus('Confirme le compte auquel envoyer les mesures.'); guard();
     } catch (e) { if (epoch === accountEpoch.current) fail(e); }
   }
-  function sync(quiet = false, consent = false, forceSources = false) {
+  // `ask`: the « Synchroniser » button, which also offers a permission not granted yet (Health Connect).
+  function sync(quiet = false, consent = false, forceSources = false, ask = false) {
     if (!pair || !start()) return;
     setHealthIssue('');
     syncTrigger.current = quiet && !forceSources ? 'auto' : 'manual';
@@ -323,7 +323,7 @@ function Companion() {
     const nonce = random(), target = `${ORIGIN}/mobile/session?nonce=${nonce}`;
     inlineSync.current = quiet && documentReady.current && refreshable(documentUrl.current);
     refreshSources.current = forceSources;
-    pending.current = { kind: 'check', nonce, url: target, consent,
+    pending.current = { kind: 'check', nonce, url: target, consent, ask,
       ...(inlineSync.current ? { pageUrl: webLocation.current } : {}) };
     // A pull or a manual sync reads the 7-day overlap; the history only when its reread is due.
     syncFull.current = fullDue(report);
@@ -341,7 +341,7 @@ function Companion() {
       refreshPage(true);
     }
   }
-  async function upload(account: Pair, consent = false) {
+  async function upload(account: Pair, consent = false, ask = false) {
     const epoch = accountEpoch.current;
     const current = () => { if (epoch !== accountEpoch.current) throw stoppedSync.current; };
     pending.current = null; if (watchdog.current) clearTimeout(watchdog.current);
@@ -351,8 +351,12 @@ function Companion() {
       // One sync at a time, also with a background run (another runtime on Android).
       await syncExclusively(async () => {
         current();
-        if (consent) { setStatus('Choisis les données à partager…'); await authorize(automatic && Platform.OS === 'android'); }
-        const full = consent || syncFull.current;
+        // Updates are automatic once Santé is connected (owner, 2026-10-17): no switch. A permission sheet never
+        // presented (a category an update added) opens by itself in the foreground; Android also asks to read in
+        // the background. A newly allowed category is read over the whole history.
+        const asked = consent || await authorizationNeeded(ask);
+        if (asked) { current(); setStatus('Choisis les données à partager…'); await authorize(Platform.OS === 'android'); }
+        const full = asked || syncFull.current;
         let credentials: Pair = account;
         const keep = async (next: Credentials) => {
           current();
@@ -523,15 +527,12 @@ function Companion() {
         const account: Pair = { ...await api('/api/mobile/exchange', 'POST', { code: reply.code, verifier: reply.task.verifier }),
           rotated_at: new Date().toISOString() };
         current();
-        const sameAccount = pair?.user_id === account.user_id;
         await syncExclusively(async () => {
           current();
           await secure.rewrite(KEYS.pair, JSON.stringify(account)); current(); setPair(account); setShowWeb(false); setTab('devices');
           await secure.remove(KEYS.last); current(); setLast('');
           await secure.remove(KEYS.sync); current(); setReport(null);
           seenReceipt.current = { userId: account.user_id, at: '' };
-          // Reconnecting the same account (refused token) keeps the automatic update choice.
-          if (!sameAccount) { await secure.remove(KEYS.auto); current(); setAutomatic(false); }
           await resetBackgroundState(account.user_id); current(); setBlock('');
         });
         current();
@@ -546,7 +547,7 @@ function Companion() {
           return;
         }
         confirmAccount(true);
-        await upload(pair, reply.task.consent);
+        await upload(pair, reply.task.consent, reply.task.ask);
       }
     } catch (e) { if (epoch === accountEpoch.current && e !== stoppedSync.current) fail(e); }
   }
@@ -592,7 +593,7 @@ function Companion() {
         await secure.remove(KEYS.progress).catch(() => {});
       });
       if (epoch !== accountEpoch.current) return;
-      setPair(null); setAutomatic(false); setLast(''); setReport(null); setHealthIssue(''); setNeedsReconnect(false);
+      setPair(null); setLast(''); setReport(null); setHealthIssue(''); setNeedsReconnect(false);
       setStatus('Téléphone dissocié. L’historique reçu reste dans ton compte.');
     } catch (e) { if (epoch === accountEpoch.current) fail(e); } finally { if (epoch === accountEpoch.current) finish(); }
   }
@@ -602,12 +603,12 @@ function Companion() {
     flushBackgroundRefresh();
     if (externalReturn.current) {
       externalReturn.current = false; setTab('devices'); setShowWeb(false); setDetail(null); refreshConnections();
-    } else if (tab !== 'devices' && automatic && pair && !needsReconnect && documentReady.current && refreshable(documentUrl.current) &&
+    } else if (tab !== 'devices' && pair && !needsReconnect && documentReady.current && refreshable(documentUrl.current) &&
       (due(report, lastAttempt.current) || (backgroundPending() && Date.now() - lastAttempt.current >= 60000))) sync(true);
   });
-  // Background sync follows the toggle, the pairing and the account. Registered from
+  // Background sync follows the pairing and the account (no switch since 2026-10-17). Registered from
   // the foreground only (iOS: after the HealthKit permission sheet).
-  const wantBackground = !!pair && automatic && !needsReconnect && !block && !(connections && pair && connections.user_id !== pair.user_id);
+  const wantBackground = !!pair && !needsReconnect && !block && !(connections && pair && connections.user_id !== pair.user_id);
   const reconcile = useEffectEvent(() => {
     if (!ready || AppState.currentState !== 'active') return;
     reconciled.current = true;
@@ -707,16 +708,10 @@ function Companion() {
     <View style={styles.content}>
     {offline.view !== null && <OfflinePlansScreen plans={offline.library.plans} selected={offline.view} select={offline.setView}
       notice={offline.notice} remove={offline.remove} close={() => { offline.setView(null); setTab('courses'); loadScreen(tabLocations.current.courses || ORIGIN + '/simulator'); }} />}
-    {tab === 'devices' && !showWeb && offline.view === null && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} report={report} automatic={automatic}
+    {tab === 'devices' && !showWeb && offline.view === null && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} report={report}
       busy={busy} ready={ready} status={status} error={error || (detail === 'health' ? '' : visibleIssue)} connections={connections} needsReconnect={needsReconnect}
-      connectHealth={connectHealth} sync={() => sync()} disconnect={disconnect}
-      auto={v => {
-        if (!v) cancelBackgroundSync();
-        setAutomatic(v); secure.set(KEYS.auto, String(v)).catch(fail);
-        // Android: reading in the background needs its own Health Connect permission.
-        if (v && Platform.OS === 'android') void authorize(true).catch(() => {}).finally(() => reconcile());
-      }}
-      provider={openProvider} refresh={refreshConnections} settings={openSettings} health={() => openTab('health')} />}
+      connectHealth={connectHealth} sync={() => sync(false, false, false, true)} disconnect={disconnect}
+      provider={openProvider} refresh={refreshConnections} settings={openSettings} />}
     {webVisible && tab === 'courses' && (offline.busy || offline.notice) && <View style={[styles.syncStatus, night && styles.darkSurface]} accessibilityLiveRegion="polite">
       {offline.busy && <ActivityIndicator size="small" />}<Text style={[styles.syncText, night && styles.darkMuted]}>{offline.busy ? 'Enregistrement du plan sur le téléphone…' : offline.notice}</Text>
     </View>}

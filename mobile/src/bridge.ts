@@ -3,7 +3,7 @@ import { Connections, readConnections } from './connections';
 
 export type Pending =
   | { kind: 'pair'; verifier: string; challenge: string; url: string }
-  | { kind: 'check'; nonce: string; url: string; consent: boolean; pageUrl?: string }
+  | { kind: 'check'; nonce: string; url: string; consent: boolean; ask?: boolean; pageUrl?: string }
   | { kind: 'connections'; nonce: string; url: string; pageUrl?: string };
 type Reply =
   | { kind: 'pair'; task: Extract<Pending, { kind: 'pair' }>; code: string }

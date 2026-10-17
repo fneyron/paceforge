@@ -26,7 +26,7 @@ export class File {
 export const getRandomBytes=(n:number)=>crypto.getRandomValues(new Uint8Array(n));
 export const CryptoDigestAlgorithm={SHA256:'SHA256'};
 export const digestStringAsync=async()=> 'a'.repeat(64);
-export const authorize=async()=>{};
+export const authorize=async()=>{};export const authorizationNeeded=async()=>false;
 // Background sync: task registration and HealthKit change subscriptions are recorded.
 export const BackgroundTaskStatus={Restricted:1,Available:2};export const BackgroundTaskResult={Success:1,Failed:2};
 export const defineTask=(name:string,run:any)=>{w.tasks[name]=run;};

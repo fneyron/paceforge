@@ -20,6 +20,16 @@ export async function authorize(background = false): Promise<void> {
   const permissions = Object.values(records).map(recordType => ({ accessType: 'read', recordType } as Permission));
   await requestPermission(background ? [...permissions, { accessType: 'read', recordType: 'BackgroundAccessPermission' }] : permissions);
 }
+/** Health Connect has no « never asked » state: a permission not granted (background reading included) is
+ * offered again by the « Synchroniser » button only, never by an automatic sync. */
+export async function authorizationNeeded(manual = false): Promise<boolean> {
+  if (!manual) return false;
+  try {
+    if (!await initialize()) return false;
+    const granted = await readable(healthReader(10000));
+    return [...Object.values(records), 'BackgroundAccessPermission'].some(type => !granted.has(type));
+  } catch { return false; }
+}
 /** No feature check in this library version: the grant itself is the answer. */
 export async function hasBackgroundAccess(): Promise<boolean> {
   try {
