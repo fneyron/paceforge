@@ -65,17 +65,23 @@ n’est plus proposé. Les enregistrements des fournisseurs restent conservés.
 (PKCE), demande des permissions puis première lecture et envoi. Une association
 existante vérifie d’abord le compte web. Une permission demandée ne signifie pas
 permission accordée : « Connecté » décrit l’association, pas la fraîcheur des
-mesures. Le dernier envoi réel est daté dans le détail. « Revoir les autorisations » relance aussi la lecture.
+mesures. Le dernier envoi réel est daté dans le détail, qui n’a que deux actions
+(propriétaire, 17 octobre 2026) : « Synchroniser » et « Déconnecter » (confirmée).
+L’actualisation est automatique dès l’association : plus d’interrupteur.
 L’aide explique le partage des balances et applications sportives vers un
 service compatible, sans associer la connexion à un modèle précis.
 
-Sur iPhone, chaque catégorie vérifie d’abord si sa demande d’autorisation a
-déjà été présentée, notamment après une mise à jour ajoutant le sommeil ou la
-VFC. Une catégorie encore à demander n’est pas interrogée : le reçu indique
-« Réglages → Apple Santé → Revoir les autorisations ». Les autres catégories
-restent lisibles. Ce contrôle ne révèle pas l’accord ou le refus de lecture ;
-une lecture vide après la demande reste une absence de mesure, jamais un zéro.
-La synchronisation automatique n’ouvre aucune demande de permission.
+Sur iPhone, une synchronisation au premier plan (ouverture, retour,
+« Synchroniser ») présente d’elle-même la demande d’autorisation d’une
+catégorie jamais demandée, notamment après une mise à jour ajoutant le sommeil
+ou la VFC ; iOS ne la montre qu’une fois. Une lecture en arrière-plan ne demande
+rien : la catégorie n’est pas interrogée et le reçu indique « Touche
+« Synchroniser » pour l’accorder ». Les autres catégories restent lisibles. Ce
+contrôle ne révèle pas l’accord ou le refus de lecture ; une lecture vide après
+la demande reste une absence de mesure, jamais un zéro. Health Connect n’a pas
+d’état « jamais demandé » : « Synchroniser » propose à nouveau une permission non
+accordée (lecture en arrière-plan comprise), jamais une synchronisation
+automatique.
 Le conseil de déverrouiller l’iPhone est réservé aux données protégées
 indisponibles ; les délais, erreurs de lecture et erreurs de traitement des
 nuits ont des messages distincts. Un contrôle d’autorisation expiré ne lance
@@ -236,7 +242,8 @@ changement de compte et déconnexion. Les API natives y sont simulées : vérifi
   de compte interrompent l’envoi et la reprise est idempotente.
 - Réglages conserve un reçu dans SecureStore, lié au compte : tentative complète
   ou partielle, dernier envoi confirmé, dernière pesée lue et dernière pesée
-  retenue par le serveur. Un ancien relevé ignoré n’est pas compté comme reçu.
+  retenue par le serveur (ces deux pesées ne sont plus affichées depuis le
+  17 octobre 2026). Un ancien relevé ignoré n’est pas compté comme reçu.
   Ni une réponse HTTP réussie ni une lecture vide ne prouvent une mesure récente.
 - Senssun Health iOS doit écrire ses pesées dans Apple Santé. Aucun accès direct
   à EXZACT/Senssun n'est supposé. Senssun → Health Connect sur Android reste à
@@ -246,8 +253,8 @@ changement de compte et déconnexion. Les API natives y sont simulées : vérifi
 
 Exigence du propriétaire : les pesées de la balance (Senssun Health → Apple Santé)
 et les nuits arrivent dans PaceForge sans ouvrir l’application. Elle suit
-l’interrupteur « Actualisation automatique », une fois le téléphone associé ;
-elle est désactivée avec lui, à la dissociation, si la session du site montre un
+l’association du téléphone (plus d’interrupteur depuis le 17 octobre 2026 ; un
+ancien choix enregistré est ignoré) ; elle est désactivée à la dissociation, si la session du site montre un
 autre compte, à la déconnexion du site et sur un jeton refusé (401, avec la
 demande de reconnexion dans Réglages).
 
@@ -272,7 +279,7 @@ demande de reconnexion dans Réglages).
   alors rien lire et ne garantit aucun rattrapage.
 - **Android.** WorkManager (`expo-background-task`, environ toutes les 60 min)
   exécute la lecture sans écran, avec la permission
-  `READ_HEALTH_DATA_IN_BACKGROUND`, demandée en activant l’interrupteur.
+  `READ_HEALTH_DATA_IN_BACKGROUND`, demandée à l’association et par « Synchroniser » tant qu’elle manque.
   Un jeton de changements Health Connect par catégorie indique ce qui a changé :
   seules ces catégories sont relues sur 3 jours ; un jeton expiré relit 7 jours ;
   un refus de quota arrête la lecture jusqu’à l’heure suivante.
@@ -296,7 +303,7 @@ demande de reconnexion dans Réglages).
   hors connexion ne sont plus remplacés par une bibliothèque vide. iOS conserve
   ces éléments après une désinstallation : un marqueur dans les documents de
   l’application (supprimés avec elle) distingue une réinstallation, qui efface
-  l’association, le reçu, l’interrupteur, l’état d’arrière-plan et l’index hors
+  l’association, le reçu, l’état d’arrière-plan et l’index hors
   connexion, d’une mise à jour, qui les garde.
 
 Limites, sans contournement possible :
@@ -345,7 +352,7 @@ site (API natives simulées). À vérifier sur appareil, avec la nouvelle build 
    part au réveil suivant ou à l’ouverture (aucun envoi au seul retour du réseau).
 7. Après un redémarrage, avant puis après le premier déverrouillage.
 8. Plans hors connexion toujours présents après ces lancements en arrière-plan.
-9. Android : activer l’interrupteur (permission en arrière-plan de Health Connect),
+9. Android : accorder la permission en arrière-plan de Health Connect (« Synchroniser »),
    pesée Senssun/balance dans Health Connect, application fermée : envoi à la
    tâche suivante (jusqu’à environ une heure) ; refus de la permission : seule
    l’actualisation à l’ouverture reste ; mode avion et redémarrage comme sur iPhone.

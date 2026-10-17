@@ -49,7 +49,7 @@ test('an existing pairing with newly added sleep permissions gets an actionable 
   assert.equal(queried, false);
   assert.equal(result.complete, false);
   assert.equal(result.nights.length, 0);
-  assert.match(result.notices.join(' '), /Revoir les autorisations/);
+  assert.match(result.notices.join(' '), /Touche « Synchroniser » pour l’accorder/);
   assert.doesNotMatch(result.notices.join(' '), /[Dd]éverrouill/);
 });
 
@@ -76,7 +76,7 @@ test('a missing optional nightly permission preserves sleep and the other readin
   assert.equal(result.nights.length, 1);
   assert.deepEqual(result.nights[0].hr, [{ at: '2026-10-12T00:00:00.000Z', value: 52 }]);
   assert.equal(calls.some(id => id.endsWith('HeartRateVariabilitySDNN')), false);
-  assert.match(result.notices.join(' '), /VFC nocturne.*Revoir les autorisations/);
+  assert.match(result.notices.join(' '), /VFC nocturne.*Touche « Synchroniser » pour l’accorder/);
 });
 
 test('processing failures are not reported as a locked phone or a failed HealthKit query', async () => {

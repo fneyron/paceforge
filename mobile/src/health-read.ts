@@ -23,7 +23,7 @@ export function readIssue(label: string, error: unknown): string {
   const code = healthKitCode(error);
   const message = error instanceof Error ? error.message : '';
   if (error instanceof HealthAuthorizationRequired || code === 5 || /\bauthorization (?:is )?not determined\b/i.test(message)) {
-    return `${label} : autorisation à demander. Ouvre Réglages → Apple Santé → Revoir les autorisations.`;
+    return `${label} : autorisation à demander. Touche « Synchroniser » pour l’accorder.`;
   }
   if (error instanceof HealthDataLocked || code === 6 || /\bprotected health data is inaccessible\b/i.test(message)) {
     return `${label} : données protégées indisponibles. Déverrouille l’iPhone, puis réessaie en gardant PaceForge ouvert.`;

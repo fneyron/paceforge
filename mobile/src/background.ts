@@ -47,14 +47,15 @@ async function loadStored(): Promise<Stored> {
   await controlQueue;
   // Shared with the app: a locked keychain surfaces on the reads below, as « locked ».
   await secure.prepare().catch(() => {});
-  const [rawPair, auto, receipt, rawState, rawProgress] = await Promise.all([secure.recover(KEYS.pair), secure.get(KEYS.auto),
+  const [rawPair, receipt, rawState, rawProgress] = await Promise.all([secure.recover(KEYS.pair),
     secure.get(KEYS.sync), secure.get(KEYS.background), secure.get(KEYS.progress)]);
   const pair = readPair(rawPair), state = readState(rawState), progress = readState(rawProgress);
   // Existing installations kept progress in the control entry. It is read until
   // the first separate progress write; an old account/generation is never merged.
   if (state.userId === null && pair) state.userId = pair.user_id;
   if (rawProgress && progress.userId === state.userId && progress.generation === state.generation) Object.assign(state, progressOf(progress));
-  return { pair, automatic: auto === 'true', receipt: readReceipt(receipt), state };
+  // Automatic once paired (owner, 2026-10-17: no switch any more; an older install's stored choice is ignored).
+  return { pair, automatic: true, receipt: readReceipt(receipt), state };
 }
 const saveProgress = (progress: BackgroundProgress) => secure.set(KEYS.progress, JSON.stringify(progress));
 

@@ -23,9 +23,18 @@ const queries: HealthQueries = { queryQuantitySamples, queryCategorySamples, que
 export const backgroundTypes = ['HKQuantityTypeIdentifierBodyMass', 'HKQuantityTypeIdentifierBodyFatPercentage',
   'HKCategoryTypeIdentifierSleepAnalysis'] as const;
 
+const readTypes = [...Object.values(identifiers), 'HKCategoryTypeIdentifierSleepAnalysis', 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN'] as const;
 export async function authorize(_background = false): Promise<void> {
   if (!isHealthDataAvailable()) throw new Error('Apple Santé n’est pas disponible sur cet appareil.');
-  await requestAuthorization({ toRead: [...Object.values(identifiers), 'HKCategoryTypeIdentifierSleepAnalysis', 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN'] });
+  await requestAuthorization({ toRead: [...readTypes] });
+}
+/** True only while a category's sheet was never presented (one an update added): iOS shows it once, never again
+ * after an answer, and never tells whether reading was allowed. Foreground syncs ask by themselves. */
+export async function authorizationNeeded(_manual = false): Promise<boolean> {
+  try {
+    return isHealthDataAvailable() &&
+      await getRequestStatusForAuthorization({ toRead: [...readTypes] }) === AuthorizationRequestStatus.shouldRequest;
+  } catch { return false; }
 }
 export const collect = (progress: (s: string) => void, daysBack = 30, budget?: ReadBudget, _metrics?: Metric[]) =>
   collectDaily(queries, progress, daysBack, budget);

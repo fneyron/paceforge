@@ -1,18 +1,17 @@
 import React, { useContext } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { connectionLabel, Connections, Provider } from './connections';
 import { Pair } from './types';
-import { reportText, SyncReport, WeightReceipt } from './sync';
+import { reportText, SyncReport } from './sync';
 import { Button, darkStyles, DeviceTheme, useDeviceUI } from './device-ui';
 
 export type DeviceDetail = 'health' | 'other' | 'help' | null;
 type Props = {
   detail: DeviceDetail; select: (detail: DeviceDetail) => void;
-  pair: Pair | null; last: string; report: SyncReport | null; automatic: boolean; busy: boolean; ready: boolean;
+  pair: Pair | null; last: string; report: SyncReport | null; busy: boolean; ready: boolean;
   status: string; error: string; connections: Connections | null; needsReconnect: boolean;
   connectHealth: () => void; sync: () => void; disconnect: () => void;
-  auto: (value: boolean) => void; provider: (provider: Provider) => void;
-  refresh: () => void; settings: (path?: string) => void; health: () => void;
+  provider: (provider: Provider) => void; refresh: () => void; settings: (path?: string) => void;
 };
 const healthName = Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect';
 
@@ -54,24 +53,13 @@ export function DevicesScreen(p: Props) {
         <Text style={ui.cardTitle}>{healthState}</Text>
         <Text style={ui.body}>{Platform.OS === 'ios' ? 'Sommeil, VFC, fréquence cardiaque, respiration, poids, masse grasse et pas.' : 'Poids, masse grasse, pas, fréquence cardiaque et respiration.'}</Text>
         {pair && <Text style={ui.small}>Compte de {pair.name}{last ? ` · Dernier envoi : ${new Date(last).toLocaleString('fr-FR')}` : ''}</Text>}
+        {/* Two actions (owner, 2026-10-17): sync now, disconnect. Updates are automatic; a permission never
+            asked opens by itself (App.upload). */}
         <Button text={pair && !mismatch ? 'Synchroniser' : `Connecter ${healthName}`} onPress={pair && !mismatch ? p.sync : p.connectHealth} disabled={busy || !p.ready} />
-        {last && !mismatch && <Link text="Voir mes mesures" onPress={p.health} disabled={busy} />}
+        {pair && <Button text={`Déconnecter ${healthName}`} secondary disabled={busy}
+          onPress={() => Alert.alert(`Déconnecter ${healthName} ?`, 'Les mesures déjà reçues restent dans ton compte.', [
+            { text: 'Annuler', style: 'cancel' }, { text: 'Déconnecter', style: 'destructive', onPress: p.disconnect }])} />}
       </View>
-      {p.report && !mismatch && <View style={ui.card}>
-        <Text style={ui.cardTitle}>Dernière pesée</Text>
-        <Text style={ui.small}>Lue sur le téléphone</Text><Text style={ui.body}>{weightText(p.report.weightRead) || 'Aucune pesée lisible dans la période vérifiée.'}</Text>
-        <Text style={ui.small}>Confirmée par PaceForge</Text><Text style={ui.body}>{weightText(p.report.weightReceived) || 'Aucune pesée confirmée.'}</Text>
-        {!p.report.weightRead && <Text style={ui.small}>Vérifie le partage de ta balance vers {healthName}, puis l’accès de PaceForge au poids.</Text>}
-      </View>}
-      {pair && <>
-        <View style={ui.toggle}><View style={{ flex: 1 }}><Text style={ui.body}>Actualisation automatique</Text><Text style={ui.small}>À l’ouverture ou au retour, toutes les 15 min au plus. {Platform.OS === 'ios' ? 'Aussi en arrière-plan après une pesée ou une nuit, si l’iPhone le permet.' : 'Aussi en arrière-plan, environ toutes les heures, si Health Connect l’autorise.'}</Text></View>
-          <Switch accessibilityLabel="Actualisation automatique" value={p.automatic} disabled={busy || mismatch} onValueChange={p.auto} />
-        </View>
-        <Link text="Revoir les autorisations" onPress={p.connectHealth} disabled={busy} />
-      </>}
-      <Text style={ui.small}>{Platform.OS === 'ios' ? 'Selon tes autorisations : nuits sur 60 jours et mesures quotidiennes sur 30 jours.' : 'Lecture des 30 derniers jours, selon tes autorisations. Sommeil et VFC : utilise la connexion de ta montre.'}</Text>
-      <Link text="Ajouter les mesures de ma balance" onPress={() => p.select('help')} disabled={busy} />
-      {pair && <Link text={`Déconnecter ${healthName}`} onPress={p.disconnect} disabled={busy} />}
     </>}
     {detail === 'other' && <>
       <Text style={ui.body}>Les connexions directes à ces services ne sont pas encore disponibles dans PaceForge.</Text>
@@ -103,10 +91,6 @@ export function DevicesScreen(p: Props) {
     {!busy && detail === 'health' && (p.status || p.report) ? <Text accessibilityLiveRegion="polite" style={ui.body}>{p.status || (p.report && reportText(p.report))}</Text> : null}
     {p.error ? <Text accessibilityRole="alert" style={ui.error} dataDetectorType="link">{p.error}</Text> : null}
   </ScrollView>;
-}
-
-function weightText(w: WeightReceipt | null): string | null {
-  return w ? `${w.value.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} kg · ${new Date(w.measured_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : null;
 }
 
 function Row(p: { name: string; icon: string; description: string; state: string; action: string; onPress: () => void; disabled: boolean; last?: boolean }) {

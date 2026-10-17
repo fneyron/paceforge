@@ -28,7 +28,7 @@ test('timeouts and native failures give distinct advice, without claiming permis
 test('new HealthKit permissions and native NSError codes give the correct next action', () => {
   for (const error of [new HealthAuthorizationRequired(), { domain: 'HKErrorDomain', code: 5 },
     Error('Error Domain=HKErrorDomain Code=5 "Authorization not determined"'), Error('Authorization not determined')]) {
-    assert.match(readIssue('Sommeil', error), /Revoir les autorisations/);
+    assert.match(readIssue('Sommeil', error), /Touche « Synchroniser » pour l’accorder/);
     assert.doesNotMatch(readIssue('Sommeil', error), /[Dd]éverrouill|refusé/);
   }
   for (const error of [{ domain: 'HKErrorDomain', code: 6 },

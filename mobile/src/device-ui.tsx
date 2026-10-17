@@ -27,7 +27,6 @@ export const ui = StyleSheet.create({
   button: { backgroundColor: '#245e4e', minHeight: 48, justifyContent: 'center', paddingVertical: 13, paddingHorizontal: 14, borderRadius: 11, marginTop: 10 },
   buttonText: { color: '#fff', textAlign: 'center', fontSize: 15, fontWeight: '600' }, secondaryButton: { backgroundColor: '#e7f0ea' }, secondaryText: { color: '#173e38' }, disabled: { opacity: 0.45 },
   error: { color: '#a33129', fontSize: 15, lineHeight: 23, marginVertical: 8 },
-  toggle: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
   link: { paddingVertical: 14, minHeight: 44 }, linkText: { color: '#245e4e', fontSize: 15, fontWeight: '600' },
 });
 const nightUI = { ...darkStyles(ui), buttonText: { ...ui.buttonText, color: '#0b1a1f' } };
