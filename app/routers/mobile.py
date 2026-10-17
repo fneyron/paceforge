@@ -265,7 +265,9 @@ async def _sync(db: AsyncSession, user: User, provider: str) -> str:
         return f"{name} n’est pas connecté."
     if conn.needs_reauth:
         return f"Reconnecte {name} pour reprendre les imports."
-    if await service.queue_sync(db, conn):
+    queued = await (coros_service.queue_sync(db, conn, pressed=True) if provider == "coros"
+                    else garmin_service.queue_sync(db, conn))
+    if queued:
         return "Synchronisation lancée."
     status = await (coros_service.coros_status if provider == "coros" else garmin_service.garmin_status)(db, user.id)
     return ("Une synchronisation est déjà en cours." if status.get("syncing") else

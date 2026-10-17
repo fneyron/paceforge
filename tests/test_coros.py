@@ -526,7 +526,8 @@ def queued(monkeypatch) -> list:
     from app.tasks.coros_sync import sync_coros_user
 
     jobs: list = []
-    monkeypatch.setattr(sync_coros_user, "apply_async", lambda *, args, retry: jobs.append(args))
+    monkeypatch.setattr(sync_coros_user, "apply_async",
+                        lambda *, args, kwargs, retry: jobs.append(args + ([kwargs["pressed"]] if kwargs else [])))
     return jobs
 
 
@@ -1153,7 +1154,7 @@ async def test_a_sync_that_fails_at_once_lets_go_of_the_link(db_session: AsyncSe
     conn = await _link(db_session, test_user)
     await db_session.refresh(conn)  # as read for a request: sync_claimed_at loaded (None)
 
-    async def down(db, c):
+    async def down(db, c, **_):
         raise httpx.ConnectError("down")
     monkeypatch.setattr(coros, "sync_connection", down)
     assert (await coros.run_sync(db_session, conn))["ok"] is False
@@ -1653,6 +1654,44 @@ async def test_a_history_cut_short_is_read_whole_once_a_day_and_stays_owed(db_se
     fake.tool_calls.clear()
     assert (await coros.run_sync(db_session, conn))["ok"]
     assert len(_asked(fake, "querySleepHrv")) == 1 and conn.last_error is None
+
+
+async def test_a_press_reads_an_owed_history_now_at_most_hourly(db_session: AsyncSession, test_user: User, fake,
+                                                                  no_commit, monkeypatch):
+    """« Synchroniser maintenant » (owner, 2026-10-17: the history still said incomplete after a fix, « avec la synchro
+    complète de demain »): a press reads an owed history again the same day, once an hour per link; the rounds keep
+    the day's rhythm."""
+    fake.max_days = {"queryDailyHealthData": 7}
+    conn = await _link(db_session, test_user)
+    assert (await coros.run_sync(db_session, conn))["ok"] and conn.last_error == coros.PARTIAL
+    allowed = iter([True, False, True])
+    monkeypatch.setattr(coros, "_pressed_read_allowed", lambda conn: next(allowed))
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"]  # a round, the same day: the last week, never asked
+    assert len(_asked(fake, "querySleepHrv")) == 1 and conn.last_error == coros.PARTIAL
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn, pressed=True))["ok"]  # a press: the 60 days now, still cut short
+    assert len(_asked(fake, "querySleepHrv")) == 9 and conn.last_error == coros.PARTIAL
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn, pressed=True))["ok"]  # pressed again within the hour
+    assert len(_asked(fake, "querySleepHrv")) == 1 and conn.last_error == coros.PARTIAL
+    fake.max_days.clear()  # COROS answers whole again (or the fix is deployed)
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn, pressed=True))["ok"]  # an hour later: read, nothing owed
+    assert len(_asked(fake, "querySleepHrv")) == 9 and conn.last_error is None
+
+
+async def test_the_button_queues_a_pressed_sync_and_the_worker_passes_it_on(as_user: AsyncClient, db_session,
+                                                                           test_user: User, fake, queued, no_commit,
+                                                                           monkeypatch):
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc), last_error=coros.PARTIAL)
+    assert (await as_user.post("/settings/coros/sync")).status_code == 200
+    job = queued.pop()
+    assert job[2] is True  # the press rides with the reservation
+    monkeypatch.setattr(coros, "_pressed_read_allowed", lambda conn: True)
+    assert (await _work(db_session, job))["ok"] and len(_asked(fake, "querySleepHrv")) == 9
+    assert conn.last_error is None
+    assert await coros.queue_sync(db_session, conn) and len(queued.pop()) == 2  # Santé opening: not a press
 
 
 async def test_an_hrv_format_not_understood_is_not_a_60_day_read_every_sync(db_session: AsyncSession,

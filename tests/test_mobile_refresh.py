@@ -98,7 +98,8 @@ async def test_retry_reserves_coros_before_polling_previous_error(client, db_ses
     # The real reservation is committed; the worker has not started the queued job yet.
     from app.tasks.coros_sync import sync_coros_user
     jobs = []
-    monkeypatch.setattr(sync_coros_user, 'apply_async', lambda *, args, retry: jobs.append(args))
+    monkeypatch.setattr(sync_coros_user, 'apply_async',
+                        lambda *, args, kwargs, retry: jobs.append(args + ([kwargs['pressed']] if kwargs else [])))
     result = (await client.post('/sante/sync', headers=HEADERS)).json()
     assert result['watches'] == ['COROS'] and not result['errors'] and len(jobs) == 1
     assert conn.sync_claimed_at is not None
