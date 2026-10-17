@@ -626,7 +626,7 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
     y = scale(0, top, y0, base)
     out = []
     for i, v in enumerate(values):
-        b = {"i": i, "x": round(xs[i] - bw / 2, 1), "w": bw, "cx": xs[i], "cls": (classes[i] if classes else "") or "",
+        b: dict = {"i": i, "x": round(xs[i] - bw / 2, 1), "w": bw, "cx": xs[i], "cls": (classes[i] if classes else "") or "",
              "today": i == today, "est": bool(hatched and hatched[i] and v is not None)}
         nap = stack[i] if stack else None
         if v is None and not nap:
