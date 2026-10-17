@@ -110,16 +110,17 @@
   }
   function keepCheckin(old, next, requested) {
     var current = old.querySelector('#ressenti'), replacement = next.querySelector('#ressenti');
-    var form = current?.querySelector('.pf-checkin-form'), fresh = replacement?.querySelector('.pf-checkin-form');
-    if (!form || !fresh || old.dataset.account !== next.dataset.account ||
-        form.elements.day?.value !== fresh.elements.day?.value) return;
-    var dirty = Array.from(form.querySelectorAll('input[type="radio"]')).some(function (input) {
-      return input.checked !== input.defaultChecked;
-    });
-    // Keep the live node: an in-flight HTMX save still owns it. A save/clear
-    // completed during the GET is newer than its response. No answers go into
-    // browser storage, and a new account or calendar day never inherits them.
-    if (dirty || form.classList.contains('htmx-request') || current !== requested) replacement.replaceWith(current);
+    if (!current || !replacement || old.dataset.account !== next.dataset.account ||
+        current.elements?.day?.value !== replacement.elements?.day?.value) return;
+    // Keep the live node: an in-flight HTMX save still owns it. A tap completed
+    // during the GET is newer than its response, and so is the track of dots it
+    // redrew. No answer goes into browser storage, and a new account or calendar
+    // day never inherits one.
+    if (current.classList.contains('htmx-request') || current !== requested) {
+      replacement.replaceWith(current);
+      var track = old.querySelector('#ressenti-courbe'), stale = next.querySelector('#ressenti-courbe');
+      if (track && stale) stale.replaceWith(track);
+    }
   }
   async function applyDocument(doc, href, requestedCheckin, valid) {
     if (requestedCheckin === undefined) requestedCheckin = document.querySelector('#main-content #ressenti');

@@ -74,29 +74,44 @@ async def test_report_does_not_change_measured_index(db_session, test_user):
     assert after["synthesis"]["signal"]["value"] is not None
 
 
-async def test_save_clear_and_stale_day_guard(as_user, db_session, test_user, monkeypatch):
+async def test_one_tap_saves_clears_and_guards_a_stale_day(as_user, db_session, test_user, monkeypatch):
+    """The feel in one tap (owner, 2026-10-17): Bien · Moyen · Cassé, the chosen one tapped again clears it; the
+    curves' track of dots follows (out of band)."""
     monkeypatch.setattr(sante, "athlete_today", AsyncMock(return_value=D))
     headers = {"HX-Request": "true"}
-    response = await as_user.post("/sante/ressenti", data={"day": D.isoformat(), "pain": "present"}, headers=headers)
-    assert response.status_code == 200 and 'value="present" checked' in response.text
-    assert "Douleur signalée" in response.text
+    response = await as_user.post("/sante/ressenti", data={"day": D.isoformat(), "feel": "bad"}, headers=headers)
+    assert response.status_code == 200
+    assert 'name="action" value="clear" aria-pressed="true">Cassé</button>' in response.text
+    assert 'name="feel" value="good" aria-pressed="false">Bien</button>' in response.text
+    assert 'id="ressenti-courbe"' in response.text and 'hx-swap-oob="true"' in response.text
+    assert 'pf-feel-dot is-bad' in response.text
     response = await as_user.post("/sante/ressenti", data={"day": (D - timedelta(days=1)).isoformat(),
-                                                           "pain": "none"}, headers=headers)
+                                                           "feel": "good"}, headers=headers)
     assert response.status_code == 200 and "Le jour a changé" in response.text
-    assert (await checkin.read(db_session, test_user.id, D))["answers"] == {"pain": "present"}
+    assert (await checkin.read(db_session, test_user.id, D))["feel"] == "bad"
     assert await row(db_session, test_user.id, D - timedelta(days=1)) is None
     response = await as_user.post("/sante/ressenti", data={"day": D.isoformat(), "action": "clear"}, headers=headers)
-    assert response.status_code == 200 and " checked" not in response.text
+    assert response.status_code == 200 and 'aria-pressed="true"' not in response.text
     assert not (await checkin.read(db_session, test_user.id, D))["saved"]
+    assert '<div id="ressenti-courbe" hidden hx-swap-oob="true"></div>' in response.text  # no answer left: hidden
 
 
 async def test_empty_and_invalid_answers_do_not_create_a_report(as_user, db_session, test_user, monkeypatch):
     monkeypatch.setattr(sante, "athlete_today", AsyncMock(return_value=D))
     response = await as_user.post("/sante/ressenti", data={"day": D.isoformat()}, headers={"HX-Request": "true"})
-    assert response.status_code == 200 and "Choisis au moins" in response.text
-    response = await as_user.post("/sante/ressenti", data={"day": D.isoformat(), "pain": "maybe"})
-    assert response.status_code == 422
+    assert response.status_code == 200 and "Choisis ton ressenti." in response.text
+    for wrong in ({"pain": "maybe"}, {"feel": "great"}):
+        response = await as_user.post("/sante/ressenti", data={"day": D.isoformat(), **wrong})
+        assert response.status_code == 422
     assert await row(db_session, test_user.id) is None
+
+
+async def test_the_feels_of_the_window_are_read_per_day(db_session, test_user):
+    await checkin.save(db_session, test_user.id, D, {"feel": "good"})
+    await checkin.save(db_session, test_user.id, D - timedelta(days=3), {"feel": "bad"})
+    await checkin.save(db_session, test_user.id, D - timedelta(days=4), {"fatigue": "high"})  # an older report
+    assert await checkin.feels(db_session, test_user.id, D - timedelta(days=29), D) == {
+        D: "good", D - timedelta(days=3): "bad"}
 
 
 async def test_page_uses_calendar_day_for_report_when_night_is_pending(db_session, test_user, monkeypatch):

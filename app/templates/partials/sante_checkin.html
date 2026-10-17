@@ -1,28 +1,23 @@
+{#- The feel in one tap (owner, 2026-10-17): Bien · Moyen · Cassé; the chosen one tapped again clears it. Context only,
+    never an input of the night index. -#}
 {% if checkin is defined and checkin %}
-<details id="ressenti" class="pf-health-checkin pf-chart-details"{% if checkin_error %} open{% endif %}>
-    <summary><span>Ressenti du jour</span><span class="pf-checkin-summary{% if checkin.attention %} is-warn{% endif %}">{{ checkin.summary }}</span></summary>
-    <div class="pf-checkin-body">
-        <p class="pf-viz-cap">{{ checkin.date_label }} · Tes réponses complètent les mesures, sans modifier l’indice nocturne.</p>
-        {% if checkin_error %}<p class="pf-checkin-error" role="alert">{{ checkin_error }}</p>{% endif %}
-        {% if checkin.signals %}<p class="pf-checkin-signals">{{ checkin.signals|join(' · ') }}</p>{% endif %}
-        {% if checkin.guidance %}<p class="pf-viz-cap">{{ checkin.guidance }}</p>{% endif %}
-        <form class="pf-checkin-form" method="post" action="/sante/ressenti" hx-post="/sante/ressenti" hx-target="#ressenti" hx-swap="outerHTML">
-            <input type="hidden" name="day" value="{{ checkin.day }}">
-            {% for field in checkin.fields %}
-            <fieldset class="pf-checkin-field">
-                <legend>{{ field.label }}</legend>
-                <div class="pf-checkin-choices">
-                    {% for value, label in field.options %}
-                    <label class="pf-checkin-choice"><input type="radio" name="{{ field.key }}" value="{{ value }}"{% if checkin.answers.get(field.key) == value %} checked{% endif %}><span>{{ label }}</span></label>
-                    {% endfor %}
-                </div>
-            </fieldset>
-            {% endfor %}
-            <div class="pf-checkin-actions">
-                <button type="submit" name="action" value="save" class="pf-btn pf-btn-primary pf-btn-sm">Enregistrer</button>
-                {% if checkin.saved %}<button type="submit" name="action" value="clear" class="pf-btn pf-btn-secondary pf-btn-sm">Effacer mes réponses</button>{% endif %}
-            </div>
-        </form>
-    </div>
-</details>
+<form id="ressenti" class="pf-feel" method="post" action="/sante/ressenti" hx-post="/sante/ressenti" hx-target="#ressenti" hx-swap="outerHTML" role="group" aria-labelledby="ressenti-label">
+    <input type="hidden" name="day" value="{{ checkin.day }}">
+    <span id="ressenti-label" class="pf-feel-label">Ressenti du jour</span>
+    <span class="pf-feel-chips">
+    {% for value, label in checkin.feel_options %}{% set on = checkin.feel == value %}
+        <button type="submit" class="pf-feel-chip is-{{ value }}" name="{{ 'action' if on else 'feel' }}" value="{{ 'clear' if on else value }}" aria-pressed="{{ 'true' if on else 'false' }}">{{ label }}</button>
+    {% endfor %}
+    </span>
+    {% if checkin_error %}<p class="pf-checkin-error" role="alert">{{ checkin_error }}</p>{% endif %}
+</form>
+{#- After a tap, the curves' track of dots follows (out of band); emptied, it hides -#}
+{% if feel_oob is defined and feel_oob %}
+{% if feel_track %}{% import "partials/_viz.html" as viz %}
+<article id="ressenti-courbe" class="pf-card pf-curve" aria-labelledby="h-ressenti-courbe" hx-swap-oob="true">
+    <div class="pf-measurement-head"><h3 id="h-ressenti-courbe" class="pf-card-h">Ressenti</h3></div>
+    {{ viz.viz_feel_track(feel_track, "Ressenti", group="jours") }}
+</article>
+{% else %}<div id="ressenti-courbe" hidden hx-swap-oob="true"></div>{% endif %}
+{% endif %}
 {% endif %}

@@ -45,7 +45,8 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     after = readouts((await client.get(f"/simulator/routes/{done}")).text)
 
     # No VFC in the seed. New accumulated load and fitness stay distinct from recovery.
-    assert set(sante) == {"recuperation", "sommeil-14", "sommeil-90", "fc", "entrainement",
+    # the seed's nights are all within the 30 of the short range: no « 3 mois » (2026-10-17)
+    assert set(sante) == {"recuperation", "sommeil-14", "fc", "entrainement",
                          "charge-accumulee", "forme-footing", "trend-hr"}
     # Tendances' night HR: last night's value is the FC de nuit card's, this one rests on its 7-night mean
     assert sante["trend-hr"] == ("45\u00a0bpm", "moyenne 7 jours", "")
@@ -59,7 +60,6 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     # number (the audit, 2026-10-09: its mean decided nothing and looked like the dial's), the sleep's on its means…
     assert sante["recuperation"] == ("", "Historique · 14 jours", "")
     assert sante["sommeil-14"] == ("7h20", "en moyenne", "")
-    assert sante["sommeil-90"] == ("7h20", "en moyenne", "")
     # …the nightly HR card prints last night's value (its row a word, no other block prints it)…
     assert sante["fc"][0] == "45\u00a0bpm" and "Garmin" not in sante["fc"][2]
     assert sante["fc"][1] == "Dernière nuit"  # real dated measurement, not the rolling average

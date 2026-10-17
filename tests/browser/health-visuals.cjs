@@ -27,8 +27,8 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       assert.ok(await page.locator('#synthese-sante').isVisible(), `${label}: measured signals need a visible synthesis`);
       assert.ok(await page.locator('#synthese-sante .pf-synthesis-reasons > li').count() <= 2, `${label}: the primary synthesis has at most two reasons`);
       assert.ok((await page.locator('.pf-synthesis-freshness').innerText()).trim(), `${label}: the synthesis needs a measurement date`);
-      assert.equal(await page.locator('#ressenti').evaluate(el => el.open), false, `${label}: the optional check-in starts collapsed`);
-      assert.equal(await page.locator('#ressenti input:checked').count(), 0, `${label}: no feeling is inferred from the measurements`);
+      assert.equal(await page.locator('#ressenti [aria-pressed="true"]').count(), 0, `${label}: no feeling is inferred from the measurements`);
+      assert.ok(await page.locator('#ressenti-courbe figure').isVisible(), `${label}: the answered days' feel sits under the curves`);
       await page.evaluate(() => window.paceforgeRememberPage());
       assert.deepEqual(await page.evaluate(() => {
         const key = 'pf-view:' + document.querySelector('#main-content').dataset.account + ':/sante';
@@ -47,13 +47,11 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       await page.screenshot({ path: `${output}/health-top-${capture}.png` });
       await page.locator('.pf-dials').screenshot({ path: `${output}/dials-${capture}.png` });
       assert.match(await page.locator('.pf-ring-recup .pf-ring-value').innerText(), /^100\s*\/100$/, `${label}: fixture must exercise a three-digit index, never a recovery percentage`);
-      await page.locator('#ressenti > summary').click();
-      for (const choice of await page.locator('.pf-checkin-choice').all()) {
+      for (const choice of await page.locator('.pf-feel-chip').all()) {
         const box = await choice.boundingBox();
-        assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= width + 1, `${label}: check-in choices are readable tap targets`);
+        assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= width + 1, `${label}: feel chips are readable tap targets`);
       }
-      await page.locator('.pf-health-checkin').screenshot({ path: `${output}/checkin-${capture}.png` });
-      await page.locator('#ressenti > summary').click();
+      await page.locator('#ressenti').screenshot({ path: `${output}/checkin-${capture}.png` });
       // Every available main chart keeps a visible date and accessible value on selection.
       for (const selector of required) for (const figure of await page.locator(selector).all()) {
         const selected = await figure.evaluate(fig => {

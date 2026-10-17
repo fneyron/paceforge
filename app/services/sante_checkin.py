@@ -13,7 +13,11 @@ from app.models.health import HealthMetric
 from app.services import viz
 
 KEY = "daily_checkin"
+# The page asks the first one only, in one tap (owner, 2026-10-17: « le ressenti en un tap »); the others stay
+# readable for the days they were answered.
+FEEL = (("good", "Bien"), ("ok", "Moyen"), ("bad", "Cassé"))
 FIELDS = (
+    ("feel", "Ressenti", FEEL),
     ("fatigue", "Fatigue", (("usual", "Habituelle"), ("high", "Plus forte"))),
     ("pain", "Douleur", (("none", "Non"), ("present", "Oui"))),
     ("effort", "Dernier effort", (("usual", "Bien toléré"), ("harder", "Plus difficile"),
@@ -42,6 +46,7 @@ def presentation(day: date, details: dict | None = None) -> dict:
     if signals:
         guidance = "Tiens compte de ce ressenti pour la reprise, même si tes signaux nocturnes sont habituels."
     return {"day": day.isoformat(), "date_label": viz.d_short(day), "answers": answers,
+            "feel": answers.get("feel"), "feel_options": FEEL,
             "fields": [{"key": key, "label": label, "options": options} for key, label, options in FIELDS],
             "saved": bool(answers), "attention": bool(signals),
             "summary": signals[0] if signals else "Renseigné aujourd’hui" if answers else "Facultatif",
@@ -78,3 +83,11 @@ async def save(db: AsyncSession, user_id: int, day: date, answers: dict | None) 
         row.details = details
         await db.flush()
     return presentation(day, row.details if row else None)
+
+
+async def feels(db: AsyncSession, user_id: int, first: date, last: date) -> dict[date, str]:
+    """The one-tap answers of the days `first` to `last` (Santé's track of dots), the unanswered days left out."""
+    rows = (await db.execute(select(HealthMetric.date, HealthMetric.details).where(
+        HealthMetric.user_id == user_id, HealthMetric.metric == "feel", HealthMetric.source == "PaceForge",
+        HealthMetric.date >= first, HealthMetric.date <= last))).all()
+    return {day: feel for day, details in rows if (feel := presentation(day, details)["feel"])}

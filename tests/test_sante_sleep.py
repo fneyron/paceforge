@@ -1,7 +1,7 @@
 """Santé v4 › the Sommeil section (app/services/sante_sleep.py, SANTE_V4_SPEC.md
 §4): last night's hero (the times and the nap, the total only when the ring
 does not print it), its timeline (one bar, or the hypnogram from real
-intervals; naps on their own lane), the 14 nuits / 3 mois bars with the estimated
+intervals; naps on their own lane), the 30 nuits / 3 mois bars with the estimated
 need, the habits (medians to 5 min, regularity from 8 nights), the nights'
 table, the method fold; no race, no « Cœur la nuit », no clock-window chart."""
 import json
@@ -40,7 +40,7 @@ def test_sleep_reference_is_the_same_need_as_the_hero(monkeypatch):
     monkeypatch.setattr(viz, "day_bars", capture)
     section = sl.sleep_section(nights, D)
     assert section["hero"]["need"] == "repère 8h00"
-    assert captured[0]["targets"] == [480] * 14
+    assert captured[0]["targets"] == [480] * 30  # the short range spans 30 nights (2026-10-17)
     assert section["bars"]["14"]["ref"] is None
     assert "repère 8h00" in json.loads(section["bars"]["14"]["data"])["r"][-1][2]
     assert section["deficit"]["minutes"] == 280 and "need" not in section and "baseline" not in section
@@ -68,7 +68,7 @@ def test_no_night_ever_is_nothing_and_an_old_series_one_line():
     assert old["state"] == "old" and "hero" not in old
 
 
-def test_three_months_only_with_a_night_14_to_90_days_old_and_r_is_honoured():
+def test_three_months_only_with_a_night_30_to_90_days_old_and_r_is_honoured():
     recent = _nights(night_rows(range(0, 10)))
     assert sl.offered_ranges(recent, D) == ["14"]
     both = _nights(night_rows(range(0, 60)))
@@ -76,8 +76,8 @@ def test_three_months_only_with_a_night_14_to_90_days_old_and_r_is_honoured():
     s = sl.sleep_section(both, D, "90")
     assert s["r"] == "90" and set(s["bars"]) == {"14", "90"} and s["bars"]["90"]["n"] == 90
     assert sl.sleep_section(both, D, "365")["r"] == "14"  # « 1 an » is gone: the first range
-    # nothing in the last 14 days, a series 3 to 8 weeks ago: « 3 mois » opens first
-    mid = _nights(night_rows(range(20, 60)))
+    # nothing in the last 30 days, a series 5 to 8 weeks ago: « 3 mois » opens first
+    mid = _nights(night_rows(range(35, 60)))
     assert sl.sleep_section(mid, D)["r"] == "90"
 
 
@@ -134,12 +134,12 @@ def test_the_bars_rest_on_the_mean_and_print_a_night_on_a_tap():
     d = json.loads(c["data"])
     mean = round((13 * 440 + 516) / 14 / 5) * 5
     # one line at rest, never the toggle's « 14 nuits » nor the title's « sur 24 h » again
-    assert c["read"] == [viz.hm(mean), "en moyenne", "Sur 14 nuits mesurées · 14 nuits"]
-    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · repère 8h00"]
-    assert c["ref"] is None and c["targets"] and c["bars"][13]["today"] and c["trend"] is None
-    assert all(not b.get("miss") for b in c["bars"])
+    assert c["read"] == [viz.hm(mean), "en moyenne", "Sur 14 nuits mesurées · 30 nuits"]
+    assert d["r"][-1] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · repère 8h00"]
+    assert c["ref"] is None and c["targets"] and c["bars"][-1]["today"] and c["trend"] is None
+    assert all(not b.get("miss") for b in c["bars"][-14:])  # the 14 measured nights of the 30
     gap = sl.bars(_nights(night_rows([0, 2])), D, "14")
-    assert gap["bars"][12]["miss"] and json.loads(gap["data"])["r"][12] == ["—", "", "nuit du mar. 6 au mer. 7 · "
+    assert gap["bars"][-2]["miss"] and json.loads(gap["data"])["r"][-2] == ["—", "", "nuit du mar. 6 au mer. 7 · "
                                                                                   "pas de mesure"]
 
 
@@ -148,10 +148,10 @@ def test_a_short_main_night_is_said_plainly():
     a nap without a night says so plainly."""
     rows = night_rows([0], asleep=150, start=(4, 0), end=(6, 40))
     d = json.loads(sl.bars(_nights(rows), D, "14")["data"])
-    assert d["r"][13] == ["2h30", "", "nuit du mer. 7 au jeu. 8 · 04:00 → 06:40 · repère 8h00"]
+    assert d["r"][-1] == ["2h30", "", "nuit du mer. 7 au jeu. 8 · 04:00 → 06:40 · repère 8h00"]
     nap = {"nap": {D: (82, {"windows": [[f"{D}T01:23", f"{D}T02:52"]]}, "COROS")}}
     d = json.loads(sl.bars(_nights(nap), D, "14")["data"])
-    assert d["r"][13] == ["1h22", "sieste seule", "nuit du mer. 7 au jeu. 8 · nuit non enregistrée"]
+    assert d["r"][-1] == ["1h22", "sieste seule", "nuit du mer. 7 au jeu. 8 · nuit non enregistrée"]
     assert "?" not in json.dumps(d, ensure_ascii=False)
 
 

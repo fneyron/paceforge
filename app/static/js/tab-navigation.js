@@ -110,7 +110,7 @@
   }
   async function waitCheckin(ticket) {
     var until = Date.now() + 20000;
-    while (document.querySelector('#ressenti .pf-checkin-form.htmx-request')) {
+    while (document.querySelector('#ressenti.htmx-request')) {
       if (ticket !== generation || Date.now() >= until) return false;
       await new Promise(function (resolve) { setTimeout(resolve, 30); });
     }
@@ -127,7 +127,7 @@
     if (!current || current.dataset.account !== account) { hardNavigation(target); return true; }
     if (push !== false && !loading) mounted = location.href;
     var ticket = ++generation; controller?.abort();
-    if (document.querySelector('#ressenti .pf-checkin-form.htmx-request')) {
+    if (document.querySelector('#ressenti.htmx-request')) {
       progress(true);
       if (!await waitCheckin(ticket)) {
         if (ticket === generation) { progress(false); notify(nonce, target, 'cancelled'); }

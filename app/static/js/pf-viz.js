@@ -433,4 +433,6 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { scan(); });
   else scan();
   document.addEventListener("htmx:afterSettle", function (e) { scan(e.target); });
+  // an out-of-band figure (Santé's feel track after a tap) settles apart from the target
+  document.addEventListener("htmx:oobAfterSwap", function (e) { scan(e.detail && e.detail.target); });
 })();

@@ -6,71 +6,50 @@ const {chromium,webkit}=require('playwright');
 const base=process.env.PF_PREVIEW_URL||'http://127.0.0.1:8852';
 const output=process.env.PF_PREVIEW_OUTPUT||'/tmp';
 async function checkinRefresh(page){
- const form='#ressenti .pf-checkin-form';
+ // The feel in one tap: no draft to keep, but a tap is newer than a GET in flight.
+ const pressed=()=>page.evaluate(()=>document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim()||'');
  const storage=()=>page.evaluate(()=>({local:JSON.stringify(localStorage),session:JSON.stringify(sessionStorage)}));
- await page.locator('#ressenti').evaluate(el=>el.open=true);
- if(await page.locator(form+' button[value="clear"]').count()){
-  await page.locator(form+' button[value="clear"]').click();
-  await page.waitForFunction(()=>document.querySelector('#ressenti .pf-checkin-summary')?.textContent==='Facultatif');
-  await page.locator('#ressenti').evaluate(el=>el.open=true);
+ if(await pressed()){
+  await page.locator('#ressenti button[value="clear"]').click();
+  await page.waitForFunction(()=>!document.querySelector('#ressenti [aria-pressed="true"]'));
  }
  const stored=await storage();
- await page.locator(form+' input[name="fatigue"][value="high"]').check();
- await page.locator(form+' input[name="pain"][value="present"]').check();
- await page.evaluate(()=>window.checkinNode=document.querySelector('#ressenti'));
- await page.evaluate(()=>window.paceforgeRefresh.refresh(false));
- assert.equal(await page.evaluate(()=>document.querySelector('#ressenti')===window.checkinNode),true,'dirty form replaced');
- assert.ok(await page.locator(form+' input[name="fatigue"][value="high"]').isChecked());
- assert.ok(await page.locator(form+' input[name="pain"][value="present"]').isChecked());
- assert.deepEqual(await storage(),stored,'self-report copied into browser storage');
- // A late GET must not restore an earlier answer after a completed save/clear.
- async function changeDuringGet(action,summary){
+ const badDots=()=>page.locator('#ressenti-courbe .pf-feel-dot.is-bad').count();
+ // A late GET must not restore an earlier answer, or its track, after a completed tap.
+ async function tapDuringGet(name,expected){
   let fetched,release;
   const ready=new Promise(resolve=>fetched=resolve),hold=new Promise(resolve=>release=resolve);
   await page.route('**/sante',async route=>{const response=await route.fetch();const body=await response.text();fetched();await hold;await route.fulfill({response,body});});
   await page.evaluate(()=>{window.checkinRefreshPromise=window.paceforgeRefresh.refresh(false)});
   await ready;
-  await page.locator('#ressenti').evaluate(el=>el.open=true);
-  await page.locator(form+` button[value="${action}"]`).click();
-  await page.waitForFunction(text=>document.querySelector('#ressenti .pf-checkin-summary')?.textContent===text,summary);
+  await page.locator('#ressenti').getByRole('button',{name}).click();
+  await page.waitForFunction(text=>(document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim()||'')===text,expected);
+  const dots=await badDots();
   await page.evaluate(()=>window.savedCheckinNode=document.querySelector('#ressenti'));
   release();await page.evaluate(()=>window.checkinRefreshPromise);await page.unroute('**/sante');
-  assert.equal(await page.evaluate(()=>document.querySelector('#ressenti')===window.savedCheckinNode),true,'stale GET replaced completed '+action);
+  assert.equal(await page.evaluate(()=>document.querySelector('#ressenti')===window.savedCheckinNode),true,'stale GET replaced the tap on '+name);
+  assert.equal(await badDots(),dots,'stale GET replaced the track of dots after '+name);
  }
- await changeDuringGet('save','Douleur signalée');
- assert.ok(await page.locator(form+' input[name="pain"][value="present"]').isChecked());
- await changeDuringGet('clear','Facultatif');
- assert.equal(await page.locator(form+' input:checked').count(),0,'cleared answers restored');
+ await tapDuringGet('Cassé','Cassé');
+ await tapDuringGet('Cassé','');
+ assert.deepEqual(await storage(),stored,'self-report copied into browser storage');
  // A refresh during the POST keeps its live HTMX target until the reply arrives.
  let posted,releasePost;
  const postReady=new Promise(resolve=>posted=resolve),postHold=new Promise(resolve=>releasePost=resolve);
  await page.route('**/sante/ressenti',async route=>{const response=await route.fetch();const body=await response.text();posted();await postHold;await route.fulfill({response,body});});
- await page.locator('#ressenti').evaluate(el=>el.open=true);
- await page.locator(form+' input[name="pain"][value="present"]').check();
- await page.locator(form+' button[value="save"]').click();
+ await page.locator('#ressenti').getByRole('button',{name:'Moyen'}).click();
  await postReady;
  await page.evaluate(()=>window.paceforgeRefresh.refresh(false));
  releasePost();
- await page.waitForFunction(()=>document.querySelector('#ressenti .pf-checkin-summary')?.textContent==='Douleur signalée');
+ await page.waitForFunction(()=>document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim()==='Moyen');
  await page.unroute('**/sante/ressenti');
- await changeDuringGet('clear','Facultatif');
- await page.locator('#ressenti').evaluate(el=>el.open=true);
- await page.locator(form+' input[name="fatigue"][value="high"]').check();
- const day=await page.locator(form+' input[name="day"]').inputValue();
+ await tapDuringGet('Moyen','');
+ // A new calendar day takes the page's form, never the old day's.
+ const day=await page.locator('#ressenti input[name="day"]').inputValue();
  const nextDay=new Date(Date.parse(day)+86400000).toISOString().slice(0,10);
  await page.route('**/sante',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace(`name="day" value="${day}"`,`name="day" value="${nextDay}"`)});});
  await page.evaluate(()=>window.paceforgeRefresh.refresh(false));
- assert.equal(await page.locator(form+' input[name="day"]').inputValue(),nextDay);
- assert.equal(await page.locator(form+' input:checked').count(),0,'draft carried across midnight');
- await page.unroute('**/sante');
- await page.evaluate(()=>window.paceforgeRefresh.refresh(false));
- await page.locator('#ressenti').evaluate(el=>el.open=true);
- await page.locator(form+' input[name="pain"][value="present"]').check();
- // A full navigation to another signed-in account must not restore the old draft.
- await page.route('**/sante',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace(/data-account="\d+"/,'data-account="999"')});});
- await page.goto(base+'/sante',{waitUntil:'networkidle'});
- assert.equal(await page.locator('#main-content').getAttribute('data-account'),'999');
- assert.equal(await page.locator(form+' input:checked').count(),0,'draft carried into another account');
+ assert.equal(await page.locator('#ressenti input[name="day"]').inputValue(),nextDay);
  await page.unroute('**/sante');
  await page.goto(base+'/sante',{waitUntil:'networkidle'});
 }

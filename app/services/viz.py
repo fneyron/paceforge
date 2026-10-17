@@ -769,6 +769,36 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             "title": f"{name} · {n} {'jours' if daytime else 'nuits'}", **_data(xs, [yv], days, r, a, sel=last)}
 
 
+# ── V3b the one-tap feel as a track of dots (owner, 2026-10-17), on the days of the curves above it ──
+
+FEEL_ROWS = (("good", "Bien"), ("ok", "Moyen"), ("bad", "Cassé"))  # top to bottom
+
+
+def feel_track(key: str, days: list[date], feels: dict[date, str]) -> dict:
+    """A dot per answered day on its answer's row (no line: answers are not measurements), the latest selected.
+    Readout: [« Bien », "", the day]; a day without an answer « — » (never a guessed one)."""
+    n, H = len(days), 58
+    xs = slot_x(n)
+    ys = {key_: 8 + 14 * i for i, (key_, _) in enumerate(FEEL_ROWS)}
+    words = dict(FEEL_ROWS)
+    r, a = [], []
+    for d in days:
+        feel = feels.get(d)
+        if feel in words:
+            r.append([words[feel], "", d_short(d)]); a.append(f"{d_long(d)} : ressenti {words[feel].lower()}")
+        else:
+            r.append(["—", "", f"{d_short(d)} · pas de réponse"]); a.append(f"{d_long(d)} : pas de réponse")
+    answered = [i for i, d in enumerate(days) if feels.get(d) in words]
+    last = answered[-1] if answered else None
+    return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "top": 2, "bottom": H - 16,
+            "rows": [{"y": ys[k], "label": label} for k, label in FEEL_ROWS],
+            "dots": [{"i": i, "x": xs[i], "y": ys[feels[days[i]]], "tone": feels[days[i]]} for i in answered],
+            "at": {"x": xs[last], "y": ys[feels[days[last]]]} if last is not None else None,
+            "xt": day_ticks(days, xs), "answered": len(answered),
+            "summary": f"Ressenti, {n} jours : {len(answered)} réponse{'s' if len(answered) > 1 else ''}",
+            **_data(xs, [[ys.get(feels.get(d, "")) for d in days]], days, r, a, sel=last)}
+
+
 # ── V4 timeline: last night on a clock axis (a bar, or the hypnogram) ───────
 
 TL_X0, TL_X1 = 60, 302  # the lane names on the left; the last hour's label centred inside the 320 width
