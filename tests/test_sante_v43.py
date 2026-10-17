@@ -166,8 +166,9 @@ async def test_the_owner_s_sante_page_names_only_the_recent_recorded_course(as_u
         assert name not in main, name
     assert "Après Transjeju 100M · J+5" in main
     assert 'href="/sante/aide"' in main and "Comment je calcule" not in main
-    # Forme describes comparable runs; only the latest recorded race/ultra is named as context.
-    rest = re.sub(r'<section id="forme".*?</section>', "", main, flags=re.S)
+    # Forme and the HR-zone method describe runs in general; neither is a named past-outing reminder.
+    # The activity-name assertions above still cover the whole page, including those sections.
+    rest = re.sub(r'<section id="(?:forme|zones-fc)".*?</section>', "", main, flags=re.S)
     rest = H.unescape(re.sub(r'<div class="pf-fitness-progress".*?</div>', "", rest, flags=re.S))
     for word in ("sortie", "ultra", "course", "il y a", "Plafonné", "Grosse"):
         assert word not in rest, word
