@@ -465,7 +465,9 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert '<details id="charge-detail" class="pf-chart-details pf-load-detail">' in main
     assert 'href="/activities?depuis=2026-10-02"' in main
     assert "repère 8h00" in main
-    assert "Mesures insuffisantes" in main and "repères en construction (5/7)" in main
+    # the card of signals left (owner, 2026-10-17): the one line says why there is no score
+    assert 'id="synthese-sante"' not in main and "Mesures insuffisantes" not in main
+    assert "Pas de score ce matin : repères en construction (5/7)." in main
     assert 'href="/sante/aide"' in main
     assert "Comprendre la récupération" not in main
     assert "pf-viz-gap" not in main and "is-out" not in main
@@ -685,7 +687,8 @@ async def test_strava_only_has_no_score_and_one_line(as_user: AsyncClient, db_se
     assert (train["sub"], train["href"], train["unit"]) == ("7 derniers jours", "#entrainement", None)
     assert train["note"] is None and not train["usual_marker"]
     html = (await as_user.get("/sante")).text
-    assert "Mesures insuffisantes" in html and "pas de bilan" in html
+    # no card of signals (owner, 2026-10-17): the one line says why, once
+    assert "Mesures insuffisantes" not in html and html.count("Connecte ta montre pour voir tes signaux nocturnes.") == 1
     assert 'href="/settings#coros"' in html and 'href="/settings#garmin"' in html
     assert 'id="sommeil"' not in html and "Comment je lis tes nuits" not in html
     assert 'id="recuperation"' not in html  # no empty card, and its dial is not a dead link

@@ -1,34 +1,24 @@
 {% import "partials/_viz.html" as viz %}
 {% set p = page %}{% set s = p.sleep %}
 <div class="pf-dials">
-    {% for d in p.dials %}{{ viz.viz_ring(d, show_note=d.key != "recup") }}{% endfor %}
+    {% for d in p.dials %}{{ viz.viz_ring(d, show_note=d.key != "recup" or d.reason) }}{% endfor %}
 </div>
-{% if p.synthesis %}{% set sy = p.synthesis %}
-<section id="synthese-sante" class="pf-health-synthesis is-{{ sy.signal.tone }}" aria-labelledby="h-synthese-sante">
-    <header class="pf-synthesis-heading">
-        <h2 id="h-synthese-sante"><i class="pf-dot" aria-hidden="true"></i>{{ sy.signal.summary }}</h2>
-        <p class="pf-synthesis-freshness{% if not sy.freshness.current %} is-stale{% endif %}">{{ sy.freshness.label }}</p>
-    </header>
-    {% if sy.reasons %}<ul class="pf-synthesis-reasons">
-        {% for reason in sy.reasons[:2] %}<li class="is-{{ reason.tone }}" data-signal="{{ reason.key }}">{{ reason.label }}</li>{% endfor %}
-    </ul>{% endif %}
-    {% if sy.context %}<ul class="pf-synthesis-context" aria-label="Contexte du bilan">
-        {% for context in sy.context %}<li data-context="{{ context.key }}">{{ context.label }}</li>{% endfor %}
-    </ul>{% endif %}
-</section>
-{% else %}
+{#- The card of signals left the page (owner, 2026-10-17): its reason sits under the Récupération ring, the race on
+    the curves, an older bilan's date in the heading (« Dernier bilan ») -#}
 {% if p.state and p.state.text %}<p class="pf-state-text">{{ p.state.text }}</p>{% endif %}
 {% if not p.state %}<p class="pf-state-line">{{ p.line }}</p>{% endif %}
-{% endif %}
+{% set has_sleep_detail = s and s.state not in ("never", "old") %}
+{% set has_curves = has_sleep_detail or p.vfc or p.fc or p.respiration or p.feel_track %}
+{% if p.race_note and not has_curves %}<p class="pf-curves-race is-alone"><i class="pf-lg is-race" aria-hidden="true"></i>{{ p.race_note }}</p>{% endif %}
 {% if p.connect %}<p class="pf-state-links"><a class="pf-native-only" data-phone-connect href="paceforge://devices">Connecter <span data-phone-health>Apple Santé</span> ›</a><span class="pf-browser-only"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></span></p>{% endif %}
 {% include "partials/sante_checkin.html" %}
 
 <div class="pf-health-panels">
-{% set has_sleep_detail = s and s.state not in ("never", "old") %}
 {# The curves stacked on the same days, under the rings (owner, 2026-10-17): a day touched on one is read on all #}
-{% if has_sleep_detail or p.vfc or p.fc or p.respiration or p.feel_track %}
+{% if has_curves %}
 <section id="courbes" class="pf-health-panel pf-health-curves" aria-labelledby="h-courbes">
-    <header class="pf-health-panel-heading"><h2 id="h-courbes" class="pf-health-panel-title">Courbes<small>30 jours</small></h2></header>
+    <header class="pf-health-panel-heading"><h2 id="h-courbes" class="pf-health-panel-title">Courbes<small>30 jours</small></h2>
+        {% if p.race_note %}<p class="pf-curves-race"><i class="pf-lg is-race" aria-hidden="true"></i>{{ p.race_note }}</p>{% endif %}</header>
     <div class="pf-panel-body pf-curves">
     {% if has_sleep_detail %}
         <section id="sommeil-detail" class="pf-card pf-curve" aria-labelledby="h-sommeil-detail" data-viz-scope>

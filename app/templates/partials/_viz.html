@@ -150,12 +150,16 @@
    (the score's 40 and 70), a bar past the axis broken,
    a line over faint bars (a long range's mean), a bar hatched and outlined in its colour (a score estimated without a
    night measured: its card's legend names it); the selection is a soft column behind its bar #}
+{# a race on the stacked curves: a dashed hairline on its day (its name printed once, over the curves) #}
+{% macro flags(c, top, bottom) %}{% for f in c.flags or [] %}<line x1="{{ f.x }}" x2="{{ f.x }}" y1="{{ top }}" y2="{{ bottom }}" class="pf-viz-ev pf-viz-race"/>{% endfor %}{% endmacro %}
+
 {% macro viz_day_bars(c, title, unit_word="journée", prev="Jour précédent", next="Jour suivant", quiet=False, group=None) %}
 {% call figure(c, title, c.key, group, unit_word, prev, next, cls="pf-viz-card" ~ (" pf-viz-faint" if c.trend else ""), card=True, quiet=quiet) %}
 {% if c.hatched %}<defs>{% for t in c.hatched %}<pattern id="pf-est-{{ c.key }}-{{ t }}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" class="pf-est-hatch is-{{ t }}"/></pattern>{% endfor %}</defs>{% endif %}
 <g class="pf-viz-cross"><rect x="{{ (-c.slot / 2)|round(2) }}" y="0" width="{{ c.slot }}" height="{{ c.base + 2 }}" rx="4"/></g>
 {% for l in c.lines %}<line x1="0" x2="{{ c.X1 }}" y1="{{ l.y }}" y2="{{ l.y }}" class="pf-viz-hair"/><text x="{{ c.W }}" y="{{ l.y + 4 }}" text-anchor="end">{{ l.label }}</text>{% endfor %}
 <line x1="0" x2="{{ c.X1 }}" y1="{{ c.base }}" y2="{{ c.base }}" class="pf-viz-grid"/>
+{{ flags(c, c.top, c.base) }}
 {% for b in c.bars %}
 <g class="pf-viz-col{% if b.today %} is-today{% endif %}" data-i="{{ b.i }}">
     {% if not b.miss %}
@@ -187,6 +191,7 @@
 {% if c.edge_prov_lo %}<path d="{{ c.edge_prov_lo }}" class="pf-viz-edge is-prov"/><path d="{{ c.edge_prov_hi }}" class="pf-viz-edge is-prov"/>{% endif %}
 {% if c.edge_lo %}<path d="{{ c.edge_lo }}" class="pf-viz-edge"/><path d="{{ c.edge_hi }}" class="pf-viz-edge"/>{% endif %}
 {% if c.ref %}<line x1="0" x2="{{ c.X1 }}" y1="{{ c.ref.y }}" y2="{{ c.ref.y }}" class="pf-viz-ref"/>{% endif %}
+{{ flags(c, c.top, c.bottom) }}
 {% if c.mean %}<path d="{{ c.mean }}" class="pf-viz-line" pathLength="1"/>{% endif %}
 {% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ c.dot_r }}" class="pf-viz-dot{% if d.i == c.sel %} is-sel{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
 {% for t in c.xt %}<text x="{{ t.x }}" y="{{ c.H - 5 }}" text-anchor="middle" class="pf-viz-date-tick{% if loop.first or loop.last or loop.index0 == (loop.length // 2) %} pf-viz-major-tick{% endif %}">{{ t.label }}</text>{% endfor %}
@@ -198,6 +203,7 @@
 {% call figure(c, title, c.key, group, "journée", "Jour précédent", "Jour suivant", cls="pf-viz-card pf-feel-track", card=True) %}
 <g class="pf-viz-cross"{% if c.at %} transform="translate({{ c.at.x }} 0)"{% endif %}><line x1="0" x2="0" y1="{{ c.top }}" y2="{{ c.bottom }}" class="pf-viz-at"/><circle cx="0" cy="{{ c.at.y if c.at else 0 }}" r="5.5" class="pf-viz-ring"/></g>
 {% for row in c.rows %}<line x1="0" x2="{{ c.X1 }}" y1="{{ row.y }}" y2="{{ row.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ row.y + 3 }}" text-anchor="end" class="pf-feel-row">{{ row.label }}</text>{% endfor %}
+{{ flags(c, c.top, c.bottom) }}
 {% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="3.2" class="pf-viz-dot pf-feel-dot is-{{ d.tone }}{% if d.i == c.sel %} is-sel{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
 {% for t in c.xt %}<text x="{{ t.x }}" y="{{ c.H - 3 }}" text-anchor="middle" class="pf-viz-date-tick{% if loop.first or loop.last or loop.index0 == (loop.length // 2) %} pf-viz-major-tick{% endif %}">{{ t.label }}</text>{% endfor %}
 {% endcall %}

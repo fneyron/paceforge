@@ -303,7 +303,7 @@ async def test_a_strava_only_user(as_user: AsyncClient, db_session: AsyncSession
     assert page["state"] is None and page["line"] == td.NO_WATCH and "rows" not in page
     assert page["vfc"] is None and page["fc"] is None
     main = _coherent((await as_user.get("/sante")).text)
-    assert "Mesures insuffisantes" in main and 'href="/settings#coros"' in main and "Les chiffres de chaque nuit" not in main
+    assert td.NO_WATCH in main and 'href="/settings#coros"' in main and "Les chiffres de chaque nuit" not in main
     act = _coherent((await as_user.get("/activities")).text)
     assert re.findall(r'data-range="(\w+)"', act) == ["duree", "distance", "dplus"]
 

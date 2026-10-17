@@ -129,3 +129,34 @@ def test_compute_exports_provenance_and_synthesis_for_the_template():
     assert "distincte de la FC de repos" in hr["detail"]
     assert model["freshness"]["current"] and model["signal"]["unit"] == "/100"
     assert page["sleep"]["hero"]["need"] == "repère 8h00"
+
+
+def test_the_race_days_on_the_curves_are_the_context_s_own_one_per_day():
+    """The card of signals left the page (owner, 2026-10-17): a tagged race (or an ultra) is a dashed line on its day
+    in the curves, chosen as the context chooses, and the Récupération ring says the first reason."""
+    from app.services import viz
+
+    races = [_session(D - timedelta(days=3), 40, workout_type=1, sid=41, name="10 km du port"),
+             _session(D - timedelta(days=40), 40, workout_type=1, sid=42, name="Semi d'hiver"),
+             _session(D + timedelta(days=1), 40, workout_type=1, sid=43, name="Demain")]
+    marks = context.race_marks([], races, D - timedelta(days=29), D)
+    assert marks == [(D - timedelta(days=3), "10 km du port")]  # its window only, never a later day
+    days = [D - timedelta(days=29 - i) for i in range(30)]
+    chart = viz.night_card("vfc", days, [50.0] * 30, band=[None] * 30, prov=[False] * 30, mean=[None] * 30,
+                           unit="ms", unit_long="millisecondes", name="VFC")
+    viz.flag_days(chart, marks)
+    assert chart["flags"] == [{"x": viz.slot_x(30)[26], "name": "10 km du port"}]
+    viz.flag_days(None, marks)  # a page without that curve
+
+
+def _recup_dial(**z):
+    ex = _example(**z)
+    day = {**ex["day"], "score": ex["score"], "state": ex["state"]}
+    return next(d for d in sante._top(day, [], True, {}, D, None)["dials"] if d["key"] == "recup")
+
+
+def test_the_recovery_ring_says_the_first_reason_when_there_is_one():
+    recup = _recup_dial(z_hrv=0, z_hr=2)
+    assert recup["reason"] and recup["note"] == "FC de nuit plus haute que d'habitude"
+    assert recup["aria"].endswith("FC de nuit plus haute que d'habitude.")
+    assert "reason" not in _recup_dial(z_hrv=0, z_hr=0)

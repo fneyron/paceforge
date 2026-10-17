@@ -24,9 +24,9 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const mode = dark ? 'dark' : 'light', capture = `${width}-${scale}-${mode}`;
       const label = `${width}px/${scale * 100}%/${mode}`;
-      assert.ok(await page.locator('#synthese-sante').isVisible(), `${label}: measured signals need a visible synthesis`);
-      assert.ok(await page.locator('#synthese-sante .pf-synthesis-reasons > li').count() <= 2, `${label}: the primary synthesis has at most two reasons`);
-      assert.ok((await page.locator('.pf-synthesis-freshness').innerText()).trim(), `${label}: the synthesis needs a measurement date`);
+      assert.equal(await page.locator('#synthese-sante').count(), 0, `${label}: the card of signals left the page`);
+      assert.match(await page.locator('.pf-curves-race').innerText(), /Trail des Crêtes · J\+20/, `${label}: the race over the curves`);
+      assert.ok(await page.locator('#sommeil-detail [data-range-panel]:not([hidden]) .pf-viz-race').count() === 1, `${label}: the race day on the curves`);
       assert.equal(await page.locator('#ressenti [aria-pressed="true"]').count(), 0, `${label}: no feeling is inferred from the measurements`);
       assert.ok(await page.locator('#ressenti-courbe figure').isVisible(), `${label}: the answered days' feel sits under the curves`);
       await page.evaluate(() => window.paceforgeRememberPage());
@@ -40,7 +40,7 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       }
       if (await page.locator('#forme').count()) assert.ok(await page.locator('#forme figure').isVisible(), `${label}: fitness graph folded`);
       assert.ok(await page.locator('.pf-phases-legend').isVisible(), `${label}: sleep phases missing from the fixture`);
-      for (const selector of ['#qualite-bilan', '#charge-detail', '#sommeil-habitudes']) {
+      for (const selector of ['#comprendre-indicateurs', '#charge-detail', '#sommeil-habitudes']) {
         if (await page.locator(selector).count()) assert.equal(await page.locator(selector).evaluate(el => el.open), false, `${label}: secondary information opens by default`);
       }
       await page.screenshot({ path: `${output}/health-default-${capture}.png`, fullPage: true });
@@ -121,6 +121,6 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       assert.deepEqual(errors, [], `${label}: browser errors`);
       await page.close();
     }
-    console.log('Health visuals: compact synthesis, optional check-in, main plots, dated selections and readable index/legends at 320/393px, 100/200% text, light/dark passed.');
+    console.log('Health visuals: no card of signals, the race on the curves, one-tap feel, main plots, dated selections and readable index/legends at 320/393px, 100/200% text, light/dark passed.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
