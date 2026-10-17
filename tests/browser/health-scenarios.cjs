@@ -68,7 +68,7 @@ const scenarios = [
           const positions = await timeline.locator('.pf-tl-seg').evaluateAll(els => els.map(el => +el.getAttribute('x')));
           assert.deepEqual(positions, [...positions].sort((a, b) => a - b), 'Stage positions follow their timestamps');
           assert.deepEqual(await timeline.locator('.pf-tl-lane').evaluateAll(labels => labels.flatMap(el => {
-            const box = el.getBBox(); return box.x + box.width > 60 ? [el.textContent] : [];
+            const box = el.getBBox(); return box.x + box.width > 70 ? [el.textContent] : []; // viz.TL_X0, where the hours start
           })), [], 'Stage lane labels leave room for the chronology');
         } else {
           assert.equal(await page.locator('#sommeil .pf-tl').count(), 0, 'Stage totals must not fabricate a chronology');

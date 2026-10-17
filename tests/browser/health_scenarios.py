@@ -14,6 +14,7 @@ from sqlalchemy import delete, update
 from tests.browser import preview_app as preview
 from app.models.activity import Activity
 from app.models.health import HealthMetric, HealthSample
+from app.routers import sante as sante_routes
 from app.services import sante
 
 SCENARIO = os.environ.get("PF_HEALTH_SCENARIO", "conflict")
@@ -77,18 +78,19 @@ async def lifespan(app):
         app.state.health_scenario = SCENARIO
         app.state.health_scenario_day = today.isoformat()
         # Keep the pending-night example reproducible after noon as well.
-        # This process serves only synthetic preview data.
+        # This process serves only synthetic preview data. The router imported
+        # health_page by name: its reference is the one /sante calls.
         original_health_page = sante.health_page
 
         async def morning_page(*args, **kwargs):
             kwargs.setdefault("now", datetime.combine(today, time(9), timezone.utc))
             return await original_health_page(*args, **kwargs)
 
-        sante.health_page = morning_page
+        sante.health_page = sante_routes.health_page = morning_page
         try:
             yield
         finally:
-            sante.health_page = original_health_page
+            sante.health_page = sante_routes.health_page = original_health_page
 
 
 app = preview.app

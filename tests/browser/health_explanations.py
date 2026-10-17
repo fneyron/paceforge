@@ -13,6 +13,7 @@ from sqlalchemy import select
 from tests.browser import preview_app as preview
 from app.models.health import HealthMetric, HealthSample
 from app.models.mobile import MobileDaily
+from app.routers import sante as sante_routes
 from app.services import sante
 from app.services.apple_nights import SDNN_METHOD
 from app.services.health import HRV_METHOD
@@ -74,11 +75,11 @@ async def lifespan(app):
             kwargs.setdefault("now", datetime.combine(today, time(9), timezone.utc))
             return await original(*args, **kwargs)
 
-        sante.health_page = morning
+        sante.health_page = sante_routes.health_page = morning  # the router's own reference is the one /sante calls
         try:
             yield
         finally:
-            sante.health_page = original
+            sante.health_page = sante_routes.health_page = original
 
 
 app = preview.app

@@ -771,7 +771,9 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
 
 # ── V4 timeline: last night on a clock axis (a bar, or the hypnogram) ───────
 
-TL_X0, TL_X1 = 60, 302  # the lane names on the left; the last hour's label centred inside the 320 width
+# the lane names on the left (« Profond » at 200 % text, 17 px: 60–66 wide by the font, so 60 ran over the first
+# hour's line); the last hour's label centred inside the 320 width
+TL_X0, TL_X1 = 70, 302
 TL_LANE, TL_GAP, TL_MAIN = 12, 6, 22
 # the hypnogram's lanes, top to bottom (Garmin's sleepLevels kinds; « core » is light sleep), named as the legend
 STAGE_LANES = (("Éveil", "awake"), ("Paradoxal", "rem"), ("Léger", "core"), ("Profond", "deep"))
