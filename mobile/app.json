@@ -93,7 +93,8 @@
       "./plugins/with-health-connect",
       "expo-background-task",
       "./plugins/without-background-fetch",
-      "./plugins/with-launch-screen"
+      "./plugins/with-launch-screen",
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {

@@ -26,6 +26,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
+from app.config import settings
 from app.csrf import check_csrf, csrf
 from app.dependencies import get_current_user, get_db
 from app.models.mobile import MobileDaily, MobileDevice
@@ -158,28 +159,194 @@ async def session(request: Request, nonce: str, user: User = Depends(get_current
     return page(request, mode="session", message=message)
 
 
+PROVIDERS = {"coros": "COROS", "garmin": "Garmin", "strava": "Strava"}
+Provider = Literal["coros", "garmin", "strava"]
+TICKET_TTL_S = 120  # the app opens its sign-in sheet at once: a ticket older than this was never used for it
+TICKET_SALT = "mobile-oauth"
+
+
+def _state(w: dict) -> str:
+    return ("reconnect" if w.get("needs_reauth") else
+            "disconnected" if not w["connected"] else
+            "syncing" if w.get("syncing") else
+            "attention" if w.get("last_error") or w.get("interrupted") else "connected")
+
+
+def _utc(moment: datetime | None) -> str | None:
+    if moment is None:
+        return None
+    return (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).isoformat()
+
+
+def _detail(provider: str, w: dict) -> dict:
+    """What the app's screen of a connection prints under its state: the last sync, and a short label when it
+    needs a look (the reconnect button says the rest)."""
+    from app.services.watch_sync_status import sync_notice
+
+    notice = None
+    if w.get("connected") and not w.get("needs_reauth"):
+        if provider == "strava":
+            notice = w.get("last_error")
+        elif w.get("last_error") and (said := sync_notice(PROVIDERS[provider], w["last_error"])):
+            notice = said["label"]
+        elif w.get("interrupted"):
+            notice = "Synchronisation interrompue"
+    return {"last_sync": _utc(w.get("last_sync_at")) if w.get("connected") else None, "notice": notice}
+
+
+async def _connections(db: AsyncSession, user: User, nonce: str, **extra) -> dict:
+    from app.services.coros import coros_status
+    from app.services.garmin import garmin_status
+    from app.services.strava import strava_status
+    states = {"coros": await coros_status(db, user.id), "garmin": await garmin_status(db, user.id),
+              "strava": strava_status(user)}
+    return {"type": "connections", "nonce": nonce, "user_id": user.id, "name": user.firstname or "Athlète",
+            "providers": {key: _state(w) for key, w in states.items()},
+            "details": {key: _detail(key, w) for key, w in states.items()}, **extra}
+
+
 @router.get("/mobile/connections")
 async def connections(request: Request, nonce: str, user: User = Depends(get_current_user),
                       db: AsyncSession = Depends(get_db)):
     """Read-only, session-bound status for the native list; never provider tokens."""
     if not re.fullmatch(r"[a-f0-9]{64}", nonce):
         raise HTTPException(400)
-    from app.services.coros import coros_status
-    from app.services.garmin import garmin_status
-    from app.services.strava import strava_status
-    states = {"coros": await coros_status(db, user.id), "garmin": await garmin_status(db, user.id),
-              "strava": strava_status(user)}
-    providers = {}
-    for key, state in states.items():
-        providers[key] = ("reconnect" if state.get("needs_reauth") else
-                          "disconnected" if not state["connected"] else
-                          "syncing" if state.get("syncing") else
-                          "attention" if state.get("last_error") or state.get("interrupted") else "connected")
-    message = {"type": "connections", "nonce": nonce, "user_id": user.id,
-               "name": user.firstname or "Athlète", "providers": providers}
+    message = await _connections(db, user, nonce)
     if request.headers.get("accept") == "application/json":
         return JSONResponse(message, headers=HEADERS)
     return page(request, mode="connections", message=message)
+
+
+@router.post("/mobile/connections")
+async def connection_action(nonce: str, provider: Provider, action: Literal["sync", "disconnect", "link"],
+                            user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """The app's screen of a connection (owner, 2026-10-17: the Apple Santé screen's two actions for each one):
+    « Synchroniser », « Déconnecter », and for COROS and Strava the link its sign-in sheet opens. Session-bound,
+    same-site only (CrossSiteRequestMiddleware); answers the fresh status with a short `result`."""
+    if not re.fullmatch(r"[a-f0-9]{64}", nonce):
+        raise HTTPException(400)
+    name, extra = PROVIDERS[provider], {}
+    if action == "link":
+        if provider == "garmin":  # Garmin signs in on its own page, in the app
+            raise HTTPException(400)
+        extra["link"] = f"{settings.BASE_URL.rstrip('/')}/mobile/oauth/{provider}#{_ticket(user, provider)}"
+    elif action == "sync":
+        extra["result"] = await _sync(db, user, provider)
+    else:
+        await _disconnect(db, user, provider)
+        extra["result"] = f"{name} déconnecté. Les données déjà reçues restent."
+    return JSONResponse(await _connections(db, user, nonce, **extra), headers=HEADERS)
+
+
+async def _sync(db: AsyncSession, user: User, provider: str) -> str:
+    """The sync Réglages starts: queued for a watch (the worker runs it), at once for Strava (/api/sync's)."""
+    name = PROVIDERS[provider]
+    if provider == "strava":
+        from app.routers.dashboard import SyncRunning, _sync_recent_activities, imported_label
+
+        if not user.has_strava_linked:
+            return "Strava n’est pas connecté."
+        if not user.has_strava_app or not user.strava_credentials_valid:
+            return "Reconnecte Strava pour reprendre les imports."
+        try:
+            received = await _sync_recent_activities(user, db, strict=True)
+        except SyncRunning:
+            return "Une synchronisation est déjà en cours."
+        except Exception:
+            await db.rollback()
+            logger.warning("Strava sync from the app failed for user %d", user.id, exc_info=True)
+            return "Synchronisation incomplète. Réessaie dans un instant."
+        return f"{imported_label(received)}." if received else "Déjà à jour."
+    from app.services import coros as coros_service
+    from app.services import garmin as garmin_service
+    service = coros_service if provider == "coros" else garmin_service
+    conn = await service.connection_for(db, user.id)
+    if conn is None:
+        return f"{name} n’est pas connecté."
+    if conn.needs_reauth:
+        return f"Reconnecte {name} pour reprendre les imports."
+    if await service.queue_sync(db, conn):
+        return "Synchronisation lancée."
+    status = await (coros_service.coros_status if provider == "coros" else garmin_service.garmin_status)(db, user.id)
+    return ("Une synchronisation est déjà en cours." if status.get("syncing") else
+            "La synchronisation n’a pas pu démarrer. Réessaie dans un instant.")
+
+
+async def _disconnect(db: AsyncSession, user: User, provider: str) -> None:
+    """As Réglages' « Déconnecter » (/settings/{provider}/disconnect): the data already received stays."""
+    if provider == "strava":
+        from app.services.strava import disconnect
+        if user.has_strava_linked:
+            await disconnect(db, user)
+        return
+    from app.services import coros as coros_service
+    from app.services import garmin as garmin_service
+    service = coros_service if provider == "coros" else garmin_service
+    if conn := await service.connection_for(db, user.id):
+        await service.disconnect(db, conn)
+
+
+def _serializer():
+    from itsdangerous import URLSafeTimedSerializer
+    return URLSafeTimedSerializer(settings.SECRET_KEY, salt=TICKET_SALT)
+
+
+def _ticket(user: User, provider: str) -> str:
+    """A one-time ticket that signs the app's sign-in sheet in (its cookies are not the app's WebView's): two
+    minutes, one use, void after a password reset. It rides in the link's fragment, never sent to a server log."""
+    return _serializer().dumps({"u": user.id, "p": provider, "v": user.session_version or 0,
+                                "j": secrets.token_urlsafe(12)})
+
+
+async def _redeem(db: AsyncSession, ticket: str, provider: str) -> User | None:
+    from itsdangerous import BadSignature
+    from app.services.auth import counter
+
+    try:
+        data = _serializer().loads(ticket, max_age=TICKET_TTL_S)
+    except BadSignature:  # expired tickets included (SignatureExpired)
+        return None
+    if not isinstance(data, dict) or data.get("p") != provider:
+        return None
+    if (await counter().incr([f"mobile-oauth:{digest(str(data.get('j')))}"], TICKET_TTL_S))[0] != 1:
+        return None  # used already
+    user = await db.get(User, data.get("u"))
+    if user is None or (user.session_version or 0) != data.get("v"):
+        return None
+    return user
+
+
+@router.get("/mobile/oauth/{provider}")
+async def oauth_page(request: Request, provider: Literal["coros", "strava"]):
+    """The sign-in sheet's first page: posts the ticket of its fragment (a link never logs it)."""
+    from app.services.app_return import app_return, with_result
+    return page(request, mode="oauth", name=PROVIDERS[provider],
+                expired=with_result(app_return(provider), "expired"))
+
+
+@router.post("/mobile/oauth/{provider}")
+async def oauth_start(request: Request, provider: Literal["coros", "strava"], ticket: str = Form(max_length=512),
+                      db: AsyncSession = Depends(get_db)):
+    """Sign the sheet in as the ticket's account, then start the provider's own connect, back to the app."""
+    from app.dependencies import sign_in
+    from app.services.app_return import app_return, with_result
+
+    user = await _redeem(db, ticket, provider)
+    if user is None:
+        return RedirectResponse(with_result(app_return(provider), "expired"), status_code=303)
+    request.session.clear()
+    sign_in(request, user)
+    return RedirectResponse(f"/mobile/oauth/{provider}/confirm", status_code=303)
+
+
+@router.get("/mobile/oauth/{provider}/confirm")
+async def oauth_confirm(request: Request, provider: Literal["coros", "strava"], user: User = Depends(get_current_user)):
+    """The account is shown before the provider's consent, as on the site's connection pages: a ticket link sent
+    to someone else cannot quietly attach their COROS or Strava to the sender's account."""
+    from app.services.app_return import app_return, with_result
+    return page(request, mode="oauth-confirm", user=user, name=PROVIDERS[provider],
+                start="/coros/connect?next=app" if provider == "coros" else "/auth/strava?next=app",
+                cancel=with_result(app_return(provider), "cancelled"))
 
 
 @router.get("/mobile/connect")
