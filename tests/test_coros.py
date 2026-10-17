@@ -1362,7 +1362,7 @@ async def test_unread_daily_details_keep_phases_visible_then_accept_corrections_
     assert row.details["stages"] == original and row.details["stages_read"]
     assert (await coros.coros_status(db_session, test_user.id))["retryable_partial"]
     html = (await as_user.get("/sante")).text
-    assert 'class="pf-phases-bar"' in html and 'aria-label="Phases de la nuit"' in html
+    assert 'class="pf-phases-bar"' in html and 'role="group" aria-label="Phases estimées par ta montre :' in html
     fake.tool_status.clear()
     fake.texts["queryDailyHealthData"] = text.replace("Deep: 1h 16min | Light: 5h 43min",
                                                        "Deep: 1h 6min | Light: 5h 53min")

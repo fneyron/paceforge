@@ -190,7 +190,7 @@ def test_daily_gaps_and_no_trend_across_a_watch_change():
     assert '4 jours avec des relevés' in c['trend'] and c['chart']['n'] == 30
     assert 'par rapport' not in c['trend']
     assert len(c['chart']['dots']) == 14
-    assert 'jours' in c['chart']['title']
+    assert c['chart']['title'] == 'FC sur 24 h'
 
 
 def bearer(token):

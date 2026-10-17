@@ -38,6 +38,7 @@
             {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
             <article id="{{ key }}" class="pf-card pf-curve" aria-labelledby="h-{{ key }}">
                 <div class="pf-measurement-head"><h3 id="h-{{ key }}" class="pf-card-h">{{ c.title }}</h3>{{ viz.help(key, c.interpretation.detail ~ ' Les points sont les mesures nocturnes, la ligne leur moyenne glissante et la zone les valeurs habituelles. La moyenne affichée au repos porte sur les mesures visibles.') }}</div>
+                {% if c.status.tone == 'danger' %}<p class="pf-card-status is-danger"><i class="pf-dot" aria-hidden="true"></i>{{ c.status_short }}</p><p class="pf-card-meaning">Ta FC de nuit est nettement plus haute que d'habitude.</p>{% endif %}
                 {% if c.measurement and c.measurement.missing_label %}<p class="pf-measurement-meta">{{ c.measurement.missing_label }}</p>{% endif %}
                 {{ viz.viz_night_card(c, c.title, legend=c.legend, central_details=True, quiet=True, group="jours") }}
             </article>

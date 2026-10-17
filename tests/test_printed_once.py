@@ -46,28 +46,25 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
 
     # No VFC in the seed. New accumulated load and fitness stay distinct from recovery.
     # the seed's nights are all within the 30 of the short range: no « 3 mois » (2026-10-17)
-    assert set(sante) == {"recuperation", "sommeil-14", "fc", "entrainement",
+    assert set(sante) == {"recuperation", "sommeil-14", "fc",
                          "charge-accumulee", "forme-footing", "trend-hr"}
     # Tendances' night HR: last night's value is the FC de nuit card's, this one rests on its 7-night mean
-    assert sante["trend-hr"] == ("45\u00a0bpm", "moyenne 7 jours", "")
-    # The new seven-day chart owns its duration; its section header does not repeat it.
-    assert sante["entrainement"][1:] == ("7 derniers jours", "")
-    training_heading = page.split('id="h-entrainement"')[1].split('</header>')[0]
-    assert sante["entrainement"][0] not in training_heading
-    assert sante["charge-accumulee"] == ("", "Récente et habituelle", "")
+    assert sante["trend-hr"] == ("45\u00a0bpm", "en moyenne", "")
+    assert "entrainement" not in sante
+    assert sante["charge-accumulee"][1:] == ("en moyenne", "")
     assert sante["forme-footing"] == ("", "Tes sorties comparables", "")
     # the ring prints today's score, the Sommeil row last night's total: the Récupération card rests on its title, no
     # number (the audit, 2026-10-09: its mean decided nothing and looked like the dial's), the sleep's on its means…
-    assert sante["recuperation"] == ("", "Historique · 14 jours", "")
+    assert sante["recuperation"] == ("100\u00a0/100", "en moyenne", "")
     assert sante["sommeil-14"] == ("7h20", "en moyenne", "")
     # …the nightly HR card prints last night's value (its row a word, no other block prints it)…
     assert sante["fc"][0] == "45\u00a0bpm" and "Garmin" not in sante["fc"][2]
-    assert sante["fc"][1] == "Dernière nuit"  # real dated measurement, not the rolling average
+    assert sante["fc"][1] == "en moyenne"  # real dated measurement, not the rolling average
     assert " · d'habitude " not in sante["fc"][2]  # source and reference share the central explanation
     context = re.search(r'data-viz-detail-for="fc">(.*?)</p>', page, re.S).group(1)
     assert "Garmin" in context and "moyenne 7 jours" in context
     fc = dict(FIG.findall(page))["fc"]
-    assert "Garmin" in re.search(r'aria-valuetext="([^"]*)"', fc).group(1)
+    assert "Moyenne" in re.search(r'aria-valuetext="([^"]*)"', fc).group(1)
     assert before["nuits-course"][0] == "J‑14 → J‑1" and "Nuit " not in before["nuits-course"][1]  # not the race
     assert "recup" not in after  # v4.3: no recovery part on the race page after the race
     # this week's hours: Activités' week heading prints them; neither A1 (it rests on the average of the complete
