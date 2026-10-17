@@ -26,6 +26,7 @@ import statistics
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from functools import partial
+from typing import Any
 
 import anyio
 from sqlalchemy import func, select
@@ -83,7 +84,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     night_state = await _night_state(db, user_id, today, sources & set(WATCH_SOURCES))
     until, today = today, cycle_day(nights, today, clock)
     daily, trends = await daily_and_trends(db, user_id, until, now=now, zone=zone)
-    out = {
+    out: dict[str, Any] = {
         "has_data": bool(sources) or bool(sessions) or bool(daily),
         "has_watch_data": bool(sources),
         "today": today,
@@ -107,6 +108,10 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     feels = await sante_checkin.feels(db, user_id, feel_days[0], until)
     out["feel_track"] = viz.feel_track("ressenti-30", feel_days, feels) if feels else None
     out["respiration"] = next((c for c in daily if c["key"] == "resp_night"), None)
+    marks = out.pop("race_marks", [])
+    for c in (out.get("vfc"), out.get("fc"), (out["respiration"] or {}).get("chart"), out["feel_track"],
+              *((out.get("sleep") or {}).get("bars") or {}).values()):
+        viz.flag_days(c, marks)
     out["trends"] = [t for t in (trends.get("weight"), trends.get("body_fat"), out.pop("hr_trend", None),
                                  trends.get("steps")) if t]
     out["explanations"] = sante_explain.build(out)
@@ -124,7 +129,7 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
     # a dawn finish: D on the day before its first morning
     efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of))
     raced = st.raced_nights(efforts)
-    out = {}
+    out: dict[str, Any] = {}
     with nt.memo():  # the nights no longer change: their baselines, trends and alerts are computed once
         nt.freeze(nights)
         day = _assess(nights, sessions, efforts, today)
@@ -143,6 +148,11 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
         out.update(_top(day, sessions, has_watch, out, until, load))
         out["synthesis"] = sante_context.synthesis(day, nights, until, efforts, sessions,
                                                    sl.deficit(nights, today, raced))
+        # the race on the curves (owner, 2026-10-17: the card of signals gone): a dashed line on its days over 3
+        # months, its name once over them
+        context = out["synthesis"]["context"]
+        out["race_marks"] = sante_context.race_marks(efforts, sessions, until - timedelta(days=89), until)
+        out["race_note"] = context[0]["label"] if context else None
     done = [s for s in sessions if s.end_day <= until]
     out["load"] = sante_load.card(sessions, until, load)
     out["fitness"] = training_view.footing(done, until, peak)
@@ -439,8 +449,11 @@ def _top(day: dict, sessions, has_watch: bool, page: dict, until: date, load: di
     train["dial"]["usual_marker"] = train["usual"] is not None
     if train["usual"] is not None:
         train["dial"]["aria"] += " 100 % représente ta semaine habituelle ; un tour complet représente 200 %."
-    return {"dials": [sleep_dial(day["tst24"], sl.NEED_DEFAULT, sleep_href), sc.dial(score, state, recup_href),
-                      train["dial"]],
+    recup = sc.dial(score, state, recup_href)
+    if state and state["tone"] != "ok" and state["reasons"]:  # the card of signals' reason, under its ring
+        recup.update(note=state["reasons"][0]["label"], reason=True)
+        recup["aria"] += f" {recup['note']}."
+    return {"dials": [sleep_dial(day["tst24"], sl.NEED_DEFAULT, sleep_href), recup, train["dial"]],
             "state": state, "line": None if state else td.no_state_line(has_watch, score["missing"]),
             "connect": not has_watch,  # no watch: how to add the nights, under the line
             "training": train, "score": score, "training_effect": training_context(train),

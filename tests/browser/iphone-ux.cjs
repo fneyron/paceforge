@@ -62,30 +62,31 @@ const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
     await page.evaluate(() => scrollTo({ top: 720, behavior: 'instant' }));
     await page.goto(base + '/activities', { waitUntil: 'networkidle' });
     const first = await page.locator('[id^="activity-row-"]').first().boundingBox();
-    assert.ok(first.y < 500, 'first activity is visible before scrolling');
+    // under the 12-week histogram, fully inside the native content height (activities-visual.cjs: 700 px)
+    assert.ok(first.y + first.height <= 700, 'first activity is visible before scrolling');
     // Simulate a session saved by the previous, collapsible Health dashboard.
     await page.evaluate(selected => {
       const key = 'pf-view:' + document.querySelector('#main-content').dataset.account + ':/sante';
       const saved = JSON.parse(sessionStorage.getItem(key));
       if (saved.charts[selected.key] !== selected.date) throw new Error('The dated chart selection was not remembered');
       for (const id of ['sommeil', 'sommeil-detail', 'recuperation', 'entrainement', 'forme', 'mesures-nocturnes', 'tendances']) saved.folds[id] = false;
-      saved.folds['qualite-bilan'] = true;
+      saved.folds['comprendre-indicateurs'] = true;
       sessionStorage.setItem(key, JSON.stringify(saved));
     }, selected);
     await page.goto(base + '/sante?app_nav=return', { waitUntil: 'networkidle' });
     assert.equal(await page.locator('#charge-detail').evaluate(el => el.open), true, 'optional history still restores its state');
-    assert.equal(await page.locator('#qualite-bilan').evaluate(el => el.open), false, 'method information must not reopen from an obsolete saved state');
+    assert.equal(await page.locator('#comprendre-indicateurs').evaluate(el => el.open), false, 'method information must not reopen from an obsolete saved state');
     assert.equal(await page.locator('#vfc .pf-viz-range').getAttribute('aria-valuetext'), selected.aria, 'tab return restores the dated selection');
     for (const selector of ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#recuperation-detail figure', '#vfc figure', '#fc figure', '#entrainement-semaine figure', '#tendances figure']) {
       assert.ok(await page.locator(selector).first().isVisible(), `old fold state hid ${selector}`);
     }
     assert.ok(Math.abs(await page.evaluate(() => scrollY) - 720) < 20, 'tab return restores scroll');
-    await page.goto(base + '/sante#qualite-bilan', { waitUntil: 'networkidle' });
-    assert.equal(await page.locator('#qualite-bilan').evaluate(el => el.open), true, 'an explicit help link still opens the requested information');
+    await page.goto(base + '/sante#comprendre-indicateurs', { waitUntil: 'networkidle' });
+    assert.equal(await page.locator('#comprendre-indicateurs').evaluate(el => el.open), true, 'an explicit help link still opens the requested information');
     await page.evaluate(() => window.paceforgeRememberPage());
     assert.equal(await page.evaluate(() => {
       const key = 'pf-view:' + document.querySelector('#main-content').dataset.account + ':/sante';
-      return 'qualite-bilan' in JSON.parse(sessionStorage.getItem(key)).folds;
+      return 'comprendre-indicateurs' in JSON.parse(sessionStorage.getItem(key)).folds;
     }), false, 'transient information is not persisted');
     // No horizontal page overflow at narrow widths or with 200% system text.
     for (const width of [320, 393]) for (const scale of [1, 2]) {

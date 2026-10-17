@@ -32,27 +32,24 @@ const scenarios = [
           document.documentElement.classList.toggle('dark', dark);
         }, { scale, dark });
         const key = `synthetic-${scenario}-${width}-${scale}-${dark ? 'dark' : 'light'}`;
-        const synthesis = page.locator('#synthese-sante');
-        assert.ok(await synthesis.isVisible(), key);
-        assert.match(await synthesis.locator('[data-context="after_effort"]').innerText(), /Ultra synthétique · J\+13/);
-        assert.ok(await synthesis.locator('.pf-synthesis-reasons > li').count() <= 2);
-        assert.doesNotMatch(await synthesis.innerText(), /\bNone\b|prêt à|tu peux courir/i);
+        // the card of signals left (owner, 2026-10-17): its reason under the Récupération ring, the race on the curves
+        assert.equal(await page.locator('#synthese-sante').count(), 0, key);
+        const dials = page.locator('.pf-dials'), note = page.locator('.pf-ring-recup .pf-ring-note');
+        assert.match(await page.locator('.pf-curves-race').innerText(), /Ultra synthétique · J\+13/);
+        assert.ok(await page.locator('#vfc .pf-viz-race').count() >= 1, key + ': the race days are marked on the curves');
+        assert.doesNotMatch(await page.locator('#main-content').innerText(), /\bNone\b|prêt à|tu peux courir/i);
         if (scenario === 'conflict') {
-          assert.match(await synthesis.locator('h2').innerText(), /Signaux à surveiller/);
-          assert.ok(await synthesis.evaluate(el => el.classList.contains('is-warn')));
           assert.ok(await page.locator('.pf-ring-recup').evaluate(el => el.classList.contains('is-warn')));
-          assert.ok(await synthesis.locator('[data-signal="hr"]').isVisible());
-          assert.doesNotMatch(await synthesis.locator('.pf-synthesis-reasons').innerText(), /fatigue|chaleur|alcool|maladie/i,
-            'The primary synthesis names the measured change without the generic explanatory paragraph');
+          assert.match(await note.innerText(), /FC de nuit plus haute que d'habitude/);
+          assert.doesNotMatch(await note.innerText(), /VFC|fatigue|chaleur|alcool|maladie/i,
+            'The ring names the measured change without the generic explanatory paragraph; the HRV stays habitual');
           assert.match(await page.locator('#comprendre-indicateurs').textContent(), /fatigue|chaleur|alcool|maladie/i,
             'The explanation remains accessible in the disclosure');
-          assert.equal(await synthesis.locator('[data-signal="hrv"]').count(), 0, 'The HRV fixture must remain habitual');
           assert.match(await page.locator('#fc .pf-viz-read').innerText(), /56/);
           assert.match(await page.locator('#vfc .pf-viz-read').innerText(), /65/);
         } else if (scenario === 'missing') {
           assert.match(await page.locator('.pf-sante-h1').innerText(), /Dernier bilan/);
-          assert.match(await synthesis.locator('.pf-synthesis-freshness').innerText(), /Bilan du .*nuit du .*en attente/);
-          assert.ok(await synthesis.locator('.pf-synthesis-freshness').evaluate(el => el.classList.contains('is-stale')));
+          assert.match(await page.locator('.pf-sante-head').innerText(), /En attente de la prochaine nuit/);
           const latestDay = await page.locator('#recuperation-detail .pf-viz-data').evaluate(el => {
             const data = JSON.parse(el.textContent); return data.d.at(-1);
           });
@@ -78,7 +75,7 @@ const scenarios = [
           assert.ok(await page.locator(selector).first().isVisible(), key + ': hidden primary plot');
         }
         await page.screenshot({ path: `${output}/${key}-top.png` });
-        await synthesis.screenshot({ path: `${output}/${key}-synthesis.png` });
+        await dials.screenshot({ path: `${output}/${key}-dials.png` });
         if (scenario === 'stages') await page.locator('#sommeil').screenshot({ path: `${output}/${key}-sleep.png` });
         if (width === 393 && scale === 1 && !dark) {
           await page.screenshot({ path: `${output}/${key}-full.png`, fullPage: true });

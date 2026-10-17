@@ -47,6 +47,8 @@ async def lifespan(app):
                     db.add(HealthMetric(user_id=user.id,date=day,metric=metric,value=value,source='COROS',details={}))
             if 0 < i < 30 and i % 2 == 0:  # the one-tap feel, a day out of two; today left to answer
                 db.add(HealthMetric(user_id=user.id,date=day,metric='feel',value=2,source='PaceForge',details={'daily_checkin':{'v':1,'feel':('good','ok','bad')[i//2%3]}}))
+            if i == 20:  # a race the provider tagged (Strava's workout_type 1): the curves' dashed line
+                db.add(Activity(user_id=user.id,strava_activity_id=900+i,name='Trail des Crêtes',sport_type='TrailRun',start_date=now-timedelta(days=i,hours=3),distance=42000,moving_time=5*3600,elapsed_time=5*3600,average_heartrate=150,average_speed=42000/(5*3600),max_heartrate=182,total_elevation_gain=2100,raw_data={'utc_offset':0,'workout_type':1}))
             if i%3==1:
                 minutes=50+i%4*4
                 db.add(Activity(user_id=user.id,strava_activity_id=i+1,name='Course facile',sport_type='Run',start_date=now-timedelta(days=i),distance=10000,moving_time=minutes*60,elapsed_time=minutes*60,average_heartrate=130+i%4,average_speed=10000/(minutes*60),max_heartrate=180,total_elevation_gain=20,raw_data={'utc_offset':0}))

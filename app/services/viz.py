@@ -322,6 +322,16 @@ def events(days: list[date], xs: list[float], races=(), longs=()) -> dict:
             "longs": [{"x": xs[idx[d]]} for d in longs if d in idx]}
 
 
+def flag_days(c: dict | None, marks) -> None:
+    """A dashed hairline on each marked day a chart draws, `marks` [(day, name)] (Santé's stacked curves: a race,
+    its name printed once over them)."""
+    if not c or not marks or "data" not in c:
+        return
+    data = json.loads(c["data"])
+    at = dict(zip(data["d"], data["x"]))
+    c["flags"] = [{"x": at[d.isoformat()], "name": name} for d, name in marks if d.isoformat() in at]
+
+
 def _context(d: date, races=(), longs=(), tags: dict | None = None) -> list[str]:
     out = [f"{GLYPH['race']} {nm}" for dd, nm in races if dd == d]
     out += [f"{GLYPH['long']} sortie longue" for dd in longs if dd == d]

@@ -1,26 +1,46 @@
 """Compact, dated context for the nightly signals; never a training clearance or a healing deadline."""
+from datetime import timedelta
+
 from app.services import sante_training as st, viz
 
 CONTEXT_DAYS = 28  # Display lookback only, not a physiological recovery window.
 
 
+def _efforts_and_races(efforts, sessions, first, last):
+    """(day, id, name, kind) of each long recorded effort or provider-tagged race finished from `first` to `last`
+    (its calendar day since the real finish, not the sleep cycle's anchor), using only imported activity data."""
+    out = []
+    for e in efforts:
+        day = e.end.date()
+        if e.kind == "ultra" and first <= day <= last:
+            out.append((day, e.session_id, e.name or "un effort long", "effort"))
+    for s in sessions:
+        day = st.local_end(s).date()
+        if s.is_race and first <= day <= last:
+            out.append((day, s.id, s.name or "une course enregistrée", "race"))
+    return out
+
+
+def _order(candidate):
+    day, sid, _, kind = candidate
+    return day, kind == "effort", sid
+
+
+def race_marks(efforts, sessions, first, last) -> list:
+    """The curves' race days (owner, 2026-10-17: the race on the curves, with the card of signals gone): [(day,
+    name)], one per day, its name chosen as recent_effort chooses."""
+    names = {}
+    for day, _, name, _ in sorted(_efforts_and_races(efforts, sessions, first, last), key=_order):
+        names[day] = name
+    return sorted(names.items())
+
+
 def recent_effort(efforts, sessions, today):
     """One long recorded effort or provider-tagged race, using only imported activity data."""
-    candidates = []
-    for e in efforts:
-        day = e.end.date()  # display calendar days since the real finish, not the sleep cycle's anchor
-        ago = (today - day).days
-        if e.kind == "ultra" and e.end.date() <= today and 0 <= ago <= CONTEXT_DAYS:
-            candidates.append((day, e.session_id, e.name or "un effort long", "effort"))
-    for s in sessions:
-        finished = st.local_end(s)
-        day = finished.date()
-        ago = (today - day).days
-        if s.is_race and finished.date() <= today and 0 <= ago <= CONTEXT_DAYS:
-            candidates.append((day, s.id, s.name or "une course enregistrée", "race"))
+    candidates = _efforts_and_races(efforts, sessions, today - timedelta(days=CONTEXT_DAYS), today)
     if not candidates:
         return []
-    day, sid, name, kind = max(candidates, key=lambda x: (x[0], x[3] == "effort", x[1]))
+    day, sid, name, kind = max(candidates, key=_order)
     return [{"key": "after_effort", "label": f"Après {name} · J+{(today - day).days}",
              "detail": "Une tendance nocturne habituelle ne mesure pas la récupération des muscles et des tendons après cet effort.",
              "tone": "neutral", "source": "Activité enregistrée", "activity_id": sid,

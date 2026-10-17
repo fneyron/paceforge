@@ -128,8 +128,9 @@ async function noOverflow(page, label) {
     const bike = page.getByRole('navigation', { name: 'Filtrer les activités par sport' }).getByRole('link', { name: 'Vélo', exact: true });
     assert.match(await bike.getAttribute('href'), /m=distance/);
     await bike.click();
-    await page.waitForURL('**/activities?**');
-    assert.match(page.url(), /sport=bike/);
+    // the measure toggle already wrote ?m= into the URL: wait for the filter's own
+    await page.waitForURL(url => new URL(url).searchParams.get('sport') === 'bike');
+    assert.match(page.url(), /m=distance/);
     assert.ok(await page.locator('.pf-activity-row').filter({ hasText: 'Boucle des villages' }).isVisible());
     assert.equal(await page.locator('.pf-activity-row').filter({ hasText: 'Footing au bord du lac' }).count(), 0);
     assert.ok(await page.locator('#semaines [data-range-panel="distance"] figure').isVisible());

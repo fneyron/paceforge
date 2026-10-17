@@ -1357,21 +1357,6 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 
 /* A measured night, its limits and the race context: no readiness prescription. */
 .pf-ring-index .pf-ring-unit { display: block; margin: 0; font-size: .4em; line-height: 1; font-weight: 500; letter-spacing: 0; }
-.pf-health-synthesis { margin-top: 12px; padding: 14px 16px 4px; border-radius: 16px; background: rgb(var(--pf-surface)); border-inline-start: 3px solid rgb(var(--pf-line)); }
-.pf-health-synthesis.is-warn { border-inline-start-color: rgb(var(--pf-warn-mark)); }
-.pf-health-synthesis.is-danger { border-inline-start-color: rgb(var(--pf-danger)); }
-.pf-synthesis-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
-.pf-synthesis-heading h2 { display: flex; align-items: baseline; gap: 7px; min-width: 0; font-size: .9375rem; font-weight: 650; line-height: 1.35; letter-spacing: -.015em; }
-.pf-synthesis-heading .pf-dot { width: 7px; height: 7px; background: rgb(var(--pf-gray-500)); }
-.pf-health-synthesis.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }
-.pf-health-synthesis.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
-.pf-synthesis-freshness { font-size: .6875rem; line-height: 1.5; color: rgb(var(--pf-gray-600)); }
-.pf-synthesis-freshness.is-stale { color: rgb(var(--pf-warn)); }
-.pf-synthesis-reasons { display: grid; gap: 7px; margin: 10px 0; padding: 0; list-style: none; font-size: .8125rem; font-weight: 600; line-height: 1.45; }
-.pf-synthesis-context { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 10px; list-style: none; padding: 0; font-size: .75rem; line-height: 1.4; }
-.pf-synthesis-context li { max-width: 100%; padding: 5px 8px; border-radius: 6px; background: rgb(var(--pf-soft)); color: rgb(var(--pf-gray-600)); overflow-wrap: anywhere; }
-.pf-sante4 .pf-synthesis-details { margin: 0; border-top: 1px solid rgb(var(--pf-line)); }
-.pf-sante4 .pf-synthesis-details > summary { min-height: 44px; font-size: .75rem; }
 /* The feel in one tap (owner, 2026-10-17): three pills; the answer is said by its word, its colour only adds. */
 .pf-feel { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 10px 0 0; padding-inline: 16px; }
 .pf-feel-label { font-size: .8125rem; font-weight: 600; color: rgb(var(--pf-gray-600)); }
@@ -1392,5 +1377,9 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-curves { display: grid; gap: 12px; }
 .pf-curves > .pf-card, .pf-curves .pf-health-nights > .pf-card { margin: 0; min-width: 0; }
 .pf-curves .pf-health-nights { grid-template-columns: minmax(0, 1fr) !important; gap: 12px; margin-top: 0; }
+.pf-curves-race { display: flex; align-items: center; gap: 6px; flex-basis: 100%; font-size: .75rem; line-height: 1.4; color: rgb(var(--pf-gray-600)); }
+.pf-curves-race.is-alone { justify-content: center; margin-top: 8px; }
+.pf-lg.is-race { width: 0; height: 12px; border-radius: 0; border-left: 1.5px dashed rgb(var(--pf-ink) / .5); }
+.pf-viz-ev.pf-viz-race { stroke: rgb(var(--pf-ink) / .5); }
 .pf-sante4 .pf-curves > .pf-card { padding: 14px; background: rgb(var(--pf-soft)); border: 0; border-radius: 16px; box-shadow: none; }
-@media (min-width: 760px) { .pf-health-synthesis, .pf-feel { max-width: 560px; margin-inline: auto; } }
+@media (min-width: 760px) { .pf-feel { max-width: 560px; margin-inline: auto; } }
