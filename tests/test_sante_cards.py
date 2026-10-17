@@ -94,7 +94,8 @@ def test_sdnn_progress_matches_its_fourteen_night_reference(count, in_baseline, 
                                  "label": f"Référence · {in_baseline} nuits" if remaining == 0
                                  else f"Référence · {in_baseline}/14 nuits"}
     assert card["measurement"]["source"] == "Apple Santé · SDNN"
-    assert card["read"][2].endswith(" · SDNN") and "Apple Santé" not in card["read"][2]
+    assert "SDNN" not in card["read"][2] and "Apple Santé" not in card["read"][2]
+    assert "SDNN" in json.loads(card["data"])["a"][-1]
     assert card["measurement"]["is_current"] and card["measurement"]["missing_label"] is None
     assert day["score"]["value"] is None  # descriptive SDNN still never creates an RMSSD state
     if remaining:
@@ -127,9 +128,9 @@ def test_missing_current_night_keeps_the_last_dated_measurement_and_real_gap(met
                                    "missing_label": "Pas de mesure cette nuit"}
     assert card["latest"] is None and day["score"]["value"] is None
     data = json.loads(card["data"])
-    assert data["d"][card["sel"]] == previous.isoformat()
-    assert card["read"][0] == f"52\u00a0{unit}" and "COROS" not in card["read"][2]
-    assert "COROS" in card["read"][3] and "COROS" in card["aria_now"]
+    assert card["sel"] == len(data["d"]) and data["d"][-2] == previous.isoformat()
+    assert data["r"][-2][0] == f"52\u00a0{unit}" and card["read"][1] == "en moyenne"
+    assert "COROS" in data["r"][-2][3] and "COROS" in data["a"][-2]
     assert data["y"][0][-1] is None and data["r"][-1][:2] == ["—", "Pas de mesure"]
     assert all(dot["i"] != len(data["d"]) - 1 for dot in card["dots"])
     assert card["reference"]["n"] == 12 and card["reference"]["ready"]  # days −19 → −8

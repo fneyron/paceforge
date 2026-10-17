@@ -69,9 +69,10 @@ def chart(metric: str, key: str, name: str, days: list[date], values: list, mean
         digits=digits, min_span=min_span, sources=sources, mean_sources=mean_sources, mean_counts=counts,
         notes=notes, daytime=daytime, zero_base=metric == "steps", compact=True, show_source=False,
         mean_label=LEGEND[metric][1], count_word=COUNT_WORD[metric])
-    c["legend"] = [("is-dot", LEGEND[metric][0])] + ([("is-mean", LEGEND[metric][1])] if c["mean"] else [])
+    c["legend"] = [("is-dot", LEGEND[metric][0])] + ([("is-mean", "moyenne glissante")] if c["mean"] else [])
     c["period_label"] = f"{n} jours · {days[0]:%d/%m} – {days[-1]:%d/%m}"
-    return c
+    return viz.card_average(c, [v for i, v in enumerate(values)
+                                if not notes or notes[i] != "journée en cours"], unit=unit, digits=digits)
 
 
 def daily_trend(metric: str, card: dict, rows: list, today: date, source_of, signal: tuple) -> dict:
@@ -106,12 +107,6 @@ def night_trend(nights, today: date) -> dict | None:
               mean_sources=[nt.mean_source(nights, "hr", d) for d in days])
     if c is None:
         return None
-    # last night's value is the FC de nuit card's: this one rests on its mean (each number printed once, viz.rest)
-    if means[-1] is not None:
-        viz.rest(c, [f"{viz.num(means[-1])}{viz.NBSP}bpm", "moyenne 7 jours", ""],
-                 f"{c['summary']}, moyenne 7 jours {viz.num(means[-1])} battements par minute")
-    else:
-        viz.rest(c, ["", f"{c['n']} nuits", ""], c["summary"])
     last, value = max((i, v) for i, v in enumerate(values) if v is not None)
     return {"key": "hr_night", "title": "FC de nuit", "chart": c, "delta": delta(means, 0, "bpm"),
             "value": viz.num(value, unit="bpm"), "latest": days[last].strftime("%d/%m/%Y"),

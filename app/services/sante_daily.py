@@ -111,6 +111,8 @@ def daily_card(metric: str, rows: list[HealthMetric], today: date) -> dict | Non
         notes=notes, daytime=metric != "resp_night", zero_base=metric == "steps", reference=reference, compact=True,
         show_source=False,
     )
+    if metric == "resp_night":
+        viz.card_average(out["chart"], values, unit=unit, digits=digits)
     return out
 
 

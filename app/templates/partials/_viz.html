@@ -1,3 +1,7 @@
+{% macro help(label, text) %}
+<span class="pf-help"><button type="button" class="pf-help-button" aria-label="À propos de {{ label }}" aria-describedby="help-{{ label|replace(' ', '-') }}">i</button><span class="pf-help-tip" role="tooltip" id="help-{{ label|replace(' ', '-') }}">{{ text }}</span></span>
+{% endmacro %}
+
 {#- PaceForge chart kit: Jinja macros drawing what app/services/viz.py computed.
     Every scrubbable figure has: the readout pinned above the plot (printed by the server, so the
     chart is complete without JS), the SVG (aria-hidden, full-height hit area: a tap selects, a
@@ -17,9 +21,10 @@
 <figure class="pf-viz {{ cls }}{% if quiet %} pf-viz-quiet{% endif %}" data-viz data-viz-key="{{ key }}"{% if group %} data-viz-group="{{ group }}"{% endif %}{% if card %} data-tone="{{ c.tone_now }}"{% endif %}>
     <figcaption class="sr-only">{{ c.summary or title }}</figcaption>
     {% if card %}
+    {% if c.average %}<p class="pf-card-average" data-average hidden>{{ c.average }} en moyenne</p>{% endif %}
     <div class="pf-viz-read pf-viz-read2">
         <p class="pf-viz-l1" aria-hidden="true"><b data-r>{{ c.read[0] }}</b><span data-r class="pf-viz-w">{{ c.read[1] }}</span></p>
-        <p class="pf-viz-l2"{% if quiet %} data-selection-date{% endif %}><span data-r aria-hidden="true">{{ c.date_now if quiet else c.read[2] }}</span>{{ link }}</p>
+        <p class="pf-viz-l2"{% if quiet %} data-selection-date{% endif %}><span data-r aria-hidden="true">{{ c.selection_date_now if quiet else c.read[2] }}</span>{{ link }}</p>
     </div>
     {% else %}
     <div class="pf-viz-read">
@@ -165,6 +170,7 @@
     {% if not b.miss %}
     {% if b.top %}<rect x="{{ b.x }}" y="{{ b.top.y }}" width="{{ b.w }}" height="{{ b.top.h + b.h }}" rx="{{ c.rx }}" class="pf-bar-top"/>{% endif %}
     {% if b.h and b.est %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="{{ c.rx }}" class="pf-bar-est is-{{ b.cls }}" fill="url(#pf-est-{{ c.key }}-{{ b.cls }})"/>
+    {% elif b.phases %}{% for phase in b.phases %}<rect x="{{ b.x }}" y="{{ phase.y }}" width="{{ b.w }}" height="{{ phase.h }}" class="pf-ph is-{{ phase.key }}"><title>{{ phase.label }}</title></rect>{% endfor %}
     {% elif b.h %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="{{ c.rx }}" class="pf-bar{% if b.cls %} is-{{ b.cls }}{% endif %}"/>{% endif %}
     {% if b.brk %}<path d="M{{ b.x - 1 }} {{ b.brk + 3 }}l{{ b.w + 2 }} -4v3.5l-{{ b.w + 2 }} 4z" class="pf-bar-brk"/>{% endif %}
     {% endif %}
@@ -231,7 +237,6 @@
    named with its minutes in the legend under it (a list a screen reader reads; the bar itself is decoration) #}
 {% macro viz_phases(ph) %}
 <div class="pf-phases">
-    <div class="pf-phases-bar" aria-hidden="true">{% for p in ph.parts %}<i class="pf-ph is-{{ p.key }}" style="flex-grow: {{ p.min }}"></i>{% endfor %}</div>
-    <ul class="pf-phases-legend" aria-label="Phases de la nuit">{% for p in ph.parts %}<li><i class="pf-ph is-{{ p.key }}" aria-hidden="true"></i>{{ p.name }} <b>{{ p.hm }}</b></li>{% endfor %}</ul>
+    <div class="pf-phases-bar" role="group" aria-label="{{ ph.aria }}">{% for p in ph.parts %}<span class="pf-phase-segment pf-ph is-{{ p.key }}" tabindex="0" style="flex-grow: {{ p.min }}" aria-label="{{ p.name }} : {{ p.hm }}">{% if p.min >= 30 %}<span class="pf-phase-duration" aria-hidden="true">{{ p.hm }}</span>{% endif %}<span class="pf-phase-tip" role="tooltip">{{ p.name }} · {{ p.hm }}</span></span>{% endfor %}</div>
 </div>
 {% endmacro %}

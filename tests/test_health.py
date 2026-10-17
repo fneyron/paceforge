@@ -4,6 +4,7 @@ import importlib.util
 import pathlib
 import re
 from datetime import date, datetime, timedelta
+from html import unescape
 
 import pytest
 import sqlalchemy as sa
@@ -115,10 +116,10 @@ def test_sleep_average_shows_from_one_night():
     assert form["nights_recent"] == 0 and form["nights_base"] == 0
 
 
-async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: AsyncSession, test_user: User, same_today):
     r = await as_user.get("/sante")
     assert "Connecter COROS" in r.text  # empty state
-    today = date.today()
+    today = same_today
     # Seven recent nights at +7 bpm remain above the lagged personal reference;
     # the acute HR alert must stay visible under the new descriptive labels.
     for metric, series in _series(today, 60, 45, 50, 57).items():
@@ -132,7 +133,7 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     assert form["nights_recent"] == 7 and form["nights_base"] == 60
     r = await as_user.get("/sante")
     assert "Signaux inhabituels" in r.text and "À ménager" not in r.text
-    assert "Ta FC de nuit est nettement plus haute que d&#39;habitude." in r.text
+    assert "Ta FC de nuit est nettement plus haute que d'habitude." in unescape(r.text)
     assert r.text.index('class="pf-dials"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
     # The alert remains visible once on the nightly chart, alongside the main signal warning.
     fc = re.search(r'<article id="fc"[^>]*>(.*?)</article>', r.text, re.S).group(1)

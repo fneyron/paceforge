@@ -139,6 +139,25 @@ def night_label(d: date) -> str:
     return f"nuit du {d_day(d - timedelta(days=1))} au {d_day(d)}"
 
 
+def selection_date(d: date, *, night: bool = False) -> str:
+    """Compact dates shared by Santé cards; a night is dated by its wake."""
+    if not night:
+        return f"{d.day} {MOIS[d.month - 1]}"
+    before = d - timedelta(days=1)
+    start = str(before.day) + (f" {MOIS[before.month - 1]}" if before.month != d.month else "")
+    return f"{start} → {d.day} {MOIS[d.month - 1]}"
+
+
+def card_average(c: dict, values: list, *, unit: str = "", digits: int = 0) -> dict:
+    """Measured points only; leave selected values intact and keep the mean visible."""
+    kept = [v for v in values if v is not None]
+    if not kept:
+        return c
+    value = num(sum(kept) / len(kept), digits, unit).replace(NNBSP, NBSP)
+    c["average"] = value
+    return rest(c, [value, "en moyenne", "", c["read"][3] if len(c["read"]) > 3 else ""], f"{c['summary']}. Moyenne : {value}.")
+
+
 def sleep_readout(main: float | None, nap: float | None) -> str:
     """« Nuit 5h50 · sieste 2h20 · 8h10 sur 24 h »; without a nap « Nuit 7h20 sur 24 h »;
     without a main episode « Sieste 1h22 · pas de nuit mesurée »."""
@@ -260,7 +279,7 @@ def band_polys(xs, lo, hi, half: float = 0, groups=None) -> list[str]:
     return polys
 
 
-def _data(xs, ys, days, r, a, h=None, sel=None, link=None, t=None) -> dict:
+def _data(xs, ys, days, r, a, h=None, sel=None, link=None, t=None, night=False) -> dict:
     """{data: the JSON pf-viz.js reads, read: the default readout (printed by
     the server: the chart is complete without JS), sel, n}. `t`: a tone per
     point (ok, warn, danger or ""), set on the figure as data-tone with the
@@ -268,7 +287,8 @@ def _data(xs, ys, days, r, a, h=None, sel=None, link=None, t=None) -> dict:
     sel = (len(xs) - 1 if sel is None else sel) if xs else None
     h = h or [None] * len(xs)
     dates = [d_short(d) for d in days]
-    out = {"x": xs, "y": ys, "d": [d.isoformat() for d in days], "dateLabels": dates,
+    selection_dates = [selection_date(d, night=night) for d in days]
+    out = {"x": xs, "y": ys, "d": [d.isoformat() for d in days], "dateLabels": dates, "selectionDates": selection_dates,
            "r": r, "a": a, "h": h, "sel": sel}
     if link:
         out["link"] = link
@@ -277,7 +297,7 @@ def _data(xs, ys, days, r, a, h=None, sel=None, link=None, t=None) -> dict:
     data = json.dumps(out, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     # `links`: a slot has a link, so the figure reserves its row; `link_now`: the default slot's (printed by the server)
     return {"data": data, "read": r[sel] if xs else ["", "—", ""], "aria_now": a[sel] if xs else "", "sel": sel,
-            "date_now": dates[sel] if xs else "",
+            "date_now": dates[sel] if xs else "", "selection_date_now": selection_dates[sel] if xs else "",
             "n": len(xs), "links": any(h), "link_now": h[sel] if xs else None,
             "tone_now": (t[sel] if t and xs and sel is not None and sel < len(t) else "") or ""}
 
@@ -294,7 +314,7 @@ def rest(c: dict, read: list[str], aria: str, back: int | None = None) -> dict:
     if back is not None:
         data["back"] = back
     c["data"] = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
-    c.update(read=read, date_now="", aria_now=aria, sel=len(data["x"]), rest=True, link_now=None, tone_now="")
+    c.update(read=read, date_now="", selection_date_now="", aria_now=aria, sel=len(data["x"]), rest=True, link_now=None, tone_now="")
     return c
 
 
@@ -536,7 +556,7 @@ def dots(days: list[date], points: list[dict], *, band: list | None = None, min_
         h.append(p.get("href"))
     return {"n": len(xs), "W": W, "H": 140, "X1": X1, "dots": out,
             "band": band_polys(xs_all, [y(v) for v in lo_b], [y(v) for v in hi_b]),
-            "ticks": [{"y": y(t), "label": num(t)} for t in nice_ticks(lo, hi, 2)],
+            "ticks": [{"y": y(t), "label": num(t)} for t in nice_ticks(lo, hi, 3)],
             "xt": x_labels(days, xs_all), **_data(xs, [ys], ds, r, a, h=h, sel=sel)}
 
 
@@ -571,7 +591,7 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
              y_max: float | None = None, reference: tuple[float, str] | None = None, lines=(),
              clip: float | None = None, tones: list | None = None, trend: list | None = None,
              today: int | None = None, sel=None, H: int = 128, summary: str = "", min_top: float = 0,
-             hatched: list | None = None, targets: list | None = None, trend_sources: list | None = None) -> dict:
+             hatched: list | None = None, targets: list | None = None, trend_sources: list | None = None, phase_parts: list | None = None) -> dict:
     """Vertical bars, one per day (Santé's cards): `values` (None: an empty
     slot, `miss`, where nothing is drawn — no mark for a missing measure,
     owner 2026-10-08: « s'il n'y a pas de mesure tu ne mets rien, pas de
@@ -606,7 +626,7 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
     y = scale(0, top, y0, base)
     out = []
     for i, v in enumerate(values):
-        b = {"i": i, "x": round(xs[i] - bw / 2, 1), "w": bw, "cx": xs[i], "cls": (classes[i] if classes else "") or "",
+        b: dict = {"i": i, "x": round(xs[i] - bw / 2, 1), "w": bw, "cx": xs[i], "cls": (classes[i] if classes else "") or "",
              "today": i == today, "est": bool(hatched and hatched[i] and v is not None)}
         nap = stack[i] if stack else None
         if v is None and not nap:
@@ -619,6 +639,18 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
             if nap:
                 yt = y((v or 0) + nap)
                 b["top"] = {"y": yt, "h": round(yv - yt, 1)}
+        if phase_parts and phase_parts[i] and v is not None and v > 0:
+            # The recorded night total remains authoritative; the watch's phase
+            # proportions subdivide it without changing the duration or naps.
+            parts = phase_parts[i]
+            total = sum(part["value"] for part in parts)
+            if total:
+                acc = 0.0
+                b["phases"] = []
+                for part in parts:
+                    start = acc
+                    acc += v * part["value"] / total
+                    b["phases"].append({"key": part["key"], "y": y(acc), "h": round(y(start) - y(acc), 2), "label": part["label"]})
         out.append(b)
     if n <= 16:
         xt = [{"x": xs[i], "label": str(d.day), "today": i == today} for i, d in enumerate(days)]
@@ -634,7 +666,7 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
                            half=min(slot / 4, 3), groups=trend_sources) if trend else None,
             "targets": paths(xs, [y(v) if values[i] is not None else None
                                    for i, v in enumerate(targets)]) if targets else None,
-            "summary": summary, **_data(xs, [], days, readouts, arias, h=links, sel=sel, t=tones)}
+            "summary": summary, **_data(xs, [], days, readouts, arias, h=links, sel=sel, t=tones, night=key.startswith("sommeil-"))}
 
 
 def day_ticks(days: list[date], xs: list[float]) -> list[dict]:
@@ -740,13 +772,9 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
         # Keep the measurement context available in Details and in the spoken
         # readout. The visible date/source line stays short while scrubbing.
         for i, d in enumerate(days):
-            before = d - timedelta(days=1)
-            start = str(before.day) + (f" {MOIS[before.month - 1]}" if before.month != d.month else "")
-            stamp = d_short(d) if daytime else f"{start} → {d.day} {MOIS[d.month - 1]}"
+            stamp = selection_date(d, night=not daytime)
             if show_source and sources and sources[i] and values[i] is not None:
                 stamp += f" · {source_label(sources[i])}"
-            elif method_labels and method_labels[i] and values[i] is not None:
-                stamp += f" · {method_labels[i]}"
             if notes and notes[i] == "journée en cours":
                 stamp += " · en cours"
             word = "Dernière nuit" if i == last else "Nuit sélectionnée"
@@ -774,9 +802,9 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             "at": {"x": xs[last], "y": yv[last]} if last is not None else None,
             "dot_r": 2.6 if n <= 31 else 1.6,
             "ticks": [{"y": y(t), "label": (num(t / 1000, 1 if t % 1000 else 0) + NNBSP + "k")
-                       if abs(t) >= 1000 else num(t)} for t in nice_ticks(lo, hi, 2)], "xt": day_ticks(days, xs),
+                       if abs(t) >= 1000 else num(t)} for t in nice_ticks(lo, hi, 3)], "xt": day_ticks(days, xs),
             "summary": f"{name}, {n} jours : {measured} mesures" if daytime else f"{name}, {n} nuits : {measured} enregistrée{'s' if measured > 1 else ''}",
-            "title": f"{name} · {n} {'jours' if daytime else 'nuits'}", **_data(xs, [yv], days, r, a, sel=last)}
+            "title": name if compact else f"{name} · {n} {'jours' if daytime else 'nuits'}", **_data(xs, [yv], days, r, a, sel=last, night=not daytime)}
 
 
 # ── V3b the one-tap feel as a track of dots (owner, 2026-10-17), on the days of the curves above it ──

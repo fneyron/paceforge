@@ -267,7 +267,9 @@ def test_health_compact_vfc_keeps_known_methods_in_each_selected_date():
                           sources=["COROS", "Apple Santé:watch (SDNN sommeil)", "Autre", "COROS"],
                           compact=True, show_source=False, method_labels=["RMSSD", "SDNN", None, "RMSSD"])
     data = json.loads(card["data"])
-    assert data["r"][0][2].endswith(" · RMSSD") and data["r"][1][2].endswith(" · SDNN")
+    assert data["r"][0][2] == viz.selection_date(days[0], night=True)
+    assert data["r"][1][2] == viz.selection_date(days[1], night=True)
+    assert "RMSSD" in data["a"][0] and "SDNN" in data["a"][1]
     assert not any(method in data["r"][i][2] for method in ("RMSSD", "SDNN") for i in (2, 3))
     assert not any(brand in row[2] for brand in ("COROS", "Apple Santé", "Autre") for row in data["r"])
     assert "COROS" in data["r"][0][3] and "Apple Santé · SDNN" in data["r"][1][3]
@@ -281,7 +283,7 @@ def test_quiet_health_cards_keep_dates_for_selection_without_source_labels():
                           sources=["COROS", None], compact=True)
     html = render("{{ v.viz_night_card(c, 'VFC', quiet=True) }}", c=card)
     date_row = html.split('data-selection-date>')[1].split('</p>')[0]
-    assert viz.d_short(days[0]) in date_row and "COROS" not in date_row
+    assert viz.selection_date(days[0], night=True) in date_row and "COROS" not in date_row
     assert "pf-chart-details" not in html and "pf-viz-quiet" in html
     payload = data_of(html)
     assert payload["dateLabels"] == [viz.d_short(d) for d in days]

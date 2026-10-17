@@ -161,21 +161,14 @@ def bars(nights: dict, today: date, key: str) -> dict:
     tst = [nt.day_tst24(nights, d) for d in days]  # the 24 h before each wake, each nap once (day_naps)
     values = [nights[d].asleep if d in nights else None for d in days]
     stack = [nt.bar_nap_min(nights, d) or None for d in days]
-    if n_days > 31:  # 90 slivers: each day's 24 h in one faint bar, the 7-night mean is the mark
-        values = tst
-        stack = None
     r, a = [], []
-    needs = [NEED_DEFAULT] * n_days
     for i, d in enumerate(days):
         read, said = _readout(nights, d)
-        if tst[i] is not None:
-            read[2] += f" · repère {viz.hm(needs[i])}"
-            said += f", repère {viz.hm_long(needs[i])}"
         r.append(read)
         a.append(said)
     totals = [v for v in tst if v is not None]
     trend, trend_sources = None, None
-    if n_days > 31:  # the long range: the 7-night mean over faint bars
+    if n_days > 31:
         averages = [nt.mean7(nights, "tst24", d) for d in days]
         trend = [m["value"] if m else None for m in averages]
         trend_sources = [nt.mean_source(nights, "tst24", d) for d in days]
@@ -184,14 +177,26 @@ def bars(nights: dict, today: date, key: str) -> dict:
                 detail = f"moyenne 7 jours : {viz.hm(m['value'])} ({m['n']} nuits) · {viz.source_label(trend_sources[i])}"
                 r[i][2] += f" · {detail}"
                 a[i] += f", {detail}"
+    phase_parts = []
+    for i, d in enumerate(days):
+        n = nights.get(d)
+        ph = phases(n.stages) if n and n.asleep is not None else None
+        phase_parts.append([{"key": p["key"], "value": p["min"], "label": f"{p['name']} · {p['hm']}"} for p in ph["parts"]
+                            if p["key"] != "awake"] if ph else None)
+        if ph:
+            a[i] += ", " + ph["aria"]
     c = viz.day_bars(f"sommeil-{key}", days, values, stack=stack, readouts=r, arias=a, trend=trend,
                      trend_sources=trend_sources,
-                     targets=needs, lines=((0, "0 h"), (240, "4 h"), (480, "8 h")),
+                     phase_parts=phase_parts, lines=((0, "0 h"), (240, "4 h"), (480, "8 h")),
                      min_top=9 * 60, today=len(days) - 1,
                      summary=f"Sommeil sur 24 h, {RANGES[key][1]} : {len(totals)} nuit{'s' if len(totals) > 1 else ''} "
                              f"enregistrée{'s' if len(totals) > 1 else ''}")
     if totals:
         mean = round(sum(totals) / len(totals) / 5) * 5  # a mean of approximate times: to 5 min
+        c["average"] = viz.hm(mean)
+        c["has_phases"] = any(phase_parts)
+        c["phase_legend"] = [("is-" + k, nm) for k, nm in PHASES if k != "awake"
+                             and any(parts and any(p["key"] == k for p in parts) for parts in phase_parts)]
         return viz.rest(c, [viz.hm(mean), "en moyenne", f"Sur {len(totals)} nuits mesurées · {RANGES[key][1]}"],
                         f"Sommeil sur 24 heures, {RANGES[key][1]} : {viz.hm_long(mean)} en moyenne, siestes "
                         "comprises. Choisis une nuit pour voir la sienne.")
@@ -330,7 +335,7 @@ def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:
                  + f" · compté{'es' if s else 'e'} dans ta prochaine nuit")
         aria += f", {later.replace(' · ', ', ')}"
     return {"day": last, "today": last == today, "label": "Cette nuit" if last == today else viz.night_label(last),
-            "source": n.source, "times": times, "nap": nap, "total": viz.hm(n.asleep + nap_min), "later": later,
+            "source": n.source, "times": times, "bed": viz.clock(n.start), "wake": viz.clock(n.end), "nap": nap, "total": viz.hm(n.asleep + nap_min), "later": later,
             "need": f"repère {viz.hm(NEED_DEFAULT)}",
             "timeline": t, "out_naps": out_naps, "stages": bool(intervals), "phases": ph, "aria": aria}
 

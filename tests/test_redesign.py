@@ -265,14 +265,13 @@ def test_debrief_mode_rules():
 
 
 @pytest.mark.asyncio
-async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_session: AsyncSession):
-    from datetime import date
+async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_session: AsyncSession, same_today):
 
     # a future dated race: no debrief anywhere
     html = (await as_user.get(f"/simulator/routes/{await _route(as_user)}")).text
     assert "Débrief" not in _visible(html) and "débrief" not in _visible(html) and "data-primary-debrief" not in html
     # no date, or race day: in the menu, after « Bande imprimable »; the main button stays « Exporter pour ma montre »
-    for rd in ("", date.today().isoformat()):
+    for rd in ("", same_today.isoformat()):
         html = (await as_user.get(f"/simulator/routes/{await _route(as_user, race_date=rd)}")).text
         assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Garder hors connexion", "Débrief",
                                      "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"], rd
