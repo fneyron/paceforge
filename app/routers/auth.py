@@ -17,6 +17,7 @@ from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db, sign_in
 from app.models.user import User
 from app.services import sessions
+from app.services.app_return import app_return, is_app_return, with_result
 from app.services.auth import (
     DUMMY_HASH,
     PASSWORD_PREFIX,
@@ -374,14 +375,18 @@ def _remember_next(request: Request, next: str | None) -> None:
         request.session["strava_next"] = "/settings#strava"
     elif next == "devices":
         request.session["strava_next"] = "/connections/strava"
+    elif next == "app":  # started from the app's screen of Strava, in its sign-in sheet
+        request.session["strava_next"] = app_return("strava")
     else:
         request.session.pop("strava_next", None)
 
 
-def _back_to_settings(request: Request, error: str) -> RedirectResponse | None:
+def _back_to_settings(request: Request, error: str, result: str = "failed") -> RedirectResponse | None:
     url = request.session.pop("strava_next", None)
     if not url:
         return None
+    if is_app_return(url):  # the app's sign-in sheet closes on it: the outcome as a code, no flash
+        return RedirectResponse(url=with_result(url, result), status_code=302)
     request.session["strava_error"] = error
     return RedirectResponse(url=url, status_code=302)
 
@@ -400,6 +405,8 @@ async def strava_link(request: Request, next: str | None = None,
         mode = "shared"
         request.session.setdefault("strava_next", "/connections/strava")
     else:
+        if next == "app":  # the keys are typed on the site, not in the app's sign-in sheet
+            return RedirectResponse(with_result(app_return("strava"), "failed"), status_code=302)
         return RedirectResponse(f"/setup?next={next}" if next in ("settings", "devices") else "/setup", status_code=302)
     # Bind the attempt to its selected app, even if configuration changes meanwhile. The shared app's
     # secret stays in the server configuration: the attempt keeps its client id only.
@@ -424,7 +431,8 @@ async def strava_callback(
         return back or RedirectResponse("/setup?error=auth_failed", status_code=302)
     if error or not code:
         back = _back_to_settings(request, "Connexion à Strava annulée." if error == "access_denied"
-                                 else "La connexion à Strava a échoué. Réessaie.")
+                                 else "La connexion à Strava a échoué. Réessaie.",
+                                 "cancelled" if error == "access_denied" else "failed")
         return back or RedirectResponse("/setup?error=auth_failed", status_code=302)
 
     pending_id, pending_secret = pending.get("client_id"), pending.get("client_secret")
@@ -534,6 +542,9 @@ async def strava_callback(
             request.session["strava_error"] = "Strava connecté. La synchronisation n’a pas démarré ; réessaie depuis Réglages."
 
     next_url = request.session.pop("strava_next", None)
+    if is_app_return(next_url):
+        request.session.pop("strava_error", None)  # the sheet's session ends with it; the app reads the link's state
+        return RedirectResponse(url=with_result(next_url, "ok"), status_code=302)
     if next_url and not request.session.get("strava_error"):
         request.session["strava_ok"] = "Strava connecté. Tes activités arrivent."
     return RedirectResponse(url=next_url or HOME, status_code=302)  # an explicit « next » first

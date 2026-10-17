@@ -154,3 +154,24 @@ test('old app builds without acknowledgement have bounded retries and an explici
   assert.equal(d.active(), true);
   d.leave(); assert.equal(d.active(), false);
 });
+
+test('a connection action posts from the loaded document only and brings its result and sign-in link', async () => {
+  const nonce = 'd'.repeat(64);
+  const task: Extract<Pending, { kind: 'connections' }> = { kind: 'connections', nonce, url: ORIGIN + '/mobile/connections?nonce=' + nonce,
+    pageUrl: ORIGIN + '/sante', action: { provider: 'coros', kind: 'link' } };
+  const calls: any[] = [], sent: any[] = [];
+  const payload = { type: 'connections', nonce, user_id: 3, name: 'F', providers: { coros: 'disconnected', garmin: 'disconnected', strava: 'connected' },
+    result: null, link: ORIGIN + '/mobile/oauth/coros#ticket' };
+  const context = { location: { origin: ORIGIN }, AbortController, setTimeout, clearTimeout,
+    window: { ReactNativeWebView: { postMessage: (raw: string) => sent.push(JSON.parse(raw)) } },
+    fetch: async (url: string, opts: any) => { calls.push([url, opts.method]); return { ok: true, redirected: false, status: 200, json: async () => payload }; } };
+  runInNewContext(inlineConnectionsScript(task), context);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [[task.url + '&provider=coros&action=link', 'POST']]);
+  const reply = takeReply({ current: task }, JSON.stringify(sent[0]), task.pageUrl!);
+  assert.equal(reply?.kind, 'connections');
+  if (reply?.kind === 'connections') assert.equal(reply.link, payload.link);
+  // never through the routed bridge document (a GET page cannot act)
+  const routed = { ...task, pageUrl: undefined };
+  assert.equal(takeReply({ current: routed }, JSON.stringify(payload), task.url), null);
+});

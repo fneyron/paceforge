@@ -4,11 +4,12 @@ Application iOS / Android avec **Santé comme tableau de bord**, puis Activités
 Les connexions restent accessibles par le bouton « Réglages », avec Apple Santé / Health Connect en premier. Les écrans du compte partagent une seule WebView HTTPS ; sa barre
 de navigation web et son bandeau sont masqués dans l’application. Le compte
 PaceForge fonctionne sans Strava. Garmin, COROS et Strava restent des connexions
-serveur accessibles depuis Connexions. COROS et Strava ouvrent directement leur
-page dédiée dans le navigateur externe, où tout le parcours OAuth conserve la
-même session. Le compte PaceForge est affiché avant validation ; après une
-connexion au compte dans le navigateur, la destination choisie est conservée.
-Garmin se connecte dans l’application. Le profil, l’apparence et les données personnelles restent disponibles
+serveur ; leurs écrans sont dans l’application (propriétaire, 17 octobre 2026 :
+« tout dans l’application »). COROS et Strava se connectent dans une feuille de
+connexion ouverte par-dessus l’application (ASWebAuthenticationSession sur
+iPhone, Custom Tabs sur Android), qui se referme d’elle-même sur
+`paceforge://devices` avec le résultat. Garmin se connecte sur sa page, dans
+l’application. Le profil, l’apparence et les données personnelles restent disponibles
 dans « Compte, apparence et confidentialité ». Les connexions web ne sont pas
 dupliquées dans cette page lorsqu’elle est ouverte dans l’application.
 
@@ -32,11 +33,16 @@ limites dans [l’audit de fluidité](../docs/mobile-fluidite.md).
 ## Connexions par service
 
 L’écran Connexions regroupe les comptes COROS, Garmin et Strava, ainsi que
-Apple Santé / Health Connect. Chaque connexion a un état et une seule action.
+Apple Santé / Health Connect, chacun avec l’icône de son application (l’icône
+Apple Santé fournie par Apple, celles de l’App Store pour COROS, Garmin Connect
+et Strava). Chaque connexion a le même écran que celui d’Apple Santé : son
+état, ce qu’elle apporte, sa dernière synchronisation, et deux actions,
+« Synchroniser » et « Déconnecter » (confirmée), ou « Connecter ».
 L’utilisateur choisit ses services ; aucun modèle de montre n’est requis.
 Les états des comptes viennent de `/mobile/connections`, via la session de la
 WebView avec vérification d’origine, de route et de nonce, sans jeton fournisseur.
-Ils sont actualisés à l’ouverture de cet écran et au retour du navigateur. Une
+Ils sont actualisés à l’ouverture de cet écran, après chaque action et à la
+fermeture de la feuille de connexion (plus de lien « Actualiser »). Une
 lecture impossible reste « État à vérifier », jamais un faux « Non connecté ».
 Cette vérification utilise un `fetch` JSON dans le document déjà chargé, avec
 les mêmes cookies et un nonce à usage unique. Elle ne remplace plus la page par
@@ -47,12 +53,16 @@ session a expiré, le formulaire de connexion reprend le parcours. Si le compte
 a changé, les destinations et copies de l’ancien compte sont invalidées et une
 nouvelle page est chargée. Les anciens compagnons gardent leur pont HTML.
 
-Suunto et Amazfit (Zepp) sont signalés dans « Autres marques » comme restant à
-intégrer, sans faux bouton de connexion. Si leur application partage des données
-avec Strava ou le référentiel santé du téléphone, l’utilisateur peut connecter
-ce service intermédiaire. Cela ne suppose pas que toutes les données sont
-partagées ou importées ; les catégories mobiles restent celles décrites
-ci-dessous.
+Les actions passent par la même session : un `POST /mobile/connections` (même
+site uniquement, nonce à usage unique) depuis le document chargé, jamais par la
+page-pont. « Connecter » COROS ou Strava reçoit un lien à usage unique valable
+deux minutes, porté dans le fragment de l’URL (jamais journalisé) : il ouvre la
+session de la feuille, éphémère, puis la connexion du service.
+
+L’écran « Autres marques » est retiré (17 octobre 2026). Si l’application d’une
+autre marque partage des données avec Strava ou le référentiel santé du
+téléphone, l’utilisateur peut connecter ce service intermédiaire ; l’aide le
+rappelle.
 
 Les appareils et capteurs se synchronisent avec l’application du fabricant ou
 celle qui enregistre la séance. Les données disponibles dans les activités

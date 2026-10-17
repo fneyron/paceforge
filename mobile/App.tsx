@@ -3,6 +3,7 @@ import { ActivityIndicator, AppState, BackHandler, Linking, Platform, Pressable,
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
+import * as WebBrowser from 'expo-web-browser';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { api, ApiError, authorized, Credentials, ORIGIN, rotateToken, rotationDue, trusted } from './src/api';
 import { authorizationNeeded, authorize, collect, collectSleep } from './src/health';
@@ -13,7 +14,7 @@ import { backgroundBlock, backgroundPending, blockBackgroundSync, cancelBackgrou
   onBackgroundReport, resetBackgroundState, skipSent, syncExclusively } from './src/background';
 import type { Block } from './src/background-engine';
 import { appShellScript, destinations, isBridgeUrl, messagePageUrl, prepareNavigationScript, presentationScript, refreshable, sameScreen, screenUrl, Tab, tabForUrl, tabNavigationScript, tabs } from './src/navigation';
-import { Connections, Provider } from './src/connections';
+import { ConnectionAction, Connections, Provider, providerNames, signInResult } from './src/connections';
 import { acknowledge, inlineConnectionsScript, inlineSessionScript, Pending, retryBridgeScript, takeReply } from './src/bridge';
 import { DeviceDetail, DevicesScreen } from './src/DevicesScreen';
 import { Button, DeviceTheme } from './src/device-ui';
@@ -67,7 +68,6 @@ function Companion() {
   const stoppedSync = useRef(new Error('sync cancelled'));
   const seenReceipt = useRef<{ userId: number; at: string } | null>(null);
   const backgroundRefresh = useRef<{ userId: number; at: string } | null>(null);
-  const externalReturn = useRef(false);
   const web = useRef<WebView>(null);
   const offline = useOfflinePlans(script => web.current?.injectJavaScript(script), random);
   const pending = useRef<Pending | null>(null);
@@ -92,6 +92,8 @@ function Companion() {
   // The site's effective theme, once it reported it, wins over the system scheme.
   const webAppearance = useRef(false);
   const canGoBack = useRef(false);
+  // What a connection's sign-in sheet ended with, said once the status read after it lands.
+  const afterRefresh = useRef('');
   // History entries since the last bridge document (pairing, session or connections
   // check), counted from the navigation events: the back key walks only these. A bridge
   // document is never a place to go back to: its load is refused, or it reloads the
@@ -191,7 +193,7 @@ function Companion() {
 
   const onAppLink = useEffectEvent((link: string) => {
     if (link === 'paceforge://privacy') openSettings('/mobile/privacy');
-    if (link === 'paceforge://devices') { externalReturn.current = false; openTab('devices'); }
+    if (link === 'paceforge://devices') openTab('devices');
     if (link === 'paceforge://health') openHealth();
   });
 
@@ -501,7 +503,9 @@ function Companion() {
     web.current?.injectJavaScript(acknowledge(reply.task));
     try {
       if (reply.kind === 'login') {
-        pending.current = { ...reply.task, pageUrl: undefined }; inlineSync.current = false;
+        // After signing in, the routed bridge reads the status again; an action is tapped again (never replayed).
+        pending.current = { ...reply.task, pageUrl: undefined, ...(reply.task.kind === 'connections' ? { action: undefined } : {}) };
+        inlineSync.current = false;
         setTab('devices'); setShowWeb(true); setUrl(reply.task.url); guard(); return;
       }
       if (reply.kind === 'unavailable') {
@@ -512,7 +516,8 @@ function Companion() {
       }
       if (!inlineSync.current) setShowWeb(false);
       if (reply.kind === 'connections') {
-        setConnections(reply.snapshot); setShowWeb(false); setStatus('');
+        setConnections(reply.snapshot); setShowWeb(false); setStatus(reply.result || afterRefresh.current);
+        afterRefresh.current = '';
         if (pair) confirmAccount(reply.snapshot.user_id === pair.user_id);
         if (reply.task.pageUrl && offline.library.userId !== reply.snapshot.user_id) {
           // A session may have changed while Settings covered the document.
@@ -521,6 +526,8 @@ function Companion() {
           documentReady.current = false; loadScreen(webLocation.current);
         }
         restoreSync(); finish();
+        if (reply.link && reply.task.action) void signIn(reply.task.action.provider, reply.link);
+        else if (reply.task.action?.kind === 'link') setError('La connexion ne peut pas s’ouvrir. Réessaie dans un instant.');
         return;
       }
       if (reply.kind === 'pair') {
@@ -563,23 +570,41 @@ function Companion() {
     if (!pair || needsReconnect || (connections && connections.user_id !== pair.user_id)) void associate();
     else sync(false, true);
   }
-  function refreshConnections() {
+  /** The status of the connections, or one of a connection screen's actions (posted from the loaded document). */
+  function refreshConnections(action?: ConnectionAction) {
+    const inline = documentReady.current && trusted(documentUrl.current) && !isBridgeUrl(documentUrl.current);
+    if (action && !inline) { setError('PaceForge se charge encore. Réessaie dans un instant.'); return; }
     if (!start()) return;
     const nonce = random(), target = `${ORIGIN}/mobile/connections?nonce=${nonce}`;
-    setConnections(null); setStatus('Vérification des connexions…');
-    const inline = documentReady.current && trusted(documentUrl.current) && !isBridgeUrl(documentUrl.current);
-    pending.current = { kind: 'connections', nonce, url: target, ...(inline ? { pageUrl: documentUrl.current } : {}) };
+    if (!action) setConnections(null);
+    setStatus(!action ? 'Vérification des connexions…' : action.kind === 'sync' ? 'Synchronisation…' :
+      action.kind === 'disconnect' ? 'Déconnexion…' : `Ouverture de ${providerNames[action.provider]}…`);
+    pending.current = { kind: 'connections', nonce, url: target, ...(action ? { action } : {}),
+      ...(inline ? { pageUrl: documentUrl.current } : {}) };
     if (inline) web.current?.injectJavaScript(inlineConnectionsScript(pending.current));
     else setUrl(target);
     guard();
   }
+  /** A connection's screen, in the app (owner, 2026-10-17: « tout dans l'application »). */
   function openProvider(provider: Provider) {
     if (lock.current) return;
     cancelSoftNavigation();
-    if (provider === 'garmin') { openSettings('/connections/garmin'); return; }
-    externalReturn.current = true;
-    setShowWeb(false); setTab('devices'); setDetail(null); setError('');
-    Linking.openURL(`${ORIGIN}/connections/${provider}`).catch(fail);
+    setShowWeb(false); setTab('devices'); setDetail(provider); setError(''); setStatus('');
+  }
+  /** Garmin signs in on its own page, in the app; COROS and Strava in a sign-in sheet over the app. */
+  function connectProvider(provider: Provider) {
+    if (lock.current) return;
+    if (provider === 'garmin') openSettings('/connections/garmin');
+    else refreshConnections({ provider, kind: 'link' });
+  }
+  /** The sheet shares no cookie with the app's WebView: a one-time ticket signs it in (server), and it lives only
+   * as long as the sheet. It closes on paceforge://devices with the outcome. */
+  async function signIn(provider: Provider, link: string) {
+    try {
+      const outcome = await WebBrowser.openAuthSessionAsync(link, 'paceforge://devices', { preferEphemeralSession: true });
+      afterRefresh.current = signInResult(outcome.type === 'success' ? outcome.url : null, provider);
+      refreshConnections();
+    } catch (e) { fail(e); }
   }
   async function disconnect() {
     if (!pair || !start()) return;
@@ -601,9 +626,7 @@ function Companion() {
     // Never during a background launch: the screen is not shown, nothing to verify.
     if (AppState.currentState !== 'active' || lock.current || softNavigation.current || !ready || offline.view !== null) return;
     flushBackgroundRefresh();
-    if (externalReturn.current) {
-      externalReturn.current = false; setTab('devices'); setShowWeb(false); setDetail(null); refreshConnections();
-    } else if (tab !== 'devices' && pair && !needsReconnect && documentReady.current && refreshable(documentUrl.current) &&
+    if (tab !== 'devices' && pair && !needsReconnect && documentReady.current && refreshable(documentUrl.current) &&
       (due(report, lastAttempt.current) || (backgroundPending() && Date.now() - lastAttempt.current >= 60000))) sync(true);
   });
   // Background sync follows the pairing and the account (no switch since 2026-10-17). Registered from
@@ -711,7 +734,7 @@ function Companion() {
     {tab === 'devices' && !showWeb && offline.view === null && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} report={report}
       busy={busy} ready={ready} status={status} error={error || (detail === 'health' ? '' : visibleIssue)} connections={connections} needsReconnect={needsReconnect}
       connectHealth={connectHealth} sync={() => sync(false, false, false, true)} disconnect={disconnect}
-      provider={openProvider} refresh={refreshConnections} settings={openSettings} />}
+      connect={connectProvider} act={refreshConnections} settings={openSettings} />}
     {webVisible && tab === 'courses' && (offline.busy || offline.notice) && <View style={[styles.syncStatus, night && styles.darkSurface]} accessibilityLiveRegion="polite">
       {offline.busy && <ActivityIndicator size="small" />}<Text style={[styles.syncText, night && styles.darkMuted]}>{offline.busy ? 'Enregistrement du plan sur le téléphone…' : offline.notice}</Text>
     </View>}
@@ -774,7 +797,7 @@ function Companion() {
             if (path === '/auth/logout') leaveSession();
             if (path === '/settings' && ['#connections', '#coros', '#garmin', '#strava'].includes(new URL(request.url).hash)) { openTab('devices'); return false; }
             if (['/auth/strava', '/coros/connect', '/setup'].includes(path)) {
-              // Start AND finish OAuth in the same browser session.
+              // A connect link of a web page: the app's screen of that connection (its sheet signs in).
               openProvider(path === '/coros/connect' ? 'coros' : 'strava');
               return false;
             }

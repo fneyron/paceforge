@@ -606,6 +606,17 @@ async def test_callback_stores_encrypted_tokens_and_starts_the_sync(as_user: Asy
     assert "expiré" in (await as_user.get("/settings")).text
 
 
+async def test_a_connect_from_the_app_returns_to_it_with_its_outcome(as_user: AsyncClient, fake, monkeypatch):
+    """Started from the app's screen of COROS (its sign-in sheet): back to paceforge://devices, the outcome as a code."""
+    monkeypatch.setattr(coros, "schedule_sync", lambda user_id: None)
+    for params, result in (("code=the-code", "ok"), ("error=access_denied", "cancelled")):
+        r = await as_user.get("/coros/connect?next=app")
+        q = {k: v[0] for k, v in parse_qs(urlsplit(r.headers["location"]).query).items()}
+        fake.challenge = q["code_challenge"]
+        r = await as_user.get(f"/coros/callback?{params}&state={q['state']}")
+        assert r.status_code == 303 and r.headers["location"] == f"paceforge://devices?connection=coros&result={result}"
+
+
 async def test_callback_rejects_a_wrong_state_or_a_refusal(as_user: AsyncClient, db_session: AsyncSession, fake):
     await _authorize(as_user, fake)
     r = await as_user.get("/coros/callback?code=the-code&state=forged")

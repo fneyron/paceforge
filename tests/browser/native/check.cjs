@@ -350,6 +350,32 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   await changedAccount.waitForFunction(()=>new URL(actual).pathname==='/activities');
   assert.equal(await changedAccount.evaluate(()=>collects),0,'account status check must not collect health');
   await changedAccount.close();
+  // The app's screens of COROS, Garmin and Strava (owner, 2026-10-17): the Apple Santé screen's two actions,
+  // a sign-in sheet in the app, no « Autres marques » nor « Actualiser ».
+  const screens=await page();await screens.waitForFunction(()=>window.nonce);await screens.evaluate(()=>reply());
+  await screens.waitForFunction(()=>collects===1);
+  await screens.getByRole('button',{name:'Réglages et connexions',exact:true}).click();
+  await screens.waitForFunction(()=>window.connectionNonce);
+  const linked={coros:'connected',garmin:'disconnected',strava:'disconnected'};
+  await screens.evaluate(p=>reply({type:'connections',name:'Athlete',providers:p,details:{coros:{last_sync:'2026-10-17T05:58:43+00:00',notice:null}}}),linked);
+  assert.equal(await screens.getByRole('button',{name:/^(Autres marques|Actualiser)$/}).count(),0,'no other brands, no refresh link');
+  assert.equal(await screens.locator('img').count(),4,'each connection shows its app icon');
+  await screens.getByRole('button',{name:/COROS.*Gérer/}).click();
+  await screens.getByRole('heading',{name:'COROS',exact:true}).waitFor();
+  assert.ok(await screens.getByText(/Dernière synchronisation/).isVisible());
+  assert.ok(await screens.getByRole('button',{name:'Déconnecter COROS',exact:true}).isVisible());
+  await screens.getByRole('button',{name:'Synchroniser',exact:true}).click();
+  await screens.waitForFunction(()=>scripts.at(-1).includes('provider=coros&action=sync')&&scripts.at(-1).includes('"POST"'));
+  await screens.evaluate(p=>reply({type:'connections',name:'Athlete',providers:p,result:'Synchronisation lancée.'}),linked);
+  await screens.getByText('Synchronisation lancée.',{exact:true}).waitFor();
+  await screens.getByRole('button',{name:'‹ Toutes les connexions',exact:true}).click();
+  await screens.getByRole('button',{name:/Strava.*Connecter/}).click();
+  await screens.waitForFunction(()=>scripts.at(-1).includes('provider=strava&action=link'));
+  await screens.evaluate(p=>reply({type:'connections',name:'Athlete',providers:p,link:'https://paceforge.fr/mobile/oauth/strava#ticket'}),linked);
+  await screens.waitForFunction(()=>(window.authSessions||[]).length===1);
+  assert.equal(await screens.evaluate(()=>authSessions[0]),'https://paceforge.fr/mobile/oauth/strava#ticket','the sheet opens PaceForge’s ticket page');
+  await screens.waitForFunction(()=>window.connectionNonce&&scripts.at(-1).includes('connections-unavailable')&&!scripts.at(-1).includes('action='));
+  await screens.close();
   const unavailable=await page(true);
   await unavailable.evaluate(()=>pageFail());
   await unavailable.getByRole('heading',{name:'Écran indisponible'}).waitFor();
@@ -357,6 +383,6 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   assert.equal(await unavailable.evaluate(()=>reloads),1);
   assert.equal(await unavailable.evaluate(()=>pull()),true,'offline retry must reload the document, not refresh an unavailable page');
   await unavailable.close();
-  console.log('Actual App: cold start, pull-only UI, error details, account safety, inline Settings/reentry/cancellation/login/account change, offline, process recovery, late bridge recovery and delayed dashboard loading passed (native APIs mocked).');
+  console.log('Actual App: cold start, pull-only UI, error details, account safety, inline Settings/reentry/cancellation/login/account change, offline, process recovery, late bridge recovery, delayed dashboard loading and connection screens passed (native APIs mocked).');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

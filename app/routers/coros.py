@@ -18,6 +18,7 @@ from app.crypto import decrypt_secret, encrypt_secret
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.services import coros
+from app.services.app_return import app_return, is_app_return, with_result
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +29,16 @@ _PENDING = "coros_oauth"
 _PENDING_TTL_S = 10 * 60  # a connect not completed within it starts again
 
 
-def _back(request: Request, error: str | None = None, ok: str | None = None) -> RedirectResponse:
+def _back(request: Request, error: str | None = None, ok: str | None = None,
+          result: str | None = None) -> RedirectResponse:
+    url = request.session.pop("coros_next", _SETTINGS)
+    if is_app_return(url):  # the app's sign-in sheet closes on it: the outcome as a code, no flash
+        return RedirectResponse(url=with_result(url, result or ("ok" if ok else "failed")), status_code=303)
     if error:
         request.session["coros_error"] = error
     if ok:
         request.session["coros_ok"] = ok
-    return RedirectResponse(url=request.session.pop("coros_next", _SETTINGS), status_code=303)
+    return RedirectResponse(url=url, status_code=303)
 
 
 @router.get("/coros/connect")
@@ -49,6 +54,8 @@ async def coros_connect(
     retried = bool(request.session.pop("coros_retry", False))
     if next == "devices":
         request.session["coros_next"] = "/connections/coros"
+    elif next == "app":  # started from the app's screen of COROS, in its sign-in sheet
+        request.session["coros_next"] = app_return("coros")
     elif not retried:
         request.session.pop("coros_next", None)
     region = region if region in coros.REGIONS else request.session.get("coros_region", coros.DEFAULT_REGION)
@@ -106,7 +113,7 @@ async def coros_callback(
             if retry:
                 return retry
         if error == "access_denied":
-            return _back(request, error="Connexion à COROS annulée.")
+            return _back(request, error="Connexion à COROS annulée.", result="cancelled")
         return _back(request, error="COROS a refusé la connexion. Réessaie.")
     if not code:
         return _back(request, error="COROS n'a pas renvoyé d'autorisation. Réessaie.")

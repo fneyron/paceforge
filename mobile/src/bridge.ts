@@ -1,15 +1,17 @@
 import { trusted } from './api';
-import { Connections, readConnections } from './connections';
+import { ConnectionAction, Connections, readActionReply, readConnections } from './connections';
 
 export type Pending =
   | { kind: 'pair'; verifier: string; challenge: string; url: string }
   | { kind: 'check'; nonce: string; url: string; consent: boolean; ask?: boolean; pageUrl?: string }
-  | { kind: 'connections'; nonce: string; url: string; pageUrl?: string };
+  // `action`: a connection's screen (sync, disconnect, sign-in link), posted from the loaded document only.
+  | { kind: 'connections'; nonce: string; url: string; pageUrl?: string; action?: ConnectionAction };
 type Reply =
   | { kind: 'pair'; task: Extract<Pending, { kind: 'pair' }>; code: string }
   | { kind: 'check'; task: Extract<Pending, { kind: 'check' }>; userId: number }
   | { kind: 'login' | 'unavailable'; task: Extract<Pending, { kind: 'check' | 'connections' }> }
-  | { kind: 'connections'; task: Extract<Pending, { kind: 'connections' }>; snapshot: Connections };
+  | { kind: 'connections'; task: Extract<Pending, { kind: 'connections' }>; snapshot: Connections;
+      result: string | null; link: string | null };
 
 // Consume before any async work: retries cannot exchange a code or upload twice.
 export function takeReply(pending: { current: Pending | null }, raw: string, url: string): Reply | null {
@@ -21,10 +23,11 @@ export function takeReply(pending: { current: Pending | null }, raw: string, url
   let reply: Reply | null = null;
   if (task.kind === 'connections') {
     const inline = task.pageUrl && trusted(url) && new URL(url).pathname === new URL(task.pageUrl).pathname && data.transport === 'inline';
-    const routed = !task.pageUrl && trusted(url, '/mobile/connections');
+    const routed = !task.pageUrl && !task.action && trusted(url, '/mobile/connections');
     if (inline || routed) {
       const snapshot = readConnections(data, task.url, task.nonce);
-      if (snapshot) reply = { kind: 'connections', task, snapshot };
+      const answer = task.action ? readActionReply(data, task.action) : { result: null, link: null };
+      if (snapshot) reply = { kind: 'connections', task, snapshot, ...answer };
       else if (inline && data.nonce === task.nonce && (data.type === 'connections-login' || data.type === 'connections-unavailable')) {
         reply = { kind: data.type === 'connections-login' ? 'login' : 'unavailable', task };
       }
@@ -60,12 +63,16 @@ export function inlineConnectionsScript(task: Extract<Pending, { kind: 'connecti
   return inlineReadScript(task, 'connections');
 }
 function inlineReadScript(task: Extract<Pending, { kind: 'check' | 'connections' }>, type: 'session' | 'connections'): string {
+  // An action posts to the same route (same-site only on the server); Strava's sync runs while it waits.
+  const action = task.kind === 'connections' ? task.action : undefined;
+  const target = action ? `${task.url}&provider=${action.provider}&action=${action.kind}` : task.url;
+  const method = action ? 'POST' : 'GET', wait = action?.kind === 'sync' ? 55000 : 25000;
   return `(async function () {
     if (location.origin !== ${JSON.stringify(new URL(task.url).origin)}) return;
     const send = data => window.ReactNativeWebView?.postMessage(JSON.stringify({...data, transport:'inline', page_url:location.href, nonce:${JSON.stringify(task.nonce)}}));
-    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 25000);
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), ${wait});
     try {
-      const response = await fetch(${JSON.stringify(task.url)}, {credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}, signal:controller.signal});
+      const response = await fetch(${JSON.stringify(target)}, {method:${JSON.stringify(method)}, credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}, signal:controller.signal});
       if (response.redirected || response.status === 401 || response.status === 403) send({type:'${type}-login'});
       else if (!response.ok) send({type:'${type}-unavailable'});
       else {

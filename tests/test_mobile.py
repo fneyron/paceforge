@@ -128,7 +128,7 @@ async def test_connections_bridge_requires_session_and_nonce_and_never_returns_t
     payload = response.json() if json_transport else bridge_payload(response.text)
     assert payload['nonce'] == 'a' * 64 and payload['user_id'] == test_user.id
     assert payload['providers'] == {'coros': 'disconnected', 'garmin': 'disconnected', 'strava': 'reconnect'}
-    assert set(payload) == {'type', 'nonce', 'user_id', 'name', 'providers'}
+    assert set(payload) == {'type', 'nonce', 'user_id', 'name', 'providers', 'details'}
     assert 'access_token' not in response.text and 'refresh_token' not in response.text
     other = User(firstname='Other')
     db_session.add(other); await db_session.flush()
