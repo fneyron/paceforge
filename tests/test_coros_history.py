@@ -39,7 +39,9 @@ class Calls:
 
 def test_empty_history_requires_an_explicit_recognised_answer():
     assert coros.sport_records_readable("Sport Records — 2026-10-01 to 2026-10-15 (0 records)", [])
-    for text in (None, "", "Temporary error", "New sport record format: []"):
+    # COROS's own wording for a window without any activity (2026-10-17)
+    assert coros.sport_records_readable("No sport records found from 2026-10-10 to 2026-10-10.", [])
+    for text in (None, "", "Temporary error", "New sport record format: []", "No sport records found yet"):
         assert not coros.sport_records_readable(text, [])
 
 
