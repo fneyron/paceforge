@@ -1,0 +1,35 @@
+{% set z = p.hr_zones %}
+{% if z %}
+<section id="zones-fc" class="pf-hr-zones" aria-labelledby="h-zones-fc">
+    <div class="pf-hr-zones-heading">
+        <h3 id="h-zones-fc" class="pf-card-h">Zones de FC</h3>
+        <span class="pf-hr-zones-status">Course à pied · {{ 'Estimation' if z.ready else 'À compléter' }}</span>
+    </div>
+    {% if z.ready %}
+    <ol class="pf-hr-zone-list" aria-label="Cinq zones estimées de fréquence cardiaque en course à pied">
+        {% for row in z.rows %}
+        <li class="pf-hr-zone" data-zone="{{ row.number }}">
+            <span class="pf-hr-zone-number">Z{{ row.number }}</span>
+            <span class="pf-hr-zone-label">{{ row.label }}</span>
+            <span class="pf-hr-zone-value">{{ row.low }}–{{ row.high }} <small>bpm</small></span>
+        </li>
+        {% endfor %}
+    </ol>
+    <p class="pf-viz-cap">Base observée · {{ z.reference }} bpm. Ton maximum réel peut être plus haut.</p>
+    <details class="pf-chart-details pf-hr-zone-method">
+        <summary>Comment sont estimées mes zones ?</summary>
+        <p>Le plus haut pic retrouvé à 5 bpm près sur au moins 3 jours de course sert de référence.
+            {{ z.support_days }} jours concordants sur les 12 derniers mois ; le dernier le {{ z.latest }}.</p>
+        {% if z.isolated_peak %}<p>Le pic plus élevé de {{ z.isolated_peak }} bpm n’est pas assez corroboré pour être retenu automatiquement.</p>{% endif %}
+        <p>Les cinq plages correspondent à 50–60, 60–70, 70–80, 80–90 et 90–100 % de cette référence.
+            Les bornes affichées sont arrondies sans chevauchement.</p>
+        <p>Si tes sorties n’ont pas atteint ta FC maximale, ces repères seront trop bas.
+            Ils ne mesurent ni ton seuil lactique ni tes seuils ventilatoires.
+            La FC nocturne et les valeurs par défaut ne servent pas à fixer ces zones.</p>
+        <p><a class="pf-link" href="https://www.polar.com/us-en/guide/heart-rate-zones">Le modèle à cinq zones · Polar ↗</a></p>
+    </details>
+    {% else %}
+    <p class="pf-sante-note">{{ z.message }}</p>
+    {% endif %}
+</section>
+{% endif %}

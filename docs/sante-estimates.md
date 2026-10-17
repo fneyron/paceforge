@@ -145,6 +145,26 @@ Détails et raisons du retrait de `cumulative-1` : [recovery-cumulative.md](reco
   donnés par sport, et ceux de la course à pied à part.
 - **Signaux nocturnes.** Aucune limite liée à la charge. L’Entraînement % s’affiche comme contexte.
 
+## Zones de FC indicatives (17 octobre 2026)
+
+Sous Entraînement, cinq plages en bpm pour la course à pied : 50–60, 60–70, 70–80,
+80–90 et 90–100 % d'une référence observée, selon le découpage du
+[modèle à cinq zones de Polar](https://www.polar.com/us-en/guide/heart-rate-zones).
+Les numéros et libellés restent lisibles sans les couleurs ; le détail expose la référence et ses limites.
+
+La référence est le plus haut pic corroboré à 5 bpm près sur au moins 3 jours distincts parmi les
+courses/trails des 365 derniers jours **(H)**. Seules les sorties terminées, d'au moins 10 minutes,
+avec un pic fini dans ]100 ; 230] bpm et, si connue, une moyenne dans [25 ; pic] sont retenues **(H)**.
+Un seul pic par jour ; au moins un jour corroborant doit dater de 90 jours ou moins **(H)**.
+Ces filtres réduisent les pics isolés sans garantir l'exactitude du capteur. Une valeur exclue plus haute
+est mentionnée dans le détail. Sans données suffisantes ou récentes, aucune plage n'est affichée.
+
+Ce n'est **pas une FC maximale mesurée**, ni une estimation des seuils lactiques ou ventilatoires.
+Sans efforts proches du maximum, les zones peuvent être trop basses ; cette limite est visible sur la carte.
+Les bornes entières ne se chevauchent pas. Aucun temps passé dans les zones n'est déduit d'une FC moyenne.
+La FC nocturne, les défauts 50/190 du modèle de charge et les pics d'autres sports ne déterminent pas ces
+plages. La charge et les plafonds du plan de course conservent leurs calculs existants.
+
 ## C7 — Contexte après un effort enregistré
 
 Une course marquée comme telle par une activité importée, ou un effort de classe ultra identifié

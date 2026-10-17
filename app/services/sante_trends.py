@@ -1,9 +1,11 @@
-"""Santé's « Tendances » (owner, 2026-10-16: « les tendances sur poids fc pas »): 90 days of a signal, its values
+"""Santé's « Tendances » (owner, 2026-10-16: « les tendances sur poids fc pas »): up to 90 days, its values
 as dots, its trailing mean as a line, and that mean's change over 4 weeks in the card's head. Context only:
 never a recovery input, never a verdict.
 
 The night HR reads the FC de nuit card's own 7-night mean (nights.mean7: the same line over more days); the
-weigh-ins and the steps a plain trailing mean, enough values in the window or none (H)."""
+weigh-ins and the steps a plain trailing mean, enough values in the window or none (H).
+The display zooms to 14 or 30 days when the measurements fit, keeping today and the calculation history.
+"""
 import statistics
 from datetime import date, timedelta
 
@@ -46,10 +48,21 @@ def delta(means: list, digits: int, unit: str) -> str | None:
 def chart(metric: str, key: str, name: str, days: list[date], values: list, means: list, counts: list, *,
           unit: str, digits: int, min_span: float, sources=None, notes=None, daytime: bool = True,
           mean_sources=None) -> dict | None:
-    """The 90 days as viz.night_card draws them (no band, no reference: a trend, not a verdict); its legend names
-    only what is drawn. None without a value in the 90 days."""
+    """Draw the shortest 14/30/90-day window containing the measurements and two days of left margin.
+
+    Keep today on the right so old measurements never appear current. Means and four-week changes are computed
+    before cropping; every aligned series is sliced together. The vertical minimum span remains unchanged.
+    """
     if not any(v is not None for v in values):
         return None
+    first = next(i for i, value in enumerate(values) if value is not None)
+    needed = len(days) - first + 2
+    window = next((n for n in (14, 30, TREND_DAYS) if n >= needed), TREND_DAYS)
+    start = max(0, len(days) - window)
+    days, values, means, counts = days[start:], values[start:], means[start:], counts[start:]
+    sources = sources[start:] if sources is not None else None
+    mean_sources = mean_sources[start:] if mean_sources is not None else None
+    notes = notes[start:] if notes is not None else None
     n = len(days)
     c = viz.night_card(
         key, days, values, band=[None] * n, prov=[False] * n, mean=means, unit=unit, unit_long=unit, name=name,
@@ -57,6 +70,7 @@ def chart(metric: str, key: str, name: str, days: list[date], values: list, mean
         notes=notes, daytime=daytime, zero_base=metric == "steps", compact=True, show_source=False,
         mean_label=LEGEND[metric][1], count_word=COUNT_WORD[metric])
     c["legend"] = [("is-dot", LEGEND[metric][0])] + ([("is-mean", LEGEND[metric][1])] if c["mean"] else [])
+    c["period_label"] = f"{n} jours · {days[0]:%d/%m} – {days[-1]:%d/%m}"
     return c
 
 
@@ -97,7 +111,7 @@ def night_trend(nights, today: date) -> dict | None:
         viz.rest(c, [f"{viz.num(means[-1])}{viz.NBSP}bpm", "moyenne 7 jours", ""],
                  f"{c['summary']}, moyenne 7 jours {viz.num(means[-1])} battements par minute")
     else:
-        viz.rest(c, ["", f"{TREND_DAYS} nuits", ""], c["summary"])
+        viz.rest(c, ["", f"{c['n']} nuits", ""], c["summary"])
     last, value = max((i, v) for i, v in enumerate(values) if v is not None)
     return {"key": "hr_night", "title": "FC de nuit", "chart": c, "delta": delta(means, 0, "bpm"),
             "value": viz.num(value, unit="bpm"), "latest": days[last].strftime("%d/%m/%Y"),

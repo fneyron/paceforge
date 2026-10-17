@@ -1330,6 +1330,23 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
   .pf-sante4 .pf-ring-dial { width: 108px; }
   .pf-sante4 .pf-health-nights { grid-template-columns: minmax(0, 1fr); }
 }
+/* Indicative running HR zones: labels and numbers remain legible independently of colour. */
+.pf-hr-zones { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgb(var(--pf-line)); }
+.pf-hr-zones-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
+.pf-hr-zones-status { color: rgb(var(--pf-gray-600)); font-size: .75rem; }
+.pf-hr-zone-list { display: grid; gap: 6px; margin: 12px 0; list-style: none; padding: 0; }
+.pf-hr-zone { --zone-color: var(--pf-gray-500); display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 10px 10px 10px 12px; border-left: 3px solid rgb(var(--zone-color)); border-radius: 4px 10px 10px 4px; background: rgb(var(--pf-soft)); font-size: .875rem; }
+.pf-hr-zone[data-zone="2"] { --zone-color: var(--pf-accent); }
+.pf-hr-zone[data-zone="3"] { --zone-color: var(--pf-ok); }
+.pf-hr-zone[data-zone="4"] { --zone-color: var(--pf-warn); }
+.pf-hr-zone[data-zone="5"] { --zone-color: var(--pf-danger); }
+.pf-hr-zone-number { font-weight: 700; color: rgb(var(--zone-color)); }
+.pf-hr-zone-label { overflow-wrap: anywhere; }
+.pf-hr-zone-value { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+.pf-hr-zone-value small { font-size: .75rem; color: rgb(var(--pf-gray-600)); font-weight: 400; }
+.pf-hr-zone-method p { margin-top: 8px; color: rgb(var(--pf-gray-600)); font-size: .8125rem; line-height: 1.6; }
+.pf-large-text .pf-hr-zone { grid-template-columns: 32px minmax(0, 1fr); }
+.pf-large-text .pf-hr-zone-value { grid-column: 2; white-space: normal; }
 /* At large text sizes, leave room for every value instead of clipping the card.
    Fewer date labels keep the actual interactive measurements intact. */
 .pf-large-text .pf-phases-legend { grid-template-columns: minmax(0, 1fr); gap: 8px; }

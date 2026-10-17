@@ -1,6 +1,9 @@
 """Santé's Tendances (owner, 2026-10-16: « les tendances sur poids fc pas »): 90 days as dots, the trailing mean as a
 line, its change over 4 weeks; FC sur 24 h, stress and the phone's 24-h breathing left the page."""
+import json
 from datetime import date, datetime, timedelta, timezone
+
+import pytest
 
 from app.models.health import HealthMetric
 from app.models.mobile import MobileDaily
@@ -11,6 +14,38 @@ from tests.test_viz import _env
 
 TODAY = date(2026, 10, 14)
 NOW = datetime(2026, 10, 14, 15, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize(("offsets", "expected"), [
+    ([0], 14), ([0, 2, 4, 7], 14), ([0, 11], 14), ([0, 12], 30),
+    ([0, 27], 30), ([0, 28], 90), ([0, 84], 90), ([80, 84], 90),
+])
+def test_sparse_trends_zoom_without_hiding_points_or_their_age(offsets, expected):
+    days = tr.days_to(TODAY)
+    values = [70.0 if (TODAY - d).days in offsets else None for d in days]
+    means, counts = tr.trailing(values, 14, 2)
+    c = tr.chart("weight", "zoom", "Poids", days, values, means, counts,
+                 unit="kg", digits=1, min_span=2)
+    payload = json.loads(c["data"])
+    assert c["n"] == expected and len(c["dots"]) == len(offsets)
+    assert payload["d"][-1] == TODAY.isoformat()
+    assert payload["d"][0] == (TODAY - timedelta(days=expected - 1)).isoformat()
+    assert payload["d"][payload["sel"]] == (TODAY - timedelta(days=min(offsets))).isoformat()
+    assert f"{expected} jours" in c["period_label"]
+
+
+def test_zoom_preserves_the_mean_and_aligned_readouts():
+    days = tr.days_to(TODAY)
+    values = [None] * 86 + [70, None, 72, 74]
+    means, counts = tr.trailing(values, 14, 2)
+    c = tr.chart("weight", "zoom", "Poids", days, values, means, counts,
+                 unit="kg", digits=1, min_span=2, sources=["Balance"] * 90,
+                 notes=[""] * 89 + ["mesure récente"], mean_sources=[None] * 90)
+    payload = json.loads(c["data"])
+    assert c["n"] == 14 and len(payload["r"]) == 14
+    assert "72,0" in payload["r"][-1][3]  # the original 14-day mean
+    assert "3 pesées" in payload["r"][-1][3] and "mesure récente" in payload["r"][-1][3]
+    assert means[-1] == 72 and len(means) == 90  # drawing never mutates the calculation inputs
 
 
 def test_the_trailing_mean_needs_its_values_and_never_reads_a_day_in_progress():

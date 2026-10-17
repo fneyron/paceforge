@@ -123,6 +123,7 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
     """The page's pure computation (no database): the day's state, its 14 days, the cards, the dials, the load."""
     from app.services import training_view
     from app.services import sante_context
+    from app.services.heart_rate_zones import running_zones
 
     # a Longue run like a race (R3): its HR against the athlete's bounds as of its day (the nights' resting HR)
     rest_of = partial(nt.rest_hr, nights)
@@ -154,6 +155,7 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
         out["race_marks"] = sante_context.race_marks(efforts, sessions, until - timedelta(days=89), until)
         out["race_note"] = context[0]["label"] if context else None
     done = [s for s in sessions if s.end_day <= until]
+    out["hr_zones"] = running_zones(done, until)
     out["load"] = sante_load.card(sessions, until, load)
     out["fitness"] = training_view.footing(done, until, peak)
     out["fitness_progress"] = st.fitness_progress(done, until, peak)

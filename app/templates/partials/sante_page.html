@@ -144,6 +144,7 @@
         </details>
         {% endif %}
         <a class="pf-link pf-health-activity-link" href="/activities?depuis={{ t.since.isoformat() }}">Voir les activités de ces 7 jours ›</a>
+        {% include "partials/heart_rate_zones.html" %}
     </div>
 </section>
 
