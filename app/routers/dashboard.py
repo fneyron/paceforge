@@ -7,6 +7,7 @@ from sqlalchemy import Row, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
+from app.config import GOOGLE_SITE_VERIFICATION
 from app.dependencies import get_current_user, get_db, get_optional_user
 from app.features import cycling_enabled
 from app.models.activity import Activity
@@ -25,6 +26,7 @@ from app.services.viz import dplus as dplus_fmt
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["google_site_verification"] = GOOGLE_SITE_VERIFICATION  # the public pages' head
 templates.env.globals["cycling_enabled"] = cycling_enabled
 templates.env.filters["fr_num"] = fr_num
 

@@ -5,7 +5,7 @@ from pathlib import Path
 from time import perf_counter
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -22,6 +22,8 @@ logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
+# the pages a search engine may list (sitemap.xml; base.html gives each its canonical URL)
+PUBLIC_PAGES = ("/", "/methode", "/privacy")
 logger = logging.getLogger(__name__)
 # httpx logs every request URL at INFO, query string included (Strava's
 # deauthorize and webhook calls carry a token or the app secret there)
@@ -245,6 +247,25 @@ def create_app() -> FastAPI:
         from fastapi.responses import FileResponse
         return FileResponse("app/static/favicon.ico", media_type="image/x-icon",
                             headers={"Cache-Control": "public, max-age=86400"})
+
+    # Search engines (owner, 2026-10-17: « référencer paceforge sur Google »): the public pages in the sitemap, the
+    # app's own pages out of the crawl (they ask for a login anyway), /landing a copy of /
+    @app.get("/robots.txt", include_in_schema=False)
+    async def robots():
+        private = ("/api/", "/auth/", "/mobile/", "/partials/", "/webhook", "/setup", "/landing", "/accueil",
+                   "/dashboard", "/sante", "/activities", "/activity/", "/settings", "/simulator", "/connections",
+                   "/coros", "/garmin")
+        body = "User-agent: *\n" + "".join(f"Disallow: {p}\n" for p in private)
+        body += f"\nSitemap: {settings.BASE_URL.rstrip('/')}/sitemap.xml\n"
+        return PlainTextResponse(body, headers={"Cache-Control": "public, max-age=86400"})
+
+    @app.get("/sitemap.xml", include_in_schema=False)
+    async def sitemap():
+        base = settings.BASE_URL.rstrip("/")
+        urls = "".join(f"<url><loc>{base}{path}</loc></url>" for path in PUBLIC_PAGES)
+        return Response('<?xml version="1.0" encoding="UTF-8"?>\n'
+                        f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>\n',
+                        media_type="application/xml", headers={"Cache-Control": "public, max-age=86400"})
 
     # Health check: fast for the container's and the proxy's probes. ?deep=1 (an external monitor) also asks
     # the database and Redis: 503 with the failing flag when one does not answer within 2 s.

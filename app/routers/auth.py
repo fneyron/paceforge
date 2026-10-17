@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from app.config import settings
+from app.config import GOOGLE_SITE_VERIFICATION, settings
 from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db, sign_in
 from app.models.user import User
@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+templates.env.globals["google_site_verification"] = GOOGLE_SITE_VERIFICATION  # /privacy's head
 HOME = "/sante"  # Santé is the main dashboard
 
 

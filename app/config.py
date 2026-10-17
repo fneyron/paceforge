@@ -67,3 +67,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+# Google Search Console's ownership tag for paceforge.fr (public by design: printed in the public pages' head)
+GOOGLE_SITE_VERIFICATION = "2TUENyE5jUvbgFdkAC953TfiC41LSPmK23l1XrudDFE"
