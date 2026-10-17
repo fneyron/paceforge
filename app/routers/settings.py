@@ -147,7 +147,8 @@ async def watch_sync(
     conn = await service.connection_for(db, user.id)
     if conn is None or conn.needs_reauth or (watch == "coros" and not coros_service.tokens_readable(conn)):
         return HTMLResponse("", headers={"HX-Refresh": "true"})
-    queued = await service.queue_sync(db, conn)
+    # a press of the button: COROS reads an owed history now (Garmin keeps its own rhythm)
+    queued = await (service.queue_sync(db, conn, pressed=True) if watch == "coros" else service.queue_sync(db, conn))
     w = await status_of(db, user.id)
     msg = None
     if watch == "coros":

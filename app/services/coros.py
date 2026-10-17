@@ -100,6 +100,7 @@ RECENT_DAYS = 7
 HRV_CHUNK_DAYS = 7  # querySleepHrv: 7 days max per call
 SLEEP_CHUNK_DAYS = 31
 SYNC_EVERY = timedelta(hours=2)  # last night shows up the same morning
+PRESSED_FULL_EVERY = 3600  # s: an owed history read again on a press of « Synchroniser maintenant », at most hourly
 CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
 # read after « Dernière synchro échouée : »; also how the next sync knows the history is owed
 PARTIAL = ("COROS a cessé de répondre en cours de route, le reste de ton historique arrive avec la synchro complète "
@@ -1802,9 +1803,22 @@ async def apply_details(db: AsyncSession, user_id: int, details: dict[int, dict]
     return n
 
 
-async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
+def _pressed_read_allowed(conn: CorosConnection) -> bool:
+    """A press of « Synchroniser maintenant » may read an owed history again the same day, once an hour per link
+    (Redis); False without Redis (the day's first sync reads it then)."""
+    try:
+        from app.services.strava_state import _redis
+
+        return bool(_redis().set(f"coros:pressed-full:{conn.id}", "1", nx=True, ex=PRESSED_FULL_EVERY))
+    except Exception:
+        return False
+
+
+async def sync_connection(db: AsyncSession, conn: CorosConnection, *, pressed: bool = False) -> dict:
     """Fetch and store; returns store_daily's counts. Raises CorosAuthError
-    when the athlete must reconnect, CorosError when COROS can't be read."""
+    when the athlete must reconnect, CorosError when COROS can't be read.
+    `pressed`: the athlete pressed « Synchroniser maintenant » (an owed history
+    is read now, not tomorrow: _pressed_read_allowed)."""
     # the history comes once: on the first sync, or while no daily value
     # arrived yet (a first sync that read nothing must not lose the 60 days;
     # a link made before the daily values were read gets them too), and once
@@ -1824,7 +1838,8 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=NAPS_FOLDED))
     full = owed and (conn.last_sync_at is None
-                     or _as_utc(conn.last_sync_at).date() < datetime.now(timezone.utc).date())
+                     or _as_utc(conn.last_sync_at).date() < datetime.now(timezone.utc).date()
+                     or (pressed and await asyncio.to_thread(_pressed_read_allowed, conn)))
     days = BACKFILL_DAYS if full else RECENT_DAYS
     now = datetime.now(timezone.utc)
     today = now.date()
@@ -1946,7 +1961,8 @@ async def claim(db: AsyncSession, conn: CorosConnection) -> bool:
     return True
 
 
-async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str | None = None) -> dict | None:
+async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str | None = None,
+                   pressed: bool = False) -> dict | None:
     """Claim, sync, record how it went. None when a sync is already running, or when the link is paused (to
     reconnect, or its tokens unreadable until a key is put back: nothing written then)."""
     if conn.needs_reauth:
@@ -1972,7 +1988,7 @@ async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str |
         set_committed_value(conn, "sync_claimed_at", now)
     history_update = None
     try:
-        result = await sync_connection(db, conn)
+        result = await sync_connection(db, conn, pressed=pressed)
         history_update = result.pop("_sessions_state", None)
         conn.last_sync_at = datetime.now(timezone.utc)
         # a history cut short is not done: said so, and the next sync asks for all of it again
@@ -2042,7 +2058,7 @@ async def _sync_in_background(user_id: int) -> None:
             await queue_sync(db, conn)
 
 
-async def queue_sync(db: AsyncSession, conn: CorosConnection) -> bool:
+async def queue_sync(db: AsyncSession, conn: CorosConnection, *, pressed: bool = False) -> bool:
     """Reserve, then hand the sync to the worker (app.tasks.coros_sync) with the
     reservation: a web request never runs it (a minute of calls and parsing on
     the web workers' loop, lost at a deploy). Reserving first lets polling see
@@ -2054,7 +2070,8 @@ async def queue_sync(db: AsyncSession, conn: CorosConnection) -> bool:
         return False
     stamp = _as_utc(conn.sync_claimed_at).isoformat()
     try:
-        await asyncio.to_thread(sync_coros_user.apply_async, args=[conn.id, stamp], retry=False)
+        await asyncio.to_thread(sync_coros_user.apply_async, args=[conn.id, stamp],
+                                kwargs={"pressed": True} if pressed else {}, retry=False)
     except Exception:
         logger.exception("COROS sync could not be queued for user %d", conn.user_id)
         conn.sync_claimed_at = None
