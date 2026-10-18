@@ -67,7 +67,7 @@
 {% if s and s.state != "never" %}
 <section id="sommeil" class="pf-health-panel" aria-labelledby="h-sommeil">
     <header class="pf-health-panel-heading">
-        <h2 id="h-sommeil" class="pf-health-panel-title">Sommeil{% if s.hero %}<small>{{ s.hero.label }}</small>{% endif %}</h2>{{ viz.help('sommeil', 'Les horaires et phases sont estimés par ta montre. Les segments montrent la répartition des phases, pas leur ordre dans la nuit. Survole ou sélectionne un segment pour connaître sa phase et sa durée.') }}
+        <h2 id="h-sommeil" class="pf-health-panel-title">Sommeil{% if s.hero %}<small>{{ s.hero.label }}</small>{% endif %}</h2>{{ viz.help('sommeil', 'Les horaires et phases sont estimés par ta montre. La répartition montre les durées par phase, pas leur ordre. Le déroulé de la nuit s’affiche lorsque les horaires des phases sont disponibles. Survole ou touche une phase pour la mettre en évidence.') }}
         <span class="pf-panel-value">{{ s.hero.total if s.hero else 'Pas de nuit récente' }}</span>
     </header>
     <div class="pf-panel-body">

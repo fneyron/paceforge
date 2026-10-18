@@ -403,10 +403,37 @@
     }
   }
 
+  function phases(box) {
+    if (box.__pfphases) return;
+    box.__pfphases = true;
+    function phaseAt(node) {
+      var el = node && node.closest && node.closest('[data-phase]');
+      return el && box.contains(el) ? el.getAttribute('data-phase') : null;
+    }
+    function highlight(key) {
+      if (key) box.setAttribute('data-active-phase', key);
+      else box.removeAttribute('data-active-phase');
+      box.querySelectorAll('[data-phase]').forEach(function (el) {
+        el.classList.toggle('is-active', !!key && el.getAttribute('data-phase') === key);
+        el.classList.remove('is-tip-dismissed');
+      });
+    }
+    box.addEventListener('pointerover', function (e) { highlight(phaseAt(e.target)); });
+    box.addEventListener('pointerout', function (e) {
+      highlight(phaseAt(e.relatedTarget) || phaseAt(document.activeElement));
+    });
+    box.addEventListener('focusin', function (e) { highlight(phaseAt(e.target)); });
+    box.addEventListener('focusout', function (e) { highlight(phaseAt(e.relatedTarget)); });
+    box.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.target.blur(); highlight(null); }
+    });
+  }
+
   function scan(root) {
     root = root && root.querySelectorAll ? root : document;
     root.querySelectorAll("[data-viz-ranges]").forEach(ranges);
     root.querySelectorAll("figure[data-viz]").forEach(setup);
+    root.querySelectorAll('.pf-phases').forEach(phases);
   }
 
   document.addEventListener("keydown", function (e) {
