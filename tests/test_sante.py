@@ -474,7 +474,8 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert 'href="/sante/aide"' in main
     assert "Comprendre la récupération" not in main
     assert "pf-viz-gap" not in main and "is-out" not in main
-    assert main.count('class="pf-phases-bar" role="group"') == 1
+    assert main.count('class="pf-phases-bar" aria-hidden="true"') == 1
+    assert main.count('class="pf-phases-legend"') == 1
     assert 'aria-label="Profond : 1h10"' in main
     assert 'action="/sante/ressenti"' in main and "Transjeju" in main and "/activity/" in main
     assert main.count("<summary>Comment je calcule</summary>") == 0

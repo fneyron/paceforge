@@ -120,9 +120,13 @@ async def test_the_stages_bar_and_its_legend_on_the_owners_page(as_user: AsyncCl
     main = _main(await _page(as_user, monkeypatch, D8))
     hero = main.split('<section id="sommeil"')[1].split("</section>")[0]  # the visible Sommeil panel
     assert "Répartition des phases" in hero
-    assert 'class="pf-phases-bar" role="group"' in hero
-    assert re.findall(r'class="pf-phase-segment pf-ph is-(\w+)" tabindex="0" style="flex-grow: (\d+)"', hero) == [
+    assert 'class="pf-phases-bar" aria-hidden="true"' in hero
+    assert 'class="pf-phases-legend" aria-label="Phases estimées par ta montre :' in hero
+    assert re.findall(r'class="pf-phase-segment pf-ph is-(\w+)" data-phase="\w+" style="flex-grow: (\d+)"', hero) == [
         ("awake", "12"), ("light", "326"), ("deep", "71"), ("rem", "119")]
+    assert hero.count('type="button" class="pf-phase-label"') == 4
+    assert '<span>Éveil</span> <b>10 min</b>' in hero  # a short phase stays readable outside its narrow segment
+    assert 'pf-phase-duration' not in hero
     for label in ("Éveil : 10 min", "Léger : 5h30", "Profond : 1h10", "Paradoxal : 2h00"):
         assert f'aria-label="{label}"' in hero
     # Interpretation is available in the shared help, without repeating it below the chart.
