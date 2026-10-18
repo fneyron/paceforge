@@ -3,7 +3,7 @@
 <section id="zones-fc" class="pf-health-panel pf-hr-zones" aria-labelledby="h-zones-fc">
     <header class="pf-health-panel-heading">
         <h2 id="h-zones-fc" class="pf-health-panel-title">Zones de FC</h2>
-        <span class="pf-hr-zones-status">Course à pied · {{ 'Repères' if z.ready else 'À renseigner' }}</span>
+        <span class="pf-hr-zones-status">Course à pied · {{ 'Estimation' if z.estimated else 'Repères' if z.ready else 'Données insuffisantes' }}</span>
     </header>
     <div class="pf-panel-body">
     {% if z.ready %}
@@ -16,18 +16,35 @@
         </li>
         {% endfor %}
     </ol>
+    {% if z.estimated %}
+    <p class="pf-viz-cap">Repère observé · {{ z.reference }} bpm · {{ z.evidence|length }} sorties concordantes.</p>
+    <p class="pf-sante-note">Repères provisoires : ta FC maximale réelle peut être plus haute.</p>
+    {% else %}
     <p class="pf-viz-cap">FC maximale renseignée · {{ z.reference }} bpm. <a class="pf-link" href="/settings#max-heart-rate">Modifier ›</a></p>
+    {% endif %}
     <details class="pf-chart-details pf-hr-zone-method">
         <summary>Comment sont calculées mes zones ?</summary>
-        <p>Les cinq plages correspondent à 50–60, 60–70, 70–80, 80–90 et 90–100 % de la FC maximale que tu as renseignée.
+        <p>Les cinq plages correspondent à 50–60, 60–70, 70–80, 80–90 et 90–100 % de {{ 'ce repère observé' if z.estimated else 'la FC maximale que tu as renseignée' }}.
             Les bornes affichées sont arrondies sans chevauchement.</p>
-        <p>Ces repères ne mesurent ni ton seuil lactique ni tes seuils ventilatoires.
-            Les pics des activités et la FC nocturne ne remplacent pas ta FC maximale confirmée.</p>
+        {% if z.estimated %}
+        <p>Le calcul compare les pics de tes courses et trails des 12 derniers mois, sur au moins deux jours distincts,
+            dont un dans les 90 derniers jours. Chaque pic doit être proche de la FC moyenne de plusieurs passages soutenus.
+            La médiane des pics concordants est retenue. Un pic isolé ou sans passages détaillés ne suffit pas.</p>
+        <p>Ces filtres ne garantissent pas la précision du capteur. Sans efforts proches du maximum, les zones peuvent être trop basses.
+            Ce calcul ne mesure pas ta FC maximale physiologique.</p>
+        <ul>
+            {% for activity in z.evidence %}
+            <li><a class="pf-link" href="/activity/{{ activity.id }}">{{ activity.day.strftime('%d/%m/%Y') }} · {{ activity.peak }} bpm ›</a></li>
+            {% endfor %}
+        </ul>
+        <p><a class="pf-link" href="/settings#max-heart-rate">Utiliser une FC maximale confirmée ›</a></p>
+        {% endif %}
+        <p>Ces repères ne mesurent ni ton seuil lactique ni tes seuils ventilatoires.</p>
         <p><a class="pf-link" href="https://www.polar.com/us-en/guide/heart-rate-zones">Le modèle à cinq zones · Polar ↗</a></p>
     </details>
     {% else %}
     <p class="pf-sante-note">{{ z.message }}</p>
-    <a class="pf-link" href="/settings#max-heart-rate">Renseigner ma FC maximale ›</a>
+    <a class="pf-link" href="/settings#max-heart-rate">Renseigner une FC maximale confirmée ›</a>
     {% endif %}
     </div>
 </section>
