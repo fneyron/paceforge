@@ -84,11 +84,11 @@ async def _weigh_ins_and_steps(db, user):
     await db.flush()
 
 
-async def test_the_page_draws_three_months_of_weight_body_fat_and_steps(db_session, test_user):
+async def test_the_page_keeps_weight_and_body_fat_without_steps(db_session, test_user):
     await _weigh_ins_and_steps(db_session, test_user)
     p = await sante.health_page(db_session, test_user.id, today=TODAY, now=NOW)
     trends = {t["key"]: t for t in p["trends"]}
-    assert list(trends) == ["weight", "body_fat", "steps"]
+    assert list(trends) == ["weight", "body_fat"]
     weight = trends["weight"]
     assert (weight["title"], weight["value"], weight["chart"]["n"]) == ("Poids", "70,7 kg", 90)
     assert weight["chart"]["legend"] == [("is-dot", "pesée"), ("is-mean", "moyenne glissante")]
@@ -96,11 +96,9 @@ async def test_the_page_draws_three_months_of_weight_body_fat_and_steps(db_sessi
     assert len(weight["chart"]["dots"]) == 13
     assert weight["chart"]["mean"].count("M") == 1  # a weekly weigh-in: one line, never a dash a week
     assert trends["body_fat"]["delta"] == "0,0 % en 4 sem."
-    steps = trends["steps"]
-    assert steps["chart"]["legend"] == [("is-dot", "jour"), ("is-mean", "moyenne glissante")]
-    assert steps["delta"] == "0 pas en 4 sem."  # today's 1 200 steps, a day in progress, never lower the mean
     html = _env().get_template("partials/sante_page.html").render(page=p)
     assert 'id="tendances"' in html and "Au quotidien" not in html
+    assert 'id="tendance-steps"' not in html
     for gone in ("FC sur 24 h", "Stress", "Respiration sur 24 h", "pf-measurement-insight"):
         assert gone not in html, gone
     # the explanations are a fold at the bottom, after the charts
@@ -119,10 +117,6 @@ async def test_a_typed_weight_stays_a_value_without_a_chart(db_session, test_use
     assert "71,0 kg" in html and "Valeur du profil" in html
 
 
-def test_the_night_hr_trend_is_the_fc_card_s_line_over_ninety_nights():
+def test_night_hr_has_one_curve_without_a_duplicate_trend():
     p = sante._compute(_nights(_rich()), [], D, D, None, {}, True, 190, {})
-    hr = p["hr_trend"]
-    assert (hr["key"], hr["title"], hr["chart"]["n"]) == ("hr_night", "FC de nuit", 90)
-    assert hr["chart"]["summary"] == "FC de nuit, 90 nuits : 60 enregistrées"
-    assert hr["chart"]["legend"] == [("is-dot", "nuit"), ("is-mean", "moyenne glissante")]
-    assert hr["value"] == p["fc"]["measurement"]["value"]
+    assert p["fc"] and "hr_trend" not in p

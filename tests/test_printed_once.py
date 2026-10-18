@@ -46,10 +46,8 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
 
     # No VFC in the seed. New accumulated load and fitness stay distinct from recovery.
     # the seed's nights are all within the 30 of the short range: no « 3 mois » (2026-10-17)
-    assert set(sante) == {"recuperation", "sommeil-14", "fc",
-                         "charge-accumulee", "forme-footing", "trend-hr"}
-    # Tendances' night HR: last night's value is the FC de nuit card's, this one rests on its 7-night mean
-    assert sante["trend-hr"] == ("45\u00a0bpm", "en moyenne", "")
+    assert set(sante) == {"recuperation", "sommeil-14", "fc", "charge-accumulee", "forme-footing"}
+    assert "trend-hr" not in sante  # the duplicate FC de nuit trend left the page
     assert "entrainement" not in sante
     assert sante["charge-accumulee"][1:] == ("en moyenne", "")
     assert sante["forme-footing"] == ("", "Tes sorties comparables", "")

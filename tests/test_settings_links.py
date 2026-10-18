@@ -393,3 +393,25 @@ async def test_a_typed_weight_is_dated_so_it_competes_with_weigh_ins(as_user: As
     assert test_user.weight_kg == 70.5 and test_user.weight_set_at == typed_at
     await as_user.post("/settings", data={"weight_kg": ""})
     assert test_user.weight_kg is None and test_user.weight_set_at is None
+
+
+async def test_personal_max_hr_can_be_saved_kept_and_cleared(as_user, db_session, test_user):
+    assert (await as_user.post('/settings', data={'weight_kg': '72', 'max_heart_rate': '180'})).status_code == 200
+    assert test_user.max_heart_rate == 180
+    await db_session.refresh(test_user)
+    assert test_user.max_heart_rate == 180
+    # An older client that does not submit the new field must keep its value.
+    await as_user.post('/settings', data={'weight_kg': '72'})
+    assert test_user.max_heart_rate == 180
+    page = (await as_user.get('/settings')).text
+    assert 'name="max_heart_rate"' in page and 'id="max-heart-rate"' in page
+    await as_user.post('/settings', data={'weight_kg': '72', 'max_heart_rate': ''})
+    assert test_user.max_heart_rate is None
+
+
+@pytest.mark.parametrize('value', ['nan', 'inf', '99', '231', '180.5', 'invalide'])
+async def test_invalid_max_hr_does_not_change_the_profile(as_user, test_user, value):
+    test_user.max_heart_rate, test_user.weight_kg = 180, 72
+    response = await as_user.post('/settings', data={'weight_kg': '73', 'max_heart_rate': value})
+    assert response.status_code == 422 and 'FC maximale non enregistrée' in response.text
+    assert test_user.max_heart_rate == 180 and test_user.weight_kg == 72

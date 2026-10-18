@@ -176,12 +176,12 @@ async def daily_context(db: AsyncSession, user_id: int, today: date, now: dateti
     return (await _context(db, user_id, today, now, zone, WINDOW_DAYS))[0]
 
 
-TREND_METRICS = ("weight", "body_fat", "steps")
+TREND_METRICS = ("weight", "body_fat")
 
 
 async def daily_and_trends(db: AsyncSession, user_id: int, today: date, now: datetime | None = None,
                            zone=None) -> tuple[list[dict], dict[str, dict]]:
-    """daily_context's cards, and Santé's Tendances of the weight, the body fat and the steps
+    """daily_context's cards, and Santé's Tendances of the weight and the body fat
     (sante_trends.daily_trend: the same cards over 90 days, one query for both); the weight typed in Réglages
     stays a value without a chart (_weight_card)."""
     cards, rows = await _context(db, user_id, today, now, zone, sante_trends.TREND_DAYS)

@@ -40,7 +40,6 @@ from app.services import sante_score as sc
 from app.services import sante_sleep as sl
 from app.services import sante_today as td
 from app.services import sante_training as st
-from app.services import sante_trends
 from app.services import viz
 from app.services.health import HRV_METHOD, WATCH_SOURCES, fmt_minutes
 from app.services.sante_daily import daily_and_trends
@@ -98,10 +97,11 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     hero_day = sl.hero_day(nights, today)
     samples = await _timeline(db, user_id, nights, hero_day) if hero_day else {}
     out.update(await anyio.to_thread.run_sync(partial(
-        _compute, nights, sessions, today, until, r, samples, bool(sources), peak, day_alt, sex)))
+        _compute, nights, sessions, today, until, r, samples, bool(sources), peak, day_alt, sex,
+        getattr(user, "max_heart_rate", None))))
     # The same real nightly respiratory card lives with Recovery; a phone's resp_day aggregate is never promoted to
-    # a night. The other daily cards (FC sur 24 h, stress, respiration sur 24 h) left the page (owner, 2026-10-16:
-    # « les tendances sur poids fc pas »): Tendances, 90 days of the weight, the body fat, the night HR, the steps.
+    # a night. The other daily cards (FC sur 24 h, stress, respiration sur 24 h) left the page.
+    # Tendances now keeps body composition only; night HR already has its curve and steps left this page.
     # The one-tap feel's dots, under the stacked curves (owner, 2026-10-17), on the days it is asked (the calendar's)
     from app.services import sante_checkin
     feel_days = [until - timedelta(days=CARD_NIGHTS - 1 - i) for i in range(CARD_NIGHTS)]
@@ -109,14 +109,13 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     out["feel_track"] = viz.feel_track("ressenti-30", feel_days, feels) if feels else None
     out["respiration"] = next((c for c in daily if c["key"] == "resp_night"), None)
     out.pop("race_marks", None)
-    out["trends"] = [t for t in (trends.get("weight"), trends.get("body_fat"), out.pop("hr_trend", None),
-                                 trends.get("steps")) if t]
+    out["trends"] = [t for t in (trends.get("weight"), trends.get("body_fat")) if t]
     out["explanations"] = sante_explain.build(out)
     return out
 
 
 def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: bool, peak: float, day_alt,
-             sex=None) -> dict:
+             sex=None, max_heart_rate=None) -> dict:
     """The page's pure computation (no database): the day's state, its 14 days, the cards, the dials, the load."""
     from app.services import training_view
     from app.services import sante_context
@@ -139,7 +138,6 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
             out["sleep"]["hero"]["label"] = viz.night_label(out["sleep"]["hero"]["day"]).capitalize()
         out["vfc"] = _night_card(nights, "hrv", today, day)
         out["fc"] = _night_card(nights, "hr", today, day)
-        out["hr_trend"] = sante_trends.night_trend(nights, today)
         # one load for every view (sante_load): today's bounds, the nights' resting HR and the sessions' peak
         rest = nt.rest_hr(nights, until)
         load = st.loads(sessions, until, rest, peak, sex)
@@ -158,7 +156,7 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
         for s in sorted(sante_load.valid(sessions), key=lambda s: s.start, reverse=True)
         if until - timedelta(days=6) <= s.end_day <= until
     ]
-    out["hr_zones"] = running_zones(done, until)
+    out["hr_zones"] = running_zones(max_heart_rate)
     out["load"] = sante_load.card(sessions, until, load)
     out["fitness"] = training_view.footing(done, until, peak)
     out["fitness_progress"] = st.fitness_progress(done, until, peak)

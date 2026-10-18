@@ -125,11 +125,16 @@
             {% if t.word %}<p class="pf-viz-cap">{{ t.word }}</p>{% endif %}
         </section>
         {% endif %}
-        <h3 class="pf-card-h pf-recent-heading">Activités des 7 derniers jours</h3>
-        <ul class="pf-recent-activities">{% for a in p.recent_activities %}<li><a href="/activity/{{ a.id }}"><span><b>{{ a.name }}</b><small>{{ a.date }}</small></span><span>{{ a.duration }}{% if a.distance %}<small>{{ a.distance }}</small>{% endif %}</span></a></li>{% else %}<li class="pf-viz-cap">Aucune activité enregistrée.</li>{% endfor %}</ul>
-        {% include "partials/heart_rate_zones.html" %}
     </div>
 </section>
+
+<section id="activites-recentes" class="pf-health-panel" aria-labelledby="h-activites-recentes">
+    <header class="pf-health-panel-heading"><h2 id="h-activites-recentes" class="pf-health-panel-title">Activités des 7 derniers jours</h2></header>
+    <div class="pf-panel-body">
+        <ul class="pf-recent-activities">{% for a in p.recent_activities %}<li><a href="/activity/{{ a.id }}"><span><b>{{ a.name }}</b><small>{{ a.date }}</small></span><span>{{ a.duration }}{% if a.distance %}<small>{{ a.distance }}</small>{% endif %}</span></a></li>{% else %}<li class="pf-viz-cap">Aucune activité enregistrée.</li>{% endfor %}</ul>
+    </div>
+</section>
+{% include "partials/heart_rate_zones.html" %}
 
 {% if p.fitness %}{% set e = p.fitness %}
 <section id="forme" class="pf-health-panel" aria-labelledby="h-forme">
