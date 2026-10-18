@@ -479,7 +479,7 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert 'aria-label="Profond : 1h10"' in main
     assert 'action="/sante/ressenti"' in main and "Transjeju" in main and "/activity/" in main
     assert main.count("<summary>Comment je calcule</summary>") == 0
-    assert "Les chiffres de chaque nuit" in main
+    assert "Les chiffres de chaque nuit" not in main
     # Cardiac measurements are visible, each once; training keeps its duration both
     # in the baseline-free dial and above the now visible daily chart.
     seen = re.sub(r"\s+", " ", _visible(html).replace("\u00a0", " ").replace("\u202f", " "))

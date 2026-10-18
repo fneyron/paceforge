@@ -173,7 +173,7 @@ async def test_the_owner_s_sante_page_names_only_the_recent_recorded_course(as_u
     rest = H.unescape(re.sub(r'<div class="pf-fitness-progress".*?</div>', "", rest, flags=re.S))
     for word in ("sortie", "ultra", "course", "il y a", "Plafonné", "Grosse"):
         assert word not in rest, word
-    assert "◇ après un gros effort" in rest  # the 06/10 and 07/10 nights
+    assert "◇ après un gros effort" not in rest  # the nightly table was removed from the page
     assert "repères en construction (5/7)" in rest  # today
 
 
