@@ -145,19 +145,31 @@ Détails et raisons du retrait de `cumulative-1` : [recovery-cumulative.md](reco
   donnés par sport, et ceux de la course à pied à part.
 - **Signaux nocturnes.** Aucune limite liée à la charge. L’Entraînement % s’affiche comme contexte.
 
-## Zones de FC indicatives (17 octobre 2026)
+## Zones de FC indicatives (18 octobre 2026)
 
 Sous Entraînement, cinq plages en bpm pour la course à pied : 50–60, 60–70, 70–80,
 80–90 et 90–100 % d'une référence observée, selon le découpage du
 [modèle à cinq zones de Polar](https://www.polar.com/us-en/guide/heart-rate-zones).
 Les numéros et libellés restent lisibles sans les couleurs ; le détail expose la référence et ses limites.
 
-La référence est le plus haut pic corroboré à 5 bpm près sur au moins 3 jours distincts parmi les
-courses/trails des 365 derniers jours **(H)**. Seules les sorties terminées, d'au moins 10 minutes,
-avec un pic fini dans ]100 ; 230] bpm et, si connue, une moyenne dans [25 ; pic] sont retenues **(H)**.
-Un seul pic par jour ; au moins un jour corroborant doit dater de 90 jours ou moins **(H)**.
-Ces filtres réduisent les pics isolés sans garantir l'exactitude du capteur. Une valeur exclue plus haute
-est mentionnée dans le détail. Sans données suffisantes ou récentes, aucune plage n'est affichée.
+Une FC maximale confirmée renseignée dans le profil a priorité. Sinon, le calcul automatique cherche
+le groupe le plus élevé de pics concordants à 5 bpm près sur au moins **deux jours distincts**, parmi
+les courses/trails terminés des 365 derniers jours ; au moins un jour dans les 90 derniers jours **(H)**.
+Chaque sortie dure au moins 10 minutes, avec un pic fini dans [100 ; 230] bpm et une FC moyenne finie
+dans [25 ; pic]. Un pic par jour est retenu, puis la **médiane** du groupe, arrondie au bpm **(H)**.
+
+La répétition d'un pic ne suffit plus : les tours ou splits de la même sortie doivent le corroborer.
+Au moins deux passages de 30 secondes à 10 minutes, totalisant au moins 3 minutes, doivent avoir une
+FC moyenne située au plus 10 bpm sous le pic **(H)**. La couverture totale valide doit atteindre
+10 minutes ou la moitié de la sortie si elle est plus courte, sans dépasser 125 % de sa durée **(H)**.
+Les moyennes non finies, inférieures à 25 ou supérieures au pic sont exclues. Un résumé d'activité seul,
+un seul tour moyen ou un pic sans passages soutenus ne permettent donc pas d'afficher de zones.
+
+Ces choix sont des filtres de qualité heuristiques, **pas un modèle validé d'estimation physiologique
+de la FC maximale**. Ils ne garantissent pas l'exactitude du capteur, notamment en cas d'artefact répété.
+La carte indique « Estimation », « Repère observé », le nombre de sorties concordantes et leurs liens
+datés dans le détail. Sans données suffisantes ou récentes, aucune plage n'est affichée. La saisie reste
+facultative ; le calcul automatique n'écrit jamais de FC maximale confirmée dans le profil.
 
 Ce n'est **pas une FC maximale mesurée**, ni une estimation des seuils lactiques ou ventilatoires.
 Sans efforts proches du maximum, les zones peuvent être trop basses ; cette limite est visible sur la carte.

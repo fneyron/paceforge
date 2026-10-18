@@ -55,7 +55,7 @@
                 <input type="number" id="max_heart_rate" name="max_heart_rate" inputmode="numeric" value="{{ user.max_heart_rate or '' }}" step="1" min="100" max="230" aria-describedby="max-hr-help" class="{{ input_cls }} pf-set-num tabular-nums">
                 <span class="text-sm text-gray-400 shrink-0">bpm</span>
             </div>
-            <p id="max-hr-help" class="text-xs text-gray-500 mt-2">Pour tes zones de FC : renseigne une valeur fiable, issue d’un test ou d’une mesure confirmée. Vide, les zones restent à renseigner.</p>
+            <p id="max-hr-help" class="text-xs text-gray-500 mt-2">Facultatif : une valeur fiable, issue d’un test ou d’une mesure confirmée, remplace le repère automatique de tes activités. Vide, tes sorties détaillées servent à établir des zones provisoires si les données suffisent.</p>
         </div>
         <div id="health-source" class="max-w-md">
             <label for="health_source" class="pf-field-label">Source prioritaire pour la santé</label>

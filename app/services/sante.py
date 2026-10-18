@@ -156,7 +156,7 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
         for s in sorted(sante_load.valid(sessions), key=lambda s: s.start, reverse=True)
         if until - timedelta(days=6) <= s.end_day <= until
     ]
-    out["hr_zones"] = running_zones(max_heart_rate)
+    out["hr_zones"] = running_zones(max_heart_rate, done, until)
     out["load"] = sante_load.card(sessions, until, load)
     out["fitness"] = training_view.footing(done, until, peak)
     out["fitness_progress"] = st.fitness_progress(done, until, peak)
