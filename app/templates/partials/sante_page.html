@@ -146,16 +146,4 @@
 {% if p.trends %}{% include "partials/sante_trends.html" %}{% endif %}
 <div class="pf-folds">
     {% include "partials/sante_explanations.html" %}
-    {% if s and s.rows %}
-    <details class="pf-fold pf-ntable-fold">
-        <summary>Les chiffres de chaque nuit</summary>
-        <div class="pf-ntable-wrap" tabindex="0" role="region" aria-label="Les chiffres de chaque nuit">
-            <table class="pf-ntable">
-                <caption class="sr-only">Les chiffres de tes nuits des 30 derniers jours, la plus récente d'abord. Les phases sont estimées par ta montre. « — » : pas de mesure.</caption>
-                <thead><tr><th scope="col">Jour</th><th scope="col">24 h</th><th scope="col">Nuit</th><th scope="col">Sieste</th><th scope="col">Coucher → lever</th><th scope="col">FC</th><th scope="col">VFC</th><th scope="col">Éveil</th><th scope="col">Léger</th><th scope="col">Profond</th><th scope="col">Paradoxal</th><th scope="col">À noter</th></tr></thead>
-                <tbody>{% for r in s.rows %}<tr><th scope="row">{{ r.date }}</th><td>{{ r.tst }}</td><td>{{ r.night }}</td><td>{{ r.nap }}</td><td>{{ r.times }}</td><td>{{ r.hr }}</td><td>{{ r.hrv }}</td>{% for ph in r.phases %}<td>{{ ph }}</td>{% endfor %}<td>{{ r.marks }}</td></tr>{% endfor %}</tbody>
-            </table>
-        </div>
-    </details>
-    {% endif %}
 </div>
