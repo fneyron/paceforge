@@ -92,6 +92,7 @@ async def save_settings(
     weight_kg: str = Form(default=""),
     ftp_watts: str = Form(default=""),
     health_source: str | None = Form(default=None),
+    max_heart_rate: str = Form(default=""),
 ):
     if health_source is not None and health_source not in ("auto", "COROS", "Garmin", "Apple Santé"):
         ctx = await _settings_context(request, user, db, health_source_bad=True)
@@ -100,6 +101,15 @@ async def save_settings(
     if weight_kg.strip() and (weight is None or not math.isfinite(weight) or not 30 <= weight <= 200):
         ctx = await _settings_context(request, user, db, weight_bad=True)
         return templates.TemplateResponse(request, "settings.html", context=ctx, status_code=422)
+    from app.services.heart_rate_zones import valid_max_hr
+
+    max_hr_submitted = "max_heart_rate" in await request.form()
+    max_hr = _to_float(max_heart_rate)
+    if max_hr_submitted and max_heart_rate.strip() and not valid_max_hr(max_hr):
+        ctx = await _settings_context(request, user, db, max_hr_bad=True)
+        return templates.TemplateResponse(request, "settings.html", context=ctx, status_code=422)
+    if max_hr_submitted:
+        user.max_heart_rate = int(max_hr) if max_hr is not None else None
     if weight != user.weight_kg:  # typed now: dated, so the most recent of it and the weigh-ins wins (athlete_weight)
         user.weight_kg = weight
         user.weight_set_at = datetime.now(timezone.utc) if weight is not None else None

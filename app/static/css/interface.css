@@ -1331,8 +1331,6 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
   .pf-sante4 .pf-health-nights { grid-template-columns: minmax(0, 1fr); }
 }
 /* Indicative running HR zones: labels and numbers remain legible independently of colour. */
-.pf-hr-zones { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgb(var(--pf-line)); }
-.pf-hr-zones-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
 .pf-hr-zones-status { color: rgb(var(--pf-gray-600)); font-size: .75rem; }
 .pf-hr-zone-list { display: grid; gap: 6px; margin: 12px 0; list-style: none; padding: 0; }
 .pf-hr-zone { --zone-color: var(--pf-gray-500); display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 10px 10px 10px 12px; border-left: 3px solid rgb(var(--zone-color)); border-radius: 4px 10px 10px 4px; background: rgb(var(--pf-soft)); font-size: .875rem; }
@@ -1441,7 +1439,6 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-help:hover .pf-help-tip, .pf-help:focus-within .pf-help-tip { display: block; }
 .pf-help-tip::before { content: ''; position: absolute; height: 10px; inset: -10px 0 auto; }
 .pf-lg.is-light { background: rgb(var(--pf-st-light)); }.pf-lg.is-deep { background: rgb(var(--pf-st-deep)); }.pf-lg.is-rem { background: rgb(var(--pf-st-rem)); }
-.pf-recent-heading { margin-top: 24px; }
 .pf-recent-activities { list-style: none; padding: 0; margin-top: 10px; }
 .pf-recent-activities a { display: flex; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid rgb(var(--pf-line)); }
 .pf-recent-activities a:hover b { text-decoration: underline; }

@@ -34,6 +34,9 @@ def test_page_shows_charge_and_recent_activities_without_disclosure():
     html = _env().get_template("partials/sante_page.html").render(page=p)
     assert [a["id"] for a in p["recent_activities"]] == [2]
     assert '<section id="charge-detail"' in html and 'href="/activity/2"' in html
+    assert '<section id="activites-recentes" class="pf-health-panel"' in html
+    training = html.split('<section id="entrainement"')[1].split('</section>\n\n<section id="activites-recentes"')[0]
+    assert 'pf-recent-activities' not in training and 'id="zones-fc"' not in training
     assert "Sortie ancienne" not in html
     assert 'class="pf-help-tip" role="tooltip"' in html
     assert "<small>30 jours</small>" not in html and "Repère de forme" not in html

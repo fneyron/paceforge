@@ -69,6 +69,8 @@ class User(Base):
 
     # Physical
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Confirmed by the athlete, for displayed running HR zones; never inferred from activity peaks.
+    max_heart_rate: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # when the athlete typed weight_kg (the latest of this and a dated weigh-in wins: services/athlete_weight)
     weight_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     health_source: Mapped[str | None] = mapped_column(String(20), nullable=True)

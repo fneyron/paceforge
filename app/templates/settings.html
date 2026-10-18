@@ -48,6 +48,15 @@
             </div>
             {% if cycling_enabled() %}<p class="text-[11px] text-gray-400 mt-1">Ton poids sert à ta puissance à vélo.</p>{% endif %}
         </div>
+        <div id="max-heart-rate" class="max-w-md">
+            <label for="max_heart_rate" class="pf-field-label">FC maximale en course à pied</label>
+            {% if max_hr_bad %}<p role="alert" class="text-sm text-danger">FC maximale non enregistrée : saisis un nombre entier entre 100 et 230 bpm.</p>{% endif %}
+            <div class="flex items-center gap-2">
+                <input type="number" id="max_heart_rate" name="max_heart_rate" inputmode="numeric" value="{{ user.max_heart_rate or '' }}" step="1" min="100" max="230" aria-describedby="max-hr-help" class="{{ input_cls }} pf-set-num tabular-nums">
+                <span class="text-sm text-gray-400 shrink-0">bpm</span>
+            </div>
+            <p id="max-hr-help" class="text-xs text-gray-500 mt-2">Pour tes zones de FC : renseigne une valeur fiable, issue d’un test ou d’une mesure confirmée. Vide, les zones restent à renseigner.</p>
+        </div>
         <div id="health-source" class="max-w-md">
             <label for="health_source" class="pf-field-label">Source prioritaire pour la santé</label>
             {% if health_source_bad %}<p role="alert" class="text-sm text-danger">Choisis une des sources proposées.</p>{% endif %}
