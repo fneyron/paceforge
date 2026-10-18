@@ -1410,7 +1410,7 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-sante4 .pf-panel-value, .pf-sante4 .pf-health-status { margin-left: auto; }
 .pf-sante4 .pf-phases { max-width: none; }
 .pf-sante4 .pf-phases-bar { height: 20px; gap: 3px; }
-.pf-phase-segment { position: relative; display: block; min-width: 6px; cursor: help; }
+.pf-phase-segment { position: relative; display: block; min-width: 6px; cursor: default; }
 .pf-phases[data-active-phase] .pf-phase-segment:not(.is-active) { opacity: .35; }
 .pf-phase-segment.is-active { outline: 2px solid rgb(var(--pf-ink) / .55); outline-offset: 2px; }
 .pf-phases-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
