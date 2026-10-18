@@ -1271,7 +1271,7 @@ body:has(.pf-sante4) { background: #f4f6f8; }
 .pf-sante4 .pf-ring-sub { font-size: .6875rem; line-height: 1.35; }
 .pf-sante4 .pf-ring-usual { font-size: .5625rem; }
 .pf-sante4 .pf-health-panels { margin-top: 18px; gap: 16px; grid-template-columns: minmax(0, 1fr); grid-template-areas: none; grid-template-rows: auto; }
-.pf-sante4 .pf-health-panels > .pf-health-panel { grid-area: auto; border-radius: 20px; }
+.pf-sante4 .pf-health-panels > .pf-health-panel { grid-area: auto; border-radius: 20px; overflow: visible; }
 .pf-health-panel-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; padding: 16px 16px 8px; min-height: 52px; }
 .pf-health-panel-title { font-size: 1.0625rem; line-height: 1.3; font-weight: 700; letter-spacing: -.025em; }
 .pf-health-panel-heading small { display: block; margin-top: 2px; color: rgb(var(--pf-gray-600)); font-size: .75rem; font-weight: 400; letter-spacing: 0; }
@@ -1424,7 +1424,7 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-sleep-times small { font-size: .75rem; color: rgb(var(--pf-gray-600)); }
 .pf-sleep-times b { font-size: 1.125rem; font-variant-numeric: tabular-nums; }
 .pf-help { position: relative; display: inline-flex; flex: 0 0 auto; align-self: center; }
-.pf-help-button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid rgb(var(--pf-line)); border-radius: 50%; font-size: .75rem; color: rgb(var(--pf-gray-600)); cursor: help; }
+.pf-help-button { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid rgb(var(--pf-line)); border-radius: 50%; font-size: .75rem; color: rgb(var(--pf-gray-600)); cursor: help; }
 .pf-help-button::before { content: ''; position: absolute; inset: -8px; }
 .pf-help-tip { display: none; position: absolute; z-index: 30; top: calc(100% + 8px); right: -12px; width: min(270px, 75vw); padding: 12px 14px; border-radius: 12px; background: rgb(var(--pf-ink)); color: rgb(var(--pf-bg)); font-size: .8125rem; font-weight: 400; line-height: 1.55; box-shadow: 0 6px 22px #0002; }
 .pf-help:hover .pf-help-tip, .pf-help:focus-within .pf-help-tip { display: block; }
@@ -1437,6 +1437,13 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-recent-activities a > span { min-width: 0; }.pf-recent-activities a > span:last-child { flex-shrink: 0; text-align: right; }
 .pf-recent-activities b { display: block; overflow-wrap: anywhere; font-size: .875rem; font-weight: 600; }
 .pf-recent-activities small { display: block; font-size: .75rem; color: rgb(var(--pf-gray-600)); margin-top: 3px; }
+/* Panel headings place help beside their title, near the left edge. Anchor
+   their tooltip to the panel padding so its text stays inside the card. */
+@media (min-width: 481px) {
+    .pf-health-panel-heading { position: relative; }
+    .pf-health-panel-heading > .pf-help { position: static; }
+    .pf-health-panel-heading > .pf-help > .pf-help-tip { top: 100%; left: 16px; right: auto; max-width: calc(100% - 32px); }
+}
 @media (max-width: 480px) { .pf-help-tip { position: fixed; top: auto; bottom: 20px; left: 20px; right: 20px; width: auto; } }
 
 .pf-sante4 .pf-viz-hair { stroke: rgb(var(--pf-line)); stroke-dasharray: none; }
