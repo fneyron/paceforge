@@ -157,7 +157,8 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
     """Version of Santé: its rows, the phone's, the activities (activity-only syncs too; integer sums, so the hash
     is stable on PostgreSQL, whose float sums may differ in their last digits from one run to the next) and each
     watch link's state (needs_reauth, an error or not: a sync that only failed reloads the page, which then says
-    so; never its last sync time: a sync that brought nothing changes nothing)."""
+    so; never its last sync time: a sync that brought nothing changes nothing). The athlete's HR reference and
+    preferred health source also change the interpretation even when none of the measurements changed."""
     from hashlib import sha256
 
     from sqlalchemy import func
@@ -168,9 +169,11 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
     from app.services.activity_identity import revision_sum
     from app.services.sante_training import int_sum as whole  # a NaN or ±∞ (PostgreSQL cannot cast it) counts as 0
 
+    profile = (await db.execute(select(User.max_heart_rate, User.health_source).where(
+        User.id == user_id))).one_or_none()
     n, last = (await db.execute(select(func.count(HealthMetric.id), func.max(HealthMetric.updated_at)).where(
         HealthMetric.user_id == user_id))).one()
-    version = f"{n}-{last.isoformat() if last else ''}"
+    version = f"{tuple(profile) if profile else None}-{n}-{last.isoformat() if last else ''}"
     count, updated = (await db.execute(select(func.count(MobileDaily.id), func.max(MobileDaily.updated_at)).where(
         MobileDaily.user_id == user_id))).one()
     version += f"-{count}-{updated.isoformat() if updated else ''}"

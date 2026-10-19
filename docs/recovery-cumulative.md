@@ -1,6 +1,6 @@
 # La charge d’entraînement : un seul calcul, distinct des signaux nocturnes
 
-Révision du 15 octobre 2026. Elle remplace le modèle `cumulative-1` du 12 octobre, qui limitait
+Révision du 19 octobre 2026 (référence FC commune). Elle remplace le modèle `cumulative-1` du 12 octobre, qui limitait
 le score de récupération d'après l'accumulation des séances ordinaires.
 
 ## Ce qui change et pourquoi
@@ -35,8 +35,11 @@ récupéré. Les seuils des signaux mesurés et les règles spécifiques de l’
   cardiaque, tour par tour, sinon par kilomètre (Morton, Fitz-Clarke et Banister 1990). C'est une
   charge interne (Impellizzeri 2019) : une sortie à vélo et une course à la même FC pèsent autant.
 - **Bornes.** Les mêmes pour toutes les séances de toutes les vues, celles du jour : FC de repos
-  = médiane des FC de nuit sur 60 jours (sinon 50) ; FC max = 98e centile des pics sur 12 mois
-  (sinon 190).
+  = médiane des FC de nuit sur 60 jours (sinon 50), sans remplacement par un minimum diurne ;
+  référence haute = FC maximale confirmée du profil, sinon repère corroboré des sorties détaillées.
+  Ce même résultat et sa provenance alimentent les zones et les plans de course. Il n'y a plus de
+  98e centile indépendant, de maximum brut non filtré ni de valeur 190 par défaut. Sans référence,
+  les séances sont estimées par leur durée. Les références historiques n'utilisent pas d'activités futures.
 - **Séance estimée.** Sans FC lisible, et toujours pour la musculation, la séance compte sa durée
   × la charge par minute médiane de sa famille (course, vélo, ou son sport) sur 12 mois, 5 séances
   lues au moins ; sinon de toutes les séances lues ; sinon 1,2 **(H)**. Ajouter un capteur ne
@@ -61,6 +64,9 @@ récupéré. Les seuils des signaux mesurés et les règles spécifiques de l’
   kilomètres par sport, jamais ceux d'un vélo ajoutés à une course.
 
 ## Simulations (données synthétiques)
+
+Ces résultats décrivent la révision du 15 octobre avec ses bornes cardiaques d'alors. Ils ne constituent
+pas une nouvelle validation de la référence commune ajoutée le 19 octobre, ni de la récupération.
 
 Plan stable de 6 séances par semaine sur 220 jours, 10 % des séances sautées, durées ± 20 %,
 20 tirages ; lecture des jours 150 à 219. « Avant » désigne le commit `0f276af`.

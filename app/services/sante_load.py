@@ -4,8 +4,8 @@ the recovery's cumulative cap and Activités' 7 / 28 days).
 
 - L, a session's load (sante_training.loads): its minutes, lap by lap, weighted x·0.64·e^(1.92x), x its share of the
   heart-rate reserve (Banister 1991; Morton, Fitz-Clarke & Banister 1990); one set of bounds a day for every
-  session of every view (rest: the median sleeping HR of 60 days, else 50; max: the 98th percentile of the
-  sessions' peaks over 12 months, else 190); a session without a readable HR, and strength, at the athlete's median
+  session of every view (rest: the median sleeping HR of 60 days, else 50; max: the shared confirmed or corroborated
+  reference; without one, load is estimated from duration); a session without a readable HR, and strength, at the athlete's median
   load per minute of its sport family (« estimée »).
 - D, the daily load: Σ L of the deduplicated sessions on the local day each ended.
 - The views: Entraînement % (week_ratio): Σ D of the 7 days ÷ the mean weekly Σ D of the 11 weeks before them (8
@@ -53,11 +53,11 @@ def valid(sessions) -> list:
     return out
 
 
-def bounds(nights, sessions, today: date) -> tuple[float, float]:
+def bounds(nights, sessions, today: date, maximum: float | None = None) -> tuple[float, float | None]:
     """The day's heart-rate bounds, the same for every session of every view: (rest, max)."""
     from app.services import nights as nt
 
-    return nt.rest_hr(nights, today), st.hr_max(sessions, today)
+    return nt.rest_hr(nights, today), st.hr_max(sessions, today, maximum)
 
 
 def daily(sessions, load: dict, lo: date, hi: date) -> dict[date, float]:

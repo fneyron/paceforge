@@ -1,8 +1,8 @@
 """Daily nightly-signal index: an interpretation of received measurements, not recovery clearance.
 
 Needs the assessed night, at least three measured nights in seven on a cardiac series, and a usable reference:
-14 nights from day −67 to −8, or a provisional reference from seven nights (including a recent fallback while
-that lagged window builds). Apple's SDNN stays separate and never enters this RMSSD index.
+14 nights from day −67 to −8, or a provisional reference from seven nights in that same window. Recent nights
+never replace missing earlier ones. Apple's SDNN stays separate and never enters this RMSSD index.
 
 Each usable cardiac series contributes independently. Red means the existing night-HR illness alert; orange
 means low RMSSD, high night HR, the breathing flag or less than six hours of sleep in the measured 24 h.
@@ -38,15 +38,14 @@ HISTORY_NIGHTS = 160  # days of nights a past day reads: its baseline (days −6
 METHOD = [
     "Sommeil compare tes 24 h, siestes comprises, au repère de 8 h. "
     "Ce repère ne mesure pas ton besoin personnel. L’écart estimé sur 7 jours est indiqué à part.",
-    "Les signaux nocturnes comparent VFC et FC de nuit à tes valeurs habituelles. "
+    "VFC et FC de nuit sont comparées à tes valeurs habituelles. "
     "La tendance porte sur 7 jours. La référence couvre 60 jours, sans la dernière semaine. "
-    "Au début, une référence récente reste provisoire. "
-    "Un sommeil court ou une respiration rapide sont signalés. Les efforts récents restent un contexte séparé. "
+    "Le bilan attend sept nuits antérieures à cette semaine ; quatorze pour un repère complet. "
+    "Un sommeil court ou une respiration rapide sont signalés. Les efforts restent un contexte. "
     "Ce bilan ne prédit pas ta date de récupération.",
     "La VFC mesure les variations entre battements cardiaques. La FC de nuit est ton pouls moyen nocturne. "
     "Les graphiques précisent si les éveils sont exclus.",
-    "Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand ton "
-    "pouls est haut.",
+    "Entraînement compare ta semaine à tes habitudes. L’intensité augmente le poids de chaque minute.",
     "Ta montre estime tes phases : la forme de ta nuit, pas sa qualité. L’indice nocturne n’est pas un "
     "pourcentage de récupération.",
 ]
@@ -268,7 +267,7 @@ def quality(day: dict) -> dict:
                      f"Repères en construction ({resp['n']}/{MIN_BAND_NIGHTS})"})
     seen = [k for k in HEART if trends.get(k) and not (k == "hrv" and is_sdnn(trends[k]))]
     partial = bool(score["parts"]) and len(score["parts"]) < len(seen)
-    # a state read against a provisional baseline (7–13 nights, or a series younger than its lagged window) says so
+    # A state read against 7–13 nights in its lagged reference says so.
     provisional = any(trends[k]["baseline"]["provisional"] for k in used if trends.get(k) and trends[k]["baseline"])
     label = "Bilan partiel" if partial else "Repères provisoires" if provisional else "Données du bilan"
     return {"label": label, "partial": partial, "provisional": provisional, "rows": rows}

@@ -426,8 +426,7 @@ def test_a_new_watch_is_never_read_against_the_old_watchs_band():
     series is the watch with the most nights in the 28 days among those worn in the last 7 (owner, 2026-10-14:
     scientific basis — two watches taking turns swapped the series night after night): 3 COROS nights leave
     Garmin's series in place (it was COROS at once), and as last night is not on it, no state; once Garmin is a week
-    gone, COROS's own series, read against its own provisional band (its 8 nights: nights.drawn_band), never
-    Garmin's."""
+    gone, COROS's own series builds a reference from its earlier nights, never Garmin's."""
     from app.services import sante
 
     rows = night_rows(range(3, 63), hr=45.0, hrv=95.0)
@@ -441,8 +440,8 @@ def test_a_new_watch_is_never_read_against_the_old_watchs_band():
     assert nt.mean_source(nights, "hr", D) == "COROS" and nt.mean7(nights, "hr", D)["value"] == 49
     for metric in ("hr", "hrv"):
         st = sante._night_stat(nights, metric, D, nt.trend(nights, metric, D))
-        assert st["value"] is not None and st["status"] is not None  # its own provisional band, never Garmin's
-        assert st["normal"]["source"] == "COROS" and st["normal"]["provisional"] and st["normal"]["n"] == 8
+        assert st["value"] is not None and st["status"] is None
+        assert st["normal"] is None and nt.reference_count(nights, metric, D) == 0
     # 2 COROS nights at 51 after Garmin nights at 44–46: never the Garmin alert line
     rows = night_rows(range(2, 62), hr=lambda k: 44 + k % 3)
     hot = night_rows([0, 1], hr=51.0, source="COROS")

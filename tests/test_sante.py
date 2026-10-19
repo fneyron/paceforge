@@ -256,14 +256,14 @@ async def test_the_installed_app_opens_on_sante(as_user: AsyncClient, client: As
 
 async def test_owner_8_october_state_and_score(db_session: AsyncSession, test_user: User):
     """The recorded Transjeju remains dated context. Five HRV nights and six night-HR nights are below the
-    seven-night provisional threshold: no index, with progress counting the actual recent fallback."""
+    seven-night provisional threshold: no index, with progress counting only nights before the assessed week."""
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D8)
     st, s = page["state"], page["score"]
     assert st is None and s["value"] is None and s["parts"] == [] and s["absent"] == ["hrv", "hr"]
-    assert s["missing"] == {"key": "building", "label": "repères en construction (5/7)", "n": 5, "required": 7,
+    assert s["missing"] == {"key": "building", "label": "repères en construction (2/7)", "n": 2, "required": 7,
                             "metric": "hrv"}
-    assert page["line"] == "Pas de score ce matin : repères en construction (5/7)."
+    assert page["line"] == "Pas de score ce matin : repères en construction (2/7)."
     from app.services import sante_training as st_
     sessions = await st_.load_sessions(db_session, test_user.id, D8)
     w = st_.effort_window(st_.efforts(sessions), D8)
@@ -315,9 +315,9 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
         "Sommeil 100\u00a0% du repère de 8 heures, suffisant.", "Récupération : pas d’indice nocturne pour cette nuit.",
         "Entraînement : 15 heures 35 d'activité ces 7 derniers jours, pas encore d'habitude."]
     assert [d["dash"] for d in page["dials"]][2] == 0 and "ring" not in page and "facts" not in page
-    assert "rows" not in page and page["line"] == "Pas de score ce matin : repères en construction (5/7)."
+    assert "rows" not in page and page["line"] == "Pas de score ce matin : repères en construction (2/7)."
     assert [(page[k]["status"]["word"], page[k]["status"]["detail"]) for k in ("vfc", "fc")] == [
-        ("en construction", "prête dans 2\u00a0nuits"), ("en construction", "prête après ta prochaine nuit")]
+        ("en construction", "prête dans 10\u00a0nuits"), ("en construction", "prête dans 9\u00a0nuits")]
     train = page["training"]
     assert {key: value for key, value in train.items() if key != "chart"} == {
         "dial": page["dials"][2], "week": "15h35", "usual": None,
@@ -391,13 +391,13 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
     # (owner, 2026-10-14: scientific basis — the baseline stops at day −8): VFC has 5 nights (29/09, 30/09, 01/10,
     # 07/10, 08/10), 2 of them already in the baseline window, the 7th comes in 10 nights; FC de nuit 6 (06/10 too):
     # 9 nights; the card says it in words
-    when = {"vfc": "dans 2\u00a0nuits", "fc": "après ta prochaine nuit"}
+    when = {"vfc": "dans 10\u00a0nuits", "fc": "dans 9\u00a0nuits"}
     for key, c in (("vfc", vfc), ("fc", fc)):
         assert c["status"] == {"key": "none", "value": None, "word": "en construction", "detail": f"prête {when[key]}",
                                "tone": None, "meaning": None,
-                               "text": "Une référence apparaît dès 7 nuits mesurées avec la même source et le même calcul."}
+                               "text": sante.BUILDS.format(n=7)}
         assert not c["band"] and not c["band_prov"] and all(set(d) == {"i", "x", "y"} for d in c["dots"])  # filled
-        assert c["reference"]["label"] == f"Référence · {5 if key == 'vfc' else 6}/7 nuits"
+        assert c["reference"]["label"] == "Référence · 2/7 nuits"
     # the 7-night line where 3 nights of the last 7 hold: FC de nuit from 06/10 (01/10 alone draws no segment)
     assert vfc["legend"] == fc["legend"] == [sante.LEGEND_DOT, sante.LEGEND_MEAN]
     # Récupération · 14 jours: each day as computed that day, with the same rule — none of his days has a full
@@ -471,7 +471,7 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert "repère 8h00" not in main
     # the card of signals left (owner, 2026-10-17): the one line says why there is no score
     assert 'id="synthese-sante"' not in main and "Mesures insuffisantes" not in main
-    assert "Pas de score ce matin : repères en construction (5/7)." in main
+    assert "Pas de score ce matin : repères en construction (2/7)." in main
     assert 'href="/sante/aide"' in main
     assert "Comprendre la récupération" not in main
     assert "pf-viz-gap" not in main and "is-out" not in main
@@ -545,32 +545,32 @@ def _garmin_rows(today: date, hrv_last=None, hr_last=None, days=60) -> dict:
                       hrv=lambda k: hrv_last if hrv_last is not None and k < 7 else 70 * math.exp(0.08 * (k % 5 - 2)))
 
 
-async def test_a_young_watch_draws_its_provisional_band_before_the_lag_fills(db_session: AsyncSession,
-                                                                            test_user: User):
-    """Production, 2026-10-14 (the owner, COROS since 29/09): the cards' usual values come from the nights a week
-    before the day read, so a watch newer than a fortnight drew no band at all where it drew a dashed provisional
-    one before, and no score where it showed a provisional one (owner, 2026-10-14: « il y a bien un score »). The
-    card draws that band from the 60 nights up to last night while the lagged window holds under 7 nights
-    (nights.drawn_band), the state reads it and says « Repères provisoires ». Under 7 nights up to last night,
-    nothing is drawn and there is no score."""
+async def test_a_young_watch_never_compares_its_recent_week_to_itself(db_session: AsyncSession,
+                                                                     test_user: User):
+    """Twelve consecutive nights hold only four nights before the assessed week: no fallback band or index.
+    The fifteenth recorded morning can use seven earlier nights, so the same reference becomes provisional
+    everywhere without switching from a recent inclusive reference."""
     from tests.test_nights import night_rows
 
     today = date(2026, 10, 14)
     await _seed_rows(db_session, test_user, night_rows(range(0, 12), source="Garmin", today=today,
                                                        hr=lambda k: 44 + k % 3, hrv=lambda k: 60 + k % 7))
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["state"] is not None and page["score"]["value"] is not None and page["line"] is None
-    assert page["quality"]["provisional"] and page["quality"]["label"] == "Repères provisoires"
-    assert page["score"]["building"] == [] and page["score"]["missing"] is None
+    assert page["state"] is None and page["score"]["value"] is None
+    assert page["score"]["missing"]["n"] == 4 and page["score"]["building"] == ["hrv", "hr"]
     for key in ("vfc", "fc"):
         c = page[key]
-        assert c["band_prov"] and not c["band"], key  # dashed, from the 12 nights up to last night
-        assert c["reference"]["label"] == "Référence · 12 nuits" and c["reference"]["provisional"]
-        assert c["reference"]["detail"] == "Référence provisoire : 12 nuits mesurées."
-        assert c["status"]["key"] in ("in", "above", "below") and c["read"][3].endswith("(provisoire)")
-        assert ("is-band-prov", "repère provisoire") in c["legend"]
-    nights = nt.build_nights(night_rows(range(0, 6), source="Garmin", today=today), today)
-    assert nt.drawn_band(nights, "hrv", today) is None and nt.drawn_band(nights, "hr", today) is None
+        assert not c["band_prov"] and not c["band"]
+        assert c["reference"]["n"] == 4 and not c["reference"]["ready"]
+        assert c["reference"]["remaining"] == 3 and c["status"]["key"] == "none"
+    # Supply the three older observations the reference actually lacks, on the same method and source.
+    await _seed_rows(db_session, test_user, night_rows(range(12, 15), source="Garmin", today=today,
+                                                       hr=lambda k: 44 + k % 3, hrv=lambda k: 60 + k % 7))
+    page = await sante.health_page(db_session, test_user.id, today=today)
+    assert page["score"]["value"] is not None and page["quality"]["provisional"]
+    for key in ("vfc", "fc"):
+        assert page[key]["band_prov"] and page[key]["reference"]["n"] == 7
+        assert page[key]["reference"]["provisional"] and page[key]["reference"]["ready"]
 
 
 async def _seed_rows(db: AsyncSession, user: User, rows: dict):
@@ -821,6 +821,27 @@ async def test_a_sync_that_only_failed_reloads_the_page_once(as_user: AsyncClien
     conn.needs_reauth = True
     await db_session.flush()
     assert await routes.data_version(db_session, test_user.id) != errored
+
+
+@pytest.mark.parametrize(("field", "value"), (("max_heart_rate", 180), ("health_source", "COROS")))
+async def test_changed_health_reference_reloads_the_page_without_new_measurements(
+        as_user: AsyncClient, db_session: AsyncSession, test_user: User, field: str, value):
+    """An open page must not keep the old HR reference or selected watch while a sync finishes."""
+    from app.routers import sante as routes
+
+    original = getattr(test_user, field)
+    version = await routes.data_version(db_session, test_user.id)
+    setattr(test_user, field, value)
+    await db_session.flush()
+    changed = await routes.data_version(db_session, test_user.id)
+    assert changed != version
+    response = await as_user.get("/sante/sync-status", params={"v": version})
+    assert response.headers.get("HX-Refresh") == "true"
+    # Reading the new version is stable; restoring the setting restores its interpretation.
+    assert await routes.data_version(db_session, test_user.id) == changed
+    setattr(test_user, field, original)
+    await db_session.flush()
+    assert await routes.data_version(db_session, test_user.id) == version
 
 
 async def test_a_coros_link_no_key_decrypts_is_one_to_reconnect_and_never_synced(

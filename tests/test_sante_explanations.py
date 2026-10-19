@@ -45,7 +45,7 @@ def test_normal_hrv_does_not_always_add_a_paragraph():
 
 
 def test_provisional_and_missing_reference_are_not_called_established_baselines():
-    provisional = page(night_rows(range(9)))["vfc"]
+    provisional = page(night_rows(range(17)))["vfc"]
     assert provisional["reference"]["provisional"]
     assert provisional["interpretation"]["key"] == "provisional"
     assert "provisoire" in provisional["interpretation"]["text"]
@@ -113,7 +113,7 @@ def test_explanations_group_interpretation_methods_reference_and_quality():
     assert explanation["title"] == "Comprendre mes indicateurs"
     items = {i["key"]: i for i in explanation["items"]}
     assert "RMSSD nocturne" in " ".join(items["vfc"]["details"])
-    assert "Référence personnelle" in " ".join(items["vfc"]["details"])
+    assert "nuits antérieures à la dernière semaine" in " ".join(items["vfc"]["details"])
     assert "distincte de la FC de repos" in " ".join(items["fc"]["details"])
     assert items["vfc"]["source"] == "Garmin"
     assert items["vfc"]["date"] == p["vfc"]["measurement"]["date_label"]

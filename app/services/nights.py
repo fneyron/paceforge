@@ -383,19 +383,20 @@ def _local(s, t: datetime) -> datetime:
     return (t + timedelta(seconds=offset or 0)).replace(tzinfo=None)
 
 
-def vigorous(s, rest: float, peak: float) -> bool:
+def vigorous(s, rest: float, peak: float | None) -> bool:
     """A vigorous session (H): its average HR ≥ 80 % of the heart-rate reserve,
     or ≥ 20 min above that in its laps (else its km splits: `s.segs`, loaded
     by load_segments for the sessions that could tag a night). « late » reads
-    it; an easy evening run (≈ 60–70 %) is not one."""
-    if not s.hr:
+    it; an easy evening run (≈ 60–70 %) is not one. Without a cardiac reference,
+    the heart-rate data cannot establish this context tag."""
+    if not s.hr or peak is None:
         return False
     hard = rest + VIGOROUS_HRR * (peak - rest)
     return s.hr >= hard or sum(m for m, hr in (getattr(s, "segs", None) or ()) if hr >= hard) >= VIGOROUS_MIN
 
 
 def tag_nights(nights: dict[date, Night], sessions=(), feel: dict[date, dict] | None = None,
-               rest: float = 50.0, peak: float = 190.0, day_alt: dict[date, float] | None = None) -> None:
+               rest: float = 50.0, peak: float | None = None, day_alt: dict[date, float] | None = None) -> None:
     """Context tags on each night (see the module docstring), in place.
     `sessions`: sante_training.Session; `feel`: {day: feel_of(...)} (the race
     page's stored check-ins); `rest`/`peak`: the athlete's HR bounds;
@@ -948,16 +949,13 @@ def normal(nights: dict[date, Night], metric: str, d: date) -> dict | None:
 
 
 def drawn_band(nights: dict[date, Night], metric: str, d: date) -> dict | None:
-    """The usual values day `d`'s card draws: its baseline (normal: the nights from d − 67 to d − 8), else, while
-    that window holds too few nights (a watch newer than a fortnight), a provisional one from the 60 nights up to
-    and including last night, dashed, read by the trend and the state as « provisoire » (a score shows while the
-    repères build); `lagged` False then."""
-    b = normal(nights, metric, d)
-    if b is not None:
-        return b
-    # the 60 nights up to and including last night (dated `d`), as the cards drew their band before the lag
-    b = band(nights, metric, d + timedelta(days=1), source=mean_source(nights, metric, d))
-    return {**b, "provisional": True, "lagged": False} if b is not None else None
+    """The exact reference the trend and state read: normal(), including while it builds.
+
+    Recent nights never stand in for missing earlier observations. Such a fallback would include the week
+    being judged, then abruptly replace its centre and spread when enough older nights became available.
+    The card draws no band until this same lagged window has enough nights on its own series.
+    """
+    return normal(nights, metric, d)
 
 
 def mean_source(nights: dict[date, Night], metric: str, today: date) -> str | None:
@@ -1017,14 +1015,30 @@ def baseline_count(nights: dict[date, Night], metric: str, d: date, source: str 
 
 
 def reference_count(nights: dict[date, Night], metric: str, d: date, source: str | None = None) -> int:
-    """Progress toward the reference actually available to the trend, including its recent fallback."""
-    source = source or mean_source(nights, metric, d)
-    b = drawn_band(nights, metric, d)
-    if b:
-        return b["n"]
-    recent = sum(1 for x, n in nights.items() if d - timedelta(days=BAND_DAYS - 1) <= x <= d
-                 and n.source_of(metric) == source and n.value(metric) is not None)
-    return max(recent, baseline_count(nights, metric, d, source))
+    """Progress in the reference actually read by cards and score: only days d − 67 to d − 8."""
+    return baseline_count(nights, metric, d, source)
+
+
+def reference_remaining(nights: dict[date, Night], metric: str, d: date) -> int:
+    """Nights until this series can fill its reference, assuming it keeps being measured each coming night.
+
+    Only observations known on `d` are read. A night enters the reference eight days after its wake-up day;
+    nights expiring before then never advance progress. A series switch restarts on that series' own history.
+    """
+    source = mean_source(nights, metric, d)
+    required = reference_min_nights(metric, source)
+    if reference_count(nights, metric, d, source) >= required:
+        return 0
+    known = [x for x, n in nights.items() if x <= d and n.source_of(metric) == source
+             and night_value(nights, x, metric) is not None]
+    lag = BASELINE_LAG + 1
+    for j in range(1, required + lag + 1):
+        lo = d + timedelta(days=j - BAND_DAYS - BASELINE_LAG)
+        hi = d + timedelta(days=j - lag)
+        count = sum(lo <= x <= hi for x in known) + max(0, j - lag)
+        if count >= required:
+            return j
+    return required + lag
 
 
 def threshold(offsets, nb: int) -> float:
@@ -1065,8 +1079,7 @@ def _trend(nights: dict[date, Night], metric: str, d: date) -> dict | None:
     vals = [night_value(nights, x, metric) for x in days]
     n = nights.get(d)
     last = n is not None and n.source_of(metric) == source and n.value(metric) is not None
-    # the lagged baseline, else (a series younger than its window) the provisional one the card draws: the state
-    # reads it too, flagged « provisoire » (a score shows while the repères build)
+    # The card and state use this same dated reference; a young series never compares a week to itself.
     b = drawn_band(nights, metric, d)
     out = {"metric": metric, "source": source, "n": len(vals), "last": last, "baseline": b, "value": None,
            "z": None, "T": None, "status": None,
@@ -1371,7 +1384,7 @@ SANTE_ROWS = ("sleep", "nap", "hrv", "hr_night", "resp_night")  # Santé v4: no 
 
 
 def tag_activities(nights: dict[date, Night], sessions=(), efforts=(), rest: float = 50.0,
-                   peak: float = 190.0, day_alt: dict[date, float] | None = None) -> None:
+                   peak: float | None = None, day_alt: dict[date, float] | None = None) -> None:
     """Santé v4's tags, from the activities alone, in place: the context of
     each night (sortie longue la veille, sortie intense le soir, altitude
     with Garmin's day altitudes `day_alt`, fuseau) and « après grosse
@@ -1393,7 +1406,7 @@ async def day_altitudes(db: AsyncSession, user_id: int, lo: date, hi: date) -> d
 
 
 async def load_nights(db: AsyncSession, user_id: int, today: date, days: int = 400, sessions=(), efforts=(),
-                      rest: float | None = None, peak: float = 190.0,
+                      rest: float | None = None, peak: float | None = None,
                       day_alt: dict[date, float] | None = None) -> dict[date, Night]:
     """Santé's nights of the last `days` days, tagged from the activities
     and Garmin's day altitudes (`day_alt`, else day_altitudes: tag_activities),

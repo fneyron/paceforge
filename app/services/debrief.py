@@ -9,6 +9,11 @@ went, and whether the athlete faded (fast early, slow late).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 STOP_SHARE = 0.40        # stops explain the gap when they are ≥ 40 % of it
 STOP_MIN_S = 120         # …and at least 2 minutes
 HR_OVER_MARGIN = 3       # bpm over the ceiling to call it "over"
@@ -85,6 +90,7 @@ def leg_debrief(
     stop_s_per_aid: int = 0,
     hr_cap: int | None = None,
     named_plan: bool | None = None,
+    hr_caps: Sequence[int | None] | None = None,
 ) -> dict:
     """Return {"legs": [...], "summary": {...}}.
 
@@ -93,7 +99,10 @@ def leg_debrief(
     mapped onto the route by proportion of total distance (GPS totals differ a
     little). ``named_plan``: the words — « le plan » when he set one (an
     objective, pinned times), « l'estimation » when the plan ran on the
-    estimate (default: ``use_target``).
+    estimate (default: ``use_target``). ``hr_caps``: the actual terrain- and
+    progress-adjusted ceiling of each section, as printed and exported. A
+    mismatched sequence cannot be aligned reliably: no cardio comparison.
+    ``hr_cap`` remains a compatibility fallback only when no sequence is given.
     """
     pts = _cumulative(splits_metric)
     total_d = pts[-1][0]
@@ -104,9 +113,11 @@ def leg_debrief(
     vs = "le plan" if named else "l'estimation"
     scale = total_d / (route_total_km * 1000) if route_total_km else 1.0
     n = len(sections)
+    caps = ([hr_cap] * n if hr_caps is None else hr_caps if len(hr_caps) == n else [None] * n)
     legs = []
     cum_plan = cum_real = 0.0
     for i, s in enumerate(sections):
+        cap = caps[i]
         d0 = float(s["start_km"]) * 1000 * scale
         d1 = float(s["end_km"]) * 1000 * scale
         plan = float(s["adjusted_time_s"] if (use_target and s.get("adjusted_time_s") is not None) else s["predicted_time_s"])
@@ -132,13 +143,13 @@ def leg_debrief(
             reason, tag = ("dans le plan" if named else "comme estimé"), "ok"
         elif delta_total > 0 and stops - planned_stop >= max(STOP_MIN_S, STOP_SHARE * delta_total):
             reason, tag = f"arrêts : {int(round((stops - planned_stop) / 60))} min de plus que prévu", "stops"
-        elif delta_moving > 0 and hr_cap and hr is not None and hr <= hr_cap - HR_LOW_MARGIN:
+        elif delta_moving > 0 and cap and hr is not None and hr <= cap - HR_LOW_MARGIN:
             reason, tag = "FC basse : jambes ou carburant", "fuel"
         elif delta_moving > 0:
             reason, tag = "allure", "slow"
-        elif delta_moving < 0 and hr_cap and hr is not None and hr >= hr_cap + HR_OVER_MARGIN:
+        elif delta_moving < 0 and cap and hr is not None and hr >= cap + HR_OVER_MARGIN:
             # the leg's HR is shown beside it: name the ceiling, not the HR again
-            reason, tag = f"FC au-dessus du plafond ({hr_cap})", "over"
+            reason, tag = f"FC au-dessus du plafond ({cap})", "over"
         elif delta_moving < 0:
             reason, tag = ("départ rapide" if progress < 0.35 else "allure"), "fast"
         else:
@@ -151,7 +162,7 @@ def leg_debrief(
             "plan_s": int(round(plan)), "planned_stop_s": int(planned_stop),
             "moving_s": int(round(moving)), "elapsed_s": int(round(elapsed)), "stops_s": int(round(stops)),
             "delta_s": int(round(delta_total)), "delta_moving_s": int(round(delta_moving)),
-            "hr": hr, "hr_over": bool(hr_cap and hr is not None and hr >= hr_cap + HR_OVER_MARGIN),
+            "hr": hr, "hr_cap": cap, "hr_over": bool(cap and hr is not None and hr >= cap + HR_OVER_MARGIN),
             "real_pace_s": int(round(real_pace)), "plan_pace_s": int(round(plan_pace)),
             "cum_plan_s": int(round(cum_plan)), "cum_real_s": int(round(cum_real)),
             "reason": reason, "tag": tag,
@@ -182,7 +193,7 @@ def leg_debrief(
         verdict.append("Fin de course plus forte que le début : le pacing a tenu, tu as remonté.")
     if total_stops - planned_stops > max(600, 0.3 * abs(total_delta)) and total_delta > 0:
         verdict.append(f"Les arrêts pèsent {int(round((total_stops - planned_stops) / 60))} min de plus que prévu.")
-    if hr_cap and any(l["hr_over"] for l in early):
+    if any(l["hr_over"] for l in early):
         verdict.append("FC au-dessus du plafond sur les premiers tronçons.")
     if not verdict:
         # no pattern: never call a race far from the plan « proche du plan »

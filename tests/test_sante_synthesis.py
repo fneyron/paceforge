@@ -13,15 +13,15 @@ def summary(rows, sessions=(), calendar_day=D):
     return context.synthesis(day, nights, calendar_day, st.efforts(list(sessions)), sessions, sl.deficit(nights, D))
 
 
-def test_six_nights_show_six_of_seven_and_one_remaining():
+def test_six_recent_nights_wait_for_an_independent_reference():
     nights = _nights(night_rows(range(6)))
     day = sante._assess(nights, [], [], D)
     card = sante._night_card(nights, "hrv", D, day)
-    assert day["score"]["missing"]["label"] == "repères en construction (6/7)"
-    assert card["reference"]["n"] == 6 and card["reference"]["remaining"] == 1
+    assert day["score"]["missing"]["label"] == "repères en construction (0/7)"
+    assert card["reference"]["n"] == 0 and card["reference"]["remaining"] == 9
     assert card["reference"]["required"] == 7 and not card["reference"]["ready"]
-    tomorrow = _day(night_rows(range(7)), today=D)
-    assert tomorrow["score"]["value"] is not None and sc.quality(tomorrow)["provisional"]
+    later = _day(night_rows(range(15)), today=D)
+    assert later["score"]["value"] is not None and sc.quality(later)["provisional"]
 
 
 def test_high_nightly_hr_cannot_be_hidden_by_usual_hrv():

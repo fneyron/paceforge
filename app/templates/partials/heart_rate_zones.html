@@ -18,7 +18,7 @@
     </ol>
     {% if z.estimated %}
     <p class="pf-viz-cap">Repère observé · {{ z.reference }} bpm · {{ z.evidence|length }} sorties concordantes.</p>
-    <p class="pf-sante-note">Repères provisoires : ta FC maximale réelle peut être plus haute.</p>
+    <p class="pf-sante-note">Repères provisoires : le capteur peut se tromper et ta FC maximale réelle peut être plus haute.</p>
     {% else %}
     <p class="pf-viz-cap">FC maximale renseignée · {{ z.reference }} bpm. <a class="pf-link" href="/settings#max-heart-rate">Modifier ›</a></p>
     {% endif %}

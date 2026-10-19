@@ -160,15 +160,15 @@ def test_last_night_is_not_the_seven_day_average():
 
 
 def test_quality_distinguishes_building_from_missing_and_never_claims_precision():
-    """« Mesures utilisées » says each signal's place: used, building its baseline (under 7 nights), used against
+    """« Mesures utilisées » says each signal's place: used, building its baseline (under 7 earlier nights), used against
     a provisional one (said so: « Repères provisoires », owner 2026-10-14), absent; never a percentage."""
-    young = _day(night_rows(range(6)))  # 6 nights up to last night: no band yet
+    young = _day(night_rows(range(6)))  # six recent nights, none before the assessed week: no band yet
     quality = sc.quality(young)
     assert not quality['partial'] and not quality['provisional'] and young['score']['value'] is None
-    assert [r['state'] for r in quality['rows']] == ['Utilisé', 'Repères en construction (6/7)',
-                                                  'Repères en construction (6/7)']
+    assert [r['state'] for r in quality['rows']] == ['Utilisé', 'Repères en construction (0/7)',
+                                                  'Repères en construction (0/7)']
     assert '%' not in str(quality)
-    provisional = _day(night_rows(range(10)))  # 10 nights up to last night, 2 in the lagged window: provisional
+    provisional = _day(night_rows(range(18)))  # eighteen nights, ten before the assessed week: provisional
     quality = sc.quality(provisional)
     assert quality['provisional'] and quality['label'] == 'Repères provisoires'
     assert provisional['score']['value'] is not None

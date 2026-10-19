@@ -107,6 +107,7 @@ def test_easy_pace_hr_is_flagged_after_two_runs_3_bpm_above():
 # ── the page ────────────────────────────────────────────────────────────────
 
 async def _add_runs(db: AsyncSession, user: User, today: date, n: int = 140):
+    user.max_heart_rate = 190  # explicit fixture reference, no invented default
     for k in range(1, n):
         d = today - timedelta(days=k)
         if d.weekday() not in (1, 3, 5, 6):

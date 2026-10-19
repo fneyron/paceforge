@@ -163,7 +163,8 @@ def test_the_entrainement_dial_against_the_usual_week():
     none = sante.training(_weeks(usual), D)  # nothing in the last 7 days: 0 %, no « Intensité »
     assert (none["dial"]["value"], none["dial"]["sub"], none["week"], none["intensity"]) == (
         "0", "moins que d'habitude", "0 min", None)
-    assert sante.training(_weeks(usual, 401), D)["intensity"] == "comme d'habitude"  # the same minutes' weight
+    assert sante.training(_weeks(usual, 401), D)["intensity"] is None  # no confirmed or supported reference
+    assert sante.training(_weeks(usual, 401), D, peak=190)["intensity"] == "comme d'habitude"
     # the usual week to 5 min: 8 weeks of 47, 48, 52 and 53 min → 50 min; with these 4 weeks alone, under the 8
     # active weeks the word needs, the dial says the 7 days' time, as without a usual week (it read « 50 min »: at 4
     # active weeks the word came with 40 % of ordinary weeks; the second statistics review, 2026-10-14)
@@ -355,5 +356,4 @@ def test_the_percentages_are_said_in_the_fold():
     text = sc.flat(sc.typo(sc.METHOD)).replace("\u00a0", " ")
     assert sc.pct(100) == "100\u00a0%" and "70 %" not in text
     assert "Sommeil compare tes 24 h, siestes comprises, au repère de 8 h." in text
-    assert ("Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand "
-            "ton pouls est haut.") in sc.METHOD
+    assert "Entraînement compare ta semaine à tes habitudes. L’intensité augmente le poids de chaque minute." in text
