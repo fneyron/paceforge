@@ -902,7 +902,8 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
     today = await st.athlete_today(db, user_id)  # the athlete's day: race day in Seoul is the 15th at 20:54 UTC on the 14th
     mode = debrief_mode(route.race_date, bool(route.result_json), today=today)
 
-    max_hr = (await estimate_training_zones(db, user_id)).get("max_hr")
+    zones = await estimate_training_zones(db, user_id)
+    max_hr = zones.get("max_hr")
     try:
         own_cap = int(float(p.get("hr_cap_climb"))) if p.get("hr_cap_climb") not in (None, "") else None
     except (TypeError, ValueError):
@@ -933,10 +934,11 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         "saved_live_json": _script_json(route.live_json) if route.live_json else None,
         "race_calibration": getattr(profile, "race_calibration", None),
         "params": route.params_json or {},
-        # Réglages du plan › « Plafond cardio en montée » (empty = 75 % of the max HR seen)
+        # The same confirmed or corroborated reference as Santé and the load model.
         "hr_cap_climb": own_cap,
         "hr_cap_default": int(round(max_hr * 0.75)) if max_hr and max_hr >= 120 else None,
         "max_hr": max_hr,
+        "hr_reference": zones.get("hr_reference"),
     }
 
 
@@ -1860,11 +1862,16 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
     if result.get("activity_id"):
         act = (await db.execute(select(Activity).where(Activity.id == result["activity_id"], Activity.user_id == user.id))).scalar_one_or_none()
     if act and act.splits_metric:
-        hr_cap = (route.params_json or {}).get("hr_cap_climb")
+        from app.services.pacing_guide import leg_instructions
+
+        hr_caps = [None] * len(b["sections"])
+        if b["sport"] != "bike":
+            guide = await _pacing_guide_for(route, db, user, b)
+            hr_caps = [row["hr_cap"] for row in leg_instructions(guide, b["sections"])]
         debrief = leg_debrief(
             act.splits_metric, b["sections"], route.total_distance_km,
             use_target=b["use_target"], stop_s_per_aid=b["stop_min"] * 60,
-            hr_cap=int(hr_cap) if hr_cap else None, named_plan=b["has_objective"],
+            hr_caps=hr_caps, named_plan=b["has_objective"],
         )
         if not debrief.get("legs"):
             debrief = None
@@ -2338,6 +2345,7 @@ async def _pacing_context(request: Request | None, route: Route, db: AsyncSessio
     return {
         "request": request, "route": route, "route_id": route.id, "guide": guide, "caps": caps,
         "walk_grade": walk_grade, "max_hr": zones.get("max_hr"), "defaults": defaults,
+        "hr_reference": zones.get("hr_reference"),
         "has_target": b["has_objective"], "total_km": b["course"].total_distance_km,
         "scenario": _scenario_settings(p, b["profile"], b["course"], await _known_course(db, user.id, route), sport=b["sport"]),
         "checkpoints": b["checkpoints"],

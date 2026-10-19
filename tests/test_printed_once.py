@@ -34,6 +34,7 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     monkeypatch.setattr(db_session, "commit", db_session.flush)
     client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
     today = await st.athlete_today(db_session, test_user.id)
+    test_user.max_heart_rate = 180  # confirmed reference keeps the easy-run card available for this layout test
     await _seed(db_session, test_user, today)  # 4 outings a week, a night every night (7h20, FC 45)
     soon = await _race(db_session, test_user, today + timedelta(days=5))
     done = await _race(db_session, test_user, today - timedelta(days=5), name="Trail passé")

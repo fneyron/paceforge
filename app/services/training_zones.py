@@ -1,39 +1,29 @@
 """Auto-calculate training zones from athlete data."""
 
 import logging
+from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
+from app.services import heart_rate_reference
+from app.services import sante_training as st
+from app.services.heart_rate_zones import running_zones
 
 logger = logging.getLogger(__name__)
 
 
-async def estimate_training_zones(db: AsyncSession, user_id: int) -> dict:
-    """Estimate HR and pace zones from recent activity data."""
-    zones: dict = {}
-
-    # Estimate max HR from recent activities
-    result = await db.execute(
-        select(func.max(Activity.max_heartrate))
-        .where(
-            Activity.user_id == user_id,
-            Activity.max_heartrate.is_not(None),
-            Activity.max_heartrate > 100,
-        )
-    )
-    max_hr = result.scalar()
-
-    if max_hr and max_hr > 120:
-        zones["max_hr"] = int(max_hr)
-        zones["hr_zones"] = [
-            {"zone": 1, "label": "Récupération", "min": int(max_hr * 0.50), "max": int(max_hr * 0.60)},
-            {"zone": 2, "label": "Endurance", "min": int(max_hr * 0.60), "max": int(max_hr * 0.70)},
-            {"zone": 3, "label": "Tempo", "min": int(max_hr * 0.70), "max": int(max_hr * 0.80)},
-            {"zone": 4, "label": "Seuil", "min": int(max_hr * 0.80), "max": int(max_hr * 0.90)},
-            {"zone": 5, "label": "VO2max", "min": int(max_hr * 0.90), "max": int(max_hr)},
-        ]
+async def estimate_training_zones(db: AsyncSession, user_id: int, today: date | None = None) -> dict:
+    """Same HR reference and boundaries as Santé; pace estimates stay separate."""
+    today = today if today is not None else await st.athlete_today(db, user_id)
+    reference = await heart_rate_reference.for_athlete(db, user_id, today)
+    zones: dict = {"hr_reference": reference}
+    if reference["reference"] is not None:
+        zones["max_hr"] = reference["reference"]
+        rows = running_zones(reference["reference"])["rows"]
+        zones["hr_zones"] = [{"zone": row["number"], "label": row["label"],
+                              "min": row["low"], "max": row["high"]} for row in rows]
 
     # Estimate pace zones from best recent efforts
     # Use average speed from recent runs, ordered by speed

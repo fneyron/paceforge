@@ -236,6 +236,7 @@ def test_the_intensity_row():
 async def _seed_runs(db: AsyncSession, user: User, hr_usual: float, hr_now: float) -> None:
     """3 runs of 100 min a week (Monday → Wednesday) over the 11 complete weeks before D at `hr_usual`, and this
     week's 3 at `hr_now` (Strava rows, max HR 180 each)."""
+    user.max_heart_rate = 180  # confirmed fixture reference; summary peaks alone no longer qualify
     monday = D - timedelta(days=D.weekday())
     for k in range(0, 12):
         for j in range(3):

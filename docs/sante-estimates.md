@@ -16,17 +16,16 @@ Code : `app/services/nights.py` (C2–C4), `sante_sleep.py` (C5), `sante_trainin
 ## C2 — Valeurs habituelles
 
 - **Fenêtre décalée.** Les valeurs habituelles d'un jour J portent sur les nuits de J−67 à J−8.
-  Les 7 nuits que la tendance juge n’y entrent pas une fois cette référence disponible.
-  L’exception provisoire pour une série récente est décrite ci-dessous. C'est un choix de conception **(H)**, pas une règle publiée. Avant, la
-  référence allait jusqu'à la dernière nuit incluse.
+  Les 7 nuits que la tendance juge n’y entrent jamais, y compris pendant la construction de la référence.
+  C'est un choix de conception **(H)**, pas une règle publiée.
 - **Nombre de nuits.** Référence complète dès 14 nuits mesurées dans cette fenêtre. De 7 à 13
   nuits, une référence « provisoire » est tracée en pointillés ; l'état la lit et le dit
-  (« Repères provisoires ») **(H)**. Une série plus jeune que la fenêtre décalée (une montre
-  nouvelle) trace et lit de la même façon une référence provisoire prise sur les 60 nuits jusqu'à
-  la dernière incluse, le temps que la fenêtre décalée se remplisse (propriétaire, 2026-10-14 :
-  « il y a bien un score » ; avant l'audit, 7 nuits jusqu'à la dernière donnaient déjà un score
-  provisoire). Les compteurs et le délai affichés utilisent cette référence réellement disponible :
-  six nuits récentes donnent 6/7, pas 0/14. Le SDNN conserve son seuil distinct de 14 nuits,
+  (« Repères provisoires ») **(H)**. Depuis le 19 octobre, aucun repli sur les nuits récentes
+  n'est utilisé : le remplacement abrupt d'un repère récent par un repère antérieur pouvait faire
+  varier l'indice sans changement de mesures. Une série jeune conserve ses points et sa moyenne,
+  sans bande ni indice tant que cette même fenêtre antérieure est insuffisante. Les compteurs et
+  délais utilisent seulement les nuits pouvant y entrer : six nuits récentes donnent 0/7 et,
+  si chaque nuit suivante est mesurée, neuf nuits d'attente. Le SDNN conserve son seuil distinct de 14 nuits,
   sans entrer dans l’indice RMSSD. Le seuil T tient compte du petit nombre de nuits de référence (C3).
 - **Centre.** Moyenne du ln RMSSD pour la VFC (moyenne géométrique). Moyenne pour la tendance de
   la FC de nuit : elle compare une moyenne de 7 nuits, et la comparer à une médiane donnait 26 à
@@ -116,8 +115,10 @@ Détails et raisons du retrait de `cumulative-1` : [recovery-cumulative.md](reco
   1990). Constantes féminines 0,86 et 1,67 dès que le sexe sera connu. Il n'y a pas encore de
   champ : les constantes masculines s'appliquent par défaut.
 - **Bornes.** Les mêmes pour toutes les séances de toutes les vues, celles du jour. FC de repos :
-  médiane des FC de nuit sur 60 jours, sinon 50. FC max : 98e centile des pics sur 12 mois,
-  sinon 190.
+  médiane des FC de nuit sur 60 jours, sinon 50 ; les minima de journée ne remplacent plus les nuits.
+  Référence haute : même résolution que les zones et les plans, FC maximale confirmée du profil puis
+  repère corroboré des activités détaillées (section suivante). Aucune valeur 190 par défaut.
+  Sans référence haute, la charge reste une estimation fondée sur la durée, pas une charge cardiaque mesurée.
 - **Séance estimée.** Sans FC lisible, et toujours pour la musculation : sa durée × la charge par
   minute médiane de sa famille de sports sur 12 mois (5 séances lues au moins), sinon de toutes les
   séances, sinon 1,2 **(H)**.
@@ -174,8 +175,17 @@ facultative ; le calcul automatique n'écrit jamais de FC maximale confirmée da
 Ce n'est **pas une FC maximale mesurée**, ni une estimation des seuils lactiques ou ventilatoires.
 Sans efforts proches du maximum, les zones peuvent être trop basses ; cette limite est visible sur la carte.
 Les bornes entières ne se chevauchent pas. Aucun temps passé dans les zones n'est déduit d'une FC moyenne.
-La FC nocturne, les défauts 50/190 du modèle de charge et les pics d'autres sports ne déterminent pas ces
-plages. La charge et les plafonds du plan de course conservent leurs calculs existants.
+La FC nocturne et les pics d'autres sports ne déterminent pas ces plages. Depuis le 19 octobre,
+`heart_rate_reference.resolve` est la source unique de la référence et de sa provenance pour Santé,
+la charge et les plafonds automatiques de course. Les activités sont terminées à la date évaluée ; les
+tours/splits sont chargés avant la résolution, y compris pour une date historique. La valeur confirmée
+du profil n'a pas d'historique daté : elle est un réglage courant appliqué aux comparaisons recalculées.
+Les affichages et anciens calculs de charge peuvent donc évoluer après un changement de référence.
+
+Un plafond cardio de course saisi explicitement reste prioritaire. Sinon, les plans et leurs exports
+utilisent la référence partagée ; sans elle, aucun plafond n'est inventé. Le débrief lit les plafonds
+de chaque tronçon du même guide (terrain et décroissance compris), au lieu d'un plafond global.
+Les explications distinguent toujours maximum confirmé, repère observé provisoire et absence de référence.
 
 ## C7 — Contexte après un effort enregistré
 

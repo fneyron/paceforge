@@ -69,9 +69,9 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         clock = await local_clock(db, user_id, now, zone=zone)
     sex = getattr(user, "sex", None)  # no such field yet: Banister's men's constants (sante_training.LOAD_WOMEN)
     sessions = await st.load_sessions(db, user_id, today, zone=zone)
-    peak = st.hr_max(sessions, today)
     # the laps (else km splits) of the sessions with HR: their loads and their steady splits (Forme)
-    await st.load_hr_segments(db, user_id, sessions, today - timedelta(days=st.RATE_DAYS))
+    await st.load_hr_segments(db, user_id, sessions, today - timedelta(days=st.HISTORY_DAYS))
+    peak = st.hr_max(sessions, today, getattr(user, "max_heart_rate", None))
     # Garmin's day altitudes: where the athlete slept, first (R2)
     day_alt = await nt.day_altitudes(db, user_id, today - timedelta(days=HISTORY_DAYS), today)
     # the nights' tags read the efforts' classes only
@@ -114,7 +114,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     return out
 
 
-def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: bool, peak: float, day_alt,
+def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: bool, peak: float | None, day_alt,
              sex=None, max_heart_rate=None) -> dict:
     """The page's pure computation (no database): the day's state, its 14 days, the cards, the dials, the load."""
     from app.services import training_view
@@ -124,13 +124,13 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
     # a Longue run like a race (R3): its HR against the athlete's bounds as of its day (the nights' resting HR)
     rest_of = partial(nt.rest_hr, nights)
     # a dawn finish: D on the day before its first morning
-    efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of))
+    efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of, max_heart_rate))
     raced = st.raced_nights(efforts)
     out: dict[str, Any] = {}
     with nt.memo():  # the nights no longer change: their baselines, trends and alerts are computed once
         nt.freeze(nights)
         day = _assess(nights, sessions, efforts, today)
-        history = (_history(nights, sessions, efforts, today, rest_of, day_alt)
+        history = (_history(nights, sessions, efforts, today, rest_of, day_alt, max_heart_rate)
                    + [(today, day["state"], day["score"])])
         out["recup"] = sc.history_card(history, today)
         out["sleep"] = sl.sleep_section(nights, today, r, samples, raced)
@@ -157,6 +157,7 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
         if until - timedelta(days=6) <= s.end_day <= until
     ]
     out["hr_zones"] = running_zones(max_heart_rate, done, until)
+    out["hr_reference"] = {k: out["hr_zones"][k] for k in ("reference", "source", "estimated", "evidence")}
     out["load"] = sante_load.card(sessions, until, load)
     out["fitness"] = training_view.footing(done, until, peak)
     out["fitness_progress"] = st.fitness_progress(done, until, peak)
@@ -265,7 +266,7 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
     return day
 
 
-def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None) -> list:
+def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None, max_heart_rate=None) -> list:
     """[(day, state, score)] of the 13 days before today, each as the page
     computed it on that day: from the nights up to that day (the baselines, the
     trends, the alert and the 24 h read nothing dated after it) and the
@@ -287,7 +288,7 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
     night reads the day before)."""
     recent = {x: n for x, n in nights.items() if x > today - timedelta(days=sc.HISTORY_NIGHTS)}
     base = {x: nt.retagged(n) for x, n in recent.items()}
-    nt.tag_activities(base, sessions, efforts, nt.rest_hr(nights, today), st.hr_max(sessions, today), day_alt)
+    nt.tag_activities(base, sessions, efforts, nt.rest_hr(nights, today), st.hr_max(sessions, today, max_heart_rate), day_alt)
     nt.freeze(base)
     # the series each day read, decided as far back as the live page's (nights: the full nights, its SERIES_LOOKBACK)
     nt.share_series(base, nights, today, sc.HISTORY_NIGHTS)
@@ -306,9 +307,9 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
         # the efforts as that day saw them: today's that it knew whole; computed anew when one was only partly
         # known (a chain across midnight: that day saw a smaller effort)
         same = not any(e.ids & known and not e.ids <= known for e in efforts)
-        efs = [e for e in efforts if e.ids <= known] if same else nt.anchor_efforts(base, st.efforts(ss, rest_of))
+        efs = [e for e in efforts if e.ids <= known] if same else nt.anchor_efforts(base, st.efforts(ss, rest_of, max_heart_rate))
         running = any(s.day <= d and s.id not in known for s in sessions)
-        peak, rest = st.hr_max(ss, d), nt.rest_hr(base, d)
+        peak, rest = st.hr_max(ss, d, max_heart_rate), nt.rest_hr(base, d)
         if not running and same and all(any(nt.vigorous(s, rest, peak) for s in c) == ("late" in base[x].tags)
                                          for x, c in late.items() if x <= d):
             nd = base
@@ -371,7 +372,7 @@ def usual_week(sessions, since: date, value=None) -> float | None:
     return (statistics.fmean(weeks) or None) if weeks is not None else None
 
 
-def training(sessions, today: date, until: date | None = None, rest: float = 50.0, peak: float = 190.0,
+def training(sessions, today: date, until: date | None = None, rest: float = 50.0, peak: float | None = None,
              load: dict | None = None, sex: str | None = None) -> dict:
     """« Entraînement », the third dial and its card (research_ind_train.md): the
     heart-rate load of the last 7 days (sante_load: one pipeline, `load` the day's sante_training.loads, else
@@ -396,7 +397,9 @@ def training(sessions, today: date, until: date | None = None, rest: float = 50.
     week = sum(s.minutes for s in days7)  # moving time, as Activités
     usual = usual_week(sessions, since)
     href = "#entrainement"
-    load = load if load is not None else st.loads(sessions, until, rest, peak, sex)
+    if load is None:
+        peak = peak if peak is not None else st.hr_max(sessions, until)
+        load = st.loads(sessions, until, rest, peak, sex)
     ratio = sante_load.week_ratio(sessions, load, until) if usual is not None else None
     if ratio is None:
         return {"dial": viz.ring("entrainement", None, viz.hm(week), "Entraînement", "7 derniers jours", tone="accent",
@@ -491,8 +494,8 @@ NO_MEAN = "Trop peu de nuits mesurées ces 7 derniers jours pour comparer."
 FEW = "trop peu de nuits pour comparer"
 BUILDING = "en construction"  # a signal without usual values yet: its card's first words
 # while they build, the chart card says it in words (the reference row says when they will be ready: printed once):
-# the nights still needed for the lagged reference (nights.BASELINE_LAG) or its provisional fallback (nights_to_normal)
-BUILDS = "Une référence apparaît dès {n} nuits mesurées avec la même source et le même calcul."
+# The reference always excludes the week being assessed, including while it builds.
+BUILDS = "Une référence apparaît dès {n} nuits antérieures à la dernière semaine, avec la même source et le même calcul."
 # the cards' legend: every measured night is a filled dot (each one counts); the band solid, or dashed while
 # provisional
 LEGEND_DOT = ("is-dot", "nuit")
@@ -502,20 +505,8 @@ LEGEND_PROV = ("is-band-prov", "repère provisoire")
 
 
 def nights_to_normal(nights, metric: str, d: date) -> int:
-    """Nights needed for either the lagged reference or its recent provisional fallback, on this series.
-    Assumes each coming night is measured; expired observations never count toward that future window."""
-    src = nt.mean_source(nights, metric, d)
-    required = nt.reference_min_nights(metric, src)
-    known = [x for x, n in nights.items() if x <= d and n.value(metric) is not None and n.source_of(metric) == src]
-    lag = nt.BASELINE_LAG + 1
-    for j in range(1, required + lag + 1):
-        lo, hi = d + timedelta(days=j - nt.BAND_DAYS - nt.BASELINE_LAG), d + timedelta(days=j - lag)
-        lagged = sum(1 for x in known if lo <= x <= hi) + max(0, j - lag)
-        recent_lo = d + timedelta(days=j - nt.BAND_DAYS + 1)
-        recent = sum(1 for x in known if x >= recent_lo) + j
-        if max(lagged, recent) >= required:
-            return j
-    return required + lag
+    """The same dated reference window as the chart, trend and nightly index."""
+    return nt.reference_remaining(nights, metric, d)
 
 
 def signed_pct(value: float, centre: float) -> int:
@@ -582,9 +573,9 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     nights with a few dots against the right edge. Each day's band is the
     usual values its 7-night mean is read against (nights.normal: the nights
     from that day − 67 to − 8, on the series the mean reads: one baseline for
-    the card, its status line and the state, drawn ± T·σ̂: _drawn; a series
-    younger than that window draws its provisional band from the 60 nights
-    before the day, dashed, flagged provisoire: nights.drawn_band), its status
+    the card, its status line and the state, drawn ± T·σ̂: _drawn; a young series
+    has no band until this same earlier window holds enough nights, then a
+    dashed provisional band until 14 nights: nights.drawn_band), its status
     line opens the card (card_status). Every measured
     night is a filled dot (each one counts), a night
     without a measure draws nothing; the provisional band is dashed; the
@@ -600,7 +591,7 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     averages = [nt.mean7(nights, metric, d) or {} for d in days]
     bands, prov = [], []
     for d in days:
-        b = nt.drawn_band(nights, metric, d)  # the lagged baseline, else a young series' provisional one
+        b = nt.drawn_band(nights, metric, d)
         bands.append(_drawn(b, metric, (nt.trend(nights, metric, d) or {}).get("T")))
         prov.append(bool(b and b["provisional"]))
     means = [m.get("value") for m in averages]
@@ -637,11 +628,11 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     provisional = bool(reference and reference["provisional"])
     source = nt.mean_source(nights, metric, today)
     required = nt.reference_min_nights(metric, source)
-    # the nights the reference holds (a young series' provisional one: the nights up to last night), else those
-    # of the lagged window so far
+    # Count only the earlier nights that can actually enter this day's reference.
     count = reference["n"] if reference else nt.reference_count(nights, metric, today, source)
     label = f"Référence · {count} nuits" if reference else f"Référence · {count}/{required} nuits"
-    reference_detail = f"Référence provisoire : {count} nuits mesurées." if provisional else None
+    reference_detail = (f"Référence {'provisoire : ' if provisional else ': '}{count} nuits antérieures à la dernière semaine."
+                        if reference else None)
     c["reference"] = {"n": count, "required": required, "provisional": provisional, "ready": bool(reference),
                       "label": label, "detail": reference_detail, "source": viz.source_label(source),
                       "remaining": 0 if reference else nights_to_normal(nights, metric, today)}

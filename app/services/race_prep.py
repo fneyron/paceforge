@@ -491,9 +491,12 @@ async def _nights(db: AsyncSession, user_id: int, today: date, lo: date, session
     rows = await nt.read_rows(db, user_id, lo, today)
     feel = {d: feel_of(v, det) for d, (v, det, _) in rows.get("feel", {}).items()}
     nights = nt.build_nights(rows, today)
-    rest = st.hr_rest({d: n.hr for d, n in nights.items() if n.hr}, {}, today)
+    from app.services.heart_rate_reference import for_athlete
+
+    rest = nt.rest_hr(nights, today)
+    reference = await for_athlete(db, user_id, today, sessions=sessions)
     await nt.load_segments(db, nights, sessions)
-    nt.tag_nights(nights, sessions, feel, rest, st.hr_max(sessions, today),
+    nt.tag_nights(nights, sessions, feel, rest, reference["reference"],
                   await nt.day_altitudes(db, user_id, lo, today))
     nt.tag_efforts(nights, nt.anchor_efforts(nights, st.efforts(sessions)))
     nt.tag_alerts(nights, today, races)

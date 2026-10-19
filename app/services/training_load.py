@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import nights as nt
-from app.services import sante_load, timezones
+from app.services import heart_rate_reference, sante_load, timezones
 from app.services import sante_training as st
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,7 @@ class TrainingLoad(BaseModel):
     run_km_28d: float = 0.0
     load_7d: float = 0.0
     load_28d: float = 0.0
+    hr_reference: dict = Field(default_factory=dict)
 
 
 async def calculate_training_load(
@@ -53,12 +54,12 @@ async def calculate_training_load(
     today = timezones.local_date(before, zone)
     sessions = [s for s in await st.load_sessions(db, user_id, today, zone=zone)
                 if st._utc(s.start) + timedelta(minutes=st.effort_minutes(s)) <= before and s.end_day <= today]
+    reference = await heart_rate_reference.for_athlete(db, user_id, today, sessions=sessions, zone=zone)
     if not sessions:
-        return TrainingLoad()
+        return TrainingLoad(hr_reference=reference)
     rows = await nt.read_rows(db, user_id, today - timedelta(days=nt.BAND_DAYS), today, ("sleep", "hr_night"))
     rest = nt.rest_hr(nt.build_nights(rows, today), today)
-    peak = st.hr_max(sessions, today)
-    await st.load_hr_segments(db, user_id, sessions, today - timedelta(days=st.RATE_DAYS))
+    peak = reference["reference"]
     load = st.loads(sessions, today, rest, peak)
     week, month = (sante_load.totals(sessions, load, today, n) for n in (7, 28))
     return TrainingLoad(
@@ -72,6 +73,7 @@ async def calculate_training_load(
         sport_breakdown_28d={k: round(v, 2) for k, v in month["km_by_sport"].items()},
         run_km_7d=round(week["run_km"], 2),
         run_km_28d=round(month["run_km"], 2),
+        hr_reference=reference,
         load_7d=round(week["load"], 1),
         load_28d=round(month["load"], 1),
     )

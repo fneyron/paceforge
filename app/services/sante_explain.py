@@ -32,7 +32,8 @@ def nightly(metric, card, trend, *, same_series=True, latest_below=False):
                 "detail": "La SDNN et la RMSSD mesurent la variabilité différemment et ne se comparent pas directement."}
     if not reference["ready"]:
         return {"key": "building", "text": "Quelques nuits supplémentaires permettront de situer cette valeur.",
-                "detail": "Sans référence personnelle suffisante, un nombre seul ne permet pas de dire « bas » ou « haut ». "
+                "detail": "La référence utilise les nuits antérieures à la semaine comparée. "
+                "Sans référence personnelle suffisante, un nombre seul ne permet pas de dire « bas » ou « haut ». "
                 + detail}
     if status["key"] == "few":
         return {"key": "few", "text": "Trop peu de nuits récentes pour dégager une tendance.", "detail": detail}
@@ -100,8 +101,16 @@ def build(page):
                             "Les phases décrivent l’estimation de la montre ; elles ne remplacent pas une mesure en laboratoire."],
                            hero.get("source"), hero.get("label")))
     if page.get("training"):
+        reference = page.get("hr_reference") or {}
+        if reference.get("reference") is not None:
+            label = "FC maximale renseignée" if reference.get("source") == "confirmed" else "Repère observé provisoire"
+            reference_text = (f"{label} : {reference['reference']} bpm. La charge, les zones et les plafonds automatiques "
+                              "de course utilisent cette même référence.")
+        else:
+            reference_text = "Sans référence cardio suffisante, la charge est estimée à partir des durées."
         items.append(_item("training", "Entraînement", "La charge des 7 derniers jours est comparée à ta semaine habituelle.",
                            ["100 % est un repère, pas un objectif. La charge tient compte de la durée et de l’intensité des activités importées.",
+                            reference_text,
                             f"Le pourcentage apparaît après {sante_load.USUAL_LABEL_WEEKS} semaines actives "
                             f"parmi les {sante_load.USUAL_WEEKS} semaines précédentes."]))
     # the night HR's trend is the FC de nuit card's (above)

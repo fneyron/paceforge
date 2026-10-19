@@ -36,10 +36,10 @@ def test_the_relative_effort_path_is_gone():
 
 def test_hr_bounds():
     ss = [S(k, hr_peak=170 + k % 10, i=k) for k in range(30)] + [S(3, hr_peak=240, id=5000)]
-    assert 178 <= st.hr_max(ss, T) <= 215
-    assert st.hr_max(ss[:5], T) == 190
+    assert st.hr_max(ss, T) is None  # summary peaks alone do not establish a reference
+    assert st.hr_max(ss[:5], T, 183) == 183
     assert st.hr_rest({T: 41, T - timedelta(days=1): 43, T - timedelta(days=2): 42}, {}, T) == 42
-    assert st.hr_rest({}, {T: 48, T - timedelta(days=1): 50, T - timedelta(days=3): 52}, T) == 50
+    assert st.hr_rest({}, {T: 42, T - timedelta(days=1): 43, T - timedelta(days=3): 44}, T) == 50
     assert st.hr_rest({}, {}, T) == 50
 
 

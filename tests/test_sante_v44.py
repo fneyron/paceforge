@@ -49,12 +49,11 @@ def test_coros_laps_give_the_whole_activitys_max_hr():
     assert coros.parse_laps(glitch) == {}  # a sensor without HR, a spike: nothing
 
 
-async def test_a_coros_only_athlete_gets_a_real_max_hr_and_the_evening_tag(db_session: AsyncSession,
+async def test_a_coros_only_athlete_keeps_peaks_without_inventing_a_reference(db_session: AsyncSession,
                                                                          test_user: User, fake, no_commit):
-    """COROS's detail has no max HR, so a COROS-only athlete ran on the 190 default (« sortie intense le soir »
-    skewed). The laps are read with the detail, for the same sessions, under the call cap: hr_max() gets real
-    peaks, and a hard evening session (150 bpm, ≥ 80 % of a 45–171 reserve) tags the night after it (it never fires
-    the alert)."""
+    """Imported summary peaks are preserved, but do not establish an automatic maximum.
+    A confirmed reference still makes the evening tag available without Strava.
+    """
     now = datetime.now(timezone.utc).replace(hour=3, minute=0, second=0, microsecond=0)
     fake.sessions = [{"label": 500 + i, "code": 100, "start": now - timedelta(days=2 + 3 * i), "seconds": 3000,
                       "km": 10} for i in range(coros.DETAILS_PER_SYNC)]
@@ -67,11 +66,12 @@ async def test_a_coros_only_athlete_gets_a_real_max_hr_and_the_evening_tag(db_se
     assert {a.max_heartrate for a in rows} == {171} and all(a.raw_data["lap_data"] == {"hr_max": 171} for a in rows)
     today = now.date()
     sessions = await st.load_sessions(db_session, test_user.id, today)
-    assert len(sessions) == 10 and st.hr_max(sessions, today) == 171  # was 190: no peak at all
+    assert len(sessions) == 10 and st.hr_max(sessions, today) is None  # summary peaks alone are insufficient
+    assert st.hr_max(sessions, today, 171) == 171
 
     nights = nt.build_nights(night_rows(range(0, 20), today=today, hr=45.0), today)  # asleep at 23:00
     evening = run(today - timedelta(days=1), minutes=40, hr=150, hour=21, sid=99)  # ends 21:40
-    nt.tag_nights(nights, [evening], {}, rest=45, peak=st.hr_max(sessions, today))
+    nt.tag_nights(nights, [evening], {}, rest=45, peak=st.hr_max(sessions, today, 171))
     assert "late" in nights[today].tags
     nights = nt.build_nights(night_rows(range(0, 20), today=today, hr=45.0), today)
     nt.tag_nights(nights, [evening], {}, rest=45, peak=190)  # the old default: 150 < 161
@@ -119,7 +119,7 @@ def _rest(d):
 def _caps(s, rest_of=_rest):
     """(class, the last day of its window D+n) of one activity (owner, 2026-10-14: scientific basis — windows,
     no caps)."""
-    [e] = st.efforts([s], rest_of)
+    [e] = st.efforts([s], rest_of, 190)
     return e.kind, e.last
 
 
@@ -141,7 +141,7 @@ def test_a_longue_at_80_percent_of_the_reserve_keeps_the_race_window():
     # Très longue and Ultra unchanged, however hard (their windows already run longer)
     assert _caps(run(d, 400, hr=170)) == _caps(run(d, 400, hr=120)) == ("very_long", 3)
     assert _caps(run(d, 700, hr=170)) == _caps(run(d, 700, hr=120)) == ("ultra", 5)
-    e = st.efforts([run(d, 200, hr=165)], _rest)[0]
+    e = st.efforts([run(d, 200, hr=165)], _rest, 190)[0]
     assert st.effort_window([e], d + timedelta(days=2))["text"] == "fenêtre indicative jusqu'à J+2"
     assert st.effort_window([e], d + timedelta(days=3)) is None
     assert st.INTENSE_RPE == 8 and nt.VIGOROUS_HRR == 0.8  # (H)
@@ -152,8 +152,8 @@ def test_the_heart_rate_test_reads_the_bounds_as_of_the_effort():
     resting HR up to it (rest_of), so every later day sees the same window. A chain is judged on its average HR
     by time."""
     d = D - timedelta(days=4)
-    before = [run(d - timedelta(days=10 + k), 50, hr=130, hr_peak=170, sid=100 + k) for k in range(12)]
-    after = [run(d + timedelta(days=1 + k % 3), 50, hr=130, hr_peak=200, sid=200 + k) for k in range(12)]
+    before = [run(d - timedelta(days=10 + k), 50, hr=130, hr_peak=170, sid=100 + k, segs=((5, 140), (4, 165), (4, 164))) for k in range(12)]
+    after = [run(d + timedelta(days=1 + k % 3), 50, hr=130, hr_peak=200, sid=200 + k, segs=((5, 140), (4, 195), (4, 194))) for k in range(12)]
     long = run(d, 200, hr=150, sid=1)
     assert st.hr_max(before + after, d) == 170 and st.hr_max(before + after, D) == 200
     # 150 ≥ 45 + 0.8 × (170 − 45) = 145: run like a race, with the peak it had then (200 later would say 161)
@@ -189,14 +189,14 @@ def test_the_history_reads_each_longue_as_its_own_day_saw_it():
 
     def page(rows, sessions, today):
         nights = nt.build_nights(rows, today)
-        nt.tag_activities(nights, sessions, st.efforts(sessions), nt.rest_hr(nights, today), st.hr_max(sessions, today))
+        nt.tag_activities(nights, sessions, st.efforts(sessions), nt.rest_hr(nights, today), st.hr_max(sessions, today, 190))
         nt.tag_alerts(nights, today)
         rest_of = partial(nt.rest_hr, nights)
-        efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of))
+        efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of, 190))
         with nt.memo():
             nt.freeze(nights)
             return (sante._assess(nights, sessions, efforts, today),
-                    sante._history(nights, sessions, efforts, today, rest_of))
+                    sante._history(nights, sessions, efforts, today, rest_of, max_heart_rate=190))
 
     day, hist = page(rows, sessions, D)
     assert day["window"] is None  # D+6: past D+2

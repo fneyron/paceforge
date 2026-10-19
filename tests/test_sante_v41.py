@@ -168,7 +168,7 @@ async def test_recovery_lives_on_sante_only(as_user: AsyncClient, client: AsyncC
     await seed_owner_v4(db_session, test_user)
     html = await _page(as_user, monkeypatch, D8)
     assert "Après Transjeju 100M · J+5" not in _main(html) and "/activity/" in _main(html)
-    assert "pf-ring-charge" not in html and "repères en construction (5/7)" in html
+    assert "pf-ring-charge" not in html and "repères en construction (2/7)" in html
     assert "Charge · 14 jours" not in html and 'data-viz-key="charge"' not in html
 
     async def today(*a, **k):
@@ -247,7 +247,7 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
 async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: AsyncClient, db_session: AsyncSession,
                                                                    test_user: User, monkeypatch):
     """No measured night after the Transjeju means no index, even with a confirmed recent ultra.
-    Context names its actual J+2; progress counts the recent nights and freshness stays explicit."""
+    Context names its actual J+2; progress counts only prior reference nights and freshness stays explicit."""
     await _link(db_session, test_user)
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D5)
@@ -259,7 +259,7 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
     assert recup["aria"] == "Récupération : pas d’indice nocturne pour cette nuit."
     assert score["missing"] == {"key": "no_night", "label": "pas de bilan"} and "rows" not in page
     assert [(page[k]["status"]["word"], page[k]["status"]["detail"]) for k in ("vfc", "fc")] == [
-        ("en construction", "prête dans 4\u00a0nuits"), ("en construction", "prête dans 4\u00a0nuits")]
+        ("en construction", "prête dans 12\u00a0nuits"), ("en construction", "prête dans 12\u00a0nuits")]
     html = await _page(as_user, monkeypatch, D5)
     assert '<span class="pf-ring-sub" aria-hidden="true">pas de score</span>' in html and ">estimée<" not in html
     assert "Après Transjeju 100M · J+2" not in _main(html) and "nuit du lun. 5 oct." in _main(html).lower()
@@ -327,6 +327,7 @@ async def test_the_range_toggle_works_without_js(as_user: AsyncClient, db_sessio
 async def test_the_race_page_tags_the_nights_as_sante(db_session: AsyncSession, test_user: User):
     """REG-4: « sortie intense le soir » from the laps too (load_segments), and the 3 nights after an effort of 6 h
     or more, on the race page as on Santé: the same nights never fire the alert."""
+    test_user.max_heart_rate = 180  # same confirmed reference in both views
     today = date(2026, 10, 8)
     await _seed_rows(db_session, test_user, night_rows(range(0, 30), today=today))
     d = today - timedelta(days=6)  # an interval session ending 21:00 local, 2 h before sleep (23:00)
@@ -344,7 +345,7 @@ async def test_the_race_page_tags_the_nights_as_sante(db_session: AsyncSession, 
     sessions = await st.load_sessions(db_session, test_user.id, today)
     race_nights = await rp._nights(db_session, test_user.id, today, today - timedelta(days=60), sessions, [])
     sante_nights = await nt.load_nights(db_session, test_user.id, today, sessions=sessions,
-                                        efforts=st.efforts(sessions), peak=st.hr_max(sessions, today))
+                                        efforts=st.efforts(sessions), peak=st.hr_max(sessions, today, test_user.max_heart_rate))
     late = today - timedelta(days=5)
     assert "late" in race_nights[late].tags and "late" in sante_nights[late].tags
     after = [big + timedelta(days=k) for k in (1, 2, 3)]

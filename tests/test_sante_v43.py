@@ -174,7 +174,7 @@ async def test_the_owner_s_sante_page_names_only_the_recent_recorded_course(as_u
     for word in ("sortie", "ultra", "course", "il y a", "Plafonné", "Grosse"):
         assert word not in rest, word
     assert "◇ après un gros effort" not in rest  # the nightly table was removed from the page
-    assert "repères en construction (5/7)" in rest  # today
+    assert "repères en construction (2/7)" in rest  # today
 
 
 # ── time zones: from each user's own data (brief §H) ────────────────────────
@@ -271,7 +271,7 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
         assert "RMSSD" not in primary
         # The complete reference and source remain available in one place and to VoiceOver.
         assert page[key]["read"][3] in html.unescape(reference)
-        assert f"Référence personnelle : {page[key]['reference']['n']} nuits mesurées." in reference
+        assert f"Référence : {page[key]['reference']['n']} nuits antérieures à la dernière semaine." in reference
         assert "COROS" in json.loads(page[key]["data"])["a"][-1]
         assert 'pf-card-status is-ok' not in primary
     act = _coherent((await as_user.get("/activities")).text)

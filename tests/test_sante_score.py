@@ -361,7 +361,7 @@ def test_owner_like_day_no_state_without_a_heart_baseline():
     assert (day["window"]["days"], day["window"]["tone"]) == (5, "warn")
     assert day["score"]["value"] is None and day["state"] is None
     assert day["score"]["missing"]["key"] == "building" and day["score"]["missing"]["label"] == \
-        "repères en construction (1/7)"
+        "repères en construction (0/7)"
 
 
 def test_no_state_from_sleep_alone():
@@ -731,8 +731,8 @@ def test_an_effort_window_does_not_create_a_signal_reason():
 
 def test_the_parts_and_what_is_missing():
     """The heart series read in their order and the ones missing, as data (v4.4: no sub-score on the page): the
-    heart signals with no baseline yet are `building` (under 7 nights up to last night), with a reason and never a
-    number; a provisional baseline (7 to 13 nights, or a series younger than its lagged window) makes a score that
+    heart signals with no baseline yet are `building` (under 7 nights before the assessed week), with a reason and
+    never a number; a provisional baseline of 7 to 13 nights in that same window makes a score that
     says « Repères provisoires » (owner, 2026-10-14: « il y a bien un score »); a watch that never measures HRV just
     misses it."""
     big = _session(D - timedelta(days=2), 200, sid=42)
@@ -741,7 +741,7 @@ def test_the_parts_and_what_is_missing():
     assert day["score"]["absent"] == [] and day["score"]["building"] == []
     young = _day(night_rows(range(0, 6)), _runs())  # 6 nights: no baseline yet
     assert young["score"]["absent"] == ["hrv", "hr"] and young["score"]["building"] == ["hrv", "hr"]
-    assert young["score"]["value"] is None and young["score"]["missing"]["label"] == "repères en construction (6/7)"
+    assert young["score"]["value"] is None and young["score"]["missing"]["label"] == "repères en construction (0/7)"
     week = _day(night_rows(range(0, 21)), _runs())  # 13 nights from day −20 to −8: a provisional score
     assert week["score"]["missing"] is None and week["state"] is not None and week["score"]["building"] == []
     assert sc.quality(week)["provisional"] and sc.quality(week)["label"] == "Repères provisoires"

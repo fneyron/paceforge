@@ -2,7 +2,7 @@
 toujours pas parce qu'il n'y a pas assez de données ? Comment matérialiser que c'est en cours de construction dans le
 graphique directement ? … Comment ça va s'afficher quand tu auras assez de données ? »), then « Tous les relevés VFC
 doivent compter en fait, pareil pour la FC »: a filled dot for every measured night (each one counts toward the
-athlete's usual values, last night included), nothing for a night without one; while there are no usual values,
+    athlete's usual values after the assessed week), nothing for a night without one; while there are no usual values,
 how many nights until they come; a provisional band (7 to 13 nights, H) dashed and lighter, a full one solid; the
 legend names only what is drawn."""
 import json
@@ -54,29 +54,28 @@ def test_without_usual_values_the_card_says_when_they_come():
     values exist (nights_to_normal: every coming night counted, and a night counts a week after it: owner,
     2026-10-14: scientific basis — it was the 60 days up to last night), the chart card says in words that they
     build, nothing about nights that would not count; no band drawn, no band in the legend."""
-    c = _card(night_rows(range(0, 6)))  # 6 nights: they enter the baseline a week after each; a 7th makes it
+    c = _card(night_rows(range(0, 6)))  # six recent nights: none is old enough for the independent baseline yet
     assert c["status"] == {"key": "none", "value": None, "word": "en construction", "tone": None, "meaning": None,
-                           "detail": "prête après ta prochaine nuit",
-                           "text": "Une référence apparaît dès 7 nuits mesurées avec la même source et le même calcul."}
+                           "detail": "prête dans 9\u00a0nuits",
+                           "text": sante.BUILDS.format(n=7)}
     assert c["band"] == [] == c["band_prov"] and not c["edge_lo"] and not c["edge_prov_lo"]
     assert c["legend"] == [("is-dot", "nuit"), sante.LEGEND_MEAN]  # every night counts: one kind of dot
     c = _card(night_rows(range(0, 5)))
-    assert (c["status"]["detail"], c["status"]["text"]) == ("prête dans 2\u00a0nuits", sante.BUILDS.format(n=7))
+    assert (c["status"]["detail"], c["status"]["text"]) == ("prête dans 10\u00a0nuits", sante.BUILDS.format(n=7))
     html = render("{{ v.viz_night_card(c, 'VFC · 14 nuits') }}", c=c)
     assert "pf-viz-band" not in html and "pf-viz-edge" not in html
     # the nights older than 67 days leave the baseline as the coming ones enter it: 3 nights 56 to 58 days old and
     # 2 recent ones make 7 after 13 nights (each coming night replaces one that leaves, until the old ones are gone)
     old = _nights(night_rows([0, 1, 56, 57, 58]))
-    assert sante.nights_to_normal(old, "hrv", D) == 5 and sante.nights_to_normal(old, "hr", D) == 5
-    assert sante.nights_to_normal(_nights(night_rows([0])), "hrv", D) == 6
+    assert sante.nights_to_normal(old, "hrv", D) == 13 and sante.nights_to_normal(old, "hr", D) == 13
+    assert sante.nights_to_normal(_nights(night_rows([0])), "hrv", D) == 14
 
 
 @pytest.mark.parametrize("count, in_baseline, remaining, provisional",
-                         [(1, 1, 13, False), (8, 8, 6, False), (14, 14, 0, True), (22, 14, 0, False)])
+                         [(1, 0, 21, False), (8, 0, 14, False), (14, 6, 8, False), (22, 14, 0, False)])
 def test_sdnn_progress_matches_its_fourteen_night_reference(count, in_baseline, remaining, provisional):
     """Apple's SDNN has its own 14-night reference, from day −67 to −8 (a night counts a week after it): `count`
-    nights up to this morning hold `in_baseline` of them; with 14 up to last night and fewer in that window, the
-    card draws a provisional one from them (nights.drawn_band, 2026-10-14), said so."""
+    nights up to this morning hold `in_baseline` of them. It never draws a provisional band from recent SDNN."""
     source = "Apple Santé:" + "a" * 64 + " (SDNN sommeil)"
     nights = {D - timedelta(days=i): nt.Night(D - timedelta(days=i), hrv=40 + i % 3, hrv_source=source)
               for i in range(count)}
@@ -87,7 +86,8 @@ def test_sdnn_progress_matches_its_fourteen_night_reference(count, in_baseline, 
                    for i in range(first, first + 20)})
     day = sante._assess(nights, [], [], D)
     card = sante._night_card(nights, "hrv", D, day)
-    detail = f"Référence provisoire : {in_baseline} nuits mesurées." if provisional else None
+    detail = (f"Référence {'provisoire : ' if provisional else ': '}{in_baseline} nuits antérieures à la dernière semaine."
+              if remaining == 0 else None)
     assert card["reference"] == {"n": in_baseline, "required": 14, "remaining": remaining,
                                  "provisional": provisional, "ready": remaining == 0,
                                  "source": "Apple Santé · SDNN", "detail": detail,
@@ -100,7 +100,7 @@ def test_sdnn_progress_matches_its_fourteen_night_reference(count, in_baseline, 
     assert day["score"]["value"] is None  # descriptive SDNN still never creates an RMSSD state
     if remaining:
         assert sante.nights_to_normal(nights, "hrv", D) == remaining
-        assert "dès 14 nuits mesurées avec la même source" in card["status"]["text"]
+        assert "14 nuits" in card["status"]["text"] and "même source" in card["status"]["text"]
         assert day["stats"]["hrv"]["normal"] is None
     else:
         assert day["stats"]["hrv"]["normal"]["source"] == source
@@ -111,7 +111,7 @@ def test_sdnn_wait_accounts_for_nights_leaving_the_sixty_day_window():
     source = "Apple Santé:watch (SDNN sommeil)"
     nights = {D - timedelta(days=i): nt.Night(D - timedelta(days=i), hrv=40 + i % 3, hrv_source=source)
               for i in (0, 1, 56, 57, 58)}
-    assert sante.nights_to_normal(nights, "hrv", D) == 12  # old nights expire before fourteen can accumulate
+    assert sante.nights_to_normal(nights, "hrv", D) == 20  # old nights expire before fourteen can accumulate
 
 
 @pytest.mark.parametrize("metric, field, source_field, unit", [
@@ -141,7 +141,8 @@ def test_provisional_metadata_describes_the_reference_not_the_measured_night():
     assert card["reference"]["n"] == 9 and card["reference"]["required"] == 7
     assert card["reference"]["provisional"] and card["reference"]["remaining"] == 0
     assert card["reference"]["label"] == "Référence · 9 nuits"
-    assert card["reference"]["detail"] == card["trend"]["reference"] == "Référence provisoire : 9 nuits mesurées."
+    assert card["reference"]["detail"] == card["trend"]["reference"] == \
+        "Référence provisoire : 9 nuits antérieures à la dernière semaine."
     assert "provisoire" not in str(card["measurement"])
     assert card["measurement"]["date"] == D.isoformat()
 

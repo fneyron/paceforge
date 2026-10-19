@@ -254,7 +254,7 @@ def semaines(weeks: list[dict], first: date | None, measure: str | None, sport: 
 
 # ── A2 FC en footing ────────────────────────────────────────────────────────
 
-def footing(sessions: list[st.Session], today: date, peak: float) -> dict | None:
+def footing(sessions: list[st.Session], today: date, peak: float | None) -> dict | None:
     """The dots of 6 months against the rolling normal (sante_training.easy_model,
     the model Santé's « FC en footing » tile reads too); « à surveiller »
     is sante_training.easy_watch. Its number (the bpm over the normal) is
@@ -310,8 +310,10 @@ async def training_top(db: AsyncSession, user_id: int, now: datetime | None = No
             today = today if today is not None else await st.athlete_today(db, user_id, now, zone=zone)
             sessions = sessions if sessions is not None else await st.load_sessions(db, user_id, today, zone=zone)
             # their km splits: the same steady flat splits Santé › Forme reads (sante_training.comparable)
-            await st.load_hr_segments(db, user_id, sessions, today - timedelta(days=st.EASY_FIT_DAYS))
-            easy = footing(sessions, today, st.hr_max(sessions, today)) if sessions else None
+            from app.services.heart_rate_reference import for_athlete
+
+            reference = await for_athlete(db, user_id, today, sessions=sessions, zone=zone)
+            easy = footing(sessions, today, reference["reference"]) if sessions else None
         return {"weeks": semaines(weeks, first, measure, sport), "easy": easy}
     except Exception:
         logger.exception("Activités › training block failed for user %d", user_id)

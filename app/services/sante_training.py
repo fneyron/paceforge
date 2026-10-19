@@ -355,25 +355,21 @@ async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = N
 
 # ── heart-rate bounds ───────────────────────────────────────────────────────
 
-def hr_max(sessions: list[Session], today: date) -> float:
-    """98th percentile of the sessions' peaks over the 12 months up to `today`
-    (wrist spikes left out by the percentile), clamped to 150–215; 190
-    without enough (COROS's own sessions have theirs from their laps)."""
-    lo = today - timedelta(days=365)
-    peaks = sorted(s.hr_peak for s in sessions if s.hr_peak and lo <= s.day <= today)
-    if len(peaks) < 10:
-        return 190.0
-    return min(215.0, max(150.0, peaks[min(len(peaks) - 1, math.ceil(0.98 * len(peaks)) - 1)]))
+def hr_max(sessions: list[Session], today: date, maximum: float | None = None) -> float | None:
+    """The shared confirmed or corroborated reference, never an invented default."""
+    from app.services.heart_rate_reference import resolve
+
+    return resolve(sessions, today, maximum)["reference"]
 
 
 def hr_rest(night_rhr: dict[date, float], day_min: dict[date, float], today: date) -> float:
-    """Median nightly resting HR over 60 days, else the median lowest daytime
-    HR over 30 days, else 50."""
-    for series, days in ((night_rhr, 60), (day_min, 30)):
-        vals = [v for d, v in series.items() if today - timedelta(days=days) < d <= today and 25 <= v <= 100]
-        if len(vals) >= 3:
-            return statistics.median(vals)
-    return 50.0
+    """Compatibility helper: nightly resting HR only; daytime minima are never mixed in.
+
+    Callers holding Night objects use nights.rest_hr, which also keeps source
+    and calculation method consistent. 50 is an explicit model fallback.
+    """
+    vals = [v for d, v in night_rhr.items() if today - timedelta(days=60) < d <= today and 25 <= v <= 100]
+    return statistics.median(vals) if len(vals) >= 3 else 50.0
 
 
 # ── heart-rate load: one pipeline for every view ────────────────────────────────────────────────────────────
@@ -382,7 +378,7 @@ def hr_rest(night_rhr: dict[date, float], day_min: dict[date, float], today: dat
 # Internal load is the consensus construct (Impellizzeri 2019; Bourdon 2017), yet never validated as an absolute
 # dose (Passfield 2022): Santé shows it only against the athlete's own usual week, as a ratio, never as a number (no
 # TRIMP, no points). No brand load is read. One set of bounds a day (rest: the median sleeping HR of 60 days, else
-# 50; max: the 98th percentile of the sessions' peaks over 12 months, else 190) weighs every session of every view
+# 50; max: the shared confirmed or corroborated reference) weighs every session of every view
 # that day: the Entraînement dial, the Charge accumulée curves and Activités' 7 / 28 days (sante_load).
 LOAD_A, LOAD_B = 0.64, 1.92  # (H) Banister 1991's men's constants: no sex is known to the app (women's: LOAD_WOMEN)
 LOAD_WOMEN = (0.86, 1.67)  # Banister 1991's women's constants, read once the athlete's sex is known
@@ -410,10 +406,10 @@ def minute_load(hr: float, rest: float, peak: float, sex: str | None = None) -> 
     return x * a * math.exp(b * x)
 
 
-def hr_readable(s: Session, rest: float, peak: float) -> bool:
+def hr_readable(s: Session, rest: float, peak: float | None) -> bool:
     """Its average HR can weigh its minutes (H): from 40 bpm to max + 10, and a run at 30 % of the reserve at least
     (under it, an optical dropout); never a strength, Workout, yoga or Pilates session (BY_TIME)."""
-    if not s.hr or s.sport in BY_TIME or not HR_FLOOR <= s.hr <= peak + HR_OVER_MAX:
+    if peak is None or not s.hr or s.sport in BY_TIME or not HR_FLOOR <= s.hr <= peak + HR_OVER_MAX:
         return False
     return s.sport not in RUN_TYPES or (s.hr - rest) / max(peak - rest, 1.0) >= RUN_MIN_HRR
 
@@ -439,7 +435,7 @@ class _Memo:
 _LOADS = _Memo(20_000)  # session load per (session, bounds): a page reads each session once a day
 
 
-def session_load(s: Session, rest: float, peak: float, sex: str | None = None) -> float | None:
+def session_load(s: Session, rest: float, peak: float | None, sex: str | None = None) -> float | None:
     """One activity's heart-rate load (Banister 1991): its laps', else its km splits' (`segs`, laps or splits with a
     plausible HR) minutes × each one's minute weight, scaled to its moving time when they cover 80 % of it at least
     (H), else its moving minutes at its average HR (summed per segment, a load reads ≈ 9 % higher, more on hard
@@ -453,8 +449,8 @@ def session_load(s: Session, rest: float, peak: float, sex: str | None = None) -
     return _LOADS.get(key, lambda: _session_load(s, rest, peak, sex))
 
 
-def _session_load(s: Session, rest: float, peak: float, sex: str | None) -> float | None:
-    if not hr_readable(s, rest, peak):
+def _session_load(s: Session, rest: float, peak: float | None, sex: str | None) -> float | None:
+    if peak is None or not hr_readable(s, rest, peak):
         return None
     segs = [(m, hr) for m, hr in s.segs or () if HR_FLOOR <= hr <= peak + HR_OVER_MAX]
     covered = sum(m for m, _ in segs)
@@ -469,7 +465,7 @@ def load_family(sport: str) -> str:
     return "run" if sport in RUN_TYPES else "bike" if sport in BIKE else sport
 
 
-def loads(sessions: list[Session], today: date, rest: float, peak: float,
+def loads(sessions: list[Session], today: date, rest: float, peak: float | None,
           sex: str | None = None) -> dict[int, tuple[float, bool]]:
     """{session id: (its heart-rate load, read from its HR)}, every session with the same bounds, today's (H: a new
     max or resting HR never moves the dial by itself). A session whose HR cannot be read, and every strength,
@@ -578,10 +574,12 @@ EASY_KM, EASY_MIN_MIN, EASY_MAX_MIN, EASY_DPLUS_PER_KM, EASY_HR_SHARE = 5, 25, 1
 STEADY_AFTER_MIN, FLAT_GRADE, STEADY_MIN_KM = 10, 0.02, 2
 
 
-def easy_runs(sessions: list[Session], peak: float) -> list[Session]:
+def easy_runs(sessions: list[Session], peak: float | None) -> list[Session]:
     """Flat easy runs (H): 5 km and more, 25–150 min, D+ ≤ 12 m/km, average
     HR ≤ 82 % of HRmax, not a race nor a workout. Hot runs stay in (Activités
     draws them hollow); they are kept out of the slope and the normal."""
+    if peak is None:
+        return []
     return [s for s in sessions
             if s.sport in RUNS and s.hr and s.speed and s.km >= EASY_KM and EASY_MIN_MIN <= s.minutes <= EASY_MAX_MIN
             and s.dplus <= EASY_DPLUS_PER_KM * s.km and s.hr <= EASY_HR_SHARE * peak and s.workout_type not in (1, 3)]
@@ -614,7 +612,7 @@ def comparable(s: Session) -> tuple[float, float] | None:
     return beats / minutes, km * 1000 / (minutes * 60)
 
 
-def _easy_sample(sessions: list[Session], today: date, peak: float) -> tuple[list[Session], list[Session], dict, bool]:
+def _easy_sample(sessions: list[Session], today: date, peak: float | None) -> tuple[list[Session], list[Session], dict, bool]:
     """The exact sample shared by the fitted model and its collection progress, and each run's (HR, speed): from
     its steady flat splits (comparable) when 6 cool runs of the 12 months have them, every run read that way; else
     from every run's own averages (no splits stored: a Garmin-only athlete) — one method per model, never mixed."""
@@ -632,7 +630,7 @@ def _line_runs(cool: list[Session], today: date) -> list[Session]:
     return [s for s in cool if today - timedelta(days=LINE_DAYS) < s.day <= today]
 
 
-def fitness_progress(sessions: list[Session], today: date, peak: float) -> dict:
+def fitness_progress(sessions: list[Session], today: date, peak: float | None) -> dict:
     """Actual comparable runs in the same 42-day window that unlocks the fitness line.
 
     Like ``training_view.footing``, call this with completed sessions. Heat,
@@ -659,7 +657,7 @@ def theil_sen(xs: list[float], ys: list[float]) -> tuple[float, float]:
     return statistics.median(y - b * x for x, y in zip(xs, ys)), b
 
 
-def easy_model(sessions: list[Session], today: date, peak: float) -> dict | None:
+def easy_model(sessions: list[Session], today: date, peak: float | None) -> dict | None:
     """The one easy-pace model Activités (A3) and Santé (the « FC à allure comparable » card) share: each flat easy
     run's HR (its steady flat splits when the athlete's runs have them: _easy_sample) moved to the athlete's
     reference pace (one Theil–Sen slope over the cool runs of 12 months; the pace is their median speed, to 5 s/km),
@@ -898,18 +896,20 @@ class _Unit:
         from app.services.nights import VIGOROUS_HRR
 
         rest, peak = bounds(self.first.day)
+        if peak is None:
+            return False
         return sum(m * hr for m, hr in timed) / sum(m for m, _ in timed) >= rest + VIGOROUS_HRR * (peak - rest)
 
 
-def hr_bounds(sessions: list[Session], rest_of):
+def hr_bounds(sessions: list[Session], rest_of, maximum: float | None = None):
     """`bounds(day)` → (rest, peak) as of that day: `rest_of(day)` (nights.rest_hr on the nights: the median
     nightly HR of the 60 days up to it, else 50) and hr_max of the sessions up to it; each day computed once.
     The same whichever later day reads it: a past day of the score's history sees what today sees."""
-    memo: dict[date, tuple[float, float]] = {}
+    memo: dict[date, tuple[float, float | None]] = {}
 
-    def bounds(d: date) -> tuple[float, float]:
+    def bounds(d: date) -> tuple[float, float | None]:
         if d not in memo:
-            memo[d] = (rest_of(d), hr_max(sessions, d))
+            memo[d] = (rest_of(d), hr_max(sessions, d, maximum))
         return memo[d]
     return bounds
 
@@ -962,7 +962,7 @@ def _chains(sessions: list[Session]) -> list[tuple[list[Session], datetime, date
     return out
 
 
-def efforts(sessions: list[Session], rest_of=None) -> list[Effort]:
+def efforts(sessions: list[Session], rest_of=None, maximum: float | None = None) -> list[Effort]:
     """The big efforts among the sessions, by end: each activity, or chain of
     activities without a real stop (< 30 min apart, H), is its own effort,
     sized from its first start to its last end (stops included), named and
@@ -977,7 +977,7 @@ def efforts(sessions: list[Session], rest_of=None) -> list[Effort]:
     units = [_Unit(run, start, end) for run, start, end in _chains(sessions)
              if end - start >= timedelta(minutes=EFFORT_LONG)
              or sum(s.dplus for s in run if s.sport in FOOT) >= EFFORT_DPLUS]
-    bounds = hr_bounds(sessions, rest_of) if rest_of is not None else None
+    bounds = hr_bounds(sessions, rest_of, maximum) if rest_of is not None else None
     return sorted((e for u in units if (e := _effort(u, bounds))), key=lambda e: e.end)
 
 
