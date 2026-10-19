@@ -735,6 +735,725 @@
       "checked_at": "2026-10-12T11:37:46.380230+00:00",
       "attempted_at": "2026-10-12T11:37:46.380241+00:00",
       "status": "ok"
+    },
+    "catalog/ecotrailautomne_2026": {
+      "attempted_at": "2026-10-19T09:06:31.803311+00:00",
+      "checked_at": "2026-10-19T09:06:32.915350+00:00",
+      "status": "ok"
+    },
+    "catalog/traildelbisaura_2026": {
+      "attempted_at": "2026-10-19T09:06:32.915364+00:00",
+      "checked_at": "2026-10-19T09:06:33.584438+00:00",
+      "status": "ok"
+    },
+    "catalog/gtauvergne_2026": {
+      "attempted_at": "2026-10-19T09:06:33.584452+00:00",
+      "checked_at": "2026-10-19T09:06:34.241312+00:00",
+      "status": "ok"
+    },
+    "catalog/kodiak_2026": {
+      "attempted_at": "2026-10-19T09:06:34.241326+00:00",
+      "checked_at": "2026-10-19T09:06:34.885568+00:00",
+      "status": "ok"
+    },
+    "catalog/otsotravessa_2026": {
+      "attempted_at": "2026-10-19T09:06:34.885582+00:00",
+      "checked_at": "2026-10-19T09:06:35.544142+00:00",
+      "status": "ok"
+    },
+    "catalog/transylvania100k_2026": {
+      "attempted_at": "2026-10-19T09:06:35.544156+00:00",
+      "checked_at": "2026-10-19T09:06:36.203720+00:00",
+      "status": "ok"
+    },
+    "catalog/mozart100_2026": {
+      "attempted_at": "2026-10-19T09:06:36.203732+00:00",
+      "checked_at": "2026-10-19T09:06:36.923520+00:00",
+      "status": "ok"
+    },
+    "catalog/alsace_2026": {
+      "attempted_at": "2026-10-19T09:06:36.923533+00:00",
+      "checked_at": "2026-10-19T09:06:37.631305+00:00",
+      "status": "ok"
+    },
+    "catalog/barousse_2026": {
+      "attempted_at": "2026-10-19T09:06:37.631318+00:00",
+      "checked_at": "2026-10-19T09:06:38.291201+00:00",
+      "status": "ok"
+    },
+    "catalog/jcchallenge_2026": {
+      "attempted_at": "2026-10-19T09:06:38.291213+00:00",
+      "checked_at": "2026-10-19T09:06:38.951476+00:00",
+      "status": "ok"
+    },
+    "catalog/oxfamtrail_2026": {
+      "attempted_at": "2026-10-19T09:06:38.951488+00:00",
+      "checked_at": "2026-10-19T09:06:39.613382+00:00",
+      "status": "ok"
+    },
+    "catalog/rothrock_2026": {
+      "attempted_at": "2026-10-19T09:06:39.613395+00:00",
+      "checked_at": "2026-10-19T09:06:40.329774+00:00",
+      "status": "ok"
+    },
+    "catalog/thp_2026": {
+      "attempted_at": "2026-10-19T09:06:40.329787+00:00",
+      "checked_at": "2026-10-19T09:06:40.990556+00:00",
+      "status": "ok"
+    },
+    "catalog/tnfkorea_2026": {
+      "attempted_at": "2026-10-19T09:06:40.990570+00:00",
+      "checked_at": "2026-10-19T09:06:41.659072+00:00",
+      "status": "ok"
+    },
+    "catalog/ultratrailgeants_2026": {
+      "attempted_at": "2026-10-19T09:06:41.659085+00:00",
+      "checked_at": "2026-10-19T09:06:42.317634+00:00",
+      "status": "ok"
+    },
+    "catalog/uta_2026": {
+      "attempted_at": "2026-10-19T09:06:42.317648+00:00",
+      "checked_at": "2026-10-19T09:06:42.961473+00:00",
+      "status": "ok"
+    },
+    "catalog/uts_2026": {
+      "attempted_at": "2026-10-19T09:06:42.961486+00:00",
+      "checked_at": "2026-10-19T09:06:43.605470+00:00",
+      "status": "ok"
+    },
+    "catalog/valfoncine_2026": {
+      "attempted_at": "2026-10-19T09:06:43.605483+00:00",
+      "checked_at": "2026-10-19T09:06:44.263687+00:00",
+      "status": "ok"
+    },
+    "catalog/euskal_2026": {
+      "attempted_at": "2026-10-19T09:06:44.263700+00:00",
+      "checked_at": "2026-10-19T09:06:44.933220+00:00",
+      "status": "ok"
+    },
+    "catalog/otomi_2026": {
+      "attempted_at": "2026-10-19T09:06:44.933234+00:00",
+      "checked_at": "2026-10-19T09:06:45.591933+00:00",
+      "status": "ok"
+    },
+    "catalog/traildesforts_2026": {
+      "attempted_at": "2026-10-19T09:06:45.591946+00:00",
+      "checked_at": "2026-10-19T09:06:46.256650+00:00",
+      "status": "ok"
+    },
+    "catalog/subcarpati_2026": {
+      "attempted_at": "2026-10-19T09:06:46.256663+00:00",
+      "checked_at": "2026-10-19T09:06:46.925287+00:00",
+      "status": "ok"
+    },
+    "catalog/transvulcania_2026": {
+      "attempted_at": "2026-10-19T09:06:46.925300+00:00",
+      "checked_at": "2026-10-19T09:06:47.581187+00:00",
+      "status": "ok"
+    },
+    "catalog/boughtonbu_2026": {
+      "attempted_at": "2026-10-19T09:06:47.581204+00:00",
+      "checked_at": "2026-10-19T09:06:48.238418+00:00",
+      "status": "ok"
+    },
+    "catalog/amazeanjungletrail_2026": {
+      "attempted_at": "2026-10-19T09:06:48.238431+00:00",
+      "checked_at": "2026-10-19T09:06:48.882457+00:00",
+      "status": "ok"
+    },
+    "catalog/bteamb_2026": {
+      "attempted_at": "2026-10-19T09:06:48.882470+00:00",
+      "checked_at": "2026-10-19T09:06:49.545831+00:00",
+      "status": "ok"
+    },
+    "catalog/isleofwight_2026": {
+      "attempted_at": "2026-10-19T09:06:49.545844+00:00",
+      "checked_at": "2026-10-19T09:06:50.223192+00:00",
+      "status": "ok"
+    },
+    "catalog/ohmeudeus_2026": {
+      "attempted_at": "2026-10-19T09:06:50.223205+00:00",
+      "checked_at": "2026-10-19T09:06:50.866679+00:00",
+      "status": "ok"
+    },
+    "catalog/tarnvalleytrail_2026": {
+      "attempted_at": "2026-10-19T09:06:50.866692+00:00",
+      "checked_at": "2026-10-19T09:06:51.526303+00:00",
+      "status": "ok"
+    },
+    "catalog/trailnap_2026": {
+      "attempted_at": "2026-10-19T09:06:51.526316+00:00",
+      "checked_at": "2026-10-19T09:06:52.186834+00:00",
+      "status": "ok"
+    },
+    "catalog/trencacims_2026": {
+      "attempted_at": "2026-10-19T09:06:52.186846+00:00",
+      "checked_at": "2026-10-19T09:06:52.849628+00:00",
+      "status": "ok"
+    },
+    "catalog/innsbrucktrail_2026": {
+      "attempted_at": "2026-10-19T09:06:52.849642+00:00",
+      "checked_at": "2026-10-19T09:06:53.510606+00:00",
+      "status": "ok"
+    },
+    "catalog/mdsraidnamibia_2026": {
+      "attempted_at": "2026-10-19T09:06:53.510619+00:00",
+      "checked_at": "2026-10-19T09:06:54.172038+00:00",
+      "status": "ok"
+    },
+    "catalog/canyons_2026": {
+      "attempted_at": "2026-10-19T09:06:54.172052+00:00",
+      "checked_at": "2026-10-19T09:06:54.844632+00:00",
+      "status": "ok"
+    },
+    "catalog/grandraidventoux_2026": {
+      "attempted_at": "2026-10-19T09:06:54.844645+00:00",
+      "checked_at": "2026-10-19T09:06:55.489678+00:00",
+      "status": "ok"
+    },
+    "catalog/lcdmt_2026": {
+      "attempted_at": "2026-10-19T09:06:55.489690+00:00",
+      "checked_at": "2026-10-19T09:06:56.146553+00:00",
+      "status": "ok"
+    },
+    "catalog/paladru_2026": {
+      "attempted_at": "2026-10-19T09:06:56.146567+00:00",
+      "checked_at": "2026-10-19T09:06:56.816650+00:00",
+      "status": "ok"
+    },
+    "catalog/penyagolosa_2026": {
+      "attempted_at": "2026-10-19T09:06:56.816663+00:00",
+      "checked_at": "2026-10-19T09:06:57.476869+00:00",
+      "status": "ok"
+    },
+    "catalog/transaubrac_2026": {
+      "attempted_at": "2026-10-19T09:06:57.476883+00:00",
+      "checked_at": "2026-10-19T09:06:58.142360+00:00",
+      "status": "ok"
+    },
+    "catalog/puertovallarta_2026": {
+      "attempted_at": "2026-10-19T09:06:58.142373+00:00",
+      "checked_at": "2026-10-19T09:06:58.786408+00:00",
+      "status": "ok"
+    },
+    "catalog/windsor_2026": {
+      "attempted_at": "2026-10-19T09:06:58.786421+00:00",
+      "checked_at": "2026-10-19T09:06:59.481137+00:00",
+      "status": "ok"
+    },
+    "catalog/100milesofistria_2026": {
+      "attempted_at": "2026-10-19T09:06:59.481150+00:00",
+      "checked_at": "2026-10-19T09:07:00.221873+00:00",
+      "status": "ok"
+    },
+    "catalog/cnn_2026": {
+      "attempted_at": "2026-10-19T09:07:00.221885+00:00",
+      "checked_at": "2026-10-19T09:07:00.880166+00:00",
+      "status": "ok"
+    },
+    "catalog/desertrats_2026": {
+      "attempted_at": "2026-10-19T09:07:00.880179+00:00",
+      "checked_at": "2026-10-19T09:07:01.524312+00:00",
+      "status": "ok"
+    },
+    "catalog/moganshan_2026": {
+      "attempted_at": "2026-10-19T09:07:01.524324+00:00",
+      "checked_at": "2026-10-19T09:07:02.168331+00:00",
+      "status": "ok"
+    },
+    "catalog/patagoniarun_2026": {
+      "attempted_at": "2026-10-19T09:07:02.168343+00:00",
+      "checked_at": "2026-10-19T09:07:02.825598+00:00",
+      "status": "ok"
+    },
+    "catalog/western_2026": {
+      "attempted_at": "2026-10-19T09:07:02.825612+00:00",
+      "checked_at": "2026-10-19T09:07:03.488701+00:00",
+      "status": "ok"
+    },
+    "catalog/fouleedeferrandi_2026": {
+      "attempted_at": "2026-10-19T09:07:03.488713+00:00",
+      "checked_at": "2026-10-19T09:07:04.154440+00:00",
+      "status": "ok"
+    },
+    "catalog/marathondessables_2026": {
+      "attempted_at": "2026-10-19T09:07:04.154452+00:00",
+      "checked_at": "2026-10-19T09:07:04.813457+00:00",
+      "status": "ok"
+    },
+    "catalog/eventtest_2026": {
+      "attempted_at": "2026-10-19T09:07:04.813469+00:00",
+      "checked_at": "2026-10-19T09:07:05.474511+00:00",
+      "status": "ok"
+    },
+    "catalog/fouleesassurance_2026": {
+      "attempted_at": "2026-10-19T09:07:05.474523+00:00",
+      "checked_at": "2026-10-19T09:07:06.133994+00:00",
+      "status": "ok"
+    },
+    "catalog/lut_2026": {
+      "attempted_at": "2026-10-19T09:07:06.134007+00:00",
+      "checked_at": "2026-10-19T09:07:06.791338+00:00",
+      "status": "ok"
+    },
+    "catalog/reventonelpaso_2026": {
+      "attempted_at": "2026-10-19T09:07:06.791351+00:00",
+      "checked_at": "2026-10-19T09:07:07.459148+00:00",
+      "status": "ok"
+    },
+    "catalog/traildesvallees_2026": {
+      "attempted_at": "2026-10-19T09:07:07.459162+00:00",
+      "checked_at": "2026-10-19T09:07:08.125102+00:00",
+      "status": "ok"
+    },
+    "catalog/bath50_2026": {
+      "attempted_at": "2026-10-19T09:07:08.125114+00:00",
+      "checked_at": "2026-10-19T09:07:08.782710+00:00",
+      "status": "ok"
+    },
+    "catalog/chianti_2026": {
+      "attempted_at": "2026-10-19T09:07:08.782723+00:00",
+      "checked_at": "2026-10-19T09:07:09.426697+00:00",
+      "status": "ok"
+    },
+    "catalog/ecotrail_2026": {
+      "attempted_at": "2026-10-19T09:07:09.426710+00:00",
+      "checked_at": "2026-10-19T09:07:10.098303+00:00",
+      "status": "ok"
+    },
+    "catalog/neandertrail_2026": {
+      "attempted_at": "2026-10-19T09:07:10.098316+00:00",
+      "checked_at": "2026-10-19T09:07:10.765407+00:00",
+      "status": "ok"
+    },
+    "catalog/sciacchetrail_2026": {
+      "attempted_at": "2026-10-19T09:07:10.765420+00:00",
+      "checked_at": "2026-10-19T09:07:11.423652+00:00",
+      "status": "ok"
+    },
+    "catalog/tenerifebyutmb_2026": {
+      "attempted_at": "2026-10-19T09:07:11.423664+00:00",
+      "checked_at": "2026-10-19T09:07:12.067503+00:00",
+      "status": "ok"
+    },
+    "catalog/ushuaiabyutmb_2026": {
+      "attempted_at": "2026-10-19T09:07:12.067516+00:00",
+      "checked_at": "2026-10-19T09:07:12.711786+00:00",
+      "status": "ok"
+    },
+    "catalog/trailducirqueduferacheval_2026": {
+      "attempted_at": "2026-10-19T09:07:12.711799+00:00",
+      "checked_at": "2026-10-19T09:07:13.370699+00:00",
+      "status": "ok"
+    },
+    "catalog/chamois_2026": {
+      "attempted_at": "2026-10-19T09:07:13.370711+00:00",
+      "checked_at": "2026-10-19T09:07:14.029086+00:00",
+      "status": "ok"
+    },
+    "catalog/tvlg_2026": {
+      "attempted_at": "2026-10-19T09:07:14.029099+00:00",
+      "checked_at": "2026-10-19T09:07:14.687782+00:00",
+      "status": "ok"
+    },
+    "catalog/xiamen_2026": {
+      "attempted_at": "2026-10-19T09:07:14.687795+00:00",
+      "checked_at": "2026-10-19T09:07:15.372645+00:00",
+      "status": "ok"
+    },
+    "catalog/transgrancanaria_2026": {
+      "attempted_at": "2026-10-19T09:07:15.372658+00:00",
+      "checked_at": "2026-10-19T09:07:16.044253+00:00",
+      "status": "ok"
+    },
+    "catalog/xtrail100_2026": {
+      "attempted_at": "2026-10-19T09:07:16.044266+00:00",
+      "checked_at": "2026-10-19T09:07:16.720528+00:00",
+      "status": "ok"
+    },
+    "catalog/tarawera_2026": {
+      "attempted_at": "2026-10-19T09:07:16.720540+00:00",
+      "checked_at": "2026-10-19T09:07:17.364926+00:00",
+      "status": "ok"
+    },
+    "catalog/maquisards_2026": {
+      "attempted_at": "2026-10-19T09:07:17.364938+00:00",
+      "checked_at": "2026-10-19T09:07:18.023137+00:00",
+      "status": "ok"
+    },
+    "catalog/mdsatlanticcoast_2026": {
+      "attempted_at": "2026-10-19T09:07:18.023151+00:00",
+      "checked_at": "2026-10-19T09:07:18.695276+00:00",
+      "status": "ok"
+    },
+    "catalog/goat_2026": {
+      "attempted_at": "2026-10-19T09:07:18.695288+00:00",
+      "checked_at": "2026-10-19T09:07:19.362850+00:00",
+      "status": "ok"
+    },
+    "catalog/winterwalk_2026": {
+      "attempted_at": "2026-10-19T09:07:19.362864+00:00",
+      "checked_at": "2026-10-19T09:07:20.022761+00:00",
+      "status": "ok"
+    },
+    "catalog/arcofattrition_2026": {
+      "attempted_at": "2026-10-19T09:07:20.022773+00:00",
+      "checked_at": "2026-10-19T09:07:20.744506+00:00",
+      "status": "ok"
+    },
+    "catalog/primavera_2026": {
+      "attempted_at": "2026-10-19T09:07:20.744518+00:00",
+      "checked_at": "2026-10-19T09:07:21.405605+00:00",
+      "status": "ok"
+    },
+    "catalog/serrechesnow_2026": {
+      "attempted_at": "2026-10-19T09:07:21.405618+00:00",
+      "checked_at": "2026-10-19T09:07:22.066700+00:00",
+      "status": "ok"
+    },
+    "catalog/mdsultra_2026": {
+      "attempted_at": "2026-10-19T09:07:22.066714+00:00",
+      "checked_at": "2026-10-19T09:07:22.732345+00:00",
+      "status": "ok"
+    },
+    "catalog/tmut_2025": {
+      "attempted_at": "2026-10-19T09:07:22.732358+00:00",
+      "checked_at": "2026-10-19T09:07:23.391014+00:00",
+      "status": "ok"
+    },
+    "catalog/himamtrail_2025": {
+      "attempted_at": "2026-10-19T09:07:23.391027+00:00",
+      "checked_at": "2026-10-19T09:07:24.049658+00:00",
+      "status": "ok"
+    },
+    "catalog/otsomoiben_2025": {
+      "attempted_at": "2026-10-19T09:07:24.049672+00:00",
+      "checked_at": "2026-10-19T09:07:24.708198+00:00",
+      "status": "ok"
+    },
+    "catalog/40bosses_2025": {
+      "attempted_at": "2026-10-19T09:07:24.708213+00:00",
+      "checked_at": "2026-10-19T09:07:25.373360+00:00",
+      "status": "ok"
+    },
+    "catalog/chiangmai_2025": {
+      "attempted_at": "2026-10-19T09:07:25.373373+00:00",
+      "checked_at": "2026-10-19T09:07:26.095037+00:00",
+      "status": "ok"
+    },
+    "catalog/ecoparccatalan_2025": {
+      "attempted_at": "2026-10-19T09:07:26.095050+00:00",
+      "checked_at": "2026-10-19T09:07:26.757062+00:00",
+      "status": "ok"
+    },
+    "catalog/hivernaledestempliers_2025": {
+      "attempted_at": "2026-10-19T09:07:26.757075+00:00",
+      "checked_at": "2026-10-19T09:07:27.418731+00:00",
+      "status": "ok"
+    },
+    "catalog/ultratraildubai_2025": {
+      "attempted_at": "2026-10-19T09:07:27.418743+00:00",
+      "checked_at": "2026-10-19T09:07:28.083029+00:00",
+      "status": "ok"
+    },
+    "catalog/menestrail-breizhchrono_2025": {
+      "attempted_at": "2026-10-19T09:07:28.083042+00:00",
+      "checked_at": "2026-10-19T09:07:28.726345+00:00",
+      "status": "unavailable"
+    },
+    "catalog/mdsperu_2025": {
+      "attempted_at": "2026-10-19T09:07:28.726363+00:00",
+      "checked_at": "2026-10-19T09:07:29.385714+00:00",
+      "status": "ok"
+    },
+    "catalog/clujecotrail_2025": {
+      "attempted_at": "2026-10-19T09:07:29.385727+00:00",
+      "checked_at": "2026-10-19T09:07:30.052466+00:00",
+      "status": "ok"
+    },
+    "catalog/3diastrailibiza_2025": {
+      "attempted_at": "2026-10-19T09:07:30.052479+00:00",
+      "checked_at": "2026-10-19T09:07:30.714344+00:00",
+      "status": "ok"
+    },
+    "catalog/kosciuszko_2025": {
+      "attempted_at": "2026-10-19T09:07:30.714358+00:00",
+      "checked_at": "2026-10-19T09:07:31.357973+00:00",
+      "status": "ok"
+    },
+    "catalog/saintelyon_2025": {
+      "attempted_at": "2026-10-19T09:07:31.357987+00:00",
+      "checked_at": "2026-10-19T09:07:32.025183+00:00",
+      "status": "ok"
+    },
+    "catalog/pacifictrails_2025": {
+      "attempted_at": "2026-10-19T09:07:32.025197+00:00",
+      "checked_at": "2026-10-19T09:07:32.740414+00:00",
+      "status": "ok"
+    },
+    "catalog/barilochebyutmb_2025": {
+      "attempted_at": "2026-10-19T09:07:32.740428+00:00",
+      "checked_at": "2026-10-19T09:07:33.413819+00:00",
+      "status": "ok"
+    },
+    "catalog/thpwinter_2025": {
+      "attempted_at": "2026-10-19T09:07:33.413847+00:00",
+      "checked_at": "2026-10-19T09:07:34.171413+00:00",
+      "status": "ok"
+    },
+    "catalog/translantau_2025": {
+      "attempted_at": "2026-10-19T09:07:34.171427+00:00",
+      "checked_at": "2026-10-19T09:07:34.849302+00:00",
+      "status": "ok"
+    },
+    "catalog/dashudao_2025": {
+      "attempted_at": "2026-10-19T09:07:34.849316+00:00",
+      "checked_at": "2026-10-19T09:07:35.525809+00:00",
+      "status": "ok"
+    },
+    "catalog/epictrailcostadaurada_2025": {
+      "attempted_at": "2026-10-19T09:07:35.525821+00:00",
+      "checked_at": "2026-10-19T09:07:36.187607+00:00",
+      "status": "ok"
+    },
+    "catalog/maratodelsdements_2025": {
+      "attempted_at": "2026-10-19T09:07:36.187620+00:00",
+      "checked_at": "2026-10-19T09:07:36.851466+00:00",
+      "status": "ok"
+    },
+    "catalog/puglia_2025": {
+      "attempted_at": "2026-10-19T09:07:36.851478+00:00",
+      "checked_at": "2026-10-19T09:07:37.495216+00:00",
+      "status": "ok"
+    },
+    "catalog/yangxiantrailchallenge_2025": {
+      "attempted_at": "2026-10-19T09:07:37.495230+00:00",
+      "checked_at": "2026-10-19T09:07:38.162068+00:00",
+      "status": "ok"
+    },
+    "catalog/la-boucle-etoile_2025": {
+      "attempted_at": "2026-10-19T09:07:38.162081+00:00",
+      "checked_at": "2026-10-19T09:07:38.805056+00:00",
+      "status": "unavailable"
+    },
+    "catalog/lavenivici_2025": {
+      "attempted_at": "2026-10-19T09:07:38.805075+00:00",
+      "checked_at": "2026-10-19T09:07:39.474095+00:00",
+      "status": "ok"
+    },
+    "catalog/tapalpa_2025": {
+      "attempted_at": "2026-10-19T09:07:39.474108+00:00",
+      "checked_at": "2026-10-19T09:07:40.142455+00:00",
+      "status": "ok"
+    },
+    "catalog/mdsjordan_2025": {
+      "attempted_at": "2026-10-19T09:07:40.142468+00:00",
+      "checked_at": "2026-10-19T09:07:40.815484+00:00",
+      "status": "ok"
+    },
+    "catalog/kullamannen_2025": {
+      "attempted_at": "2026-10-19T09:07:40.815498+00:00",
+      "checked_at": "2026-10-19T09:07:41.460053+00:00",
+      "status": "ok"
+    },
+    "catalog/mallorcabyutmb_2025": {
+      "attempted_at": "2026-10-19T09:07:41.460066+00:00",
+      "checked_at": "2026-10-19T09:07:42.103854+00:00",
+      "status": "ok"
+    },
+    "catalog/mdstrekmaroc_2025": {
+      "attempted_at": "2026-10-19T09:07:42.103867+00:00",
+      "checked_at": "2026-10-19T09:07:42.764784+00:00",
+      "status": "ok"
+    },
+    "catalog/mdstrekmaroc_2026": {
+      "attempted_at": "2026-10-19T09:07:42.764797+00:00",
+      "checked_at": "2026-10-19T09:07:43.431710+00:00",
+      "status": "ok"
+    },
+    "catalog/grcathares_2025": {
+      "attempted_at": "2026-10-19T09:07:43.431724+00:00",
+      "checked_at": "2026-10-19T09:07:44.092706+00:00",
+      "status": "ok"
+    },
+    "catalog/hallo_2025": {
+      "attempted_at": "2026-10-19T09:07:44.092719+00:00",
+      "checked_at": "2026-10-19T09:07:44.750523+00:00",
+      "status": "ok"
+    },
+    "catalog/laketoba_2025": {
+      "attempted_at": "2026-10-19T09:07:44.750537+00:00",
+      "checked_at": "2026-10-19T09:07:45.472615+00:00",
+      "status": "ok"
+    },
+    "catalog/marxainfantil_2025": {
+      "attempted_at": "2026-10-19T09:07:45.472629+00:00",
+      "checked_at": "2026-10-19T09:07:46.134376+00:00",
+      "status": "ok"
+    },
+    "catalog/templiers_2025": {
+      "attempted_at": "2026-10-19T09:07:46.134390+00:00",
+      "checked_at": "2026-10-19T09:07:46.811290+00:00",
+      "status": "ok"
+    },
+    "catalog/transjeju_2025": {
+      "attempted_at": "2026-10-19T09:07:46.811304+00:00",
+      "checked_at": "2026-10-19T09:07:47.455321+00:00",
+      "status": "ok"
+    },
+    "catalog/ultraninghai_2025": {
+      "attempted_at": "2026-10-19T09:07:47.455335+00:00",
+      "checked_at": "2026-10-19T09:07:48.124804+00:00",
+      "status": "ok"
+    },
+    "catalog/utcappadocia_2025": {
+      "attempted_at": "2026-10-19T09:07:48.124818+00:00",
+      "checked_at": "2026-10-19T09:07:48.782781+00:00",
+      "status": "ok"
+    },
+    "catalog/traildelbisaura_2025": {
+      "attempted_at": "2026-10-19T09:07:48.782796+00:00",
+      "checked_at": "2026-10-19T09:07:49.441709+00:00",
+      "status": "ok"
+    },
+    "catalog/mdsmorocco_2025": {
+      "attempted_at": "2026-10-19T09:07:49.441722+00:00",
+      "checked_at": "2026-10-19T09:07:50.100555+00:00",
+      "status": "ok"
+    },
+    "catalog/kodiak_2025": {
+      "attempted_at": "2026-10-19T09:07:50.100570+00:00",
+      "checked_at": "2026-10-19T09:07:50.783546+00:00",
+      "status": "ok"
+    },
+    "catalog/trailvdj_2025": {
+      "attempted_at": "2026-10-19T09:07:50.783560+00:00",
+      "checked_at": "2026-10-19T09:07:51.443503+00:00",
+      "status": "ok"
+    },
+    "catalog/kentdowns50_2025": {
+      "attempted_at": "2026-10-19T09:07:51.443517+00:00",
+      "checked_at": "2026-10-19T09:07:52.105057+00:00",
+      "status": "ok"
+    },
+    "utmb/ecotrailautomne_2026/20km": {
+      "checked_at": "2026-10-19T09:07:54.040661+00:00",
+      "attempted_at": "2026-10-19T09:07:54.040675+00:00",
+      "status": "excluded"
+    },
+    "utmb/ecotrailautomne_2026/50km": {
+      "checked_at": "2026-10-19T09:10:07.017893+00:00",
+      "attempted_at": "2026-10-19T09:10:07.017898+00:00",
+      "status": "ok"
+    },
+    "utmb/ecotrailautomne_2026/80km": {
+      "checked_at": "2026-10-19T09:12:19.428907+00:00",
+      "attempted_at": "2026-10-19T09:12:19.428913+00:00",
+      "status": "ok"
+    },
+    "utmb/traildelbisaura_2026/curta": {
+      "checked_at": "2026-10-19T09:12:20.080924+00:00",
+      "attempted_at": "2026-10-19T09:12:20.080936+00:00",
+      "status": "excluded"
+    },
+    "utmb/traildelbisaura_2026/mitja": {
+      "checked_at": "2026-10-19T09:12:20.732356+00:00",
+      "attempted_at": "2026-10-19T09:12:20.732371+00:00",
+      "status": "excluded"
+    },
+    "utmb/traildelbisaura_2026/trail": {
+      "checked_at": "2026-10-19T09:12:21.439177+00:00",
+      "attempted_at": "2026-10-19T09:12:21.439191+00:00",
+      "status": "excluded"
+    },
+    "utmb/gtauvergne_2026/100m": {
+      "checked_at": "2026-10-19T09:13:15.984511+00:00",
+      "attempted_at": "2026-10-19T09:13:15.984518+00:00",
+      "status": "ok"
+    },
+    "utmb/gtauvergne_2026/16k": {
+      "checked_at": "2026-10-19T09:13:16.637106+00:00",
+      "attempted_at": "2026-10-19T09:13:16.637130+00:00",
+      "status": "excluded"
+    },
+    "utmb/gtauvergne_2026/27k": {
+      "checked_at": "2026-10-19T09:13:17.286631+00:00",
+      "attempted_at": "2026-10-19T09:13:17.286646+00:00",
+      "status": "excluded"
+    },
+    "utmb/gtauvergne_2026/360solo": {
+      "checked_at": "2026-10-19T09:15:03.630065+00:00",
+      "attempted_at": "2026-10-19T09:15:03.630071+00:00",
+      "status": "ok"
+    },
+    "utmb/gtauvergne_2026/50k": {
+      "checked_at": "2026-10-19T09:17:16.446074+00:00",
+      "attempted_at": "2026-10-19T09:17:16.446079+00:00",
+      "status": "ok"
+    },
+    "utmb/gtauvergne_2026/80k": {
+      "checked_at": "2026-10-19T09:19:28.856232+00:00",
+      "attempted_at": "2026-10-19T09:19:28.856238+00:00",
+      "status": "ok"
+    },
+    "utmb/kodiak_2026/100k": {
+      "checked_at": "2026-10-19T09:21:41.306978+00:00",
+      "attempted_at": "2026-10-19T09:21:41.306986+00:00",
+      "status": "ok"
+    },
+    "utmb/kodiak_2026/100mile": {
+      "attempted_at": "2026-10-19T09:21:41.308196+00:00",
+      "status": "failed"
+    },
+    "utmb/kodiak_2026/10k": {
+      "checked_at": "2026-10-19T09:23:54.569144+00:00",
+      "attempted_at": "2026-10-19T09:23:54.569158+00:00",
+      "status": "excluded"
+    },
+    "utmb/kodiak_2026/21k": {
+      "checked_at": "2026-10-19T09:23:55.214300+00:00",
+      "attempted_at": "2026-10-19T09:23:55.214315+00:00",
+      "status": "excluded"
+    },
+    "utmb/kodiak_2026/50k": {
+      "checked_at": "2026-10-19T09:26:07.476909+00:00",
+      "attempted_at": "2026-10-19T09:26:07.476915+00:00",
+      "status": "ok"
+    },
+    "utmb/utmj_2026/renarde": {
+      "checked_at": "2026-10-19T09:28:22.790453+00:00",
+      "attempted_at": "2026-10-19T09:28:22.790460+00:00",
+      "status": "ok"
+    },
+    "utmb/utmj_2026/utmj": {
+      "checked_at": "2026-10-19T09:30:35.560088+00:00",
+      "attempted_at": "2026-10-19T09:30:35.560094+00:00",
+      "status": "ok"
+    },
+    "utmb/munstertrail_2026/mt10": {
+      "checked_at": "2026-10-19T09:30:36.223972+00:00",
+      "attempted_at": "2026-10-19T09:30:36.223986+00:00",
+      "status": "excluded"
+    },
+    "utmb/munstertrail_2026/mt21": {
+      "checked_at": "2026-10-19T09:30:36.870636+00:00",
+      "attempted_at": "2026-10-19T09:30:36.870650+00:00",
+      "status": "excluded"
+    },
+    "utmb/munstertrail_2026/mt32": {
+      "checked_at": "2026-10-19T09:30:37.522110+00:00",
+      "attempted_at": "2026-10-19T09:30:37.522151+00:00",
+      "status": "excluded"
+    },
+    "utmb/chiangmai_2025/CHD160": {
+      "checked_at": "2026-10-19T09:34:49.387753+00:00",
+      "attempted_at": "2026-10-19T09:34:49.387769+00:00",
+      "status": "ok"
+    },
+    "utmb/chiangmai_2025/ELP100": {
+      "checked_at": "2026-10-19T09:41:11.077692+00:00",
+      "attempted_at": "2026-10-19T09:41:11.077704+00:00",
+      "status": "ok"
     }
   }
 }

@@ -1,42 +1,47 @@
 {
-  "started_at": "2026-10-12T11:05:36.834124+00:00",
+  "started_at": "2026-10-19T09:06:31.766989+00:00",
   "scope": "scheduled queue",
   "updated": [
-    "utmb/kentdowns50_2026/50KM",
-    "utmb/100miles_2026/100mile",
-    "utmb/100miles_2026/grande",
-    "utmb/100miles_2026/travers",
-    "utmb/chihuahuabyutmb_2026/118",
-    "utmb/chihuahuabyutmb_2026/58",
-    "utmb/chihuahuabyutmb_2026/93",
-    "utmb/transjeju_2026/100k",
-    "utmb/transjeju_2026/60k",
-    "utmb/ultrapirineu_2026/mp",
-    "utmb/ultrapirineu_2026/sup",
-    "utmb/utmj_2026/cmm",
-    "utmb/utmj_2026/franco",
-    "utmb/chiangmai_2025/HMN50D"
+    "utmb/ecotrailautomne_2026/50km",
+    "utmb/ecotrailautomne_2026/80km",
+    "utmb/gtauvergne_2026/100m",
+    "utmb/gtauvergne_2026/360solo",
+    "utmb/gtauvergne_2026/50k",
+    "utmb/gtauvergne_2026/80k",
+    "utmb/kodiak_2026/100k",
+    "utmb/kodiak_2026/50k",
+    "utmb/utmj_2026/renarde",
+    "utmb/utmj_2026/utmj",
+    "utmb/chiangmai_2025/ELP100"
   ],
   "unchanged": [
-    "utmb/chiangmai_2025/HMN50N"
+    "utmb/chiangmai_2025/CHD160"
   ],
   "excluded": [
-    "utmb/kentdowns50_2026/10KM",
-    "utmb/kentdowns50_2026/25KM",
-    "utmb/100miles_2026/foulees",
-    "utmb/chihuahuabyutmb_2026/21",
-    "utmb/chihuahuabyutmb_2026/39",
-    "utmb/chihuahuabyutmb_2026/9",
-    "utmb/transjeju_2026/20k",
-    "utmb/utmj_2026/lacham",
-    "utmb/utmj_2026/lalynx"
+    "utmb/ecotrailautomne_2026/20km",
+    "utmb/traildelbisaura_2026/curta",
+    "utmb/traildelbisaura_2026/mitja",
+    "utmb/traildelbisaura_2026/trail",
+    "utmb/gtauvergne_2026/16k",
+    "utmb/gtauvergne_2026/27k",
+    "utmb/kodiak_2026/10k",
+    "utmb/kodiak_2026/21k",
+    "utmb/munstertrail_2026/mt10",
+    "utmb/munstertrail_2026/mt21",
+    "utmb/munstertrail_2026/mt32"
   ],
-  "errors": [],
-  "catalog_deferred": 875,
-  "races_deferred": 2354,
-  "finished_at": "2026-10-12T11:37:46.381403+00:00",
-  "requests": 3170,
-  "corpus_sha256": "ac0e9e086fe100f6c4bd5c1d3222327714f2d2f4ab31257609897af548aff1b6",
-  "archives": 1019,
-  "status": "complete"
+  "errors": [
+    {
+      "item": "utmb/kodiak_2026/100mile",
+      "error": "IncompleteDownloadError",
+      "detail": "Non-monotonic checkpoint timing"
+    }
+  ],
+  "catalog_deferred": 823,
+  "races_deferred": 2705,
+  "finished_at": "2026-10-19T09:41:11.079146+00:00",
+  "requests": 3157,
+  "corpus_sha256": "3ae62226c54ab7ff4bb9d1a6290c269acdf007fe5518855effc75d90ba2cf11f",
+  "archives": 1029,
+  "status": "partial"
 }
