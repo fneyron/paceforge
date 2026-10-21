@@ -5,6 +5,7 @@ import logging
 import re
 import time
 import unicodedata
+from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -59,7 +60,7 @@ async def simulator_page(
         pts, imp = light.get(rt.id, (None, None))
         rt.profile_points = pts if isinstance(pts, list) else []
         rt.imported_estimate_s = imp if isinstance(imp, (int, float)) else 0  # the course's import estimate (_objective_s)
-        rt.has_course = bool(rt.profile_points)  # every course has its elevation points (a triathlon has none)
+        setattr(rt, "has_course", bool(rt.profile_points))  # template metadata, not a stored Route field
     # upcoming races first (soonest), then past ones (most recent first), then undated: on the athlete's day
     # (sante_training.athlete_today, the day Santé reads), not the server's UTC one
     from datetime import date as _date
@@ -69,9 +70,9 @@ async def simulator_page(
     today = await st.athlete_today(db, user.id)
     for rt in saved_routes:
         try:
-            rt.days_to = (_date.fromisoformat(str(rt.race_date)[:10]) - today).days if rt.race_date else None
+            setattr(rt, "days_to", (_date.fromisoformat(str(rt.race_date)[:10]) - today).days if rt.race_date else None)
         except ValueError:
-            rt.days_to = None
+            setattr(rt, "days_to", None)
     saved_routes.sort(key=lambda rt: (0, rt.days_to) if rt.days_to is not None and rt.days_to >= 0 else (1, -rt.days_to) if rt.days_to is not None else (2, 0))
     # races run without their activity yet: found by itself (race day, course distance), the newest
     # first, at most 10 a page load — one small indexed query each, nothing predicted; the athlete's
@@ -117,9 +118,10 @@ async def simulator_page(
                 rt.legacy_estimate_s = m or 0
             except Exception:
                 logger.exception("legacy objective check failed for route %s", rt.id)
+    estimates, profile = await _listed_estimates(saved_routes, db, user, profile=profile)
     run = await _races_vs_plan([rt for rt in saved_routes if rt.result_json], db, user, profile=profile)
     for rt in saved_routes:
-        rt.card = _route_card(rt, *run.get(rt.id, (None, None)), today=today)
+        rt.card = _route_card(rt, *run.get(rt.id, (None, None)), today=today, estimate_s=estimates.get(rt.id))
 
     return templates.TemplateResponse(
         request,
@@ -203,8 +205,57 @@ async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User, prof
     return out
 
 
-def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None, today=None) -> dict:
-    """What « Mes courses » shows for a race: the date in words, the objective, the real
+async def _listed_estimates(routes: list[Route], db: AsyncSession, user: User,
+                            profile=None) -> tuple[dict[int, int], Any]:
+    """Current finish estimates for upcoming/undated foot races, without creating an objective.
+
+    Read only their courses and checkpoints in two batches; completed races keep
+    the light list read. Share one athlete profile with the rest of the page and
+    use the detail page's prediction, stops, weather and minute rounding.
+    """
+    from app.schemas.simulator import CourseProfile
+    from app.services.race_simulator import build_athlete_gradient_profile
+
+    pending = [rt for rt in routes if (rt.days_to is None or rt.days_to >= 0) and not rt.result_json
+               and rt.has_course and rt.sport_type not in ("bike", "triathlon")]
+    if not pending:
+        return {}, profile
+    ids = [rt.id for rt in pending]
+    courses: dict[int, dict | None] = dict((await db.execute(select(Route.id, Route.course_json).where(
+        Route.user_id == user.id, Route.id.in_(ids)))).all())
+    points: dict[int, list] = {}
+    for cp in (await db.execute(select(RouteCheckpoint).where(
+        RouteCheckpoint.route_id.in_(list(courses))).order_by(RouteCheckpoint.distance_km))).scalars():
+        points.setdefault(cp.route_id, []).append(cp.as_dict())
+    if profile is None:
+        try:
+            profile = await build_athlete_gradient_profile(db, user.id)
+        except Exception:
+            logger.exception("race list profile failed for user %s", user.id)
+            return {}, profile
+    estimates = {}
+    for rt in pending:
+        try:
+            course = CourseProfile.model_validate(courses.get(rt.id))
+            cps = points.get(rt.id, [])
+            weather = rt.weather_json if isinstance(rt.weather_json, dict) else {}
+            _, finish, _ = _estimate(
+                course, profile, rt.start_hour if rt.start_hour is not None else 6, rt.start_minute or 0,
+                await _race_clock(db, user.id, rt, course), cps, rt.stop_minutes, course.total_distance_km,
+                bool(rt.weather_json), float(weather.get("heat_factor") or 1.0), weather.get("hourly"),
+                _aid_kms_from_checkpoints(cps),
+            )
+            estimate = _to_minute(finish)
+            if estimate > 0:
+                estimates[rt.id] = estimate
+        except Exception:
+            logger.exception("race list estimate failed for route %s", rt.id)
+    return estimates, profile
+
+
+def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None, today=None,
+                estimate_s: int | None = None) -> dict:
+    """What « Mes courses » shows for a race: the date, current estimate, objective and real
     time against the plan once run (the débrief's numbers: ``_races_vs_plan``), and a mini profile.
     ``today``: the athlete's day (the year shows for another year, the past carries it)."""
     from datetime import date as _date
@@ -212,7 +263,8 @@ def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None,
     from app.services.debrief import close_to_plan
 
     today = today or _date.today()
-    out: dict = {"date": None, "when": None, "objective": None, "real": None, "diff": None, "good": None, "profile": None}
+    out: dict = {"date": None, "when": None, "objective": None, "estimate": None,
+                 "real": None, "diff": None, "good": None, "profile": None}
     d = None
     try:
         d = _date.fromisoformat(str(rt.race_date)[:10]) if rt.race_date else None
@@ -226,6 +278,8 @@ def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None,
                        else f"dans {round(days / 7)} sem." if days < 63 else f"dans {round(days / 30.4)} mois")
     if obj := _objective_s(rt, legacy_s=getattr(rt, "legacy_estimate_s", 0), imported_s=getattr(rt, "imported_estimate_s", 0)):
         out["objective"] = _hm(obj)
+    if estimate_s and estimate_s > 0:
+        out["estimate"] = _hm(estimate_s)
     if real_s:
         out["real"] = _hm(_min(real_s) * 60)
         if plan_s:

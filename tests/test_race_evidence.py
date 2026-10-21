@@ -1012,13 +1012,18 @@ async def test_mes_courses_reads_the_objective_by_the_same_rule(as_user: AsyncCl
     shown = int((rs.predict_course(_course(), profile, start_hour=6).predicted_total_time_s + 30) // 60 * 60)
     soon = (date.today() + timedelta(days=30)).isoformat()
     sim._LEGACY.clear()
+    ids = {}
     for name, target in (("Estimée", shown), ("Visée", 5 * 3600)):
-        await as_user.post("/api/simulator/routes", data={
+        response = await as_user.post("/api/simulator/routes", data={
             "course_json": _course().model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": name,
             "target_time_s": target, "race_date": soon, "start_hour": 6, "start_minute": 0})
+        ids[name] = response.json()["id"]
     db_session.expunge_all()
     html = (await as_user.get("/simulator")).text
-    assert "5h00" in html and f"{shown // 3600}h{shown % 3600 // 60:02d}" not in html
+    estimated = html.split(f'id="route-card-{ids["Estimée"]}"')[1].split("</a>")[0]
+    chosen = html.split(f'id="route-card-{ids["Visée"]}"')[1].split("</a>")[0]
+    assert "estimation" in estimated.lower() and "Objectif " not in estimated
+    assert "estimation" in chosen.lower() and "objectif 5h00" in chosen.lower()
 
 
 # the owner's races as Strava gives them (moving hours, Strava D+): the older page read his level with the law of
