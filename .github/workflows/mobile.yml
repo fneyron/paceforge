@@ -26,6 +26,15 @@ jobs:
         working-directory: mobile
       - run: npm run lint && npm run typecheck && npm test
         working-directory: mobile
+      - name: Check native navigation, refresh and offline plans
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pf-browser" playwright@1.64.0 esbuild@0.28.2 react@19.2.3 react-dom@19.2.3 react-native-web@0.21.4
+          export NODE_PATH="$RUNNER_TEMP/pf-browser/node_modules"
+          node "$NODE_PATH/playwright/cli.js" install --with-deps chromium
+          node tests/browser/native/build.cjs
+          node tests/browser/native/check.cjs
+          node tests/browser/native/background.cjs
+          node tests/browser/native/offline.cjs
       - name: Check the project with expo-doctor
         # The dependency version check follows Expo's patch releases, not this repository:
         # it is reported by the next step without failing the check.

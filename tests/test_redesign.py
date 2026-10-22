@@ -64,7 +64,7 @@ async def test_app_shell_top_bar_and_tab_bar(as_user: AsyncClient):
     assert 'class="pf-top"' in page and 'class="pf-tabbar"' in page
     tabbar = page.split('class="pf-tabbar"')[1].split("</nav>")[0]
     labels = re.findall(r"<span>([^<]+)</span>", tabbar)
-    assert labels == ["Santé", "Activités", "Courses"]  # Santé is the main dashboard
+    assert labels == ["Courses", "Activités", "Santé"]  # requested navigation order
     assert "Vélo" not in tabbar and "Triathlon" not in tabbar
 
 
