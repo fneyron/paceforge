@@ -1,7 +1,7 @@
 import { ORIGIN, trusted } from './api';
 
 export type Tab = 'health' | 'activities' | 'courses' | 'devices';
-export const tabs = [['health', 'Santé'], ['activities', 'Activités'], ['courses', 'Courses']] as const;
+export const tabs = [['courses', 'Courses'], ['activities', 'Activités'], ['health', 'Santé']] as const;
 export const destinations: Record<Exclude<Tab, 'devices'>, string> = { health: '/sante', activities: '/activities', courses: '/simulator' };
 export function prepareNavigationScript(nonce: string): string {
   return `Promise.resolve().then(() => window.paceforgeBeforeLeave?.()).then(() => window.paceforgeTabs?.beforeLeave?.()).then(() => {

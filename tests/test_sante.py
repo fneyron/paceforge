@@ -175,13 +175,13 @@ async def test_the_check_in_post_is_kept_harmlessly(as_user: AsyncClient, db_ses
 # ── Daily dashboard first ─────────────────────────────────────────────────────────────
 
 async def test_sante_remains_in_both_navs(as_user: AsyncClient):
-    """Santé · Activités · Courses, in both navs (owner, 2026-10-09: « Mets Activités avant Courses »)."""
+    """Courses · Activités · Santé, in both navs (owner, 2026-10-22)."""
     page = (await as_user.get("/activities")).text
     top = page.split('class="pf-nav"')[1].split("</nav>")[0]
     tabbar = page.split('class="pf-tabbar"')[1].split("</nav>")[0]
     for nav in (top, tabbar):
-        assert re.findall(r'href="(/[a-z]+)"', nav) == ["/sante", "/activities", "/simulator"]
-        assert [m for m in re.findall(r"<span>([^<]+)</span>", nav)] == ["Santé", "Activités", "Courses"]
+        assert re.findall(r'href="(/[a-z]+)"', nav) == ["/simulator", "/activities", "/sante"]
+        assert [m for m in re.findall(r"<span>([^<]+)</span>", nav)] == ["Courses", "Activités", "Santé"]
     assert '<a href="/sante" class="pf-logo"' in page  # the logo goes home
     page = (await as_user.get("/sante")).text
     assert page.count('href="/sante" aria-current="page"') == 2

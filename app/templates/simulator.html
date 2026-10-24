@@ -32,7 +32,9 @@
                 {% elif r.card.objective %}<b>{{ r.card.objective }}</b><span class="pf-item-sub block">objectif</span>
                 {% else %}<span class="pf-item-sub block">sans objectif</span>{% endif %}
             {% else %}
-                {% if r.card.objective %}<b>{{ r.card.objective }}</b>{% else %}<span class="pf-link text-sm block">Fixer l'objectif</span>{% endif %}
+                {% if r.card.estimate %}<b>{{ r.card.estimate }}</b><span class="pf-item-sub block">estimation{% if r.card.objective %} · objectif {{ r.card.objective }}{% endif %}</span>
+                {% elif r.card.objective %}<b>{{ r.card.objective }}</b><span class="pf-item-sub block">objectif</span>
+                {% else %}<span class="pf-item-sub block">Estimation indisponible</span>{% endif %}
             {% endif %}
         </span>
         {{ ic.icon('chev-r', 'pf-chev') }}
@@ -79,8 +81,14 @@
                 <span class="pf-next-name">{{ nxt.name }}</span>
                 <span class="pf-next-meta tabular-nums">{{ ('%.1f'|format(nxt.total_distance_km)).replace('.', ',') }} km · {{ '{:,}'.format(nxt.total_elevation_gain|int).replace(',', ' ') }} m D+</span>
                 <span class="pf-next-big">
-                    <span><span class="pf-label block">Objectif</span><span class="pf-big pf-next-v">{{ nxt.card.objective or '—' }}</span></span>
+                    {% if nxt.card.estimate %}
+                    <span><span class="pf-label block">Estimation</span><span class="pf-big pf-next-v">{{ nxt.card.estimate }}</span></span>
+                    {% elif nxt.card.objective %}
+                    <span><span class="pf-label block">Objectif</span><span class="pf-big pf-next-v">{{ nxt.card.objective }}</span></span>
+                    {% endif %}
                 </span>
+                {% if not nxt.card.estimate %}<span class="pf-item-sub block mt-2">Estimation indisponible</span>{% endif %}
+                {% if nxt.card.estimate and nxt.card.objective %}<span class="pf-item-sub block mt-2">Objectif {{ nxt.card.objective }}</span>{% endif %}
                 {% if not nxt.card.objective %}<span class="pf-link text-sm mt-2 block">Fixe ton objectif →</span>{% endif %}
                 {% if nxt.card.profile %}<svg class="pf-next-pf" viewBox="0 0 400 70" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="nxg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" class="pfp-g0"/><stop offset="1" class="pfp-g1"/></linearGradient></defs><path d="{{ nxt.card.profile.area }}" fill="url(#nxg)"/><path d="{{ nxt.card.profile.line }}" class="pfp-line" vector-effect="non-scaling-stroke"/></svg>{% endif %}
             </a>

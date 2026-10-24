@@ -103,7 +103,8 @@ jobs:
   # into a fresh one, must give the same tables, rows and Alembic revision (scripts/backup/drill.sh).
   backup-drill:
     name: Backup and restore drill
-    runs-on: ubuntu-latest
+    # Noble provides postgresql-client-16; newer runner images no longer carry it.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
