@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 os.environ.update(DEBUG='false',COROS_SYNC='false',GARMIN_SYNC='false',ACTIVITY_ENV_FETCH='false')
 from contextlib import asynccontextmanager
 from datetime import datetime,timezone,timedelta
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import create_async_engine,async_sessionmaker
 from app.main import create_app
 from app.database import Base
@@ -62,6 +62,7 @@ async def session():
     async with factory() as db:
         yield db
         await db.commit()
-async def user(db=Depends(get_db)):
-    return await db.get(User,app.state.user_id)
+async def user(request: Request, db=Depends(get_db)):
+    request.state.user = await db.get(User,app.state.user_id)  # as get_current_user: a 404 keeps the app layout
+    return request.state.user
 app.dependency_overrides[get_db]=session;app.dependency_overrides[get_current_user]=user

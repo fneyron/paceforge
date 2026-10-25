@@ -45,6 +45,7 @@
     <div id="load-more">
         {% include "partials/load_more.html" %}
     </div>
+    <p id="load-more-live" class="sr-only" aria-live="polite"></p>{# « 6 semaines ajoutées » (app.js) #}
     {% elif has_more %}
     {#- nothing in these 6 weeks, older activities there: the way to them -#}
     <p class="pf-sante-note">Aucune activité{% if sport %} dans cette catégorie{% endif %} ces 6 dernières semaines.</p>
@@ -52,6 +53,7 @@
     <div id="load-more">
         {% include "partials/load_more.html" %}
     </div>
+    <p id="load-more-live" class="sr-only" aria-live="polite"></p>
     {% else %}
     <div class="pf-empty-state">
         <i data-lucide="activity" class="pf-empty-icon" aria-hidden="true"></i>

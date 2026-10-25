@@ -6,6 +6,7 @@ promise it. What it does offer: a bridge to the simulator
 """
 
 import logging
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -20,11 +21,12 @@ from app.models.route import Route
 from app.models.user import User
 from app.schemas.activity import ActivityDetail
 from app.services.activity_dedupe import sport_group
-from app.services.viz import fr_num
+from app.services.viz import fr_int, fr_num
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["fr_num"] = fr_num
+templates.env.filters["fr_int"] = fr_int
 
 router = APIRouter(tags=["activity"])
 
@@ -78,5 +80,20 @@ async def activity_detail(
             "user": user,
             "activity": detail,
             "compare_routes": compare_routes,
+            "back": _back(request),
         },
     )
+
+
+_BACK_LISTS = {"/activities": "Activités", "/sante": "Santé"}
+
+
+def _back(request: Request) -> dict:
+    """Where « ‹ » leads without JS: the list this page was opened from on this site (Activités with its filter, or
+    Santé), else Activités. With JS the link goes back in the history instead, so the list comes back as it was
+    left (its loaded weeks, its scroll): activity_detail.html."""
+    ref = urlsplit(request.headers.get("referer", ""))
+    if ref.netloc != request.url.netloc or ref.path not in _BACK_LISTS:
+        return {"href": "/activities", "label": "Activités"}
+    query = urlencode([(k, v) for k, v in parse_qsl(ref.query) if k != "app_nav"])
+    return {"href": ref.path + (f"?{query}" if query else ""), "label": _BACK_LISTS[ref.path]}

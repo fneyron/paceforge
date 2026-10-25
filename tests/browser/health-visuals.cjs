@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const base = process.env.PF_PREVIEW_URL || 'http://127.0.0.1:8853';
 const output = process.env.PF_HEALTH_SCREENSHOTS || '/tmp/paceforge-health-visuals';
 const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#recuperation-detail figure',
-  '#vfc figure', '#fc figure', '#entrainement-semaine figure', '#tendances figure'];
+  '#vfc figure', '#fc figure', '#charge-detail figure', '#tendances figure'];
 
 (async () => {
   fs.mkdirSync(output, { recursive: true });
@@ -25,8 +25,18 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       const mode = dark ? 'dark' : 'light', capture = `${width}-${scale}-${mode}`;
       const label = `${width}px/${scale * 100}%/${mode}`;
       assert.equal(await page.locator('#synthese-sante').count(), 0, `${label}: the card of signals left the page`);
-      assert.match(await page.locator('.pf-curves-race').innerText(), /Trail des Crêtes · J\+20/, `${label}: the race over the curves`);
-      assert.ok(await page.locator('#sommeil-detail [data-range-panel]:not([hidden]) .pf-viz-race').count() === 1, `${label}: the race day on the curves`);
+      // (the fixture's race, 20 days back, is outside the 14 days the curves draw now: no race line to check)
+      // the audit (2026-10): the ring's word agrees, the legends show what is drawn in its colours, one (i) place
+      assert.match(await page.locator('.pf-ring-recup .pf-ring-sub').innerText(), /^habituelle$/, `${label}: the recovery ring's word`);
+      assert.deepEqual(await page.locator('#sommeil-detail .pf-viz-legend').innerText().then(t => t.split(/\s+/).filter(Boolean)), ['léger', 'profond', 'paradoxal'], `${label}: the sleep legend names only what is drawn`);
+      assert.equal(await page.evaluate(() => {
+        const dot = document.querySelector('#vfc .pf-viz-dot:not(.is-sel)'), swatch = document.querySelector('#vfc .pf-lg.is-dot');
+        return getComputedStyle(dot).fill === getComputedStyle(swatch).backgroundColor;
+      }), true, `${label}: the night legend's dot wears the dots' colour`);
+      for (const head of await page.locator('.pf-health-panel-heading:has(.pf-help), .pf-measurement-head:has(.pf-help), .pf-card-top:has(.pf-help)').all()) {
+        const right = await head.evaluate(el => { const h = el.querySelector('.pf-help').getBoundingClientRect(), b = el.getBoundingClientRect(), pad = parseFloat(getComputedStyle(el).paddingRight) || 0; return b.right - pad - h.right; });
+        assert.ok(right < 2, `${label}: an (i) off the header's right edge (${right}px)`);
+      }
       assert.equal(await page.locator('#ressenti [aria-pressed="true"]').count(), 0, `${label}: no feeling is inferred from the measurements`);
       assert.ok(await page.locator('#ressenti-courbe figure').isVisible(), `${label}: the answered days' feel sits under the curves`);
       await page.evaluate(() => window.paceforgeRememberPage());
@@ -40,7 +50,7 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       }
       if (await page.locator('#forme').count()) assert.ok(await page.locator('#forme figure').isVisible(), `${label}: fitness graph folded`);
       assert.ok(await page.locator('.pf-phases-legend').isVisible(), `${label}: sleep phases missing from the fixture`);
-      for (const selector of ['#comprendre-indicateurs', '#charge-detail', '#sommeil-habitudes']) {
+      for (const selector of ['#comprendre-indicateurs']) {
         if (await page.locator(selector).count()) assert.equal(await page.locator(selector).evaluate(el => el.open), false, `${label}: secondary information opens by default`);
       }
       await page.screenshot({ path: `${output}/health-default-${capture}.png`, fullPage: true });
@@ -59,7 +69,7 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
           if (!input || !data.d?.length) return null;
           const index = Math.max(0, data.d.length - 3);
           input.value = index; input.dispatchEvent(new Event('input'));
-          return { expected: data.a[index], date: fig.classList.contains('pf-viz-quiet') ? data.dateLabels[index] : data.r[index][2], key: fig.dataset.vizKey };
+          return { expected: data.a[index], date: fig.classList.contains('pf-viz-quiet') ? (data.selectionDates || data.dateLabels)[index] : data.r[index][2], key: fig.dataset.vizKey };
         });
         if (!selected) continue;
         assert.equal(await figure.locator('.pf-viz-range').getAttribute('aria-valuetext'), selected.expected, `${label}: ${selected.key} accessible selection`);
@@ -113,7 +123,7 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
         const data = JSON.parse(fig.querySelector('.pf-viz-data').textContent);
         window.paceforgeRememberPage();
         const key = 'pf-view:' + document.querySelector('#main-content').dataset.account + ':/sante';
-        return { expected: data.a[data.sel], actual: fig.querySelector('input').getAttribute('aria-valuetext'),
+        return { expected: data.rest && data.sel >= data.a.length ? data.restA : data.a[data.sel], actual: fig.querySelector('input').getAttribute('aria-valuetext'),
           pinned: fig.dataset.vizKey in JSON.parse(sessionStorage.getItem(key)).charts };
       });
       assert.equal(reset.actual, reset.expected, `${label}: Escape returns to the latest measurement`);
@@ -121,6 +131,6 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       assert.deepEqual(errors, [], `${label}: browser errors`);
       await page.close();
     }
-    console.log('Health visuals: no card of signals, the race on the curves, one-tap feel, main plots, dated selections and readable index/legends at 320/393px, 100/200% text, light/dark passed.');
+    console.log('Health visuals: no card of signals, the ring word, legends in the series colours, (i) on the right, one-tap feel, main plots, dated selections and readable index/legends at 320/393px, 100/200% text, light/dark passed.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

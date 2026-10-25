@@ -10,8 +10,10 @@
 {% set has_sleep_detail = s and s.state not in ("never", "old") %}
 {% set has_curves = has_sleep_detail or p.vfc or p.fc or p.respiration or p.feel_track %}
 
-{% if p.connect %}<p class="pf-state-links"><a class="pf-native-only" data-phone-connect href="paceforge://devices">Connecter <span data-phone-health>Apple Santé</span> ›</a><span class="pf-browser-only"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></span></p>{% endif %}
+{% if p.connect %}<p class="pf-state-links"><a class="pf-native-only" data-phone-connect href="paceforge://devices"><span>Connecter <span data-phone-health>Apple Santé</span> ›</span></a><span class="pf-browser-only"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></span></p>{% endif %}
 {% include "partials/sante_checkin.html" %}
+{#- a tap on the feel is said here (the form itself is swapped: sante_checkin.html fills this region out of band) -#}
+<p id="ressenti-live" class="sr-only" aria-live="polite"></p>
 
 <div class="pf-health-panels">
 {# The curves stacked on the same days, under the rings (owner, 2026-10-17): a day touched on one is read on all #}
@@ -22,13 +24,12 @@
     {% if has_sleep_detail %}
         <section id="sommeil-detail" class="pf-card pf-curve" aria-labelledby="h-sommeil-detail" data-viz-scope>
             <div class="pf-card-top">
-                <h3 id="h-sommeil-detail" class="pf-card-h">Sommeil</h3>{{ viz.help('sommeil-courbes', 'Durée de sommeil enregistrée, siestes comprises. Les couleurs montrent les phases estimées par la montre ; une nuit sans phases reste unie. La moyenne utilise uniquement les jours mesurés et ne constitue pas un objectif personnel.') }}
+                <h3 id="h-sommeil-detail" class="pf-card-h">Sommeil</h3>{{ viz.help('sommeil-courbes', 'Durée de sommeil enregistrée, siestes comprises. Les couleurs montrent les phases estimées par la montre ; une nuit sans phases reste unie. La moyenne utilise uniquement les jours mesurés et ne constitue pas un objectif personnel.', 'du graphique de sommeil') }}
             </div>
             {% for key, label in s.ranges if key == s.r %}{% set b = s.bars[key] %}
             <div data-range-panel="{{ key }}"{% if key != s.r %} hidden{% endif %}>
                 {{ viz.viz_day_bars(b, "Sommeil sur 24 heures, " ~ label, "nuit", "Nuit précédente", "Nuit suivante", quiet=True, group="jours" if key == "14" else None) }}
-                {% if b.has_phases %}{{ viz.viz_legend(b.phase_legend + [("is-night", "nuit sans phases"), ("is-nap", "sieste")]) }}
-                {% else %}{{ viz.viz_legend([("is-night", "nuit"), ("is-nap", "sieste")]) }}{% endif %}
+                {% if b.legend %}{{ viz.viz_legend(b.legend) }}{% endif %}
             </div>
             {% endfor %}
         </section>
@@ -37,7 +38,7 @@
         <div id="mesures-nocturnes" class="pf-health-nights" role="group" aria-label="Mesures nocturnes">
             {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
             <article id="{{ key }}" class="pf-card pf-curve" aria-labelledby="h-{{ key }}">
-                <div class="pf-measurement-head"><h3 id="h-{{ key }}" class="pf-card-h">{{ c.title }}</h3>{{ viz.help(key, c.interpretation.detail ~ ' Les points sont les mesures nocturnes, la ligne leur moyenne glissante et la zone les valeurs habituelles. La moyenne affichée au repos porte sur les mesures visibles.') }}</div>
+                <div class="pf-measurement-head"><h3 id="h-{{ key }}" class="pf-card-h">{{ c.title }}</h3>{{ viz.help(key, c.interpretation.detail ~ ' Les points sont les mesures nocturnes, la ligne leur moyenne glissante et la zone les valeurs habituelles. La moyenne affichée au repos porte sur les mesures visibles.', 'de la VFC' if key == 'vfc' else 'de la FC de nuit') }}</div>
                 {% if c.status.tone == 'danger' %}<p class="pf-card-status is-danger"><i class="pf-dot" aria-hidden="true"></i>{{ c.status_short }}</p><p class="pf-card-meaning">Ta FC de nuit est nettement plus haute que d'habitude.</p>{% endif %}
                 {% if c.measurement and c.measurement.missing_label %}<p class="pf-measurement-meta">{{ c.measurement.missing_label }}</p>{% endif %}
                 {{ viz.viz_night_card(c, c.title, legend=c.legend, central_details=True, quiet=True, group="jours") }}
@@ -45,7 +46,7 @@
             {% endfor %}
             {% if p.respiration %}{% set c = p.respiration %}
             <article id="respiration" class="pf-card pf-curve" aria-labelledby="h-respiration">
-                <div class="pf-measurement-head"><h3 id="h-respiration" class="pf-card-h">{{ c.title }}</h3>{{ viz.help('respiration', 'Nombre de respirations par minute pendant le sommeil. Compare les variations à tes valeurs habituelles, en tenant compte de ton ressenti.') }}</div>
+                <div class="pf-measurement-head"><h3 id="h-respiration" class="pf-card-h">{{ c.title }}</h3>{{ viz.help('respiration', 'Nombre de respirations par minute pendant le sommeil. Compare les variations à tes valeurs habituelles, en tenant compte de ton ressenti.', 'de la respiration') }}</div>
                 {% if c.stale %}<p class="pf-measurement-meta">Donnée ancienne</p>{% endif %}
                 {% if c.chart %}
                 {{ viz.viz_night_card(c.chart, c.title, legend=[("is-ref", c.chart.ref.label)] if c.chart.ref else [], central_details=True, quiet=True, group="jours") }}
@@ -67,8 +68,9 @@
 {% if s and s.state != "never" %}
 <section id="sommeil" class="pf-health-panel" aria-labelledby="h-sommeil">
     <header class="pf-health-panel-heading">
-        <h2 id="h-sommeil" class="pf-health-panel-title">Sommeil{% if s.hero %}<small>{{ s.hero.label }}</small>{% endif %}</h2>{{ viz.help('sommeil', 'Les horaires et phases sont estimés par ta montre. La répartition montre les durées par phase, pas leur ordre. Le déroulé de la nuit s’affiche lorsque les horaires des phases sont disponibles. Survole ou touche une phase pour la mettre en évidence.') }}
-        <span class="pf-panel-value">{{ s.hero.total if s.hero else 'Pas de nuit récente' }}</span>
+        <h2 id="h-sommeil" class="pf-health-panel-title">Sommeil{% if s.hero %}<small>{{ s.hero.label }}</small>{% endif %}</h2>
+        <span class="pf-head-end"><span class="pf-panel-value">{{ s.hero.total if s.hero else 'Pas de nuit récente' }}</span>
+        {{ viz.help('sommeil', 'Les horaires et phases sont estimés par ta montre. La répartition montre les durées par phase, pas leur ordre. Le déroulé de la nuit s’affiche lorsque les horaires des phases sont disponibles. Survole ou touche une phase pour la mettre en évidence.', 'du sommeil') }}</span>
     </header>
     <div class="pf-panel-body">
     {% if s.state == "old" %}<p class="pf-sante-note">Ta montre n'a enregistré aucune nuit ces 3 derniers mois.</p>
@@ -91,10 +93,9 @@
 {% if p.recup or p.score.value is not none %}
 <section id="recuperation" class="pf-health-panel" aria-labelledby="h-recuperation">
     <header class="pf-health-panel-heading">
-        <h2 id="h-recuperation" class="pf-health-panel-title">Récupération</h2>{{ viz.help('récupération', 'Indice sur 100 calculé à partir des signaux nocturnes disponibles et de tes repères personnels. Les seuils 40 et 70 délimitent les zones de lecture. Un score élevé indique des signaux plus favorables ; il ne garantit pas l’absence de fatigue. Les jours sans données restent vides.') }}
-        {% if p.score.value is not none and p.quality and p.quality.partial %}
-        <span class="pf-health-status">Indice partiel</span>
-        {% endif %}
+        <h2 id="h-recuperation" class="pf-health-panel-title">Récupération</h2>
+        <span class="pf-head-end">{% if p.score.value is not none and p.quality and p.quality.partial %}<span class="pf-health-status">Indice partiel</span>{% endif %}
+        {{ viz.help('recuperation', 'Indice sur 100 calculé à partir des signaux nocturnes disponibles et de tes repères personnels. Les seuils 40 et 70 délimitent les zones de lecture. Un score élevé indique des signaux plus favorables ; il ne garantit pas l’absence de fatigue. Les jours sans données restent vides.', 'de la récupération') }}</span>
     </header>
     <div class="pf-panel-body">
         {% if p.recup %}<div id="recuperation-detail" class="pf-card pf-recup14">
@@ -113,8 +114,8 @@
     <div class="pf-panel-body">
         {% if p.load %}{% set c = p.load %}
         <section id="charge-detail" class="pf-load-detail">
-            <div class="pf-measurement-head"><h3 class="pf-card-h">Charge cumulée</h3>{{ viz.help('charge', 'La charge combine la durée et l’intensité des activités reçues. La ligne récente réagit plus vite que la ligne habituelle. Les unités sont propres à cet indicateur et ne mesurent pas un risque de blessure.') }}</div>
-            {% call viz.figure(c, "Charge accumulée", "charge-accumulee", unit_word="jour", card=True, quiet=True) %}
+            <div class="pf-measurement-head"><h3 class="pf-card-h">Charge cumulée</h3>{{ viz.help('charge', 'La charge combine la durée et l’intensité des activités reçues. La ligne récente réagit plus vite que la ligne habituelle. Les unités sont propres à cet indicateur et ne mesurent pas un risque de blessure.', 'de la charge cumulée') }}</div>
+            {% call viz.figure(c, "Charge cumulée", "charge-accumulee", unit_word="jour", card=True, quiet=True) %}
                 {% for tick in c.ticks %}<line x1="0" x2="{{ c.X1 }}" y1="{{ tick.y }}" y2="{{ tick.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ tick.y + 4 }}" text-anchor="end">{{ tick.label }}</text>{% endfor %}
                 {% for line in c.series %}<path d="{{ line.path }}" class="pf-viz-line {{ line.cls }}{% if loop.index == 2 %} pf-load-usual{% endif %}"/>{% endfor %}
                 {% for tick in c.xt %}<text x="{{ tick.x }}" y="136" text-anchor="middle">{{ tick.label }}</text>{% endfor %}

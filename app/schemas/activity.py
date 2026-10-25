@@ -53,7 +53,9 @@ class ActivitySummary(BaseModel):
         if not self.average_speed or self.average_speed == 0:
             return None
         if self.sport_group == "bike":  # every bike sport (gravel, VTT, e-bike…): a speed, not a pace
-            return f"{self.average_speed * 3.6:.1f} km/h"
+            from app.services.viz import fr_num
+
+            return f"{fr_num(self.average_speed * 3.6, 1)} km/h"  # « 22,1 km/h »: the decimal comma
         if self.sport_type in ("Swim",):
             pace_per_100m = 100 / self.average_speed
             mins = int(pace_per_100m // 60)

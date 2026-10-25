@@ -18,7 +18,17 @@
                 charts[fig.dataset.vizKey] = data.d[Number(fig.querySelector('.pf-viz-range').value)];
             } catch (_) {}
         });
-        return { y: scrollY, folds: folds, charts: charts };
+        // Activités: how many weeks were on the page (« Semaines précédentes »), so a return (the activity page's
+        // « ‹ » goes back in the history; signed-in pages are not kept by the browser) brings them back
+        return { y: scrollY, folds: folds, charts: charts, weeks: main.querySelectorAll('#activity-list > section[id^="week-"]').length };
+    }
+    // the older pages again, one after the other, then `done` (the scroll): no focus move, nothing said (app.js
+    // only follows the button's own requests)
+    function olderWeeks(want, done, guard) {
+        var list = document.getElementById('activity-list'), button = document.querySelector('#load-more [data-load-more]');
+        if (!list || !button || !window.htmx || list.children.length >= want || guard > 20) { done(); return; }
+        window.htmx.ajax('GET', button.getAttribute('hx-get'), { target: '#activity-list', swap: 'beforeend' })
+            .then(function () { olderWeeks(want, done, guard + 1); }, done);
     }
     function remember() {
         var state = capture(), name = key();
@@ -49,8 +59,20 @@
                 var id = decodeURIComponent(location.hash.slice(1));
                 var target = document.getElementById(id === 'forme' ? 'fc-facile' : id);
                 for (var parent = target; parent; parent = parent.parentElement) if (parent.tagName === 'DETAILS') parent.open = true;
-                if (target) { window.PFViz?.scan(target); scrollTo({ top: scrollY + target.getBoundingClientRect().top, behavior: 'instant' }); }
-            } else if (state) scrollTo({ top: state.y, behavior: 'instant' });
+                // the anchor's own margin and the page's padding (the sticky top bar's height) count, as for the
+                // browser's own anchor jump: « Voir la semaine › » never lands its title under the bar
+                if (target) {
+                    window.PFViz?.scan(target);
+                    var margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+                    var padding = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+                    scrollTo({ top: scrollY + target.getBoundingClientRect().top - margin - padding, behavior: 'instant' });
+                }
+            } else if (state) {
+                var list = document.getElementById('activity-list'), y = state.y, nav = performance.getEntriesByType?.('navigation')[0];
+                var back = returning || (nav && nav.type === 'back_forward');   // a return, not a new visit
+                if (list && back && state.weeks > list.children.length) olderWeeks(state.weeks, function () { scrollTo({ top: y, behavior: 'instant' }); }, 0);
+                else scrollTo({ top: y, behavior: 'instant' });
+            }
         } catch (_) {}
     }
     window.paceforgeRememberPage = remember;

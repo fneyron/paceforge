@@ -195,8 +195,14 @@ def bars(nights: dict, today: date, key: str) -> dict:
         mean = round(sum(totals) / len(totals) / 5) * 5  # a mean of approximate times: to 5 min
         c["average"] = viz.hm(mean)
         c["has_phases"] = any(phase_parts)
-        c["phase_legend"] = [("is-" + k, nm) for k, nm in PHASES if k != "awake"
+        c["phase_legend"] = [("is-" + k, nm.lower()) for k, nm in PHASES if k != "awake"
                              and any(parts and any(p["key"] == k for p in parts) for parts in phase_parts)]
+        # the legend names only what the bars draw, in the kit's lower case: the phases seen, a night drawn
+        # plain (« nuit sans phases » beside phased ones), a nap on top
+        plain = any(v and not phase_parts[i] for i, v in enumerate(values))
+        c["legend"] = (c["phase_legend"]
+                       + ([("is-night", "nuit sans phases" if c["has_phases"] else "nuit")] if plain else [])
+                       + ([("is-nap", "sieste")] if any(stack) else []))
         return viz.rest(c, [viz.hm(mean), "en moyenne", f"Sur {len(totals)} nuits mesurées · {RANGES[key][1]}"],
                         f"Sommeil sur 24 heures, {RANGES[key][1]} : {viz.hm_long(mean)} en moyenne, siestes "
                         "comprises. Choisis une nuit pour voir la sienne.")

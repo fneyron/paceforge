@@ -21,6 +21,9 @@ assert.ok(['localhost', '127.0.0.1'].includes(new URL(base).hostname));
     await page.evaluate(() => { window.pendingTab = window.paceforgeTabs.navigate('/activities'); });
     await requested;
     assert.equal(await page.locator('#main-content').evaluate(main => main.hidden), true);
+    // the loading status says it in words (an aria-label on a status is not read)
+    await page.waitForFunction(() => document.querySelector('.pf-refresh-status.is-loading [class="sr-only"]')?.textContent === 'Chargement…');
+    assert.equal(await page.locator('.pf-refresh-status.is-loading').getAttribute('aria-label'), null);
     await page.evaluate(() => window.paceforgeTabs.cancel());
     assert.equal(await page.locator('#main-content').evaluate(main => main.hidden), false);
     assert.equal(await page.locator('.pf-refresh-status.is-loading').count(), 0);

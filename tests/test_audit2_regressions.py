@@ -64,7 +64,7 @@ def test_every_bike_sport_shows_a_speed():
         return ActivitySummary(id=1, sport_type=sport, name="x", start_date=datetime(2026, 1, 1), distance=40000,
                                moving_time=5400, average_speed=40000 / 5400)
     for sport in ("Ride", "GravelRide", "MountainBikeRide", "EBikeRide", "VirtualRide"):
-        assert row(sport).pace_formatted == "26.7 km/h", sport
+        assert row(sport).pace_formatted == "26,7 km/h", sport
     assert row("TrailRun").pace_formatted == "2:15/km"
 
 
@@ -108,4 +108,4 @@ async def test_the_activity_pages_print_the_decimal_comma(as_user, db_session, t
     await db_session.flush()
     assert ">12,35<small" in (await as_user.get("/activities")).text
     detail = (await as_user.get(f"/activity/{act.id}")).text
-    assert "12,35 <span" in detail and ">1,2km<" in detail
+    assert "12,35 <span" in detail and ">1,2 km<" in detail

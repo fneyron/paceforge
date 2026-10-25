@@ -1,18 +1,25 @@
 {#- The feel in one tap (owner, 2026-10-17): Bien · Moyen · Cassé; the chosen one tapped again clears it. Context only,
-    never an input of the night index. -#}
+    never an input of the night index. The chips keep their ids across the swap (htmx gives the focus back to the one
+    tapped); the group is a div (a form keeps its own role). -#}
 {% if checkin is defined and checkin %}
-<form id="ressenti" class="pf-feel" method="post" action="/sante/ressenti" hx-post="/sante/ressenti" hx-target="#ressenti" hx-swap="outerHTML" role="group" aria-labelledby="ressenti-label">
+<form id="ressenti" class="pf-feel-form" method="post" action="/sante/ressenti" hx-post="/sante/ressenti" hx-target="#ressenti" hx-swap="outerHTML">
     <input type="hidden" name="day" value="{{ checkin.day }}">
+    <div class="pf-feel" role="group" aria-labelledby="ressenti-label">
     <span id="ressenti-label" class="pf-feel-label">Ressenti du jour</span>
     <span class="pf-feel-chips">
     {% for value, label in checkin.feel_options %}{% set on = checkin.feel == value %}
-        <button type="submit" class="pf-feel-chip is-{{ value }}" name="{{ 'action' if on else 'feel' }}" value="{{ 'clear' if on else value }}" aria-pressed="{{ 'true' if on else 'false' }}">{{ label }}</button>
+        <button type="submit" id="feel-{{ value }}" class="pf-feel-chip is-{{ value }}" name="{{ 'action' if on else 'feel' }}" value="{{ 'clear' if on else value }}" aria-pressed="{{ 'true' if on else 'false' }}">{{ label }}</button>
     {% endfor %}
     </span>
     {% if checkin_error %}<p class="pf-checkin-error" role="alert">{{ checkin_error }}</p>{% endif %}
+    </div>
 </form>
-{#- After a tap, the curves' track of dots follows (out of band); emptied, it hides -#}
+{#- After a tap, the curves' track of dots follows (out of band); emptied, it hides. The answer is said in the page's
+    polite region (sante_page.html), filled in place: the region itself stays -#}
 {% if feel_oob is defined and feel_oob %}
+{% if not checkin_error %}{% set chosen = checkin.feel_options|selectattr(0, 'equalto', checkin.feel)|map(attribute=1)|first %}
+<p id="ressenti-live" hx-swap-oob="innerHTML">{% if chosen %}Ressenti enregistré : {{ chosen }}{% else %}Ressenti effacé{% endif %}</p>
+{% endif %}
 {% if feel_track %}{% import "partials/_viz.html" as viz %}
 <article id="ressenti-courbe" class="pf-card pf-curve" aria-labelledby="h-ressenti-courbe" hx-swap-oob="true">
     <div class="pf-measurement-head"><h3 id="h-ressenti-courbe" class="pf-card-h">Ressenti</h3></div>
