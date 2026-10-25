@@ -238,6 +238,37 @@ async def test_a_password_reset_signs_out_every_other_session(client, db_session
         assert (await other.get("/settings")).status_code == 200
 
 
+async def test_a_password_reset_unpairs_every_phone_of_the_account(client, db_session, no_commit):
+    """A phone's token lasts 180 days of its own, whatever the sessions: a reset (the password was perhaps stolen)
+    unpairs the account's phones; another account's phone keeps working."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.mobile import MobileDevice
+    from app.routers.mobile import digest
+
+    user, other = await _member(db_session), await _member(db_session, "other@x.fr")
+    in_30_days = datetime.now(timezone.utc) + timedelta(days=30)
+    db_session.add_all([MobileDevice(user_id=user.id, platform="ios", token_hash=digest("mine"), expires_at=in_30_days),
+                        MobileDevice(user_id=other.id, platform="ios", token_hash=digest("theirs"),
+                                     expires_at=in_30_days)])
+    user.password_reset_token = auth_service.hash_token("reset-token")
+    user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    await db_session.flush()
+
+    async def sync(token):
+        return await client.post("/api/mobile/daily", json={"days": []}, headers={"Authorization": f"Bearer {token}"})
+
+    assert (await sync("mine")).status_code == 200
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:
+        r = await c.post("/auth/reset-password", data={"token": "reset-token", "password": "pw-87654321"})
+        assert r.headers["location"] == "/sante"
+    r = await sync("mine")
+    assert r.status_code == 401 and r.json()["detail"] == "Associe à nouveau ce téléphone."
+    assert (await sync("theirs")).status_code == 200
+    phones = (await db_session.execute(select(MobileDevice.user_id))).scalars().all()
+    assert phones == [other.id]
+
+
 async def _login_from(c, address, email, password="wrong-password"):
     return await c.post("/auth/login", data={"email": email, "password": password},
                         headers={"X-Forwarded-For": address})

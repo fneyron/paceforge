@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from app.config import GOOGLE_SITE_VERIFICATION, settings
 from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db, sign_in
+from app.models.mobile import MobileDevice
 from app.models.user import User
 from app.services import sessions
 from app.services.app_return import app_return, is_app_return, with_result
@@ -355,6 +356,9 @@ async def reset_password(
     user.password_reset_token = None
     user.password_reset_expires_at = None
     user.session_version = (user.session_version or 0) + 1  # every other session of the account is signed out
+    # and every paired phone (180-day tokens of their own): whoever reset the password pairs them again; the days
+    # they sent stay (mobile_daily.device_id is set to NULL)
+    await db.execute(delete(MobileDevice).where(MobileDevice.user_id == user.id))
     await db.commit()  # before the redirect: the request that follows it already checks the new session version
     # an account the per-account login cap holds can sign in again: whoever reset it holds its mailbox
     await forget_account_attempts("login", (user.email or "").strip().lower())
