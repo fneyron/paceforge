@@ -23,7 +23,7 @@ from starlette.templating import Jinja2Templates
 
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.services import coros, garmin
+from app.services import coros, garmin, health_consent
 from app.services.sante import health_page
 from app.services.watch_sync_status import sync_notice
 
@@ -83,8 +83,10 @@ async def _health_context(db: AsyncSession, user: User, r: str | None = None) ->
 
     day = (page or {}).get("calendar_day") or await athlete_today(db, user.id)
     checkin = await sante_checkin.read(db, user.id, day)
+    # the consent to health data not given yet (an account from before it was asked): asked above the rings
+    consent_card = not health_consent.given(user) and await health_consent.holds_health_data(db, user.id)
     return {"user": user, "coros": status, "garmin": garmin_link, "page": page, "auto_sync": auto_sync,
-            "checkin": checkin,
+            "checkin": checkin, "consent_card": health_consent.texts() if consent_card else None,
             "sync_v": await data_version(db, user.id) if auto_sync else None, "sync_n": 0}
 
 
@@ -120,6 +122,36 @@ async def link_state(db: AsyncSession, user_id: int) -> tuple[dict, dict]:
                  coros.ACTIVITIES_PARTIAL)
     return (_link(await coros.connection_for(db, user_id), coros, retryable),
             _link(await garmin.connection_for(db, user_id), garmin))
+
+
+@router.get("/sante/consentement", response_class=HTMLResponse)
+async def health_consent_page(request: Request, next: str = "", user: User = Depends(get_current_user)):
+    """The consent to health data (GDPR art. 9.2.a), asked before a new health source starts: its text, a box to
+    tick, then back to `next` (one of the allowed targets only, services/health_consent.safe_next)."""
+    target = health_consent.safe_next(next)
+    if health_consent.given(user):
+        return RedirectResponse(target, status_code=303)
+    return templates.TemplateResponse(request, "health_consent.html", context={
+        "user": user, "next": target, **health_consent.texts()})
+
+
+@router.post("/sante/consentement", response_class=HTMLResponse)
+async def health_consent_give(
+    request: Request,
+    next: str = Form(default=""),
+    accept: str | None = Form(default=None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The box ticked (or Santé's « J'accepte »): the consent is dated and versioned, then `next`."""
+    target = health_consent.safe_next(next)
+    if accept != "1":
+        return templates.TemplateResponse(request, "health_consent.html", status_code=400, context={
+            "user": user, "next": target, "error": health_consent.MISSING, **health_consent.texts()})
+    health_consent.record(user)
+    await db.commit()  # before the redirect: the next request (a COROS connect) reads it
+    logger.info("Health data consent given by user %d", user.id)
+    return RedirectResponse(target, status_code=303)
 
 
 @router.get("/accueil")

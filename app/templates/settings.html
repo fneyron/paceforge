@@ -98,10 +98,25 @@
     {% include "partials/garmin_settings.html" %}
     </div>
 
-    <div class="pf-section space-y-3">
+    <div class="pf-section space-y-3" id="donnees">
         <h2 class="pf-h2">Données et confidentialité</h2>
+        {% if health_ok is defined and health_ok %}<p class="pf-note !text-ok" role="status">{{ health_ok }}</p>{% endif %}
+        {% if health_consent_on %}
+        <div class="pf-consent-set">
+            <p class="text-sm">Données de santé&nbsp;: consentement donné le {{ health_consent_on }}.</p>
+            <details class="pf-consent-withdraw">
+                <summary class="pf-link">Retirer mon consentement</summary>
+                <form method="post" action="/settings/health-consent/withdraw">
+                    <p class="text-sm text-gray-500">Tes sources seront déconnectées et tes données de santé effacées.</p>
+                    <button type="submit" class="pf-btn pf-btn-sm bg-danger text-white">Retirer et effacer</button>
+                </form>
+            </details>
+        </div>
+        {% else %}
+        <p class="text-sm">Données de santé&nbsp;: pas de consentement. <a class="pf-link" href="/sante/consentement?next=/settings%23donnees">Donner mon accord</a></p>
+        {% endif %}
         <p><a class="pf-link" href="/mobile/devices">Téléphones associés et imports de santé ›</a></p>
-        <p><a class="pf-link" href="/mobile/privacy">Confidentialité ›</a></p>
+        <p><a class="pf-link" href="/privacy">Confidentialité ›</a></p>
     </div>
 
     <!-- Danger: collapsed, out of the way -->

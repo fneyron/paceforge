@@ -26,6 +26,7 @@
     {% if sync_notes %}
     <p class="pf-health-sync-note" data-sync-note role="status"><span>{{ sync_notes|join(' ') }}</span><a href="/settings#connections">Détails ›</a></p>
     {% endif %}
+    {% if consent_card %}{% include "partials/health_consent_card.html" %}{% endif %}
 
     {% if page is none %}
     <section class="pf-note mt-4"><p>Impossible d'afficher tes données pour l'instant. Réessaie dans quelques minutes.</p></section>

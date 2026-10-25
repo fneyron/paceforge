@@ -8,7 +8,7 @@ from app.csrf import check_csrf, csrf
 from app.dependencies import get_current_user, get_db
 from app.models.lactate import LactateTest
 from app.models.user import User
-from app.services import lactate
+from app.services import health_consent, lactate
 
 router = APIRouter(prefix='/sante/lactate', tags=['lactate'])
 templates = Jinja2Templates(directory='app/templates')
@@ -30,7 +30,8 @@ async def render(request, user, db, *, selected=None, edit=None, values=None, er
     return templates.TemplateResponse(request, 'lactate.html', context=dict(user=user, tests=tests, current=current,
         chart=lactate.chart(current, previous) if current else None, previous=previous, candidates=candidates,
         values=values or lactate.form_values(edit), edit=edit, error=error, csrf=csrf(request),
-        effort_label=lactate.effort_label, number_label=lactate.number_label), status_code=400 if error else 200,
+        effort_label=lactate.effort_label, number_label=lactate.number_label,
+        **(health_consent.texts() if not health_consent.given(user) else {})), status_code=400 if error else 200,
         headers={'Cache-Control': 'no-store'})
 
 
@@ -63,13 +64,21 @@ async def save(request: Request, user: User = Depends(get_current_user), db: Asy
         except (ValueError, TypeError):
             raise HTTPException(400, 'Test invalide.') from None
         row = await owned(db, user, test_id)
-    try:
-        values = lactate.parse(form)
-    except ValueError as exc:
+    def typed():
         vals = {k: str(form.get(k,''))[:1000] for k in ('tested_on','mode','device','protocol','notes')}
         vals['stages'] = [dict(zip(('intensity','lactate','hr','minutes'), fields)) for fields in
                           zip(*(form.getlist(k)[:30] for k in ('intensity','lactate','hr','minutes')))]
-        return await render(request, user, db, selected=row, edit=row, values=vals, error=str(exc))
+        return vals
+    try:
+        values = lactate.parse(form)
+    except ValueError as exc:
+        return await render(request, user, db, selected=row, edit=row, values=typed(), error=str(exc))
+    # a lactate test is health data: saved with the athlete's consent only (the form's box when not given yet)
+    if not health_consent.given(user):
+        if form.get('health_consent') != '1':
+            return await render(request, user, db, selected=row, edit=row, values=typed(),
+                                error=health_consent.MISSING)
+        health_consent.record(user)
     if row is None:
         row = LactateTest(user_id=user.id, **values)
         db.add(row)

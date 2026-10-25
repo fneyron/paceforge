@@ -15,6 +15,7 @@ from app.models.activity import Activity
 from app.models.user import User
 from app.services import coros as coros_service
 from app.services import garmin as garmin_service
+from app.services import health_consent
 from app.services.coros import coros_status
 from app.services.garmin import garmin_status
 from app.services.strava import disconnect as strava_disconnect_link
@@ -62,6 +63,7 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
     flags.setdefault("coros", await coros_status(db, user.id))
     flags.setdefault("garmin", await garmin_status(db, user.id))
     flags.setdefault("strava", strava_status(user))
+    flags.setdefault("health_consent_on", health_consent.given_on(user) if health_consent.given(user) else None)
     return {"request": request, "user": user, "activity_count": total, **flags}
 
 
@@ -80,6 +82,7 @@ async def settings_page(
         strava_ok=request.session.pop("strava_ok", None),
         strava_error=request.session.pop("strava_error", None),
         garmin_error=request.session.pop("garmin_error", None),
+        health_ok=request.session.pop("health_ok", None),
     )
     return templates.TemplateResponse(request, "settings.html", context=ctx)
 
@@ -208,16 +211,17 @@ async def strava_disconnect(
 REVOKE_TIMEOUT_S = 8  # per provider: a deletion never waits long on one that does not answer
 
 
-async def _revoke_links(db: AsyncSession, user: User) -> None:
+async def _revoke_links(db: AsyncSession, user: User, strava: bool = True) -> None:
     """Before an account's rows go, best effort and time-bounded: PaceForge's
     access revoked at Strava (deauthorize, and the athlete's own app's webhook
     deleted) and at COROS, the Garmin link forgotten (Garmin has no
     revocation). A provider that fails or does not answer in time never stops
     the deletion: the session is then rolled back to a clean state (nothing is
-    deleted yet), the explicit deletions follow."""
+    deleted yet), the explicit deletions follow. `strava=False`: the health
+    sources only (the consent to health data withdrawn)."""
     user_id = user.id
     steps = []
-    if user.has_strava_linked or user.strava_webhook_subscription_id:
+    if strava and (user.has_strava_linked or user.strava_webhook_subscription_id):
         steps.append(("Strava", lambda: strava_disconnect_link(db, user)))
     coros_conn = await coros_service.connection_for(db, user_id)
     if coros_conn is not None:
@@ -234,6 +238,29 @@ async def _revoke_links(db: AsyncSession, user: User) -> None:
             logger.warning("Account deletion of user %d: %s link not revoked", user_id, name, exc_info=True)
     if not clean:
         await db.rollback()
+
+
+@router.post("/settings/health-consent/withdraw")
+async def withdraw_health_consent(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """« Retirer mon consentement » (GDPR art. 7.3): COROS and Garmin disconnected as account deletion does it, the
+    phones unpaired, the health data erased and the consent cleared. Activities, plans and Strava stay."""
+    from app.models.coros import CorosConnection
+    from app.models.garmin import GarminConnection
+
+    user_id = user.id
+    await _revoke_links(db, user, strava=False)
+    # a link a provider did not let go of in time (rolled back) is forgotten all the same
+    for model in (CorosConnection, GarminConnection):
+        await db.execute(delete(model).where(model.user_id == user_id))
+    await health_consent.erase_health_data(db, user_id)
+    await db.commit()
+    request.session["health_ok"] = "Consentement retiré\u00a0: tes sources sont déconnectées et tes données de santé effacées."
+    logger.warning("User %d withdrew the health data consent: health data erased", user_id)
+    return RedirectResponse(url="/settings#donnees", status_code=303)
 
 
 @router.post("/settings/delete-account")

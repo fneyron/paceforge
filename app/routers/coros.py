@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crypto import decrypt_secret, encrypt_secret
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.services import coros
+from app.services import coros, health_consent
 from app.services.app_return import app_return, is_app_return, with_result
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,11 @@ async def coros_connect(
     db: AsyncSession = Depends(get_db),
 ):
     """Discover COROS's OAuth setup, make sure PaceForge is registered there,
-    then send the athlete to the COROS login."""
+    then send the athlete to the COROS login. Without the consent to health
+    data (COROS sends nights, HRV, heart rate), it is asked first."""
+    if not health_consent.given(user):
+        here = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+        return RedirectResponse(url=health_consent.consent_url(here), status_code=303)
     retried = bool(request.session.pop("coros_retry", False))
     if next == "devices":
         request.session["coros_next"] = "/connections/coros"

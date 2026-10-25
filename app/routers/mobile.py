@@ -345,25 +345,44 @@ async def oauth_start(request: Request, provider: Literal["coros", "strava"], ti
 async def oauth_confirm(request: Request, provider: Literal["coros", "strava"], user: User = Depends(get_current_user)):
     """The account is shown before the provider's consent, as on the site's connection pages: a ticket link sent
     to someone else cannot quietly attach their COROS or Strava to the sender's account."""
+    from app.services import health_consent
     from app.services.app_return import app_return, with_result
+    # COROS brings health data: without the consent, this page asks for it (its box, then the connect)
+    ask = provider == "coros" and not health_consent.given(user)
     return page(request, mode="oauth-confirm", user=user, name=PROVIDERS[provider],
                 start="/coros/connect?next=app" if provider == "coros" else "/auth/strava?next=app",
-                cancel=with_result(app_return(provider), "cancelled"))
+                cancel=with_result(app_return(provider), "cancelled"), **(health_consent.texts() if ask else {}))
+
+
+def _connect_page(request: Request, user: User, challenge: str, platform: str, error: str | None = None):
+    from app.services import health_consent
+    # Apple Santé and Health Connect bring health data: the pairing page asks for the consent not given yet
+    ask = health_consent.texts() if not health_consent.given(user) else {}
+    return templates.TemplateResponse(request, "mobile.html", status_code=400 if error else 200, headers=HEADERS,
+                                      context={"mode": "connect", "user": user, "challenge": challenge,
+                                               "platform": platform, "csrf": csrf(request), "error": error, **ask})
 
 
 @router.get("/mobile/connect")
 async def connect(request: Request, challenge: str, platform: Platform, user: User = Depends(get_current_user)):
     if not re.fullmatch(r"[a-f0-9]{64}", challenge):
         raise HTTPException(400)
-    return page(request, mode="connect", user=user, challenge=challenge, platform=platform, csrf=csrf(request))
+    return _connect_page(request, user, challenge, platform)
 
 
 @router.post("/mobile/connect")
 async def pair(request: Request, challenge: str = Form(), platform: Platform = Form(),
-               csrf_token: str = Form(), user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+               csrf_token: str = Form(), health_consent: str | None = Form(default=None),
+               user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from app.services import health_consent as consent
+
     check_csrf(request, csrf_token)
     if not re.fullmatch(r"[a-f0-9]{64}", challenge):
         raise HTTPException(400)
+    if not consent.given(user):
+        if health_consent != "1":
+            return _connect_page(request, user, challenge, platform, error=consent.MISSING)
+        consent.record(user)
     now = datetime.now(timezone.utc)
     await db.execute(delete(MobileDevice).where(MobileDevice.user_id == user.id, MobileDevice.expires_at < now))
     count = len((await db.scalars(select(MobileDevice.id).where(MobileDevice.user_id == user.id))).all())

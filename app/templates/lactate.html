@@ -59,6 +59,8 @@
                 </div>
                 <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" id="add-lactate-stage" hidden>Ajouter un palier</button>
                 <label>Contexte · facultatif<textarea class="pf-input" name="notes" rows="3" maxlength="1000" placeholder="Moment du prélèvement, récupération entre paliers, repas, température…">{{ values.notes }}</textarea></label>
+                {% if consent_text %}<div class="pf-lactate-consent">{% for paragraph in consent_text %}<p>{{ paragraph }}</p>{% endfor %}
+                <label class="pf-consent-check"><input type="checkbox" name="health_consent" value="1" required><span>{{ consent_label }}</span></label></div>{% endif %}
                 <div class="pf-lactate-actions"><button class="pf-btn pf-btn-primary">Enregistrer le test</button>{% if edit %}<a class="pf-link" href="/sante/lactate/{{ edit.id }}">Annuler</a>{% endif %}</div>
             </form>
         </div>
