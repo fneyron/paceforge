@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 from time import perf_counter
@@ -60,6 +61,13 @@ class PageTimingMiddleware:
             await send(message)
 
         await self.app(scope, receive, timed_send)
+
+
+def register_font_types() -> None:
+    """python:3.12-slim has no /etc/mime.types and Python's own table lacks the web fonts: the .woff2 files went out
+    as application/octet-stream, and gzipped (GZipMiddleware skips font/woff2, already compressed, not that)."""
+    mimetypes.add_type("font/woff2", ".woff2")
+    mimetypes.add_type("font/woff", ".woff")
 
 
 class VersionedStaticFiles(StaticFiles):
@@ -211,7 +219,8 @@ def create_app() -> FastAPI:
     # answer gets the headers too
     app.add_middleware(CrossSiteRequestMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(GZipMiddleware, minimum_size=1024)
+    # level 6: most of level 9's gain for a fraction of its CPU on every page and partial
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
     app.add_middleware(PageTimingMiddleware)
     app.add_middleware(
         SessionMiddleware,
@@ -222,7 +231,8 @@ def create_app() -> FastAPI:
         https_only=not settings.DEBUG,
     )
 
-    # Static files
+    # Static files (their types first: StaticFiles reads them per response, from mimetypes)
+    register_font_types()
     static_dir = Path(__file__).parent / "static"
     app.mount("/static", VersionedStaticFiles(directory=str(static_dir)), name="static")
 
