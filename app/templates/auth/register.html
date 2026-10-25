@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Inscription — PaceForge{% endblock %}
+{% block head %}<meta name="robots" content="noindex">{% endblock %}
 {% block content_public %}
-<div class="pf-auth">
+{% set bad_email = error and error_field == 'email' %}{% set bad_password = error and error_field == 'password' %}
+<div class="pf-auth-page">
+<main id="main-content" tabindex="-1" class="pf-auth">
     <div class="w-full max-w-sm">
         <div class="text-center mb-8">
             <a href="/" class="pf-logo pf-auth-logo" aria-label="PaceForge, accueil">{% include "partials/_logo_mark.html" %}<span>PaceForge</span></a>
@@ -10,42 +13,47 @@
         </div>
 
         {% if error %}
-        <div class="mb-4 pf-note !text-danger">{{ error }}</div>
+        <div id="form-error" class="mb-4 pf-note !text-danger" role="alert">{{ error }}</div>
         {% endif %}
 
         <form method="POST" action="/auth/register" class="space-y-4">
+            {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label for="firstname" class="pf-field-label">Prénom</label>
-                    <input type="text" name="firstname" id="firstname" value="{{ firstname or '' }}"
+                    <input type="text" name="firstname" id="firstname" value="{{ firstname or '' }}" autocomplete="given-name"{% if not error %} autofocus{% endif %}
                            class="pf-input">
                 </div>
                 <div>
-                    <label for="lastname" class="pf-field-label">Nom</label>
-                    <input type="text" name="lastname" id="lastname" value="{{ lastname or '' }}"
+                    <label for="lastname" class="pf-field-label">Nom <span class="text-gray-500">(facultatif)</span></label>
+                    <input type="text" name="lastname" id="lastname" value="{{ lastname or '' }}" autocomplete="family-name"
                            class="pf-input">
                 </div>
             </div>
             <div>
                 <label for="email" class="pf-field-label">Email</label>
-                <input type="email" name="email" id="email" required value="{{ email or '' }}"
+                <input type="email" name="email" id="email" required value="{{ email or '' }}" autocomplete="email"{% if bad_email %} aria-invalid="true" aria-describedby="form-error"{% endif %}
                        class="pf-input">
             </div>
             <div>
                 <label for="password" class="pf-field-label">Mot de passe</label>
-                <input type="password" name="password" id="password" required minlength="8"
-                       placeholder="8 caractères minimum"
+                <input type="password" name="password" id="password" required minlength="8" autocomplete="new-password"
+                       aria-describedby="password-help{% if bad_password %} form-error{% endif %}"{% if bad_password %} aria-invalid="true"{% endif %}
                        class="pf-input">
+                <p id="password-help" class="pf-field-help">8 caractères minimum.</p>
             </div>
             <button type="submit"
                     class="pf-btn pf-btn-primary pf-btn-block">
                 Créer mon compte
             </button>
+            <p class="pf-field-help">En créant un compte, tu acceptes les <a href="/cgu">CGU</a> et la <a href="/privacy">politique de confidentialité</a>.</p>
         </form>
 
         <p class="mt-6 text-center text-sm text-gray-500">
-            Déjà un compte ? <a href="/auth/login" class="pf-link">Se connecter</a>
+            Déjà un compte&#8239;? <a href="/auth/login" class="pf-link">Se connecter</a>
         </p>
     </div>
+</main>
+{% include "partials/public_footer.html" %}
 </div>
 {% endblock %}

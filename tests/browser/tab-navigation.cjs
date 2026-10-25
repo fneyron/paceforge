@@ -63,7 +63,7 @@ async function sameDocument(page) {
     // One existing tab remains immediately readable while the next one is requested.
     await page.evaluate(() => {
       document.querySelector('#main-content').dataset.cachedMarker = 'health-visited';
-      document.querySelector('#sommeil-habitudes').open = true;
+      document.querySelector('#comprendre-indicateurs').open = true;
       scrollTo({ top: 650, behavior: 'instant' });
     });
     await page.waitForTimeout(100);
@@ -72,6 +72,8 @@ async function sameDocument(page) {
     await go(page, '/activities');
     results.cold_activity_visible_ms = Date.now() - coldStarted;
     await sameDocument(page);
+    // the new tab's content takes the focus (a screen reader reads it from its start)
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'main-content', 'A tab change left the focus on the old tab link');
     const firstRows = await page.locator('[id^="activity-row-"]').count();
     assert.ok(firstRows > 0);
     await page.getByRole('button', { name: /Semaines précédentes/ }).click();
@@ -94,7 +96,7 @@ async function sameDocument(page) {
     results.visited_health_visible_ms = Date.now() - cacheStarted;
     await waiting.promise;
     assert.equal(await page.locator('#main-content').getAttribute('data-cached-marker'), 'health-visited', 'Visited page waited for the delayed GET');
-    assert.equal(await page.locator('#sommeil-habitudes').evaluate(el => el.open), true);
+    assert.equal(await page.locator('#comprendre-indicateurs').evaluate(el => el.open), true);
     assert.ok(Math.abs((await page.evaluate(() => scrollY)) - savedY) < 4, 'Tab return lost the scroll position');
     await page.locator('#ressenti').getByRole('button', { name: 'Cassé' }).click();
     await page.waitForFunction(() => document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim() === 'Cassé');

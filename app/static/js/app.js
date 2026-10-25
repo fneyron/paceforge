@@ -33,6 +33,34 @@
     }
     window.pfToast = pfToast;
     window.pfConfirm = pfConfirm;
+
+    // Activités › « Semaines précédentes » (partials/load_more.html): aria-disabled while it loads (never disabled:
+    // the focus would drop to the page); once the weeks are in, the focus goes to the first one added (its heading)
+    // and the polite region under the list says how many came. The button itself is swapped out of band.
+    var weeksBefore = null;
+    document.addEventListener("htmx:beforeRequest", function (event) {
+        var button = event.detail && event.detail.elt;
+        if (!button || !button.matches || !button.matches("[data-load-more]")) return;
+        var list = document.getElementById("activity-list");
+        weeksBefore = list ? list.children.length : null;
+        button.setAttribute("aria-disabled", "true");
+    });
+    document.addEventListener("htmx:afterRequest", function (event) {
+        var button = event.detail && event.detail.elt;
+        if (button && button.matches && button.matches("[data-load-more]") && button.isConnected) button.removeAttribute("aria-disabled");
+    });
+    document.addEventListener("htmx:afterSettle", function (event) {
+        var list = event.detail && event.detail.target;
+        if (!list || list.id !== "activity-list" || weeksBefore === null) return;
+        var added = Array.prototype.slice.call(list.children, weeksBefore).filter(function (el) { return el.matches("section[id^='week-']"); });
+        weeksBefore = null;
+        var heading = added.length ? added[0].querySelector("h2") : null;
+        var next = document.querySelector("#load-more [data-load-more]");
+        if (heading) heading.focus({ preventScroll: false });
+        else if (next) next.focus();
+        var live = document.getElementById("load-more-live");
+        if (live) live.textContent = added.length ? added.length + (added.length > 1 ? " semaines ajoutées" : " semaine ajoutée") : "Aucune semaine de plus";
+    });
 })();
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -66,8 +94,9 @@ document.addEventListener("DOMContentLoaded", function () {
     document.body.addEventListener("htmx:beforeSwap", function (event) {
         if (event.detail.xhr.status === 404) {
             event.detail.shouldSwap = false;
-        } else if (event.detail.xhr.status === 429) {
-            // too many of a request for now: the answer says so, in the form's own error box
+        } else if (event.detail.xhr.status === 429 || (event.detail.xhr.status === 413
+                   && /^text\/html/.test(event.detail.xhr.getResponseHeader("Content-Type") || ""))) {
+            // too many of a request for now, or a GPX too heavy: the answer says so, in the form's own error box
             event.detail.shouldSwap = true;
             event.detail.isError = false;
         }

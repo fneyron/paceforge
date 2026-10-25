@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Vérifie ton email — PaceForge{% endblock %}
+{% block head %}<meta name="robots" content="noindex">{% endblock %}
 {% block content_public %}
-<div class="pf-auth">
+<div class="pf-auth-page">
+<main id="main-content" tabindex="-1" class="pf-auth">
     <div class="w-full max-w-sm text-center">
         <a href="/" class="pf-logo pf-auth-logo" aria-label="PaceForge, accueil">{% include "partials/_logo_mark.html" %}<span>PaceForge</span></a>
         <div class="w-16 h-16 rounded-2xl bg-accent-soft text-accent flex items-center justify-center mx-auto mb-6">
@@ -20,5 +22,7 @@
             <p class="mt-2 text-xs text-gray-500">Un nouvel envoi est possible chaque minute.</p>
         </form>{% else %}<a href="/auth/login" class="pf-btn pf-btn-secondary mt-4">Me connecter pour renvoyer le lien</a>{% endif %}
     </div>
+</main>
+{% include "partials/public_footer.html" %}
 </div>
 {% endblock %}

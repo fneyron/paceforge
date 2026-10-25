@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block meta_title %}Mentions légales · PaceForge{% endblock meta_title %}
+{% block title %}{{ self.meta_title() }}{% endblock title %}
+{% block meta_description %}Éditeur, directeur de la publication et hébergeur de PaceForge.{% endblock meta_description %}
+
+{% block content_public %}
+{% include "partials/public_header.html" %}
+<main id="main-content" tabindex="-1" class="pf-legal">
+    <a href="/" class="pf-back">&larr; Retour</a>
+    <h1>Mentions légales</h1>
+
+    <section aria-labelledby="editeur">
+        <h2 id="editeur">Éditeur</h2>
+        <p>PaceForge est édité par Florent Neyron, particulier.<br>Contact&nbsp;: <a href="mailto:contact@paceforge.fr">contact@paceforge.fr</a></p>
+        <p>Directeur de la publication&nbsp;: Florent Neyron.</p>
+    </section>
+
+    <section aria-labelledby="hebergeur">
+        <h2 id="hebergeur">Hébergeur</h2>
+        <p>OVH SAS, 2 rue Kellermann, 59100 Roubaix, France.<br>Téléphone&nbsp;: <a href="tel:+33972101007">+33&nbsp;9&nbsp;72&nbsp;10&nbsp;10&nbsp;07</a></p>
+        <p>Le serveur est situé à Gravelines, en France.</p>
+    </section>
+
+    <section aria-labelledby="contenu">
+        <h2 id="contenu">Propriété du contenu</h2>
+        <p>Les textes, les visuels et le code de PaceForge appartiennent à leur auteur. Les fonds de carte viennent d’OpenStreetMap et de ses contributeurs. Les temps de référence viennent de résultats publics, sans aucun nom.</p>
+        <p>Tes parcours, tes activités et tes données restent à toi.</p>
+    </section>
+
+    <section aria-labelledby="voir">
+        <h2 id="voir">Voir aussi</h2>
+        <p><a href="/privacy">Politique de confidentialité</a> · <a href="/cgu">Conditions d’utilisation</a></p>
+    </section>
+</main>
+{% include "partials/public_footer.html" %}
+{% endblock content_public %}

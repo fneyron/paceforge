@@ -317,8 +317,10 @@ async def test_activities_page_semaines_then_fc_en_footing_on_page_one(client: A
     assert '<h2 id="semaines-h" class="pf-h2">12 semaines</h2>' in semaines
     assert html.index('id="activity-list"') < html.index('id="fc-facile"')
     toggle = semaines.split('data-viz-key="semaines-duree"')[0]
-    assert re.search(r'<form class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges data-viz-param="m" role="group" '
-                     r'aria-label="Mesure" method="get" action="/activities#semaines">', toggle)
+    # a GET form drawing no box around the group (a form keeps its own role: the group is a div inside it)
+    assert re.search(r'<form class="pf-viz-ranges-form" method="get" action="/activities#semaines">\s*'
+                     r'<div class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges data-viz-param="m" role="group" '
+                     r'aria-label="Mesure">', toggle)
     assert re.findall(r'name="m" value="(\w+)" data-range="\w+" aria-pressed="(\w+)">([^<]+)<', toggle) == [
         ("duree", "true", "Durée"), ("distance", "false", "Distance"), ("dplus", "false", "D+")]
     assert html.count('aria-label="Filtrer les activités par sport"') == 1

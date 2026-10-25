@@ -207,7 +207,7 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     # need); the night missing 4 days ago held the cycle's highest VFC, so the 7-night mean is 0.61 SD under the
     # baseline: inside T (0.74 for these 6 nights, 1.28 standard errors of a week's mean: it was orange under the
     # 0.5 of max(0.5, 1.28/√n7)), green; (0.95 + 1)/2 → 97
-    assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "97 /100 Récupération habituels", dials
+    assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "97 /100 Récupération habituelle", dials
     # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 4 active weeks,
     # under the 8 the word needs, so the dial says the 7 days' time, as without a usual week (it read « 100 % comme
     # d'habitude »: at 4 active weeks the word came with 40 % of ordinary weeks; the second statistics review)

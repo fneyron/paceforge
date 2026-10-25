@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Connexion — PaceForge{% endblock %}
+{% block head %}<meta name="robots" content="noindex">{% endblock %}
 {% block content_public %}
-<div class="pf-auth">
+{% set bad = error and error_field == 'credentials' %}
+<div class="pf-auth-page">
+<main id="main-content" tabindex="-1" class="pf-auth">
     <div class="w-full max-w-sm">
         <div class="text-center mb-8">
             <a href="/" class="pf-logo pf-auth-logo" aria-label="PaceForge, accueil">{% include "partials/_logo_mark.html" %}<span>PaceForge</span></a>
@@ -9,19 +12,19 @@
         </div>
 
         {% if error %}
-        <div class="mb-4 pf-note !text-danger">{{ error }}</div>
+        <div id="form-error" class="mb-4 pf-note !text-danger" role="alert">{{ error }}</div>
         {% endif %}
 
         <form method="POST" action="/auth/login" class="space-y-4">
             {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
             <div>
                 <label for="email" class="pf-field-label">Email</label>
-                <input type="email" name="email" id="email" required value="{{ email or '' }}" autofocus autocomplete="email"
+                <input type="email" name="email" id="email" required value="{{ email or '' }}"{% if not error %} autofocus{% endif %} autocomplete="email"{% if bad %} aria-invalid="true" aria-describedby="form-error"{% endif %}
                        class="pf-input">
             </div>
             <div>
                 <label for="password" class="pf-field-label">Mot de passe</label>
-                <input type="password" name="password" id="password" required autocomplete="current-password"
+                <input type="password" name="password" id="password" required autocomplete="current-password"{% if bad %} aria-invalid="true" aria-describedby="form-error"{% endif %}
                        class="pf-input">
             </div>
             <button type="submit"
@@ -31,12 +34,14 @@
         </form>
 
         <div class="mt-4 text-center">
-            <a href="/auth/forgot-password" class="text-sm text-gray-400 hover:text-gray-600">Mot de passe oublié ?</a>
+            <a href="/auth/forgot-password" class="text-sm text-gray-400 hover:text-gray-600">Mot de passe oublié&#8239;?</a>
         </div>
 
         <p class="mt-6 text-center text-sm text-gray-500">
-            Pas encore de compte ? <a href="/auth/register" class="pf-link">S'inscrire</a>
+            Pas encore de compte&#8239;? <a href="/auth/register{% if next == 'simulator' %}?next=simulator{% endif %}" class="pf-link">S'inscrire</a>
         </p>
     </div>
+</main>
+{% include "partials/public_footer.html" %}
 </div>
 {% endblock %}

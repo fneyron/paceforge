@@ -43,7 +43,7 @@
             <label for="weight_kg" class="pf-field-label">Poids</label>
             {% if weight_bad %}<p role="alert" class="text-sm text-danger">Poids non enregistré : entre 30 et 200 kg.</p>{% endif %}
             <div class="flex items-center gap-2">
-                <input type="number" id="weight_kg" name="weight_kg" inputmode="decimal" value="{{ user.weight_kg or '' }}" placeholder="72" step="0.1" min="30" max="200" class="{{ input_cls }} pf-set-num tabular-nums">
+                <input type="number" id="weight_kg" name="weight_kg" inputmode="decimal" value="{{ user.weight_kg or '' }}" step="0.1" min="30" max="200" class="{{ input_cls }} pf-set-num tabular-nums">
                 <span class="text-sm text-gray-400 shrink-0">kg</span>
             </div>
             {% if cycling_enabled() %}<p class="text-[11px] text-gray-400 mt-1">Ton poids sert à ta puissance à vélo.</p>{% endif %}
@@ -60,12 +60,13 @@
         <div id="health-source" class="max-w-md">
             <label for="health_source" class="pf-field-label">Source prioritaire pour la santé</label>
             {% if health_source_bad %}<p role="alert" class="text-sm text-danger">Choisis une des sources proposées.</p>{% endif %}
-            <select id="health_source" name="health_source" class="{{ input_cls }}">
-                {% for value, label in (('auto', 'Automatique · COROS, Garmin, Apple Santé'), ('COROS', 'COROS'), ('Garmin', 'Garmin'), ('Apple Santé', 'Apple Santé')) %}
+            {#- a short option (the phone's select cuts a long one); the order of « Automatique » is said under it -#}
+            <select id="health_source" name="health_source" aria-describedby="health-source-help" class="{{ input_cls }}">
+                {% for value, label in (('auto', 'Automatique'), ('COROS', 'COROS'), ('Garmin', 'Garmin'), ('Apple Santé', 'Apple Santé')) %}
                 <option value="{{ value }}"{% if (user.health_source or 'auto') == value %} selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
-            <p class="text-xs text-gray-500 mt-2">Une seule valeur par jour. Si elle manque, les autres sources peuvent compléter. Les mesures de chaque source sont conservées séparément.</p>
+            <p id="health-source-help" class="text-xs text-gray-500 mt-2">Automatique : COROS, puis Garmin, puis Apple Santé. Une seule valeur par jour. Si elle manque, les autres sources peuvent compléter. Les mesures de chaque source sont conservées séparément.</p>
         </div>
         {% if cycling_enabled() %}
         <div class="max-w-xs">
@@ -98,10 +99,27 @@
     {% include "partials/garmin_settings.html" %}
     </div>
 
-    <div class="pf-section space-y-3">
+    <div class="pf-section space-y-3" id="donnees">
         <h2 class="pf-h2">Données et confidentialité</h2>
+        {% if health_ok is defined and health_ok %}<p class="pf-note !text-ok" role="status">{{ health_ok }}</p>{% endif %}
+        {% if health_consent_on %}
+        <div class="pf-consent-set">
+            <p class="text-sm">Données de santé&nbsp;: consentement donné le {{ health_consent_on }}.</p>
+            <details class="pf-consent-withdraw">
+                <summary class="pf-link">Retirer mon consentement</summary>
+                <form method="post" action="/settings/health-consent/withdraw">
+                    <p class="text-sm text-gray-500">Tes sources seront déconnectées et tes données de santé effacées.</p>
+                    <button type="submit" class="pf-btn pf-btn-sm bg-danger text-white">Retirer et effacer</button>
+                </form>
+            </details>
+        </div>
+        {% else %}
+        <p class="text-sm">Données de santé&nbsp;: pas de consentement. <a class="pf-link" href="/sante/consentement?next=/settings%23donnees">Donner mon accord</a></p>
+        {% endif %}
         <p><a class="pf-link" href="/mobile/devices">Téléphones associés et imports de santé ›</a></p>
-        <p><a class="pf-link" href="/mobile/privacy">Confidentialité ›</a></p>
+        <p><a class="pf-link" href="/privacy">Confidentialité ›</a></p>
+        {# a browser saves the ZIP; the phone app's web view has no downloads #}
+        <p class="pf-browser-only"><a class="pf-link" href="/settings/export" download>Télécharger mes données ›</a></p>
     </div>
 
     <!-- Danger: collapsed, out of the way -->

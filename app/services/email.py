@@ -1,5 +1,6 @@
 import logging
 import smtplib
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -22,7 +23,9 @@ def send_email(to: str, subject: str, html_body: str) -> bool:
         msg.attach(MIMEText(html_body, "html", "utf-8"))
 
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
-            server.starttls()
+            # the server's certificate and name checked against the system's CAs: without a context, starttls()
+            # encrypts towards whoever answers, and the login and the reset links would go to them
+            server.starttls(context=ssl.create_default_context())
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.sendmail(settings.SMTP_FROM, to, msg.as_string())
 

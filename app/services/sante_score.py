@@ -275,7 +275,9 @@ def quality(day: dict) -> dict:
 
 # ── what the page draws ─────────────────────────────────────────────────────
 
-DIAL_WORDS = {"ok": "habituels", "warn": "à surveiller", "danger": "inhabituels"}
+# « Récupération · habituelle »: the ring's word agrees with its name (the page's states elsewhere stay
+# « Signaux habituels », sante_today.WORDS)
+DIAL_WORDS = {"ok": "habituelle", "warn": "à surveiller", "danger": "inhabituelle"}
 NO_SCORE = "pas de score"  # the dial's word without a state (the line under the dials says why)
 NO_MEASURE = "pas de mesure ce jour-là"  # a day without a state: no bar, no dot, its readout says it
 
@@ -287,7 +289,8 @@ def pct(v: int) -> str:
 
 
 def index_label(v: int) -> str:
-    return f"{v}{viz.NBSP}/100"
+    """« 64/100 »: the denominator is glued to the number (no space, it is not a unit)."""
+    return f"{v}/100"
 
 
 def dial(score: dict, state: dict | None, href: str | None = None) -> dict:
@@ -306,8 +309,8 @@ def dial(score: dict, state: dict | None, href: str | None = None) -> dict:
 
 
 def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> dict | None:
-    """« Récupération · 14 jours »: one bar per day with a state, its indice in the state's colour, with faint 40
-    and 70 lines labelled on the right (never colour alone), today's day on a disc; nothing on a day without a state
+    """« Récupération · 14 jours »: one bar per day with a state, its indice in the state's colour, with faint 40,
+    70 and 100 lines labelled on the right (the bars reach 100: the axis says where) (never colour alone), today's day on a disc; nothing on a day without a state
     (no point either), whose readout says « pas de mesure ce jour-là »; tap a bar → « 64 % » « ◐ Récupération en
     cours » / « mer. 7 oct. »: the date, the indice and the state only. Nothing selected, no number: the card's
     title rests
@@ -329,7 +332,7 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
         r.append([index_label(v), f"{st['glyph']} {st['word']}", viz.d_short(d)])
         a.append(f"{viz.d_long(d)} : indice {v} sur 100, {st['word'].lower()}.")
     c = viz.day_bars("recuperation", days, values, readouts=r, arias=a, classes=classes, tones=tones, y_max=100,
-                     lines=((70, "70"), (40, "40"), (0, "0")), today=len(days) - 1 if days and days[-1] == today else None,
+                     lines=((100, "100"), (70, "70"), (40, "40"), (0, "0")), today=len(days) - 1 if days and days[-1] == today else None,
                      summary=f"Historique des signaux nocturnes : {len(with_score)} indices sur {len(days)} jours")
     title = f"Signaux nocturnes · {len(days)} jours"
     c = viz.rest(c, [index_label(rounded(statistics.fmean(with_score))), "en moyenne", ""], f"Historique des scores quotidiens sur {len(days)} jours. Choisis un jour pour voir son "

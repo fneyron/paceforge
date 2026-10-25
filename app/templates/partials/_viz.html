@@ -1,5 +1,7 @@
-{% macro help(label, text) %}
-<span class="pf-help"><button type="button" class="pf-help-button" aria-label="À propos de {{ label }}" aria-describedby="help-{{ label|replace(' ', '-') }}">i</button><span class="pf-help-tip" role="tooltip" id="help-{{ label|replace(' ', '-') }}">{{ text }}</span></span>
+{#- a card's (i): `key` names the tip (its id), `about` is what the button says it is about, in words
+    (« du poids », « de la VFC »: « À propos du poids »); the macro sits last in its card's header, on its right -#}
+{% macro help(key, text, about=None) %}
+<span class="pf-help"><button type="button" class="pf-help-button" aria-label="À propos {{ about or ('de ' ~ key) }}" aria-describedby="help-{{ key|replace(' ', '-') }}">i</button><span class="pf-help-tip" role="tooltip" id="help-{{ key|replace(' ', '-') }}">{{ text }}</span></span>
 {% endmacro %}
 
 {#- PaceForge chart kit: Jinja macros drawing what app/services/viz.py computed.
@@ -36,7 +38,7 @@
     {% endif %}
     <div class="pf-viz-plot">
         <svg class="pf-viz-svg" viewBox="0 0 {{ c.W }} {{ c.H }}" aria-hidden="true" focusable="false">{{ caller() }}</svg>
-        {% if c.n %}<input type="range" class="pf-viz-range sr-only" aria-label="{{ title }} : choisis une {{ unit_word }}" min="0" max="{{ top }}" step="1" value="{{ c.sel }}" aria-valuetext="{{ c.aria_now }}">{% endif %}
+        {% if c.n %}<input type="range" class="pf-viz-range sr-only" aria-label="{{ title }} : choisis {{ 'un' if unit_word in ('jour', 'mois', 'point') else 'une' }} {{ unit_word }}" min="0" max="{{ top }}" step="1" value="{{ c.sel }}" aria-valuetext="{{ c.aria_now }}">{% endif %}
     </div>
     {% if legend and not legend_details %}{{ viz_legend(legend) }}{% endif %}
     {% if c.compact and not quiet and not central_details %}
@@ -124,11 +126,12 @@
    is a GET form, so it works without JS too (the page comes back with ?r=…, `hidden` fields kept: Activités' sport
    filter); pf-viz.js switches the panels in place and carries the choice into the links marked data-viz-carry #}
 {% macro viz_ranges(options, current, label="Période", action=None, param="r", hidden=None) %}
-{% set tag = "form" if action else "div" %}
-<{{ tag }} class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges{% if param != "r" %} data-viz-param="{{ param }}"{% endif %} role="group" aria-label="{{ label }}"{% if action %} method="get" action="{{ action }}"{% endif %}>
-    {% for k, v in (hidden or {}).items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+{#- the group is a div (a form keeps its own role): with an action, a box-less GET form around it -#}
+{% if action %}<form class="pf-viz-ranges-form" method="get" action="{{ action }}">{% for k, v in (hidden or {}).items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{% endif %}
+<div class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges{% if param != "r" %} data-viz-param="{{ param }}"{% endif %} role="group" aria-label="{{ label }}">
     {% for value, text in options %}<button type="{{ 'submit' if action else 'button' }}"{% if action %} name="{{ param }}" value="{{ value }}"{% endif %} data-range="{{ value }}" aria-pressed="{{ 'true' if value == current else 'false' }}">{{ text }}</button>{% endfor %}
-</{{ tag }}>
+</div>
+{% if action %}</form>{% endif %}
 {% endmacro %}
 
 {#- Santé v4 (one page, WHOOP/Oura-like) -#}

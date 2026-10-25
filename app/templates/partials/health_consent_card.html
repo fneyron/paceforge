@@ -1,0 +1,10 @@
+{# Santé, above the rings: the consent to health data an account from before it was asked has not given yet #}
+<section class="pf-panel pf-consent-card" aria-labelledby="consent-card-title">
+    <h2 id="consent-card-title" class="pf-h2">{{ consent_card.consent_title }}</h2>
+    {% for paragraph in consent_card.consent_text %}<p>{{ paragraph }}</p>{% endfor %}
+    <form method="post" action="/sante/consentement" class="pf-consent-actions">
+        <input type="hidden" name="next" value="/sante">
+        <button type="submit" name="accept" value="1" class="pf-btn pf-btn-primary pf-btn-sm">J’accepte</button>
+        <a class="pf-link" href="/settings#connections">Déconnecter mes sources</a>
+    </form>
+</section>

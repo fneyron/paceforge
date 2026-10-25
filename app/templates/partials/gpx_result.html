@@ -38,20 +38,20 @@
         </div>
         <details class="relative shrink-0" id="plan-more">
             <summary class="pf-ibtn pf-more list-none cursor-pointer" aria-label="Plus d'actions" title="Plus d'actions">{{ ic.icon('more', 'w-6 h-6') }}</summary>
-            <div class="pf-menu" role="menu">
-                {% if deb_primary %}<button type="button" role="menuitem" onclick="window._sim && window._sim.openExport()">{{ ic.icon('watch') }}Exporter pour ma montre</button>{% endif %}
-                <button type="button" role="menuitem" onclick="window._sim && window._sim.sharePlan()">{{ ic.icon('share') }}Partager le plan</button>
-                <button type="button" role="menuitem" onclick="window._sim && window._sim.printPlan()">{{ ic.icon('printer') }}Bande imprimable</button>
+            <div class="pf-menu">
+                {% if deb_primary %}<button type="button" onclick="window._sim && window._sim.openExport()">{{ ic.icon('watch') }}Exporter pour ma montre</button>{% endif %}
+                <button type="button" onclick="window._sim && window._sim.sharePlan()">{{ ic.icon('share') }}Partager le plan</button>
+                <button type="button" onclick="window._sim && window._sim.printPlan()">{{ ic.icon('printer') }}Bande imprimable</button>
                 {% if saved_route_id %}
-                <a class="pf-offline-action" role="menuitem" href="paceforge://offline/save/{{ saved_route_id }}">{{ ic.icon('download') }}Garder hors connexion</a>
-                {% if dmode == 'menu' %}<button type="button" role="menuitem" id="rtab-realise" onclick="window.switchRouteTab && window.switchRouteTab('realise')">{{ ic.icon('chart') }}Débrief</button>{% endif %}
+                <a class="pf-offline-action" href="paceforge://offline/save/{{ saved_route_id }}">{{ ic.icon('download') }}Garder hors connexion</a>
+                {% if dmode == 'menu' %}<button type="button" id="rtab-realise" onclick="window.switchRouteTab && window.switchRouteTab('realise')">{{ ic.icon('chart') }}Débrief</button>{% endif %}
                 {% endif %}
                 <hr class="pf-menu-sep">
-                <button type="button" role="menuitem" onclick="window._sim && window._sim.openRaceSheet()">{{ ic.icon('calendar') }}Nom, date et départ</button>
+                <button type="button" onclick="window._sim && window._sim.openRaceSheet()">{{ ic.icon('calendar') }}Nom, date et départ</button>
                 {% if saved_route_id %}
-                <button type="button" role="menuitem" onclick="window._sim && window._sim.openTool('advanced')">{{ ic.icon('sliders') }}Réglages du plan</button>
+                <button type="button" onclick="window._sim && window._sim.openTool('advanced')">{{ ic.icon('sliders') }}Réglages du plan</button>
                 <form hx-post="/api/simulator/routes/{{ saved_route_id }}/reimport" hx-encoding="multipart/form-data" hx-target="#reimport-error" hx-swap="innerHTML" class="pf-menu-form">
-                    <label role="menuitem">{{ ic.icon('upload') }}Remplacer la trace GPX<input type="file" name="gpx_file" accept=".gpx" class="pf-file-input" onchange="this.form.requestSubmit()"></label>
+                    <label>{{ ic.icon('upload') }}Remplacer la trace GPX<input type="file" name="gpx_file" accept=".gpx" class="pf-file-input" onchange="this.form.requestSubmit()"></label>
                 </form>
                 {% endif %}
             </div>
@@ -63,7 +63,9 @@
     <section class="pf-hero" aria-label="Objectif">
         <div class="pf-hero-main">
             <div class="pf-label" id="hero-label">{% if has_obj %}Objectif{% else %}Estimation{% endif %}</div>
-            <button id="hero-time" type="button" onclick="window._sim && window._sim.heroEdit()" aria-label="{% if has_obj %}Modifier l'objectif{% else %}Fixer un objectif{% endif %}" class="pf-hero-btn"><span id="hero-num" class="pf-big pf-hero-num">{{ '%dh%02d'|format(hero_s // 3600, (hero_s % 3600) // 60) }}</span>{{ ic.icon('pencil', 'pf-hero-pen', '2.2') }}</button>
+            {% set hero_hm = '%dh%02d'|format(hero_s // 3600, (hero_s % 3600) // 60) %}
+            {#- its name carries the number it shows (updateHero keeps it in step) -#}
+            <button id="hero-time" type="button" onclick="window._sim && window._sim.heroEdit()" aria-label="{% if has_obj %}Modifier l'objectif : {{ hero_hm }}{% else %}Fixer un objectif (estimation {{ hero_hm }}){% endif %}" class="pf-hero-btn"><span id="hero-num" class="pf-big pf-hero-num">{{ hero_hm }}</span>{{ ic.icon('pencil', 'pf-hero-pen', '2.2') }}</button>
             <span id="hero-edit" class="hidden items-baseline pf-big pf-hero-num">
                 <input type="number" id="target-h" inputmode="numeric" min="0" max="99" value="{{ tgt // 3600 }}" aria-label="Objectif, heures" class="sim-num pf-hero-in w-[2ch] text-right">h<input type="number" id="target-m" inputmode="numeric" min="0" max="59" value="{{ '%02d'|format((tgt % 3600) // 60) }}" aria-label="Objectif, minutes" class="sim-num pf-hero-in w-[2ch]">
             </span>
@@ -474,7 +476,9 @@ window._sim = {};
         prof.minE = Math.floor((minE - pad) / 50) * 50; if (minE >= 0) prof.minE = Math.max(0, prof.minE);
         prof.maxE = Math.ceil((maxE + pad) / 50) * 50;
         var base = h - prof.padB;
-        var svg = mk('svg', { width: w, height: h, viewBox: '0 0 ' + w + ' ' + h });
+        // named as one image: the distance, the climb and the high point (the passages below give the detail)
+        var svg = mk('svg', { width: w, height: h, viewBox: '0 0 ' + w + ' ' + h, role: 'img',
+            'aria-label': 'Profil d’altitude : ' + fmtKm(totalDistKm).replace(/,0$/, '') + ' km, ' + fmtM(course.total_elevation_gain || 0) + ' m de dénivelé positif, point culminant ' + fmtM(maxE) + ' m' });
         svg.style.display = 'block'; svg.style.cursor = 'crosshair'; svg.style.touchAction = 'pan-y'; svg.style.userSelect = 'none';
         // sparse km labels: 0 · 50 · 100 · total on the phone, every 25 km and the total on desktop
         var stepKm = compact ? (totalDistKm > 120 ? 50 : totalDistKm > 50 ? 20 : totalDistKm > 20 ? 10 : 5) : (totalDistKm > 120 ? 25 : totalDistKm > 50 ? 10 : totalDistKm > 20 ? 5 : 2);
@@ -581,7 +585,8 @@ window._sim = {};
     }
     function showSectionLabel(a, b, gain, loss, sec) {
         if (!prof.svg) return;
-        placeLabel(fmtKm(b - a) + ' km · +' + gain + '/−' + loss + ' · ' + fmtDur(sec), (xOf(a) + xOf(b)) / 2 - 40, prof.padT + 2);
+        var climb = [+gain > 0 ? '+' + gain : '', +loss > 0 ? '−' + loss : ''].filter(Boolean).join('/');  // no « −0 »
+        placeLabel(fmtKm(b - a) + ' km' + (climb ? ' · ' + climb : '') + ' · ' + fmtDur(sec), (xOf(a) + xOf(b)) / 2 - 40, prof.padT + 2);
     }
     function hideCross() { if (!prof.svg) return; prof.cross.setAttribute('visibility', 'hidden'); prof.dot.setAttribute('visibility', 'hidden'); prof.lbl.setAttribute('visibility', 'hidden'); }
     var hoverRaf = null, hoverKm = 0, hoverFromChart = false;
@@ -1298,7 +1303,7 @@ window._sim = {};
         var total = real ? currentTargetS() : pins ? planData.plan_total_s : predictedTotalS;
         var t = document.getElementById('hero-num'); if (t) t.textContent = fmtHM(total);
         var lab = document.getElementById('hero-label'); if (lab) lab.textContent = real ? 'Objectif' : pins ? 'Avec tes heures fixées' : 'Estimation';
-        var hb = document.getElementById('hero-time'); if (hb) hb.setAttribute('aria-label', real ? 'Modifier l\'objectif' : 'Fixer un objectif');
+        var hb = document.getElementById('hero-time'); if (hb) hb.setAttribute('aria-label', real ? 'Modifier l\'objectif : ' + fmtHM(total) : 'Fixer un objectif (' + (pins ? 'avec tes heures fixées' : 'estimation') + ' ' + fmtHM(total) + ')');
         var rs = document.getElementById('obj-reset');
         if (rs) { if (!real && rs.contains(document.activeElement)) { try { document.getElementById('target-h').focus({ preventScroll: true }); } catch (e) {} } rs.classList.toggle('hidden', !real); }
         var eb = document.querySelector('#obj-est-line b'); if (eb) eb.textContent = fmtHM(predictedTotalS);  // the same estimate as the tick and the reset
@@ -1347,18 +1352,29 @@ window._sim = {};
     }
     // ── SHEETS, SHARE, TOOLS ──
     var sheetOpeners = new WeakMap();
+    // a disclosure's summary takes the focus too (« Autres formats »), what a closed one holds does not (it may keep
+    // a layout box, content-visibility hidden): Tab never leaves an open sheet
     function sheetFocusables(sh) {
-        return Array.from(sh.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
-            .filter(function (el) { return !el.disabled && el.offsetParent !== null; });
+        return Array.from(sh.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])'))
+            .filter(function (el) {
+                var fold = el.closest('details');
+                if (fold && !fold.open && !(el.tagName === 'SUMMARY' && el.parentElement === fold)) return false;
+                return !el.disabled && el.offsetParent !== null && (!el.checkVisibility || el.checkVisibility());
+            });
+    }
+    // what had the focus before a sheet opened; an item of the closed « … » menu gives way to the menu's own button
+    function openerOf(el) {
+        var menu = el && el.closest && el.closest('details');
+        return menu && !menu.open && menu.querySelector('summary') ? menu.querySelector('summary') : el;
     }
     function showSheet(sh) {
-        if (sh.classList.contains('hidden')) sheetOpeners.set(sh, document.activeElement);
+        if (sh.classList.contains('hidden')) sheetOpeners.set(sh, openerOf(document.activeElement));
         sh.classList.remove('hidden');
         var first = sheetFocusables(sh)[0]; if (first) first.focus({ preventScroll: true });
     }
     function hideSheet(sh) {
         if (sh.classList.contains('hidden')) return;
-        var opener = sheetOpeners.get(sh), restore = sh.contains(document.activeElement);
+        var opener = openerOf(sheetOpeners.get(sh)), restore = sh.contains(document.activeElement);
         sh.classList.add('hidden');
         if (restore && opener && document.body.contains(opener)) opener.focus({ preventScroll: true });
     }

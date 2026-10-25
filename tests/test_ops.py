@@ -3,6 +3,7 @@ the production compose file and of .env.example (every setting wired and documen
 import re
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -110,6 +111,8 @@ def test_sentry_initialises_once_per_process_with_every_integration(monkeypatch)
         assert {"starlette", "fastapi", "celery"} <= set(client.integrations)
         assert not {"redis", "httpx", "sqlalchemy"} & set(client.integrations)  # no breadcrumbs with URLs or SQL
         assert client.options["send_default_pii"] is False and client.options["traces_sample_rate"] is None
+        assert client.options["max_request_body_size"] == "never" and client.options["include_local_variables"] is False
+        assert client.options["before_send"] is sentry._scrub
         assert BUILD_ID.startswith(client.options["release"])
         assert sentry.init_sentry() is True  # the other module's turn: a no-op
         assert sentry_sdk.get_client() is client
@@ -118,6 +121,42 @@ def test_sentry_initialises_once_per_process_with_every_integration(monkeypatch)
             client.close(timeout=0)
         sentry_sdk.get_global_scope().set_client(None)
     assert not sentry_sdk.is_initialized()
+
+
+def test_sentry_never_sends_bodies_local_variables_queries_or_cookies(monkeypatch):
+    """Off in production today (no DSN), safe the day it is set: the SDK told to keep request bodies and frame
+    variables out, and before_send dropping what an integration still attached (body, query, cookies, credentials)
+    and masking the tokens a logged URL carries."""
+    sentry_sdk = pytest.importorskip("sentry_sdk")
+    from app import sentry
+
+    init = MagicMock()
+    monkeypatch.setattr(sentry_sdk, "init", init)
+    monkeypatch.setattr(sentry_sdk, "is_initialized", lambda: False)
+    monkeypatch.setattr(settings, "SENTRY_DSN", "https://0123456789abcdef0123456789abcdef@127.0.0.1:1/1")
+    monkeypatch.setattr(sentry, "_initialised", False)
+    assert sentry.init_sentry() is True
+    options = init.call_args.kwargs
+    assert options["max_request_body_size"] == "never" and options["include_local_variables"] is False
+    assert options["send_default_pii"] is False and options["auto_enabling_integrations"] is False
+    event = {
+        "request": {"url": "https://paceforge.fr/auth/reset-password?token=S3CRET", "method": "POST",
+                    "query_string": "token=S3CRET", "data": {"password": "hunter22", "token": "S3CRET"},
+                    "cookies": {"paceforge_session": "abc"},
+                    "headers": {"Cookie": "paceforge_session=abc", "Authorization": "Bearer t0k", "User-Agent": "UA",
+                                "X-Forwarded-For": "203.0.113.9"}},
+        "logentry": {"message": "GET %s failed", "params": ["/auth/verify-email?token=S3CRET"]},
+        "breadcrumbs": {"values": [{"category": "uvicorn.access", "message": "GET /x?code=C0DE&state=S7 200"}]},
+        "exception": {"values": [{"type": "ValueError"}]},
+    }
+    scrubbed = options["before_send"](event, {})
+    assert scrubbed["request"] == {"url": "https://paceforge.fr/auth/reset-password", "method": "POST",
+                                   "headers": {"User-Agent": "UA"}}
+    assert scrubbed["logentry"]["params"] == ["/auth/verify-email?token=***"]
+    assert scrubbed["breadcrumbs"]["values"][0]["message"] == "GET /x?code=***&state=*** 200"
+    assert scrubbed["exception"] == {"values": [{"type": "ValueError"}]}  # the error itself is what is reported
+    for secret in ("S3CRET", "hunter22", "abc", "t0k", "C0DE", "203.0.113.9"):
+        assert secret not in repr(scrubbed)
 
 
 # ── Celery ───────────────────────────────────────────────────────────────────

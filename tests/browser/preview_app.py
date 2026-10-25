@@ -4,8 +4,9 @@ from tempfile import TemporaryDirectory
 os.environ.update(DEBUG='false',COROS_SYNC='false',GARMIN_SYNC='false',ACTIVITY_ENV_FETCH='false')
 from contextlib import asynccontextmanager
 from datetime import datetime,timezone,timedelta
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import create_async_engine,async_sessionmaker
+from app.services.health_consent import HEALTH_CONSENT_VERSION
 from app.main import create_app
 from app.database import Base
 from app.dependencies import get_db,get_current_user
@@ -24,7 +25,8 @@ factory=async_sessionmaker(engine,expire_on_commit=False)
 async def lifespan(app):
     async with engine.begin() as c: await c.run_sync(Base.metadata.create_all)
     async with factory() as db:
-        user=User(firstname='Camille');db.add(user);await db.flush();app.state.user_id=user.id
+        # an athlete who agreed to the health data text (the consent card is tested in tests/test_health_consent)
+        user=User(firstname='Camille',health_consent_at=datetime.now(timezone.utc),health_consent_version=HEALTH_CONSENT_VERSION);db.add(user);await db.flush();app.state.user_id=user.id
         now=datetime.now(timezone.utc)
         course = _course()
         route = Route(user_id=user.id, name='Course test UX', course_json=course.model_dump(),
@@ -62,6 +64,7 @@ async def session():
     async with factory() as db:
         yield db
         await db.commit()
-async def user(db=Depends(get_db)):
-    return await db.get(User,app.state.user_id)
+async def user(request: Request, db=Depends(get_db)):
+    request.state.user = await db.get(User,app.state.user_id)  # as get_current_user: a 404 keeps the app layout
+    return request.state.user
 app.dependency_overrides[get_db]=session;app.dependency_overrides[get_current_user]=user

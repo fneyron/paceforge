@@ -1,97 +1,122 @@
 {% extends "base.html" %}
 
-{% block title %}PaceForge — Politique de confidentialité{% endblock title %}
+{% block meta_title %}Politique de confidentialité · PaceForge{% endblock meta_title %}
+{% block title %}{{ self.meta_title() }}{% endblock title %}
+{% block meta_description %}Ce que PaceForge fait de tes données&nbsp;: finalités, durées, destinataires, données de santé et tes droits.{% endblock meta_description %}
 
 {% block content_public %}
 {% include "partials/public_header.html" %}
-<div class="pf-legal">
-    <div class="space-y-8">
-        <div>
-            <a href="/" class="pf-back">&larr; Retour</a>
-            <h1 class="mt-2">Politique de confidentialité</h1>
-            <p class="mt-2 text-sm text-gray-500">Dernière mise à jour : octobre 2026</p>
-        </div>
+<main id="main-content" tabindex="-1" class="pf-legal">
+    <a href="/" class="pf-back">&larr; Retour</a>
+    <h1>Politique de confidentialité</h1>
+    <p class="pf-legal-date">Mise à jour le 25 octobre 2026</p>
 
-        <section class="space-y-3">
-            <h2>1. Qui sommes-nous</h2>
-            <p class="text-gray-600 leading-relaxed">
-                PaceForge prépare ton plan de course pour le trail et l'ultra : heures de passage et pilotage. Le service est opéré par Florent Neyron.
-            </p>
-        </section>
+    <section aria-labelledby="qui">
+        <h2 id="qui">Qui est responsable</h2>
+        <p>Florent Neyron, éditeur de PaceForge (particulier), est responsable du traitement de tes données. Pour toute question ou demande&nbsp;: <a href="mailto:contact@paceforge.fr">contact@paceforge.fr</a>.</p>
+    </section>
 
-        <section class="space-y-3">
-            <h2>2. Données collectées</h2>
-            <ul class="list-disc pl-6 text-gray-600 space-y-1">
-                <li><strong>Ton compte</strong> : adresse e-mail, prénom, nom, mot de passe (stocké sous forme hachée, jamais en clair)</li>
-                <li><strong>Strava</strong>, si tu le relies : profil (prénom, nom, photo, identifiant athlète), activités (date, distance, durée, dénivelé, vitesse, fréquence cardiaque, cadence, splits, tracé et mesures de l'activité), accès Strava et, si tu utilises une app personnelle, les clés de cette app</li>
-                <li><strong>Tes courses</strong> : les fichiers GPX que tu importes, tes points de passage, tes objectifs et tes réglages. Ce que tu avais saisi dans l'ancien outil nutrition (produits, plan) reste enregistré sans être utilisé, jusqu'à sa refonte.</li>
-                <li><strong>COROS</strong>, si tu le relies : VFC, FC au repos, sommeil et VO2 max, et les accès COROS</li>
-                <li><strong>Garmin</strong>, si tu le relies : VFC, FC au repos, sommeil, VO2 max, charge, stress, pas et activités, et les accès Garmin (ton mot de passe Garmin n'est jamais conservé)</li>
-                <li><strong>Ressenti du jour</strong>, si tu le renseignes : Bien, Moyen ou Cassé (avant octobre 2026 : fatigue, douleur, dernier effort), avec sa date. Tu peux effacer les réponses du jour depuis ce volet.</li>
-            </ul>
-            <p class="text-gray-600 leading-relaxed">
-                Nous ne collectons <strong>pas</strong> tes données de paiement.
-            </p>
-        </section>
+    <section aria-labelledby="quoi">
+        <h2 id="quoi">Ce que PaceForge traite, pourquoi, combien de temps</h2>
+        <table class="pf-legal-table">
+            <thead><tr><th scope="col">Finalité</th><th scope="col">Données</th><th scope="col">Base légale</th><th scope="col">Durée</th></tr></thead>
+            <tbody>
+                <tr>
+                    <th scope="row">Ton compte</th>
+                    <td data-label="Données">E-mail, prénom, nom (facultatif), mot de passe haché (jamais en clair), réglages</td>
+                    <td data-label="Base légale">Contrat</td>
+                    <td data-label="Durée">Tant que ton compte existe</td>
+                </tr>
+                <tr>
+                    <th scope="row">Plans de course</th>
+                    <td data-label="Données">Fichiers GPX, points de passage, objectifs, réglages, débriefs, météo et terrain du parcours</td>
+                    <td data-label="Base légale">Contrat</td>
+                    <td data-label="Durée">Jusqu’à la suppression du plan ou du compte</td>
+                </tr>
+                <tr>
+                    <th scope="row">Activités importées de Strava, COROS ou Garmin</th>
+                    <td data-label="Données">Date, distance, durée, dénivelé, vitesse, fréquence cardiaque, cadence, tracé&#8239;; profil Strava (nom, photo)&#8239;; accès à ces services, chiffrés</td>
+                    <td data-label="Base légale">Contrat</td>
+                    <td data-label="Durée">Tant que ton compte existe. Déconnecter un service garde les activités reçues.</td>
+                </tr>
+                <tr>
+                    <th scope="row">Données de santé (COROS, Garmin, Apple Santé, Health Connect, tes saisies)</th>
+                    <td data-label="Données">Sommeil, VFC, fréquence cardiaque, respiration, VO2&nbsp;max, stress, pas, poids, masse grasse, ressenti, tests de lactate</td>
+                    <td data-label="Base légale">Consentement explicite (art.&nbsp;9.2.a RGPD)</td>
+                    <td data-label="Durée">Jusqu’au retrait du consentement ou la suppression du compte</td>
+                </tr>
+                <tr>
+                    <th scope="row">Sécurité</th>
+                    <td data-label="Données">Adresse IP, journaux techniques (requêtes, erreurs), compteurs de tentatives</td>
+                    <td data-label="Base légale">Intérêt légitime&nbsp;: protéger le service et ton compte</td>
+                    <td data-label="Durée">Compteurs&nbsp;: une heure au plus. Journaux&nbsp;: taille limitée, écrasés au fil de l’eau.</td>
+                </tr>
+                <tr>
+                    <th scope="row">E-mails de service</th>
+                    <td data-label="Données">E-mail, lien de confirmation, lien de nouveau mot de passe</td>
+                    <td data-label="Base légale">Contrat</td>
+                    <td data-label="Durée">Lien de confirmation valable 24&nbsp;h, de mot de passe 1&nbsp;h</td>
+                </tr>
+            </tbody>
+        </table>
+        <p>«&nbsp;Contrat&nbsp;»&nbsp;: ce qu’il faut pour te rendre le service que tu demandes en créant ton compte (art.&nbsp;6.1.b RGPD). «&nbsp;Intérêt légitime&nbsp;»&nbsp;: art.&nbsp;6.1.f.</p>
+        <p>Ce que tu avais saisi dans l’ancien outil nutrition (produits, plan) reste enregistré avec ton compte et tes plans, sans être utilisé, et il est effacé avec eux.</p>
+        <p>Rien d’autre&nbsp;: ni publicité, ni revente, ni profilage commercial.</p>
+    </section>
 
-        <section class="space-y-3">
-            <h2>3. Utilisation des données</h2>
-            <p class="text-gray-600 leading-relaxed">Tes données servent seulement à :</p>
-            <ul class="list-disc pl-6 text-gray-600 space-y-1">
-                <li>Calculer ton niveau en course et tes heures de passage</li>
-                <li>Préparer ton plan : pilotage, exports montre et bande dossard</li>
-                <li>Comparer ton plan et ta course réelle (débrief)</li>
-                <li>Afficher ta forme (données COROS ou Garmin), si tu as relié ta montre</li>
-                <li>Afficher ton ressenti à côté des mesures, sans modifier l’indice nocturne</li>
-                <li>T'envoyer les e-mails du compte (confirmation, mot de passe oublié)</li>
-            </ul>
-        </section>
+    <section aria-labelledby="sante">
+        <h2 id="sante">Données de santé</h2>
+        <p>Ce sont des données sensibles. PaceForge ne les traite qu’avec ton consentement explicite, demandé avant de connecter une source, de noter ton ressenti ou de saisir un test de lactate. Elles servent seulement à afficher ta forme dans Santé.</p>
+        <p>Sur ton téléphone, l’application PaceForge lit les catégories que tu autorises dans Apple Santé ou Health Connect et les envoie en HTTPS à ton compte, aussi en arrière-plan. Les points cardiaques bruts ne sont pas conservés, seulement des résumés par jour et par nuit. Le détail&nbsp;: <a href="/mobile/privacy">données de l’application</a>.</p>
+        <p>Tu peux retirer ton consentement à tout moment dans Réglages&nbsp;: tes sources sont déconnectées et tes données de santé effacées. Tes activités et tes plans restent.</p>
+        <p>PaceForge n’est pas un dispositif médical et ne pose aucun diagnostic.</p>
+    </section>
 
-        <section class="space-y-3">
-            <h2>4. Partage des données</h2>
-            <p class="text-gray-600 leading-relaxed">
-                Pour la météo et le terrain, PaceForge envoie les coordonnées de ton parcours à <strong>Open-Meteo</strong> et à <strong>OpenStreetMap</strong> (Overpass), sans ton nom ni ton e-mail. Strava, COROS et Garmin ne reçoivent que les demandes faites avec tes accès, pour lire tes données.
-            </p>
-            <p class="text-gray-600 leading-relaxed">
-                Nous ne vendons, ne louons et ne partageons tes données avec aucun autre tiers.
-            </p>
-        </section>
+    <section aria-labelledby="effacement">
+        <h2 id="effacement">Suppression et sauvegardes</h2>
+        <p>Tu peux supprimer ton compte à tout moment depuis Réglages. Tout ce qu’il contient est effacé aussitôt de la base de données. Les sauvegardes, quotidiennes, sont gardées 8 semaines au plus&nbsp;: tes données en disparaissent au plus tard 8 semaines après.</p>
+        <p>Une session de connexion se ferme après 30 jours sans visite, et au plus tard après 90 jours.</p>
+    </section>
 
-        <section class="space-y-3">
-            <h2>5. Stockage et sécurité</h2>
-            <p class="text-gray-600 leading-relaxed">
-                Tes données sont stockées dans une base de données PostgreSQL hébergée sur un serveur sécurisé en Europe. La clé secrète de ton app Strava et les accès COROS et Garmin sont chiffrés. Les communications sont protégées par HTTPS.
-            </p>
-        </section>
+    <section aria-labelledby="destinataires">
+        <h2 id="destinataires">Qui reçoit quoi</h2>
+        <ul>
+            <li><strong>OVH SAS</strong> (France)&nbsp;: héberge le serveur, la base de données et les sauvegardes à Gravelines, en France, et envoie les e-mails du compte.</li>
+            <li><strong>Strava</strong> (États-Unis, hors UE), si tu le relies&nbsp;: tes activités y sont déjà, sous la politique de Strava. PaceForge n’y envoie que ses demandes de lecture, faites avec l’accès que tu autorises, et sa révocation quand tu te déconnectes. Ta photo de profil s’affiche depuis Strava.</li>
+            <li><strong>COROS</strong>, si tu le relies&nbsp;: le même principe, sur le serveur de ton compte COROS (Europe, Monde ou Chine&#8239;; ces deux derniers hors UE).</li>
+            <li><strong>Garmin</strong> (hors UE), si tu le relies&nbsp;: ton e-mail et ton mot de passe Garmin partent une fois chez Garmin pour ouvrir l’accès, sans être conservés&#8239;; ensuite, seulement des demandes de lecture.</li>
+            <li><strong>Open-Meteo</strong> (Suisse, protection reconnue par l’UE)&nbsp;: les coordonnées et les dates de ton parcours et de tes activités, pour la météo et l’altitude.</li>
+            <li><strong>Serveurs Overpass d’OpenStreetMap</strong> (Allemagne, Autriche)&nbsp;: la zone de ton parcours, pour le terrain.</li>
+            <li><strong>Fonds de carte</strong>&nbsp;: ton navigateur charge la carte chez OpenFreeMap (Hongrie), CARTO (carte sombre) et Amazon Web Services (relief), ces deux derniers aux États-Unis, hors UE. Comme pour toute carte en ligne, ils voient ton adresse IP et la zone affichée.</li>
+        </ul>
+        <p>Open-Meteo et Overpass ne reçoivent ni ton nom, ni ton e-mail&nbsp;: les demandes partent du serveur de PaceForge. Apple et Google ne reçoivent rien de PaceForge.</p>
+    </section>
 
-        <section class="space-y-3">
-            <h2>6. Tes droits</h2>
-            <p class="text-gray-600 leading-relaxed">Conformément au RGPD, tu peux à tout moment :</p>
-            <ul class="list-disc pl-6 text-gray-600 space-y-1">
-                <li><strong>Accéder</strong> à tes données depuis ton compte PaceForge</li>
-                <li><strong>Révoquer l'accès</strong> Strava depuis <a href="https://www.strava.com/settings/apps" class="text-accent hover:underline" target="_blank">les paramètres Strava</a></li>
-                <li><strong>Supprimer</strong> ton compte et toutes tes données depuis Réglages, ou en nous écrivant</li>
-            </ul>
-        </section>
+    <section aria-labelledby="droits">
+        <h2 id="droits">Tes droits</h2>
+        <p>Tu peux à tout moment&nbsp;:</p>
+        <ul>
+            <li><strong>accéder</strong> à tes données et les <strong>emporter</strong>&nbsp;: «&nbsp;Télécharger mes données&nbsp;» dans Réglages&#8239;;</li>
+            <li>les <strong>rectifier</strong>, dans ton profil et tes plans&#8239;;</li>
+            <li>les <strong>effacer</strong>&nbsp;: un plan, un test, ou tout ton compte depuis Réglages&#8239;;</li>
+            <li>demander la <strong>limitation</strong> d’un traitement ou t’y <strong>opposer</strong>&#8239;;</li>
+            <li><strong>retirer ton consentement</strong> aux données de santé, dans Réglages&#8239;;</li>
+            <li>donner des <strong>directives</strong> sur tes données après ton décès&#8239;;</li>
+            <li>adresser une <strong>réclamation</strong> à la CNIL, sur <a href="https://www.cnil.fr" target="_blank" rel="noopener">cnil.fr</a>.</li>
+        </ul>
+        <p>Pour exercer un droit, écris à <a href="mailto:contact@paceforge.fr">contact@paceforge.fr</a>&nbsp;: réponse sous un mois. Tu peux aussi retirer l’accès de PaceForge dans <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener">les paramètres Strava</a>.</p>
+    </section>
 
-        <section class="space-y-3">
-            <h2>7. Cookies</h2>
-            <p class="text-gray-600 leading-relaxed">
-                PaceForge utilise un unique cookie de session (<code class="bg-gray-100 px-1 rounded">paceforge_session</code>) nécessaire à la connexion. Aucun cookie de suivi ou publicitaire.
-            </p>
-        </section>
-
-        <section class="space-y-3">
-            <h2>8. Contact</h2>
-            <p class="text-gray-600 leading-relaxed">
-                Pour toute question sur tes données personnelles, écris-nous à
-                <a href="mailto:florent.neyron@gmail.com" class="text-accent hover:underline">florent.neyron@gmail.com</a>.
-            </p>
-        </section>
-
-        <div class="border-t pt-6 text-center">
-            <a href="/" class="text-sm text-gray-500 hover:text-gray-700">&larr; Retour à l'accueil</a>
-        </div>
-    </div>
-</div>
+    <section aria-labelledby="plus">
+        <h2 id="plus">À savoir aussi</h2>
+        <ul>
+            <li><strong>Âge minimum</strong>&nbsp;: 15 ans.</li>
+            <li><strong>Pas de décision automatique</strong>&nbsp;: les estimations et les indices t’informent, rien n’est décidé à ta place.</li>
+            <li><strong>Cookies</strong>&nbsp;: un seul, <code>paceforge_session</code>, strictement nécessaire à la connexion. Aucun cookie de suivi ni de publicité. Ton choix de thème reste dans ton navigateur.</li>
+            <li><strong>Sécurité</strong>&nbsp;: serveur en France, échanges en HTTPS, mot de passe haché, accès aux services chiffrés.</li>
+        </ul>
+        <p>Voir aussi les <a href="/cgu">conditions d’utilisation</a> et les <a href="/mentions-legales">mentions légales</a>.</p>
+    </section>
+</main>
+{% include "partials/public_footer.html" %}
 {% endblock content_public %}

@@ -2,7 +2,7 @@
 {% for wk in weeks %}
 <section id="week-{{ wk.key }}">
     <div class="pf-week-heading">
-        <h2 class="pf-h3">{{ wk.label }}</h2>
+        <h2 class="pf-h3" tabindex="-1">{{ wk.label }}</h2>
         {# one counted activity: its row already says it all #}
         {% if wk.count > 1 %}<p class="pf-label tabular-nums">
             <b class="text-gray-700">{{ wk.hours_formatted }}</b>

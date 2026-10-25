@@ -80,7 +80,7 @@ def _visible(html: str) -> str:
 
 def _menu_items(html: str) -> list[str]:
     menu = html.split('id="plan-more"')[1].split("</details>")[0]
-    items = re.findall(r'role="menuitem"[^>]*>(.*?)</(?:button|label|a)>', menu, flags=re.S)
+    items = re.findall(r'<(?:button|a|label)\b[^>]*>(.*?)</(?:button|label|a)>', menu, flags=re.S)  # a plain disclosure: no menu roles
     return [unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", i)).strip()) for i in items]
 
 
@@ -247,6 +247,8 @@ async def test_menu_lists_share_print_then_race_settings_and_gpx(as_user: AsyncC
     assert "Finisher de référence" not in html and "/reference" not in html
     menu = html.split('id="plan-more"')[1].split("</details>")[0]
     assert menu.count('class="pf-menu-sep"') == 1 and "<small" not in menu
+    # a plain disclosure (like Mes courses' row menu): no menu/menuitem roles promising arrow keys it does not have
+    assert 'role="menu' not in menu and '<summary class="pf-ibtn pf-more' in menu
     assert "sharePlan()" in menu and "printPlan()" in menu and "switchRouteTab('reference')" not in menu
     assert "openRaceSheet()" in menu and "openTool('advanced')" in menu and 'type="file" name="gpx_file"' in menu
 
@@ -321,8 +323,9 @@ async def test_closed_rows_show_clock_name_and_km_only(as_user: AsyncClient):
     for h in heads:
         assert h.count("<svg") == 1  # the chevron only: no poste glyph, no bag, no weather icon
         text = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", h)).strip())
-        # the Cible clock, the name, the km, then the Optimiste and Sécurité clocks in two small columns
-        assert re.fullmatch(r"\d\d:\d\d \S.* km [\d,]+ \d\d:\d\d \d\d:\d\d", text), text
+        # the Cible clock, the name, the km, then the Optimiste and Sécurité clocks in two small columns, each named
+        # for a screen reader (the column names above are aria-hidden)
+        assert re.fullmatch(r"\d\d:\d\d( en retard)? \S.* km [\d,]+ optimiste \d\d:\d\d sécurité \d\d:\d\d( en retard)?", text), text
         assert "FC" not in text and "+" not in text and "°" not in text and " min" not in text and "Base vie" not in text
     assert "pf-tag" not in t and "pf-kind" not in t and "pf-prow-col" not in t
     # the day separator; the two small columns named once above the list, never per row
@@ -337,7 +340,8 @@ async def test_an_opened_row_has_the_leg_how_to_run_it_one_line_of_facts_and_two
     t = await _rows(as_user, rid, CPS)
     det = t.split('data-detail="1"')[1].split('data-row role="listitem"')[0]  # Col: ravito, crew, drop bag, cutoff
     text = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", det)))
-    assert re.search(r"\d+ ?(h\d\d|min) · 4 km · \+[\d ]+ m −[\d ]+ m", text), text  # the previous row is right above: no « depuis »
+    assert re.search(r"\d+ ?(h\d\d|min) · 4 km · \+[\d ]+ m( −[\d ]+ m)?", text), text  # the previous row is right above: no « depuis »
+    assert "−0 m" not in t and "+0 m" not in t  # a leg without descent (or climb) does not print it
     # no cardio consigne and no food line in a row (owner, 2026-10-09): the ceiling lives on the watch export
     assert "pf-tiles" not in t and not re.search(r"Cardio (sous|vers) \d+|(Montée|montée|Descente|descente) :", text), text
     assert "roulant" not in text.lower() and "Ta nutrition" not in text and "À prendre en route" not in text and "depuis" not in text.lower(), text

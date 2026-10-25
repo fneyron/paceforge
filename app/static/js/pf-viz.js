@@ -122,6 +122,23 @@
       }
     }
 
+    // the readouts of the other panels of this figure's range toggle (Activités: Durée · Distance · D+): measured
+    // with its own, so that switching the measure never moves the plot either (« +2 140 m » wraps where « 5h40 »
+    // does not)
+    function siblings() {
+      var scope = fig.closest("[data-range-panel]") && fig.closest("[data-viz-scope]"), out = [];
+      if (!scope) return out;
+      scope.querySelectorAll("[data-range-panel] figure[data-viz] script.pf-viz-data").forEach(function (el) {
+        if (el === dataEl) return;
+        try {
+          var o = JSON.parse(el.textContent);
+          out = out.concat(o.r || []);
+          if (o.rest) out.push(o.rest);
+        } catch (_) { /* a panel without readouts adds nothing */ }
+      });
+      return out;
+    }
+
     // the readout's tallest line, so that no selection moves the plot: the longest readouts are measured
     // (a dozen at most), with the resting one and « — »; again when the figure's width changes
     var lastW = -1, lastFont = "";
@@ -135,7 +152,7 @@
       var font = getComputedStyle(readBox).fontSize;
       if (w === lastW && font === lastFont) return;
       lastW = w; lastFont = font;
-      var rows = (D.r || []).map(function (r, i) { return { r: r || [], i: i }; });
+      var rows = (D.r || []).concat(siblings()).map(function (r, i) { return { r: r || [], i: i }; });
       function len(r, k) { return ((r[k] || "") + "").length; }
       var cand = rows.slice().sort(function (a, b) { return (len(b.r, 1) + len(b.r, 2)) - (len(a.r, 1) + len(a.r, 2)); })
         .slice(0, 12).concat(rows.slice().sort(function (a, b) { return len(b.r, 0) - len(a.r, 0); }).slice(0, 4))
@@ -169,7 +186,8 @@
       i = Math.max(0, Math.min(top, i | 0));
       // The visible dated readout and an explicit historical selection are
       // distinct: page-state must never pin an untouched default to yesterday.
-      fig.classList.toggle("is-inspecting", i !== END && (!opts.silent || opts.follow));
+      // a boolean, always: toggle(…, undefined) flips the class (a silent default select marked the feel track inspected)
+      fig.classList.toggle("is-inspecting", i !== END && (!opts.silent || !!opts.follow));
       var average = fig.querySelector("[data-average]");
       if (average) average.hidden = i === END;
       if (i === cur) return;
@@ -425,22 +443,38 @@
     box.addEventListener('focusin', function (e) { highlight(phaseAt(e.target)); });
     box.addEventListener('focusout', function (e) { highlight(phaseAt(e.relatedTarget)); });
     box.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') { e.target.blur(); highlight(null); }
+      if (e.key === 'Escape') highlight(null);   // the highlight goes, the focus stays where it was
     });
+  }
+
+  // the plot's px per viewBox unit (--pf-viz-k): interface.css keeps a desktop plot's text at a constant size with it
+  // (a 320-unit viewBox drawn 560 px wide would print its axis bigger than the card's title). Layout only, no colour
+  var scaleRO = "ResizeObserver" in window ? new ResizeObserver(function (es) {
+    es.forEach(function (en) { scaleOf(en.target); });
+  }) : null;
+  function scaleOf(svg) {
+    var vb = svg.viewBox && svg.viewBox.baseVal, w = svg.getBoundingClientRect().width;
+    if (vb && vb.width && w) svg.style.setProperty("--pf-viz-k", String(Math.round(w / vb.width * 1e4) / 1e4));
+  }
+  function scaled(svg) {
+    if (svg.__pfk) return;
+    svg.__pfk = true; scaleOf(svg);
+    if (scaleRO) scaleRO.observe(svg);
   }
 
   function scan(root) {
     root = root && root.querySelectorAll ? root : document;
     root.querySelectorAll("[data-viz-ranges]").forEach(ranges);
     root.querySelectorAll("figure[data-viz]").forEach(setup);
+    root.querySelectorAll("svg.pf-viz-svg").forEach(scaled);
     root.querySelectorAll('.pf-phases').forEach(phases);
   }
 
+  // Escape dismisses a shown tip (WCAG 1.4.13) and leaves the focus on its button: the next focus shows it again
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     document.querySelectorAll(".pf-help:hover, .pf-help:focus-within, .pf-phase-segment:hover, .pf-phase-segment:focus")
       .forEach(function (el) { el.classList.add("is-tip-dismissed"); });
-    if (e.target.matches(".pf-help-button, .pf-phase-segment")) e.target.blur();
   });
   document.addEventListener("pointerout", function (e) {
     var tip = e.target.closest(".pf-help, .pf-phase-segment");
@@ -452,6 +486,7 @@
   });
   window.PFViz = { scan: scan, dispose: function (root) {
     root.querySelectorAll('figure[data-viz]').forEach(function (fig) { fig.__pfvizDestroy?.(); });
+    if (scaleRO) root.querySelectorAll('svg.pf-viz-svg').forEach(function (svg) { scaleRO.unobserve(svg); });
   } };
   // A ring or a bookmarked chart opens every containing disclosure before
   // scrolling. Native summaries stay operable with keyboard and without JS.

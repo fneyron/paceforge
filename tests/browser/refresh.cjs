@@ -61,7 +61,7 @@ async function check(engine,name,width){
  await page.goto(base+'/sante',{waitUntil:'networkidle'});
  await page.waitForFunction(()=>window.PFViz&&window.htmx&&window.paceforgeRefresh);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'horizontal overflow');
- await page.evaluate(()=>{window.refreshCount=0;window.stableDocument=document;document.addEventListener('pf:refreshed',()=>window.refreshCount++);document.querySelector('#charge-detail').open=true;document.querySelector('#sommeil-habitudes').open=false;});
+ await page.evaluate(()=>{window.refreshCount=0;window.stableDocument=document;document.addEventListener('pf:refreshed',()=>window.refreshCount++);document.querySelector('#comprendre-indicateurs').open=true;});
  // A vertical swipe, even if it drifts sideways afterwards, must not select.
  const selector='#recuperation-detail figure[data-viz]';
  const before=await page.locator(selector+' input').inputValue();
@@ -84,10 +84,11 @@ async function check(engine,name,width){
  await page.evaluate(()=>window.refreshPromise);
  assert.equal(await page.evaluate(()=>refreshCount),1);
  assert.equal(await page.evaluate(()=>document===window.stableDocument),true);
- assert.equal(await page.locator('#sommeil-habitudes').getAttribute('open'),null);
- assert.notEqual(await page.locator('#charge-detail').getAttribute('open'),null);
+ // the refresh status is a polite region in the page from its load, empty and hidden until it speaks
+ assert.equal(await page.evaluate(()=>{const t=document.querySelector('.pf-refresh-status');return t.parentElement.getAttribute('role')==='status'&&t.parentElement.getAttribute('aria-live')==='polite'}),true);
+ assert.notEqual(await page.locator('#comprendre-indicateurs').getAttribute('open'),null);
  assert.ok(await page.locator('#sommeil-detail [data-range-panel]:not([hidden]) figure').isVisible());
- assert.ok(await page.locator('#entrainement-semaine figure').isVisible());
+ assert.ok(await page.locator('#charge-detail figure').isVisible());
  assert.equal(await page.locator(selector+' input').inputValue(),selected);
  assert.ok(Math.abs((await page.evaluate(()=>scrollY))-oldY)<3,'scroll anchor moved');
  // HX-Refresh is caught before HTMX can reload the document.

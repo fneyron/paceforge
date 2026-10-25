@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
@@ -14,7 +14,8 @@ from starlette.concurrency import run_in_threadpool
 
 from app.config import GOOGLE_SITE_VERIFICATION, settings
 from app.crypto import encrypt_secret
-from app.dependencies import get_current_user, get_db, sign_in
+from app.dependencies import get_current_user, get_db, get_optional_user, sign_in
+from app.models.mobile import MobileDevice
 from app.models.user import User
 from app.services import sessions
 from app.services.app_return import app_return, is_app_return, with_result
@@ -24,6 +25,7 @@ from app.services.auth import (
     TOO_MANY,
     client_ip,
     count_attempt,
+    forget_account_attempts,
     forget_attempts,
     generate_token,
     hash_password_async,
@@ -44,6 +46,18 @@ router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 templates.env.globals["google_site_verification"] = GOOGLE_SITE_VERIFICATION  # /privacy's head
 HOME = "/sante"  # Santé is the main dashboard
+# Where a sign-in may lead instead of Santé: a connection page asked for before the login, or the race plans (the
+# method page's « Créer mon plan », carried through sign-up and the email check in the session). Nothing else.
+AFTER_LOGIN = {"coros": "/connections/coros", "garmin": "/connections/garmin", "strava": "/connections/strava",
+               "simulator": "/simulator"}
+_AFTER_LOGIN_KEY = "after_login"
+
+
+def _next(value: str | None) -> str:
+    """`value` when it is a known « next », else nothing (« /simulator » is read as « simulator »)."""
+    value = (value or "").strip()
+    value = "simulator" if value == "/simulator" else value
+    return value if value in AFTER_LOGIN else ""
 
 
 def _same_site(request: Request) -> None:
@@ -65,8 +79,8 @@ def _same_site(request: Request) -> None:
 # ---------------------------------------------------------------------------
 
 @router.get("/auth/register", response_class=HTMLResponse)
-async def register_page(request: Request):
-    return templates.TemplateResponse(request, "auth/register.html", context={})
+async def register_page(request: Request, next: str = ""):
+    return templates.TemplateResponse(request, "auth/register.html", context={"next": _next(next)})
 
 
 @router.post("/auth/register", dependencies=[Depends(_same_site)])
@@ -77,27 +91,32 @@ async def register(
     password: str = Form(...),
     firstname: str = Form(default=""),
     lastname: str = Form(default=""),
+    next: str = Form(default=""),
 ):
     email = email.strip().lower()
     firstname = firstname.strip()
     lastname = lastname.strip()
+    next = _next(next)
+    typed = {"email": email, "firstname": firstname, "lastname": lastname, "next": next}
 
     if not valid_email(email) or not password or len(firstname) > 100 or len(lastname) > 100:
         return templates.TemplateResponse(
             request, "auth/register.html",
-            context={"error": "Vérifie ton adresse email et tes informations.", "email": email, "firstname": firstname, "lastname": lastname},
+            context={"error": "Vérifie ton adresse email et tes informations.",
+                     "error_field": "email" if not valid_email(email) else None, **typed},
         )
 
     if not 8 <= len(password) <= 1024:
         return templates.TemplateResponse(
             request, "auth/register.html",
-            context={"error": "Le mot de passe doit contenir entre 8 et 1 024 caractères.", "email": email, "firstname": firstname, "lastname": lastname},
+            context={"error": "Le mot de passe doit contenir entre 8 et 1 024 caractères.", "error_field": "password",
+                     **typed},
         )
 
     if await count_attempt("register", client_ip(request), email):
         return templates.TemplateResponse(
             request, "auth/register.html", status_code=429,
-            context={"error": TOO_MANY, "email": email, "firstname": firstname, "lastname": lastname},
+            context={"error": TOO_MANY, **typed},
         )
 
     # Check if email already exists
@@ -105,7 +124,7 @@ async def register(
     if result.scalar_one_or_none():
         return templates.TemplateResponse(
             request, "auth/register.html",
-            context={"error": "Un compte existe déjà avec cet email.", "email": email, "firstname": firstname, "lastname": lastname},
+            context={"error": "Un compte existe déjà avec cet email.", "error_field": "email", **typed},
         )
 
     verify_token = verification_token()
@@ -123,7 +142,7 @@ async def register(
         await db.rollback()
         return templates.TemplateResponse(
             request, "auth/register.html",
-            context={"error": "Un compte existe déjà avec cet email.", "email": email, "firstname": firstname, "lastname": lastname},
+            context={"error": "Un compte existe déjà avec cet email.", "error_field": "email", **typed},
         )
     await db.refresh(user)
     await over_quota("resend", user=user.id)  # this first email counts for the resend's minute
@@ -136,6 +155,8 @@ async def register(
     request.session.clear()
     request.session["pending_user_id"] = user.id
     request.session["verification_failed"] = not sent
+    if next:  # led there after the email check and the first login, in this browser
+        request.session[_AFTER_LOGIN_KEY] = next
     logger.info("User %d registered", user.id)
 
     return RedirectResponse(url="/auth/check-email", status_code=302)
@@ -201,7 +222,8 @@ async def verify_email(
 
 @router.get("/auth/login", response_class=HTMLResponse)
 async def login_page(request: Request, next: str = ""):
-    return templates.TemplateResponse(request, "auth/login.html", context={"next": next if next in ("coros", "garmin", "strava") else ""})
+    return templates.TemplateResponse(request, "auth/login.html", context={
+        "next": _next(next) or _next(request.session.get(_AFTER_LOGIN_KEY))})
 
 
 @router.post("/auth/login", dependencies=[Depends(_same_site)])
@@ -213,7 +235,7 @@ async def login(
     next: str = Form(""),
 ):
     email = email.strip().lower()
-    next = next if next in ("coros", "garmin", "strava") else ""
+    next = _next(next) or _next(request.session.get(_AFTER_LOGIN_KEY))
     ip = client_ip(request)
     # counted before anything else: parallel attempts cannot slip past the limit, and a refused one costs
     # neither a database connection nor a password check
@@ -231,7 +253,8 @@ async def login(
     if not (await verify_password_async(password, user.password_hash if known else DUMMY_HASH) and known):
         return templates.TemplateResponse(
             request, "auth/login.html",
-            context={"error": "Email ou mot de passe incorrect.", "email": email, "next": next},
+            context={"error": "Email ou mot de passe incorrect.", "error_field": "credentials", "email": email,
+                     "next": next},
         )
     await forget_attempts("login", ip, email)
 
@@ -241,11 +264,13 @@ async def login(
     request.session.clear()
     if not user.email_verified:
         request.session["pending_user_id"] = user.id
+        if next:
+            request.session[_AFTER_LOGIN_KEY] = next
         return RedirectResponse("/auth/check-email", status_code=302)
     sign_in(request, user)
     logger.info("User %d logged in", user.id)
 
-    return RedirectResponse(url=f"/connections/{next}" if next else HOME, status_code=302)
+    return RedirectResponse(url=AFTER_LOGIN[next] if next else HOME, status_code=302)
 
 
 async def _sign_out(request: Request, db: AsyncSession) -> None:
@@ -335,7 +360,8 @@ async def reset_password(
     if not 8 <= len(password) <= 1024:
         return templates.TemplateResponse(
             request, "auth/reset_password.html",
-            context={"token": token, "error": "Le mot de passe doit contenir entre 8 et 1 024 caractères."},
+            context={"token": token, "error": "Le mot de passe doit contenir entre 8 et 1 024 caractères.",
+                     "error_field": "password"},
         )
 
     result = await db.execute(
@@ -354,7 +380,12 @@ async def reset_password(
     user.password_reset_token = None
     user.password_reset_expires_at = None
     user.session_version = (user.session_version or 0) + 1  # every other session of the account is signed out
+    # and every paired phone (180-day tokens of their own): whoever reset the password pairs them again; the days
+    # they sent stay (mobile_daily.device_id is set to NULL)
+    await db.execute(delete(MobileDevice).where(MobileDevice.user_id == user.id))
     await db.commit()  # before the redirect: the request that follows it already checks the new session version
+    # an account the per-account login cap holds can sign in again: whoever reset it holds its mailbox
+    await forget_account_attempts("login", (user.email or "").strip().lower())
 
     request.session.clear()
     if not user.email_verified:
@@ -589,5 +620,15 @@ async def setup_credentials(
 # ---------------------------------------------------------------------------
 
 @router.get("/privacy", response_class=HTMLResponse)
-async def privacy(request: Request):
-    return templates.TemplateResponse(request, "privacy.html")
+async def privacy(request: Request, user: User | None = Depends(get_optional_user)):
+    return templates.TemplateResponse(request, "privacy.html", context={"viewer": user})
+
+
+@router.get("/mentions-legales", response_class=HTMLResponse)
+async def legal_notice(request: Request, user: User | None = Depends(get_optional_user)):
+    return templates.TemplateResponse(request, "legal_notice.html", context={"viewer": user})
+
+
+@router.get("/cgu", response_class=HTMLResponse)
+async def terms(request: Request, user: User | None = Depends(get_optional_user)):
+    return templates.TemplateResponse(request, "terms.html", context={"viewer": user})

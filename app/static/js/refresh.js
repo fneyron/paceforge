@@ -29,11 +29,7 @@
       if (retry) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'refresh-notice', message: message }));
       return;
     }
-    if (!toast) {
-      toast = document.createElement('div'); toast.className = 'pf-refresh-status';
-      toast.setAttribute('role', 'status'); toast.setAttribute('aria-live', 'polite');
-      document.getElementById('main-content').before(toast);
-    }
+    if (!liveRegion()) return;
     toast.replaceChildren(); toast.hidden = false;
     toast.classList.toggle('is-loading', !!loading);
     var text = document.createElement('span'); text.textContent = message; toast.appendChild(text);
@@ -42,8 +38,21 @@
       var close = document.createElement('button'); close.type = 'button'; close.textContent = '×';
       close.setAttribute('aria-label', 'Fermer le message'); close.onclick = function () { toast.hidden = true; };
       toast.appendChild(close);
-    } else if (!loading) hideTimer = setTimeout(function () { toast.hidden = true; }, 3000);
+    } else if (!loading) hideTimer = setTimeout(function () { toast.hidden = true; }, 6000);   // time to read it (≥ 6 s)
   }
+  // The polite region is in the page from its load, empty: a region filled in the task that creates it is often not
+  // said. The visible line inside it is shown and filled later (status); an error stays until it is closed.
+  function liveRegion() {
+    if (toast) return toast;
+    var main = document.getElementById('main-content');
+    if (!main) return null;
+    var live = document.createElement('div');
+    live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
+    toast = document.createElement('div'); toast.className = 'pf-refresh-status'; toast.hidden = true;
+    live.appendChild(toast); main.before(live);
+    return toast;
+  }
+  liveRegion();
   async function request(url, options, format) {
     var controller = new AbortController(), timer = setTimeout(function () { controller.abort(); }, 30000);
     try {

@@ -300,7 +300,7 @@ def _visible_and_meta(html: str) -> str:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", PUBLIC_PATHS + ("/privacy",))
+@pytest.mark.parametrize("path", PUBLIC_PATHS + ("/privacy", "/mentions-legales", "/cgu"))
 async def test_public_pages_make_no_ai_or_bike_claims(client: AsyncClient, path):
     html = (await client.get(path)).text
     text = _visible_and_meta(html)
@@ -312,11 +312,13 @@ async def test_public_pages_make_no_ai_or_bike_claims(client: AsyncClient, path)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", ["/", "/methode"])
+@pytest.mark.parametrize("path", ["/", "/methode", "/privacy", "/mentions-legales", "/cgu"])
 async def test_public_footer_links(client: AsyncClient, path):
     html = (await client.get(path)).text
     footer = html[html.rfind("<footer"):]
     assert 'href="/methode"' in footer and 'href="/privacy"' in footer
+    assert 'href="/cgu"' in footer and 'href="/mentions-legales"' in footer
+    assert 'href="mailto:contact@paceforge.fr"' in footer and "gmail" not in html
 
 
 def test_manifest_makes_no_ai_claim():

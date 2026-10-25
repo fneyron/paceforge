@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block meta_title %}Conditions d’utilisation · PaceForge{% endblock meta_title %}
+{% block title %}{{ self.meta_title() }}{% endblock title %}
+{% block meta_description %}Les règles d’utilisation de PaceForge, service gratuit de suivi de forme et de plans de course trail.{% endblock meta_description %}
+
+{% block content_public %}
+{% include "partials/public_header.html" %}
+<main id="main-content" tabindex="-1" class="pf-legal">
+    <a href="/" class="pf-back">&larr; Retour</a>
+    <h1>Conditions d’utilisation</h1>
+    <p class="pf-legal-date">Version du 25 octobre 2026</p>
+
+    <section aria-labelledby="service">
+        <h2 id="service">Le service</h2>
+        <p>PaceForge est gratuit. Il est fourni tel quel, sans garantie de disponibilité ni de résultat, et peut évoluer ou s’arrêter.</p>
+    </section>
+
+    <section aria-labelledby="estimations">
+        <h2 id="estimations">Des estimations, pas des certitudes</h2>
+        <p>Les temps de passage, les plans et les indices de Santé sont des estimations indicatives. En montagne, ta sécurité et tes décisions restent les tiennes&nbsp;: matériel, météo, allure, abandon.</p>
+        <p>PaceForge n’est pas un dispositif médical et ne remplace pas l’avis d’un médecin.</p>
+    </section>
+
+    <section aria-labelledby="compte">
+        <h2 id="compte">Ton compte</h2>
+        <p>Il faut avoir au moins 15 ans. Ton compte est personnel&nbsp;: garde ton mot de passe pour toi. Tu peux le supprimer à tout moment depuis Réglages.</p>
+    </section>
+
+    <section aria-labelledby="donnees">
+        <h2 id="donnees">Tes données</h2>
+        <p>Elles sont traitées selon la <a href="/privacy">politique de confidentialité</a>.</p>
+    </section>
+
+    <section aria-labelledby="droit">
+        <h2 id="droit">Droit applicable</h2>
+        <p>Ces conditions relèvent du droit français. Une question&#8239;? <a href="mailto:contact@paceforge.fr">contact@paceforge.fr</a></p>
+        <p>Voir aussi les <a href="/mentions-legales">mentions légales</a>.</p>
+    </section>
+</main>
+{% include "partials/public_footer.html" %}
+{% endblock content_public %}

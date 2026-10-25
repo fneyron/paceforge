@@ -6,8 +6,8 @@
 {% set has_validation = stats and stats.has_validation %}
 {% set tj = va.transjeju_2026 if va else None %}
 
-{% block title %}Comment PaceForge estime ton temps{% endblock title %}
-{% block meta_title %}Comment PaceForge estime ton temps{% endblock meta_title %}
+{% block meta_title %}Comment on estime ton temps de course · PaceForge{% endblock meta_title %}
+{% block title %}{{ self.meta_title() }}{% endblock title %}
 {% block meta_description %}Les données, ce que le modèle apprend, comment on le teste et ses limites.{% endblock meta_description %}
 
 {% macro tag() %}<span class="ml-2 pf-tag align-middle">sur courses réelles</span>{% endmacro %}
@@ -16,6 +16,7 @@
 <div class="min-h-screen overflow-x-hidden">
     {% set show_register = True %}{% include "partials/public_header.html" %}
 
+    <main id="main-content" tabindex="-1">
     <!-- Intro -->
     <div class="max-w-3xl mx-auto px-5 sm:px-6 pt-12 pb-10 sm:pt-16">
         <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-gray-900 leading-tight">Comment PaceForge estime ton temps</h1>
@@ -71,15 +72,15 @@
             <h2 id="modele" class="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">Ce que le plan prend en compte</h2>
             <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div class="rounded-2xl bg-white p-5">
-                    <h3 class="font-semibold text-gray-900">La pente{{ tag() }}</h3>
+                    <h3 class="font-semibold text-gray-900">La pente {{ tag() }}</h3>
                     <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">Lue tous les 25&nbsp;m. Une montée raide, une descente cassante et un faux plat n'ont pas le même coût. On part de cette courbe, puis on l'ajuste à tes sorties Strava là où tu as assez de kilomètres.</p>
                 </div>
                 <div class="rounded-2xl bg-white p-5">
-                    <h3 class="font-semibold text-gray-900">La fatigue{{ tag() }}</h3>
+                    <h3 class="font-semibold text-gray-900">La fatigue {{ tag() }}</h3>
                     <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">Ce qui pèse, ce sont les heures déjà passées sur le parcours, pas les kilomètres.</p>
                 </div>
                 <div class="rounded-2xl bg-white p-5">
-                    <h3 class="font-semibold text-gray-900">La nuit{{ tag() }}</h3>
+                    <h3 class="font-semibold text-gray-900">La nuit {{ tag() }}</h3>
                     <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">On avance moins vite de nuit. La nuit suit le soleil, là où tu passes et à ton heure de passage (soleil à plus de 6° sous l’horizon), avec une transition au crépuscule et à l’aube. Sans date de course, une plage fixe de 21 h à 6 h.</p>
                 </div>
                 <div class="rounded-2xl bg-white p-5">
@@ -91,7 +92,7 @@
                     <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">Prévision météo à chaque point, à ton heure de passage. Au-delà de 15 jours, les normales de saison.</p>
                 </div>
                 <div class="rounded-2xl bg-white p-5">
-                    <h3 class="font-semibold text-gray-900">Tes arrêts{{ tag() }}</h3>
+                    <h3 class="font-semibold text-gray-900">Tes arrêts {{ tag() }}</h3>
                     <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">Un temps d'arrêt par type de poste (eau, ravito, base vie), plus long quand ta course est longue, mesuré sur les arrêts chronométrés d'UTMB Live. Tu le règles point par point.</p>
                 </div>
             </div>
@@ -193,11 +194,12 @@
                 {% if viewer %}
                 <a href="/simulator" class="pf-btn pf-btn-primary w-full sm:w-auto">Mes courses</a>
                 {% else %}
-                <a href="/auth/register" class="pf-btn pf-btn-primary w-full sm:w-auto">Créer mon plan</a>
+                <a href="/auth/register?next=simulator" class="pf-btn pf-btn-primary w-full sm:w-auto">Créer mon plan</a>
                 {% endif %}
             </div>
         </div>
     </div>
+    </main>
 
     {% include "partials/public_footer.html" %}
 </div>

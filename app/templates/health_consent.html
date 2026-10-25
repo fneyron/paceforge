@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Données de santé — PaceForge{% endblock title %}
+
+{% block content %}
+<div class="pf-consent">
+    <h1 class="pf-h1">{{ consent_title }}</h1>
+    {% for paragraph in consent_text %}<p class="pf-lead">{{ paragraph }}</p>{% endfor %}
+    <p class="pf-lead"><a class="pf-link" href="/privacy#sante">Le détail dans la politique de confidentialité</a></p>
+    {% if error %}<p id="consent-error" class="pf-note !text-danger" role="alert">{{ error }}</p>{% endif %}
+    <form method="post" action="/sante/consentement" class="pf-consent-form">
+        <input type="hidden" name="next" value="{{ next }}">
+        <label class="pf-consent-check">
+            <input type="checkbox" name="accept" value="1" required{% if error %} aria-invalid="true" aria-describedby="consent-error"{% endif %}>
+            <span>{{ consent_label }}</span>
+        </label>
+        <div class="pf-consent-actions">
+            <button type="submit" class="pf-btn pf-btn-primary">Continuer</button>
+            <a class="pf-link" href="/settings#connections">Pas maintenant</a>
+        </div>
+    </form>
+</div>
+{% endblock content %}

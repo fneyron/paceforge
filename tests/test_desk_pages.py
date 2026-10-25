@@ -58,13 +58,13 @@ async def test_activity_rows_ultra_values_and_recent_view(as_user: AsyncClient, 
     db_session.add(_activity(test_user, 2, name="Transjeju", distance=147060.0, moving_time=75480, total_elevation_gain=12000.0))
     await db_session.flush()
     page = (await as_user.get("/activities")).text
-    assert '>12,35<small class="pf-act-u"> km</small>' in page and '>+1234<small class="pf-act-u"> m</small>' in page
-    assert '>147,06<small class="pf-act-u"> km</small>' in page and '>+12000<small class="pf-act-u"> m</small>' in page
+    assert '>12,35<small class="pf-act-u"> km</small>' in page and '>+1\u202f234<small class="pf-act-u"> m</small>' in page
+    assert '>147,06<small class="pf-act-u"> km</small>' in page and '>+12\u202f000<small class="pf-act-u"> m</small>' in page
     css = (Path(__file__).resolve().parents[1] / "app/static/css/interface.css").read_text(encoding="utf-8")
     desk = css.split("/* @desk-pages */", 1)[1]
     assert ".pf-act-stats b { white-space: nowrap; }" in desk
     widths = {sel: int(w) for sel, w in re.findall(r"\.pf-act-stats > ([^{]+?) \{ width: (\d+)px; \}", desk)}
-    assert widths[":nth-child(1)"] >= 76 and widths[".pf-act-dplus"] >= 76  # « 147,06 km », « +12000 m »: 75 px
+    assert widths[":nth-child(1)"] >= 76 and widths[".pf-act-dplus"] >= 84  # « 147,06 km »: 75 px; « +12 000 m », grouped: 82 px
     # Santé's « depuis » view lists the same rows in #recent: the empty-column rule covers it too
     since = (date.today() - timedelta(days=7)).isoformat()
     recent = (await as_user.get(f"/activities?depuis={since}")).text

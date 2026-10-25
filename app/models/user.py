@@ -94,6 +94,9 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
     health_last_push_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # explicit consent to health data (GDPR art. 9.2.a): when, and to which text (services/health_consent)
+    health_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    health_consent_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # Race goal
     race_name: Mapped[str | None] = mapped_column(String(255), nullable=True)

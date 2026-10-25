@@ -21,9 +21,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # the tool's words: its name, its old name, what it counted (gels, caffeine), its blocks and buttons
 GONE = re.compile(r"nutri|ravitaillement|\bgels?\b|caf[ée]ine|à chaque ravito|de secours|tes produits|plan type|prends \d", re.I)
 # the privacy page's one line about the tool: its stored data (nutrition_products, routes.nutrition_json) stays until the
-# new model replaces it, so the page declares it (RGPD) and says it is read by nothing
-DISCLOSURE = ("Ce que tu avais saisi dans l'ancien outil nutrition (produits, plan) reste enregistré sans être utilisé, "
-              "jusqu'à sa refonte.")
+# new model replaces it, so the page declares it (RGPD), says it is read by nothing and goes with the account or the plan
+DISCLOSURE = ("Ce que tu avais saisi dans l’ancien outil nutrition (produits, plan) reste enregistré avec ton compte et "
+              "tes plans, sans être utilisé, et il est effacé avec eux.")
 
 
 @pytest.fixture

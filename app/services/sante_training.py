@@ -20,7 +20,7 @@ built on it).
 - each activity's heart-rate load (research_ind_train.md): its minutes
   weighted by their share of the
   heart-rate reserve (Banister 1991), from its laps when it has them, one
-  pipeline for the Entraînement dial, the Charge accumulée and Activités
+  pipeline for the Entraînement dial, the Charge cumulée and Activités
   (sante_load); shown only against the athlete's own usual week.
 Everything is computed on the fly; nothing is written to Activity. Activités
 (training_view), the race page (race_prep) and Santé read it. The dated
@@ -379,7 +379,7 @@ def hr_rest(night_rhr: dict[date, float], day_min: dict[date, float], today: dat
 # dose (Passfield 2022): Santé shows it only against the athlete's own usual week, as a ratio, never as a number (no
 # TRIMP, no points). No brand load is read. One set of bounds a day (rest: the median sleeping HR of 60 days, else
 # 50; max: the shared confirmed or corroborated reference) weighs every session of every view
-# that day: the Entraînement dial, the Charge accumulée curves and Activités' 7 / 28 days (sante_load).
+# that day: the Entraînement dial, the Charge cumulée curves and Activités' 7 / 28 days (sante_load).
 LOAD_A, LOAD_B = 0.64, 1.92  # (H) Banister 1991's men's constants: no sex is known to the app (women's: LOAD_WOMEN)
 LOAD_WOMEN = (0.86, 1.67)  # Banister 1991's women's constants, read once the athlete's sex is known
 SEG_COVER = 0.8  # (H) laps (else km splits) with HR over 80 % of the moving time: their load, scaled to it

@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{% block title %}PaceForge{% endblock %}</title>
-    <link rel="manifest" href="/static/manifest.json?v=4">
+    <link rel="manifest" href="/static/manifest.json?v=5">
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#0E1214" media="(prefers-color-scheme: dark)">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="icon" href="/favicon.ico?v=4" sizes="32x32">
-    <link rel="icon" type="image/png" href="/static/img/icon-192.png?v=4" sizes="192x192">
-    <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png?v=4">
+    <link rel="icon" type="image/png" href="/static/img/icon-192.png?v=5" sizes="192x192">
+    <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png?v=5">
     {% set _meta_title %}{% block meta_title %}PaceForge · Ton plan de course trail, calé sur de vraies courses{% endblock meta_title %}{% endset %}
     {% set _meta_desc %}{% block meta_description %}Importe le GPX de ta course : heures de passage calées sur de vraies courses de trail et sur ton niveau en course. Export montre, bande dossard.{% endblock meta_description %}{% endset %}
     <meta property="og:title" content="{{ _meta_title | trim }}">
@@ -19,12 +19,14 @@
     <meta property="og:image" content="https://paceforge.fr/static/img/og-image.png">
     <meta property="og:url" content="https://paceforge.fr{% if request is defined and request %}{{ request.url.path }}{% endif %}">
     <meta property="og:type" content="website">
+    <meta property="og:site_name" content="PaceForge">
+    <meta property="og:locale" content="fr_FR">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ _meta_title | trim }}">
     <meta name="twitter:description" content="{{ _meta_desc | trim }}">
     <meta name="twitter:image" content="https://paceforge.fr/static/img/og-image.png">
     <meta name="description" content="{{ _meta_desc | trim }}">
-    {% if request is defined and request and request.url.path in ("/", "/landing", "/methode", "/privacy") %}
+    {% if request is defined and request and request.url.path in ("/", "/landing", "/methode", "/privacy", "/mentions-legales", "/cgu") %}
     <link rel="canonical" href="https://paceforge.fr{{ '/' if request.url.path == '/landing' else request.url.path }}">
     {% if google_site_verification %}<meta name="google-site-verification" content="{{ google_site_verification }}">{% endif %}
     {% endif %}
@@ -41,9 +43,13 @@
             if (theme === 'true' || (theme === null && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark');
         } catch (_) { /* Storage may be unavailable in private browsers. */ }
     </script>
+    {# htmx and the icons for the app's pages only: the public ones (landing, méthode, privacy, sign-in, errors,
+       /setup) use neither, and app.js checks for them #}
+    {% if user is defined and user %}
     <meta name="htmx-config" content='{"allowScriptTags":true}'>
     <script defer src="/static/vendor/htmx-2.0.4.min.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
     <script defer src="/static/vendor/lucide-0.469.0.min.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
+    {% endif %}
     {% block head %}{% endblock %}
 </head>
 <body class="min-h-full bg-canvas text-ink antialiased{% if user is defined and user %} pf-app{% endif %}">
@@ -120,8 +126,9 @@
     </script>
     <script>
     if ('serviceWorker' in navigator) {
-        // update(): the installed worker is refetched at once, so a new worker reaches existing installs
-        navigator.serviceWorker.register('/static/sw.js').then((r) => r.update()).catch(() => {});
+        // the worker (scope /static/) controls no page: it only retires the caches of earlier builds when it installs.
+        // No update() on every page: that was one more request per navigation for a worker that serves nothing
+        navigator.serviceWorker.register('/static/sw.js').catch(() => {});
     }
     </script>
     <script src="/static/js/app.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>

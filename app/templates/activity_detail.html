@@ -8,11 +8,12 @@
 <div class="space-y-6">
     <!-- Back + Header -->
     <div>
-        <a href="/activities" class="pf-back inline-flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors mb-3">
-            <svg width="16" height="16" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+        {#- the list it was opened from (activity.py _back); with JS, back in the history (below) -#}
+        <a href="{{ back.href if back is defined else '/activities' }}" data-back class="pf-back inline-flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors mb-3">
+            <svg width="16" height="16" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
             </svg>
-            Activités
+            <span data-back-label>{{ back.label if back is defined else 'Activités' }}</span>
         </a>
         <h1 class="text-lg font-semibold tracking-tight">{{ activity.name }}</h1>
         <p class="text-sm text-gray-400 mt-0.5">{{ activity.start_date.strftime('%d/%m/%Y') }}</p>
@@ -20,10 +21,13 @@
 
     <!-- Metrics Grid -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {#- a session without a distance (renforcement, mobilité) shows no « 0,0 km » -#}
+        {% if activity.distance_km > 0 %}
         <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Distance</p>
             <p class="text-xl font-bold tabular-nums">{{ activity.distance_km|fr_num }} <span class="text-sm font-normal text-gray-400">km</span></p>
         </div>
+        {% endif %}
         <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Durée</p>
             <p class="text-xl font-bold tabular-nums">{{ activity.duration_formatted }}</p>
@@ -31,7 +35,7 @@
         {% if activity.total_elevation_gain > 0 %}
         <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">D+</p>
-            <p class="text-xl font-bold tabular-nums text-red-500">{{ activity.total_elevation_gain|int }} <span class="text-sm font-normal text-gray-400">m</span></p>
+            <p class="text-xl font-bold tabular-nums">{{ activity.total_elevation_gain|fr_int }} <span class="text-sm font-normal text-gray-400">m</span></p>
         </div>
         {% endif %}
         {% if activity.pace_formatted %}
@@ -131,10 +135,10 @@
                             {% set l_sec = (lap_time % 60)|int %}
                             {{ l_min }}'{{ '%02d'|format(l_sec) }}"
                         </td>
-                        <td class="text-right py-2 px-4 tabular-nums text-gray-500">{{ (lap_dist / 1000)|fr_num(1) }}km</td>
+                        <td class="text-right py-2 px-4 tabular-nums text-gray-500">{{ (lap_dist / 1000)|fr_num(1) }} km</td>
                         {% if is_cycling %}
-                        <td class="text-right py-2 px-4 tabular-nums font-medium {% if lap_watts and lap_watts > 200 %}text-red-500{% endif %}">
-                            {% if lap_watts %}{{ lap_watts|int }}W{% else %}-{% endif %}
+                        <td class="text-right py-2 px-4 tabular-nums font-medium">
+                            {% if lap_watts %}{{ lap_watts|int }} W{% else %}—{% endif %}
                         </td>
                         <td class="text-right py-2 px-4 tabular-nums text-gray-500">
                             {% if lap_dist > 0 and lap_time > 0 %}{{ (lap_dist / lap_time * 3.6)|fr_num(1) }} km/h{% endif %}
@@ -172,7 +176,7 @@
     <div class="rounded-xl border border-gray-200 bg-white shadow-sm" x-data="{ open: false }">
         <button @click="open = !open" class="w-full flex items-center justify-between p-5">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">
-                {% if is_cycling %}Vitesse par segment{% else %}Splits par kilomètre{% endif %}
+                {% if is_cycling %}Vitesse par segment{% else %}Par kilomètre{% endif %}
             </h3>
             <svg width="16" height="16" class="w-4 h-4 text-gray-400 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
         </button>
@@ -212,11 +216,9 @@
                         </td>
                         {% endif %}
                         <td class="text-right py-2 pl-4 tabular-nums text-gray-400">
-                            {% if split.get('elevation_difference') %}
-                            <span class="{% if split.elevation_difference > 0 %}text-red-500{% elif split.elevation_difference < 0 %}text-blue-500{% endif %}">
-                                {{ split.elevation_difference|int }}m
-                            </span>
-                            {% endif %}
+                            {#- signed in words, never in red (red is an alert elsewhere): « +3 m », « −3 m » -#}
+                            {% set climb = split.get('elevation_difference') %}
+                            {% if climb and climb|round|int != 0 %}{{ '+' if climb > 0 else '−' }}{{ (climb|abs)|fr_int }} m{% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -227,4 +229,27 @@
     </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// « ‹ »: opened from one of the lists on this site (Activités, Santé), go back in the history, so the list comes
+// back as it was left (its filter, its loaded weeks, its scroll), in a browser and in the app's web view alike. The
+// href stays the way back without JS, or when the history has nowhere to go (then it is followed after a moment).
+(function () {
+    var link = document.querySelector('[data-back]'), lists = { '/activities': 'Activités', '/sante': 'Santé' }, ref = null;
+    if (!link) return;
+    try { ref = new URL(document.referrer); } catch (_) { return; }
+    if (ref.origin !== location.origin || !Object.prototype.hasOwnProperty.call(lists, ref.pathname) || history.length < 2) return;
+    link.querySelector('[data-back-label]').textContent = lists[ref.pathname];
+    link.addEventListener('click', function (event) {
+        if (event.defaultPrevented || event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        var left = false;
+        window.addEventListener('pagehide', function () { left = true; }, { once: true });
+        history.back();
+        setTimeout(function () { if (!left) location.href = link.href; }, 1200);
+    });
+})();
+</script>
 {% endblock %}

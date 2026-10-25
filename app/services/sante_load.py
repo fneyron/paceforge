@@ -1,5 +1,5 @@
 """The training load: one pipeline for every view (owner, 2026-10-14: scientific basis — the load was computed four
-ways, with different heart-rate bounds, decays and duplicate handling: the Entraînement dial, the Charge accumulée,
+ways, with different heart-rate bounds, decays and duplicate handling: the Entraînement dial, the Charge cumulée,
 the recovery's cumulative cap and Activités' 7 / 28 days).
 
 - L, a session's load (sante_training.loads): its minutes, lap by lap, weighted x·0.64·e^(1.92x), x its share of the
@@ -10,7 +10,7 @@ the recovery's cumulative cap and Activités' 7 / 28 days).
 - D, the daily load: Σ L of the deduplicated sessions on the local day each ended.
 - The views: Entraînement % (week_ratio): Σ D of the 7 days ÷ the mean weekly Σ D of the 11 weeks before them (8
   active weeks at least; « comme d'habitude » within the range of those active weeks, which an ordinary week leaves
-  2/(n_a + 1) of the time); Charge accumulée (history,
+  2/(n_a + 1) of the time); Charge cumulée (history,
   card): A and C, exponential averages of τ = 7 and 42 days, each day x ← x + α·(D − x) with α = 1 − e^(−1/τ)
   (the decay of the fitness-fatigue model: Morton, Fitz-Clarke & Banister 1990; Busso 2003 — Williams 2017's
   EWMA uses λ = 2/(N + 1), about twice as fast: 0.25 against α = 0.133 at N = τ = 7 days, 0.047 against 0.024
@@ -116,7 +116,7 @@ def card(sessions, today: date, load: dict | None = None, rest: float = 50.0, pe
     chart = viz.lines([r['day'] for r in rows], [
         {'name': 'Récente', 'values': [r['recent'] for r in rows]},
         {'name': 'Habituelle', 'values': [r['usual'] for r in rows], 'cls': 'is-soft'},
-    ], title='Charge accumulée des activités reçues sur 90 jours')
+    ], title='Charge cumulée des activités reçues sur 90 jours')
     readouts = [[viz.num(r['recent'], unit='u.a.'), 'charge récente',
                  viz.d_long(r['day']) + (' · habituelle : '+viz.num(r['usual'], unit='u.a.') if r['usual'] is not None else ' · repères en cours')]
                 for r in rows]

@@ -5,12 +5,15 @@
 {% set has_dataset = stats is defined and stats and stats.has_dataset %}
 {% set has_validation = stats is defined and stats and stats.has_validation %}
 
-{% block title %}PaceForge · Récupération et plans de course pour le trail et l'ultra{% endblock title %}
+{% block meta_title %}Récupération et plans de course trail · PaceForge{% endblock meta_title %}
+{% block title %}{{ self.meta_title() }}{% endblock title %}
+{% block meta_description %}Chaque matin, ton sommeil, ta récupération et ton entraînement. Pour tes courses, des temps de passage calés sur de vraies courses de trail.{% endblock meta_description %}
 
 {% block content_public %}
 <div class="pf-landing overflow-x-hidden">
     {% include "partials/public_header.html" %}
-    <main class="pf-wrap">
+    <main id="main-content" tabindex="-1" class="pf-wrap">
+        {% if account_deleted %}<p class="pf-note pf-ldeleted" role="status">Ton compte a été supprimé.</p>{% endif %}
         <section class="pf-lhero">
             <div>
                 <p class="pf-eyebrow">Trail et ultra</p>
@@ -21,7 +24,7 @@
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
                     <a href="/methode" class="pf-btn pf-btn-secondary">Voir la méthode</a>
                 </div>
-                <p class="pf-fine"><svg width="16" height="16" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>Gratuit · COROS, Garmin ou Strava</p>
+                <p class="pf-fine"><svg width="16" height="16" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>Gratuit · COROS ou Garmin · Strava en option</p>
                 {% if error %}
                 <div class="pf-note !text-danger mt-4" role="alert">La connexion a échoué. Réessaie.</div>
                 {% endif %}

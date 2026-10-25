@@ -28,6 +28,7 @@ from app.dependencies import get_db
 from app.main import create_app
 from app.models.activity import Activity
 from app.models.user import User
+from app.services.health_consent import HEALTH_CONSENT_VERSION
 
 # PostgreSQL, as in production, when TEST_DATABASE_URL names one (never the application's DATABASE_URL: the suite
 # empties its tables; one suite at a time on it): build its schema with `alembic upgrade head` first (the models
@@ -167,6 +168,9 @@ async def test_user(db_session: AsyncSession) -> User:
         firstname="Test",
         lastname="Runner",
         profile_picture_url="https://example.com/avatar.jpg",
+        # an athlete who agreed to the health data text (tests/test_health_consent: one who did not)
+        health_consent_at=datetime(2026, 10, 25, tzinfo=timezone.utc),
+        health_consent_version=HEALTH_CONSENT_VERSION,
     )
     db_session.add(user)
     await db_session.flush()
