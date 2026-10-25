@@ -865,6 +865,10 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-auth { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 40px 20px; }
 .pf-auth > div { width: 100%; max-width: 380px; }
 .pf-auth-logo { margin: 0 auto 28px; display: flex; width: max-content; }
+/* /setup's mark at 48 px, where a 178 KB PNG of it was: the header's own mark, scaled */
+.pf-setup-logo { margin: 0 auto 16px; display: flex; width: max-content; }
+.pf-setup-logo .pf-mark { width: 48px; height: 48px; border-radius: 12px; }
+.pf-setup-logo .pf-mark svg { width: 31px; height: 31px; }
 .pf-auth-h1 { font-size: 1.875rem; }
 .pf-auth form .pf-btn { margin-top: 8px; }
 .pf-errpage { min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 20px; }
