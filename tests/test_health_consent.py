@@ -255,3 +255,17 @@ def test_migration_starts_everyone_without_consent_and_round_trips():
         assert not columns & {"health_consent_at", "health_consent_version"}
         assert conn.execute(text("SELECT firstname FROM users WHERE id = 1")).scalar() == "Camille"
     engine.dispose()
+
+
+async def test_the_feel_is_saved_only_after_the_consent(client, db_session, newcomer, no_commit):
+    """The one-tap feel is health data too: without the consent, a tap leads to the consent page, nothing stored."""
+    app_client = _as(client, newcomer)
+    today = (await app_client.get("/sante")).text
+    day = re.search(r'name="day" value="([0-9-]+)"', today)
+    data = {"day": day.group(1) if day else datetime.now(timezone.utc).date().isoformat(), "feel": "good"}
+    r = await app_client.post("/sante/ressenti", data=data, headers={"HX-Request": "true"})
+    assert r.status_code == 204 and r.headers["HX-Redirect"] == "/sante/consentement?next=%2Fsante"
+    r = await app_client.post("/sante/ressenti", data=data)
+    assert r.status_code == 303 and r.headers["location"] == "/sante/consentement?next=%2Fsante"
+    assert not await db_session.scalar(select(func.count()).select_from(HealthMetric).where(
+        HealthMetric.user_id == newcomer.id))

@@ -237,9 +237,16 @@ async def sante_checkin(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.services import health_consent
     from app.services import sante_checkin as checkins
     from app.services.sante import athlete_today
 
+    if action == "save" and not health_consent.given(user):
+        # the feel is health data (GDPR art. 9): asked once, then the athlete taps again on Santé
+        url = health_consent.consent_url("/sante")
+        if request.headers.get("HX-Request"):
+            return Response(status_code=204, headers={"HX-Redirect": url})
+        return RedirectResponse(url, status_code=303)
     today = await athlete_today(db, user.id)
     answers = {key: value for key, value in (("feel", feel), ("fatigue", fatigue), ("pain", pain), ("effort", effort))
                if value is not None}
