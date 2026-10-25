@@ -19,12 +19,14 @@
     <meta property="og:image" content="https://paceforge.fr/static/img/og-image.png">
     <meta property="og:url" content="https://paceforge.fr{% if request is defined and request %}{{ request.url.path }}{% endif %}">
     <meta property="og:type" content="website">
+    <meta property="og:site_name" content="PaceForge">
+    <meta property="og:locale" content="fr_FR">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ _meta_title | trim }}">
     <meta name="twitter:description" content="{{ _meta_desc | trim }}">
     <meta name="twitter:image" content="https://paceforge.fr/static/img/og-image.png">
     <meta name="description" content="{{ _meta_desc | trim }}">
-    {% if request is defined and request and request.url.path in ("/", "/landing", "/methode", "/privacy") %}
+    {% if request is defined and request and request.url.path in ("/", "/landing", "/methode", "/privacy", "/mentions-legales", "/cgu") %}
     <link rel="canonical" href="https://paceforge.fr{{ '/' if request.url.path == '/landing' else request.url.path }}">
     {% if google_site_verification %}<meta name="google-site-verification" content="{{ google_site_verification }}">{% endif %}
     {% endif %}

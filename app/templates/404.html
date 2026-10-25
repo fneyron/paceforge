@@ -13,10 +13,10 @@
 
 {% block content_public %}
 {% include "partials/public_header.html" %}
-<div class="pf-errpage">
+<main id="main-content" tabindex="-1" class="pf-errpage">
     <p class="pf-big pf-errcode">404</p>
     <h1 class="pf-h2 mt-2">Page non trouvée</h1>
     <p class="pf-lead">{% if message is defined and message %}{{ message }}{% else %}Cette page n'existe pas, ou plus.{% endif %}</p>
     <a href="/" class="pf-btn pf-btn-primary mt-6">Retour à l'accueil</a>
-</div>
+</main>
 {% endblock content_public %}

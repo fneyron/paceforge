@@ -57,12 +57,14 @@ _SUMMARY_COLUMNS = (
 async def landing(
     request: Request,
     error: str | None = None,
+    account_deleted: str | None = None,
     user: User | None = Depends(get_optional_user),
 ):
     if user:  # signed in: the daily dashboard
         return RedirectResponse(url=HOME, status_code=302)
     return templates.TemplateResponse(
-        request, "login.html", context={"error": error, "stats": load_model_stats(), "rings": _example_rings()}
+        request, "login.html", context={"error": error, "stats": load_model_stats(), "rings": _example_rings(),
+                                        "account_deleted": account_deleted == "1"}  # Réglages' deletion lands here
     )
 
 

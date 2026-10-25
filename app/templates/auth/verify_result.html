@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Vérification — PaceForge{% endblock %}
+{% block head %}<meta name="robots" content="noindex">{% endblock %}
 {% block content_public %}
-<div class="pf-auth">
+<div class="pf-auth-page">
+<main id="main-content" tabindex="-1" class="pf-auth">
     <div class="w-full max-w-sm text-center">
         <a href="/" class="pf-logo pf-auth-logo" aria-label="PaceForge, accueil">{% include "partials/_logo_mark.html" %}<span>PaceForge</span></a>
         {% if success %}
-        <h1 class="pf-h1 pf-auth-h1 mb-2">Email vérifié !</h1>
+        <h1 class="pf-h1 pf-auth-h1 mb-2">Email vérifié&#8239;!</h1>
         <a href="/sante" class="pf-btn pf-btn-primary mt-6">
             Continuer
         </a>
@@ -17,5 +19,7 @@
         </a>
         {% endif %}
     </div>
+</main>
+{% include "partials/public_footer.html" %}
 </div>
 {% endblock %}

@@ -873,6 +873,37 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-legal p a, .pf-legal li a { text-decoration: underline; text-underline-offset: 3px; }
 .pf-legal h1 { font-family: var(--pf-font-display); font-size: 2.125rem; font-weight: 700; letter-spacing: -.035em; line-height: 1.1; }
 .pf-legal h2 { font-family: var(--pf-font-display); font-size: 1.25rem; font-weight: 650; letter-spacing: -.02em; }
+.pf-legal h1 { margin-top: 8px; }
+.pf-legal section { margin-top: 32px; }
+.pf-legal section > * + * { margin-top: 12px; }
+.pf-legal :is(p, li) { color: rgb(var(--pf-gray-600)); line-height: 1.65; }
+.pf-legal ul { list-style: disc; padding-left: 1.25rem; }
+.pf-legal li + li { margin-top: 8px; }
+.pf-legal strong { color: rgb(var(--pf-ink)); font-weight: 600; }
+.pf-legal code { background: rgb(var(--pf-soft)); padding: 0 4px; border-radius: 4px; font-size: .875em; }
+.pf-legal .pf-legal-date { margin-top: 8px; font-size: 0.875rem; color: rgb(var(--pf-gray-500)); }
+/* the privacy table: four columns from 640 px; below, one block per purpose, each value under its column's name */
+.pf-legal-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; line-height: 1.5; }
+.pf-legal-table :is(th, td) { text-align: left; vertical-align: top; padding: 12px 12px 12px 0; border-bottom: 1px solid rgb(var(--pf-line)); }
+.pf-legal-table thead th { font-size: 0.8125rem; font-weight: 600; color: rgb(var(--pf-gray-500)); padding-top: 0; }
+.pf-legal-table tbody th { font-weight: 600; color: rgb(var(--pf-ink)); width: 24%; }
+.pf-legal-table td { color: rgb(var(--pf-gray-600)); }
+@media (max-width: 639px) {
+    .pf-legal-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .pf-legal-table :is(tbody, tr, th, td) { display: block; width: auto; }
+    .pf-legal-table tr { padding: 14px 0; border-bottom: 1px solid rgb(var(--pf-line)); }
+    .pf-legal-table :is(th, td) { border: 0; padding: 3px 0; }
+    .pf-legal-table tbody th { font-size: 0.9375rem; padding-bottom: 4px; width: auto; }
+    .pf-legal-table td::before { content: attr(data-label) "\00a0: "; font-weight: 600; color: rgb(var(--pf-ink)); }
+}
+/* sign-in pages: the form centred, the legal links at the bottom */
+.pf-auth-page { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+.pf-auth-page > .pf-auth { flex: 1 0 auto; min-height: 0; }
+.pf-auth-page > .pf-pubfoot { margin-top: 0; width: 100%; }
+.pf-field-help { font-size: 0.8125rem; line-height: 1.45; color: rgb(var(--pf-gray-500)); margin-top: 6px; }
+.pf-field-help a { color: rgb(var(--pf-accent)); text-decoration: underline; text-underline-offset: 2px; }
+.pf-auth .pf-field-help a { display: inline; min-height: 0; }
+.pf-ldeleted { margin-top: 16px; }
 /* the consent to health data: its page, Santé's card, the boxes of the lactate form and of Réglages */
 .pf-consent { max-width: 36rem; }
 .pf-consent .pf-lead { margin-top: 12px; line-height: 1.6; }

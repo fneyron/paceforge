@@ -23,7 +23,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 # the pages a search engine may list (sitemap.xml; base.html gives each its canonical URL)
-PUBLIC_PAGES = ("/", "/methode", "/privacy")
+PUBLIC_PAGES = ("/", "/methode", "/privacy", "/mentions-legales", "/cgu")
 logger = logging.getLogger(__name__)
 # httpx logs every request URL at INFO, query string included (Strava's
 # deauthorize and webhook calls carry a token or the app secret there)
@@ -249,10 +249,11 @@ def create_app() -> FastAPI:
                             headers={"Cache-Control": "public, max-age=86400"})
 
     # Search engines (owner, 2026-10-17: « référencer paceforge sur Google »): the public pages in the sitemap, the
-    # app's own pages out of the crawl (they ask for a login anyway), /landing a copy of /
+    # app's own pages out of the crawl (they ask for a login anyway), /landing a copy of /. The sign-in pages stay
+    # crawlable: they say noindex themselves, which a crawler only reads on a page it may fetch.
     @app.get("/robots.txt", include_in_schema=False)
     async def robots():
-        private = ("/api/", "/auth/", "/mobile/", "/partials/", "/webhook", "/setup", "/landing", "/accueil",
+        private = ("/api/", "/mobile/", "/partials/", "/webhook", "/setup", "/landing", "/accueil",
                    "/dashboard", "/sante", "/activities", "/activity/", "/settings", "/simulator", "/connections",
                    "/coros", "/garmin")
         body = "User-agent: *\n" + "".join(f"Disallow: {p}\n" for p in private)
