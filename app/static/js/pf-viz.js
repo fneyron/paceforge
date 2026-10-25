@@ -186,7 +186,8 @@
       i = Math.max(0, Math.min(top, i | 0));
       // The visible dated readout and an explicit historical selection are
       // distinct: page-state must never pin an untouched default to yesterday.
-      fig.classList.toggle("is-inspecting", i !== END && (!opts.silent || opts.follow));
+      // a boolean, always: toggle(…, undefined) flips the class (a silent default select marked the feel track inspected)
+      fig.classList.toggle("is-inspecting", i !== END && (!opts.silent || !!opts.follow));
       var average = fig.querySelector("[data-average]");
       if (average) average.hidden = i === END;
       if (i === cur) return;
