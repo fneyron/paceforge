@@ -1,5 +1,5 @@
 """Repeated Santé calculations keep their results and their isolation, and the page stays within its budget (owner,
-2026-10-14: the page cost 1.5–2.8 s of CPU per load: the Charge accumulée recomputed every session's load for each
+2026-10-14: the page cost 1.5–2.8 s of CPU per load: the Charge cumulée recomputed every session's load for each
 of 400 days, the 14-day history its sleep bases, and every daily row was read whole)."""
 import math
 import re

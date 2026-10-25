@@ -425,7 +425,7 @@
     box.addEventListener('focusin', function (e) { highlight(phaseAt(e.target)); });
     box.addEventListener('focusout', function (e) { highlight(phaseAt(e.relatedTarget)); });
     box.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') { e.target.blur(); highlight(null); }
+      if (e.key === 'Escape') highlight(null);   // the highlight goes, the focus stays where it was
     });
   }
 
@@ -436,11 +436,11 @@
     root.querySelectorAll('.pf-phases').forEach(phases);
   }
 
+  // Escape dismisses a shown tip (WCAG 1.4.13) and leaves the focus on its button: the next focus shows it again
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     document.querySelectorAll(".pf-help:hover, .pf-help:focus-within, .pf-phase-segment:hover, .pf-phase-segment:focus")
       .forEach(function (el) { el.classList.add("is-tip-dismissed"); });
-    if (e.target.matches(".pf-help-button, .pf-phase-segment")) e.target.blur();
   });
   document.addEventListener("pointerout", function (e) {
     var tip = e.target.closest(".pf-help, .pf-phase-segment");

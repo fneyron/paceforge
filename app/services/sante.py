@@ -7,7 +7,7 @@ It is a descriptive /100 index, never a percentage of recovery or a training cle
 context is dated separately, without score caps or a physiological recovery deadline. Before noon a pending
 night may retain yesterday's explicitly dated cycle.
 Entraînement compares the last seven days' load to the usual week: 100 % is a reference, not a target, and the
-full arc is 200 %; the same load (sante_load, one pipeline) draws the Charge accumulée and Activités' 7 / 28 days.
+full arc is 200 %; the same load (sante_load, one pipeline) draws the Charge cumulée and Activités' 7 / 28 days.
 
 The rings open native disclosures with sleep details, nightly signals and history, or training context. The
 nightly VFC/FC charts remain visible: rolling trends, measured points and provisional references are labelled

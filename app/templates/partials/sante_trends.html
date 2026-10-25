@@ -5,7 +5,8 @@
     <div class="pf-daily-grid">
         {% for c in page.trends %}
         <article id="tendance-{{ c.key }}" class="pf-card" aria-labelledby="trend-{{ c.key }}-title">
-            <div class="pf-measurement-head"><h3 class="pf-card-h" id="trend-{{ c.key }}-title">{{ c.title }}</h3>{{ viz.help('tendance-' ~ c.key, 'Les points montrent les mesures enregistrées, la ligne leur moyenne glissante. La moyenne affichée porte sur les mesures visibles, sans remplacer les jours manquants par des zéros. Sélectionne un point pour voir sa valeur datée.') }}{% if c.delta %}<span class="pf-trend-delta">{{ c.delta }}</span>{% endif %}</div>
+            {% set about = {'weight': 'du poids', 'body_fat': 'de la masse grasse', 'hr_night': 'de la FC de nuit', 'steps': 'des pas'}.get(c.key, ': ' ~ c.title) %}
+            <div class="pf-measurement-head"><h3 class="pf-card-h" id="trend-{{ c.key }}-title">{{ c.title }}</h3>{% if c.delta %}<span class="pf-trend-delta">{{ c.delta }}</span>{% endif %}{{ viz.help('tendance-' ~ c.key, 'Les points montrent les mesures enregistrées, la ligne leur moyenne glissante. La moyenne affichée porte sur les mesures visibles, sans remplacer les jours manquants par des zéros. Sélectionne un point pour voir sa valeur datée.', about) }}</div>
             {% if c.stale %}<p class="pf-measurement-meta">Donnée ancienne</p>{% endif %}
             {% if c.chart %}
             {{ viz.viz_night_card(c.chart, c.title, daytime=c.key != 'hr_night', legend=c.chart.legend, central_details=True, quiet=True) }}

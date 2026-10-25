@@ -79,8 +79,8 @@ def test_the_recuperation_dial():
         return sc.dial(score, td.state(score), "#recuperation")
     dials = (dial(85, "ok"), dial(65, "warn"), dial(35, "danger"))
     assert [(d["value"], d["unit"], d["label"], d["sub"], d["tone"], _fill(d)) for d in dials] == [
-        ("85", "/100", "Récupération", "habituels", "ok", 0.85), ("65", "/100", "Récupération", "à surveiller", "warn", 0.65),
-        ("35", "/100", "Récupération", "inhabituels", "danger", 0.35)]
+        ("85", "/100", "Récupération", "habituelle", "ok", 0.85), ("65", "/100", "Récupération", "à surveiller", "warn", 0.65),
+        ("35", "/100", "Récupération", "inhabituelle", "danger", 0.35)]
     assert dial(65, "warn")["aria"] == "Récupération : indice nocturne 65 sur 100, à surveiller."
     none = sc.dial({"value": None}, None, None)
     assert (none["value"], none["sub"], none["tone"], none["href"], none["dash"]) == ("—", "pas de score", "none",

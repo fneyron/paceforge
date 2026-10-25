@@ -254,7 +254,7 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
     # its 7-night means at their usual values to the percent: « comme d'habitude » (« 0 % » said in words)
     assert page["vfc"]["status"]["text"] == page["fc"]["status"]["text"] == "comme d'habitude"
     assert [(d["key"], d["value"], d["unit"], d["sub"], d["tone"]) for d in page["dials"]] == [
-        ("sommeil", "92", "%", "suffisant", "sleep"), ("recup", "100", "/100", "habituels", "ok"),
+        ("sommeil", "92", "%", "suffisant", "sleep"), ("recup", "100", "/100", "habituelle", "ok"),
         ("entrainement", "0 min", None, "7 derniers jours", "accent")]
     assert [(k, page[k]["status"]["word"], page[k]["status"]["tone"]) for k in ("vfc", "fc")] == [
         ("vfc", "comme d'habitude", "ok"), ("fc", "comme d'habitude", "ok")]

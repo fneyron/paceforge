@@ -959,6 +959,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-viz-cap { font-size: 0.75rem; color: rgb(var(--pf-gray-500)); margin-top: 6px; }
 /* range toggle: 44 px on touch; the pressed one carries a 2 px ink ring (≥ 3:1 in both themes) */
 .pf-viz-ranges { margin-top: 14px; }
+.pf-viz-ranges-form { display: contents; }   /* a toggle that is a GET form: the form draws no box, its group does */
 .pf-viz-ranges > button { min-height: 40px; }
 .pf-viz-ranges > [aria-pressed="true"] { box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }
 .pf-viz-ranges > button:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
@@ -1302,6 +1303,15 @@ body:has(.pf-sante4) { background: #f4f6f8; }
 .pf-sante4 .pf-health-nights .pf-viz-dot:not(.is-sel) { fill: rgb(var(--pf-accent-strong)); }
 .dark .pf-sante4 .pf-health-nights .pf-viz-line { stroke: rgb(var(--pf-accent)); }
 .dark .pf-sante4 .pf-health-nights .pf-viz-dot:not(.is-sel) { fill: rgb(var(--pf-accent)); }
+/* their legend wears the series' colours: the night's dot, the rolling mean's line */
+.pf-sante4 .pf-health-nights .pf-viz-legend .pf-lg.is-dot { background: rgb(var(--pf-accent-strong)); }
+.pf-sante4 .pf-health-nights .pf-viz-legend .pf-lg.is-mean { border-top-color: rgb(var(--pf-accent-strong)); }
+.dark .pf-sante4 .pf-health-nights .pf-viz-legend .pf-lg.is-dot { background: rgb(var(--pf-accent)); }
+.dark .pf-sante4 .pf-health-nights .pf-viz-legend .pf-lg.is-mean { border-top-color: rgb(var(--pf-accent)); }
+@media (forced-colors: active) {
+    .pf-sante4 .pf-health-nights .pf-viz-legend .pf-lg.is-dot { background: CanvasText; }
+    .pf-sante4 .pf-health-nights .pf-viz-legend .pf-lg.is-mean { border-top-color: CanvasText; }
+}
 .pf-measurement-head { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; }
 .pf-measurement-value { font-size: 1.625rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pf-measurement-meta, .pf-measurement-reference { font-size: .75rem; line-height: 1.5; color: rgb(var(--pf-gray-600)); }
@@ -1445,14 +1455,25 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-recent-activities a > span { min-width: 0; }.pf-recent-activities a > span:last-child { flex-shrink: 0; text-align: right; }
 .pf-recent-activities b { display: block; overflow-wrap: anywhere; font-size: .875rem; font-weight: 600; }
 .pf-recent-activities small { display: block; font-size: .75rem; color: rgb(var(--pf-gray-600)); margin-top: 3px; }
-/* Panel headings place help beside their title, near the left edge. Anchor
-   their tooltip to the panel padding so its text stays inside the card. */
+/* One place for the (i) on every card: last in its header, on the right edge, on the title's line (a value or a
+   status before it takes the free space, the (i) follows it). Panel headings anchor their tooltip to the panel
+   padding, on the right, so its text stays inside the card. */
+:is(.pf-health-panel-heading, .pf-measurement-head, .pf-card-top) > .pf-help { margin-left: auto; align-self: baseline; }
+:is(.pf-health-panel-heading, .pf-measurement-head, .pf-card-top) > :is(.pf-panel-value, .pf-health-status, .pf-trend-delta) { margin-left: auto; }
+:is(.pf-health-panel-heading, .pf-measurement-head, .pf-card-top) > :is(.pf-panel-value, .pf-health-status, .pf-trend-delta) + .pf-help { margin-left: 0; }
+.pf-large-text .pf-health-panel-heading > .pf-panel-value { margin-left: 0; }   /* 200 %: the value wraps under the title */
+.pf-large-text .pf-health-panel-heading > .pf-panel-value + .pf-help { margin-left: auto; }
 @media (min-width: 481px) {
     .pf-health-panel-heading { position: relative; }
     .pf-health-panel-heading > .pf-help { position: static; }
-    .pf-health-panel-heading > .pf-help > .pf-help-tip { top: 100%; left: 16px; right: auto; max-width: calc(100% - 32px); }
+    .pf-health-panel-heading > .pf-help > .pf-help-tip { top: 100%; left: auto; right: 16px; max-width: calc(100% - 32px); }
 }
-@media (max-width: 480px) { .pf-help-tip { position: fixed; top: auto; bottom: 20px; left: 20px; right: 20px; width: auto; } }
+/* a phone: the tip across the screen's foot, over the web tab bar's height (≥ 63 px with its text, its safe area
+   under it) and above it in the stacking order (its z-index is 45); the app has no web tab bar */
+@media (max-width: 480px) {
+    .pf-help-tip { position: fixed; z-index: 50; top: auto; bottom: calc(63px + 1.0625rem + env(safe-area-inset-bottom, 0px)); left: 20px; right: 20px; width: auto; max-height: calc(100dvh - 180px); overflow-y: auto; }
+    .pf-native .pf-help-tip { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+}
 
 .pf-sante4 .pf-viz-hair { stroke: rgb(var(--pf-line)); stroke-dasharray: none; }
 

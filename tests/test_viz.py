@@ -409,7 +409,8 @@ def test_ring_and_ranges_macros():
     assert 'data-viz-ranges role="group"' in html and html.count('aria-pressed="true"') == 1
     # with an action, a GET form: the toggle works without JS too (REG-3); pf-viz.js switches in place
     form = render("{{ v.viz_ranges([('14', '14 nuits'), ('90', '3 mois')], '14', action='/sante#sommeil') }}")
-    assert '<form class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges role="group"' in form
+    assert '<form class="pf-viz-ranges-form" method="get"' in form and 'role="group"' not in form.split(">")[0]
+    assert '<div class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges role="group"' in form
     assert 'method="get" action="/sante#sommeil"' in form and form.count('type="submit" name="r"') == 2
     assert 'value="90" data-range="90" aria-pressed="false"' in form
     js = (ROOT / "app/static/js/pf-viz.js").read_text()

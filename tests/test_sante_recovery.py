@@ -1,6 +1,6 @@
 """Behavioural checks of the training load as context (owner, 2026-10-14: scientific basis — the cumulative
 exposure no longer caps the daily state: the HRV already reads what training does to the night; the load is one
-pipeline, sante_load, shown as the Entraînement % and the Charge accumulée); not physiological validation."""
+pipeline, sante_load, shown as the Entraînement % and the Charge cumulée); not physiological validation."""
 import math
 from dataclasses import replace
 from datetime import timedelta
@@ -50,7 +50,7 @@ def test_ordinary_sessions_accumulate_in_the_load_not_in_the_state():
 
 
 def test_no_new_session_means_gradual_decay_over_several_mornings():
-    """The Charge accumulée's recent average falls by e^(−1/7) a morning without a session (τ = 7 days); the
+    """The Charge cumulée's recent average falls by e^(−1/7) a morning without a session (τ = 7 days); the
     7 days' sum keeps the block whole while it is in them: one rest day resets neither."""
     ss = base() + block()
     load = st.loads(ss, D, 50, 190)
