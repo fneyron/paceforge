@@ -15,6 +15,7 @@ from starlette.datastructures import MutableHeaders
 from app.build import BUILD_ID
 from app.config import settings
 from app.exceptions import register_exception_handlers
+from app.log_redaction import install as mask_secrets_in_access_logs
 from app.middleware.security import CrossSiteRequestMiddleware, SecurityHeadersMiddleware
 from app.sentry import init_sentry
 
@@ -201,6 +202,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.state.build_id = BUILD_ID
+    # the access log's lines without the tokens some links carry (?token=, ?code=…): in each worker, after uvicorn
+    # has set its logging up (it does so before it imports the app)
+    mask_secrets_in_access_logs()
 
     # Middleware, innermost first (the last added runs first): the session is read before the headers middleware
     # answers, which needs it to tell a signed-in page; the cross-site check refuses before any route runs, and its
