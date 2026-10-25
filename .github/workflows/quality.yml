@@ -1,11 +1,15 @@
 name: Quality gate
 
-# ruff errors blocking (style reported only), mypy held to « no new finding » against mypy-baseline.txt (docs/quality.md).
+# ruff errors blocking (style reported only), mypy held to « no new finding » against mypy-baseline.txt (docs/quality.md),
+# and no dependency of the production image with a known vulnerability (pip-audit on requirements.lock).
 # Deploys do not wait for it yet (deploy.yml): make them once main is clean.
 on:
   push:
     branches: [main]
   pull_request:
+  # weekly as well: advisories are published against locks nobody changed
+  schedule:
+    - cron: "23 5 * * 1"
 
 permissions:
   contents: read
@@ -46,3 +50,24 @@ jobs:
       - name: mypy, no new finding
         if: success() || failure()
         run: python scripts/mypy_baseline.py check
+
+  audit:
+    name: pip-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # What the image installs (requirements.lock), checked against PyPI's advisories (PYSEC/GHSA). The file is fully
+      # pinned and hashed, so nothing is installed or resolved (--disable-pip): the audit reads the pins, a few
+      # seconds. A finding fails the job: upgrade that package alone (uv lock --upgrade-package <name>, then the
+      # exports of make lock). Should PyPI not answer, the job fails too: run it again.
+      - name: Known vulnerabilities in requirements.lock
+        run: |
+          pip install pip-audit==2.10.1
+          pip-audit -r requirements.lock --disable-pip --require-hashes --strict --progress-spinner off
