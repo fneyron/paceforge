@@ -4,13 +4,13 @@ Both columns start empty: no athlete is assumed to have consented. Santé asks t
 health source; a new source asks before it starts.
 
 Revision ID: j1b2c3d4e5f6
-Revises: i9f0a1b2c3d4
+Revises: j0a1b2c3d4e5
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "j1b2c3d4e5f6"
-down_revision = "i9f0a1b2c3d4"
+down_revision = "j0a1b2c3d4e5"
 branch_labels = None
 depends_on = None
 

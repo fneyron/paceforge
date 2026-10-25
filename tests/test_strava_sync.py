@@ -1224,7 +1224,7 @@ def test_the_verify_tokens_are_never_logged(caplog):
     from app.routers import webhook
 
     with caplog.at_level(logging.INFO, logger="app.routers.webhook"):
-        assert webhook._is_valid_verify_token(settings.STRAVA_WEBHOOK_VERIFY_TOKEN)
+        assert asyncio.run(webhook._is_valid_verify_token(settings.STRAVA_WEBHOOK_VERIFY_TOKEN))
     secret = "paceforge-1234567890abcdef-secret"
 
     async def call():

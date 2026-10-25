@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 from time import perf_counter
@@ -15,6 +16,8 @@ from starlette.datastructures import MutableHeaders
 from app.build import BUILD_ID
 from app.config import settings
 from app.exceptions import register_exception_handlers
+from app.log_redaction import install as mask_secrets_in_access_logs
+from app.middleware.body_limit import BodySizeLimitMiddleware
 from app.middleware.security import CrossSiteRequestMiddleware, SecurityHeadersMiddleware
 from app.sentry import init_sentry
 
@@ -59,6 +62,13 @@ class PageTimingMiddleware:
             await send(message)
 
         await self.app(scope, receive, timed_send)
+
+
+def register_font_types() -> None:
+    """python:3.12-slim has no /etc/mime.types and Python's own table lacks the web fonts: the .woff2 files went out
+    as application/octet-stream, and gzipped (GZipMiddleware skips font/woff2, already compressed, not that)."""
+    mimetypes.add_type("font/woff2", ".woff2")
+    mimetypes.add_type("font/woff", ".woff")
 
 
 class VersionedStaticFiles(StaticFiles):
@@ -201,13 +211,18 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.state.build_id = BUILD_ID
+    # the access log's lines without the tokens some links carry (?token=, ?code=…): in each worker, after uvicorn
+    # has set its logging up (it does so before it imports the app)
+    mask_secrets_in_access_logs()
 
     # Middleware, innermost first (the last added runs first): the session is read before the headers middleware
-    # answers, which needs it to tell a signed-in page; the cross-site check refuses before any route runs, and its
-    # answer gets the headers too
+    # answers, which needs it to tell a signed-in page; the cross-site check and the body size limit refuse before
+    # any route runs (the limit before any body is read or parsed), and their answers get the headers too
     app.add_middleware(CrossSiteRequestMiddleware)
+    app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(GZipMiddleware, minimum_size=1024)
+    # level 6: most of level 9's gain for a fraction of its CPU on every page and partial
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
     app.add_middleware(PageTimingMiddleware)
     app.add_middleware(
         SessionMiddleware,
@@ -218,7 +233,8 @@ def create_app() -> FastAPI:
         https_only=not settings.DEBUG,
     )
 
-    # Static files
+    # Static files (their types first: StaticFiles reads them per response, from mimetypes)
+    register_font_types()
     static_dir = Path(__file__).parent / "static"
     app.mount("/static", VersionedStaticFiles(directory=str(static_dir)), name="static")
 

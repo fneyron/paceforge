@@ -81,6 +81,10 @@ LIMITS = {  # action: (per address and email, per address, window in seconds)
     "register": (5, 20, 60 * 60),
     "forgot": (5, 20, 60 * 60),  # reset emails asked for
 }
+# Failed logins per account whatever the address: a guessing campaign spread over many addresses is held to this
+# (1 200 a day at most). Counted only for attempts the limits above let through, and higher than one address can
+# reach alone (4 windows of 10 an hour), so no single address can lock anyone out; a password reset clears it.
+ACCOUNT_LIMITS = {"login": (50, 60 * 60)}  # action: (per account, window in seconds)
 TOO_MANY = "Trop de tentatives. Réessaie plus tard."  # windows of 15 minutes to an hour
 
 # Quotas on the costly or sensitive requests (over_quota): one window each, counted per signed-in account
@@ -94,6 +98,7 @@ QUOTAS = {  # action: (window in seconds, {scope: allowed in the window})
     # Strava's events all come from its few egress addresses: a ceiling on the flood only, never on its traffic
     "webhook": (10 * 60, {"ip": 3000}),
     "resend": (60, {"user": 1}),  # verification emails: one a minute per account
+    "data_export": (60 * 60, {"user": 3}),  # the account's data downloaded (Réglages): every row read again
 }
 RETRY_AFTER = "3600"
 
@@ -223,18 +228,36 @@ def _keys(action: str, ip: str, email: str) -> list[str]:
     return [f"rl:{action}:{_digest(f'{ip}|{email}')}", f"rl:{action}:ip:{_digest(ip)}"]
 
 
+def _account_key(action: str, email: str) -> str:
+    return f"rl:{action}:account:{_digest(email)}"
+
+
 async def count_attempt(action: str, ip: str, email: str) -> bool:
     """Count one attempt, before any other work; True when it is over the limit (it must then be refused)."""
     per_email, per_address, window = LIMITS[action]
     counts = await counter().incr(_keys(action, ip, email), window)
-    return counts[0] > per_email or counts[1] > per_address
+    if counts[0] > per_email or counts[1] > per_address:
+        return True
+    if action in ACCOUNT_LIMITS:
+        per_account, account_window = ACCOUNT_LIMITS[action]
+        return (await counter().incr([_account_key(action, email)], account_window))[0] > per_account
+    return False
 
 
 async def forget_attempts(action: str, ip: str, email: str) -> None:
-    """A login that worked: this address and email start afresh, and the address is not charged for it."""
+    """A login that worked: this address and email start afresh, and neither the address nor the account is
+    charged for it."""
     key, address = _keys(action, ip, email)
     await counter().delete(key)
     await counter().decr(address)
+    if action in ACCOUNT_LIMITS:
+        await counter().decr(_account_key(action, email))
+
+
+async def forget_account_attempts(action: str, email: str) -> None:
+    """The account's own count starts afresh (a password reset: whoever holds the mailbox signs in again)."""
+    if action in ACCOUNT_LIMITS:
+        await counter().delete(_account_key(action, email))
 
 
 async def over_quota(action: str, **subjects) -> bool:

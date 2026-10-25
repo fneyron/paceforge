@@ -44,7 +44,11 @@ resserrer.
 ## CI
 
 `quality.yml` tourne à chaque push sur `main` et sur chaque PR : ruff puis mypy (mypy tourne même si ruff a
-échoué, pour avoir les deux rapports). Le déploiement (`deploy.yml`) ne l’attend pas encore : pour qu’un
+échoué, pour avoir les deux rapports). Un second job, `pip-audit`, confronte `requirements.lock` (ce que l’image
+installe) aux avis de sécurité de PyPI sans rien installer (`--disable-pip` : le verrou est épinglé et haché) ;
+il tourne aussi chaque lundi, les avis tombant sur des verrous inchangés. Sur un constat, monter ce paquet seul
+(`uv lock --upgrade-package <nom>` avec uv 0.8.17, puis les exports de `make lock`).
+Le déploiement (`deploy.yml`) ne l’attend pas encore : pour qu’un
 constat bloque un déploiement, une fois `main` propre, déplacer le job dans `deploy.yml` et l’ajouter au
 `needs` du job `deploy`, ou exiger le check « ruff and mypy » dans un ruleset de `main`.
 
