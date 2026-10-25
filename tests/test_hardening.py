@@ -1,7 +1,9 @@
 """Server-side hardening after the site audit: the SMTP link checks its server, the access log masks the tokens
-some links carry."""
+some links carry, the webhook's verify token is compared in constant time and looked up without blocking."""
+import asyncio
 import logging
 import ssl
+import time
 from unittest.mock import MagicMock
 
 from app.config import settings
@@ -61,3 +63,59 @@ def test_the_access_log_masks_the_tokens_links_carry(caplog):
         assert secret not in caplog.text
     assert all(isinstance(r.args, tuple) and len(r.args) == 5 for r in records)  # uvicorn's formatter unpacks five
     assert redact("GET /auth/verify-email?TOKEN=x") == "GET /auth/verify-email?TOKEN=***"
+
+
+# ── the webhook's verify token: constant-time, and a Redis lookup that never blocks ──
+
+
+class _VerifyRedis:
+    """redis.asyncio stand-in holding the one-time verify tokens; `hang` makes it never answer."""
+
+    keys: set[str] = set()
+    hang = False
+    opened: list[dict] = []
+
+    @classmethod
+    def from_url(cls, url, **kwargs):
+        cls.opened.append(kwargs)
+        return cls()
+
+    async def delete(self, key):
+        if self.hang:
+            await asyncio.sleep(3600)
+        if key in self.keys:
+            self.keys.discard(key)
+            return 1
+        return 0
+
+    async def aclose(self):
+        pass
+
+
+async def test_the_webhook_verify_token_is_checked_in_constant_time_and_without_blocking(client, monkeypatch):
+    import redis.asyncio as aioredis
+
+    from app.routers import webhook
+
+    compared = []
+    real_compare = webhook.secrets.compare_digest
+    monkeypatch.setattr(webhook.secrets, "compare_digest", lambda a, b: compared.append((a, b)) or real_compare(a, b))
+    monkeypatch.setattr(aioredis.Redis, "from_url", _VerifyRedis.from_url)
+    monkeypatch.setattr(_VerifyRedis, "keys", {"strava_webhook_verify:paceforge-once"})
+    monkeypatch.setattr(_VerifyRedis, "opened", [])
+
+    def validation(token):
+        return client.get("/webhook/strava", params={"hub.mode": "subscribe", "hub.challenge": "ch",
+                                                     "hub.verify_token": token})
+
+    assert (await validation(settings.STRAVA_WEBHOOK_VERIFY_TOKEN)).json() == {"hub.challenge": "ch"}
+    assert compared and compared[-1][1] == settings.STRAVA_WEBHOOK_VERIFY_TOKEN.encode()
+    assert (await validation("paceforge-once")).status_code == 200  # an athlete's app's one-time token
+    assert (await validation("paceforge-once")).status_code == 403  # used up
+    assert all(o["socket_timeout"] and o["socket_connect_timeout"] for o in _VerifyRedis.opened)
+
+    monkeypatch.setattr(webhook, "VERIFY_LOOKUP_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(_VerifyRedis, "hang", True)
+    started = time.monotonic()
+    assert (await validation("paceforge-unknown")).status_code == 403  # Redis silent: refused, at once
+    assert time.monotonic() - started < 2

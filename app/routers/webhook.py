@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -45,26 +46,29 @@ async def _read_shared_subscription() -> None:
 router = APIRouter(tags=["webhook"], lifespan=_warm_up)
 
 
-def _is_valid_verify_token(token: str) -> bool:
-    """Check verify token against static config or dynamic Redis tokens."""
-    # Static fallback (dev/testing)
-    if token == settings.STRAVA_WEBHOOK_VERIFY_TOKEN:
+VERIFY_LOOKUP_TIMEOUT_S = 1  # Strava waits 2 s for the challenge's echo
+
+
+async def _is_valid_verify_token(token: str) -> bool:
+    """The configured verify token (compared in constant time), or a one-time token stored in Redis when an
+    athlete's own app subscribed (StravaService.create_webhook_subscription). The lookup is asynchronous and
+    bounded: Redis slow or down never holds the event loop, the token is then refused (Strava retries)."""
+    expected = settings.STRAVA_WEBHOOK_VERIFY_TOKEN
+    if expected and secrets.compare_digest(token.encode(), expected.encode()):
         return True
-
-    # Dynamic per-user tokens stored in Redis during subscription creation
     try:
-        import redis as redis_lib
-        r = redis_lib.Redis.from_url(settings.REDIS_URL, decode_responses=True)
-        key = f"strava_webhook_verify:{token}"
-        result = r.get(key)
-        if result:
-            r.delete(key)  # One-time use
-            r.close()
-            return True
-        r.close()
-    except Exception:
-        logger.exception("Failed to check webhook verify token in Redis")
+        import redis.asyncio as aioredis
 
+        r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_timeout=VERIFY_LOOKUP_TIMEOUT_S,
+                                    socket_connect_timeout=VERIFY_LOOKUP_TIMEOUT_S)
+        try:
+            async with asyncio.timeout(VERIFY_LOOKUP_TIMEOUT_S):
+                # one-time use: read and removed in one step, so two validations cannot both use it
+                return bool(await r.delete(f"strava_webhook_verify:{token}"))
+        finally:
+            await r.aclose()
+    except Exception:
+        logger.warning("Webhook verify token not checked in Redis", exc_info=True)
     return False
 
 
@@ -75,7 +79,7 @@ async def strava_webhook_validation(
     verify_token: str = Query(alias="hub.verify_token"),
 ):
     """Strava webhook subscription validation."""
-    if mode != "subscribe" or not _is_valid_verify_token(verify_token):
+    if mode != "subscribe" or not await _is_valid_verify_token(verify_token):
         logger.warning("Invalid webhook validation (mode=%s)", mode)  # never the token: it is a secret
         return JSONResponse(status_code=403, content={"error": "Forbidden"})
 
