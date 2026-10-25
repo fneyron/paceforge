@@ -200,6 +200,8 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-secondary-button:hover { background: rgb(var(--pf-gray-200)); }
 .pf-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 999px; color: rgb(var(--pf-gray-600)); }
 .pf-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+/* the invisible GPX field shows its keyboard focus on the visible buttons that open it (Mes courses) */
+.pf-simulator:has(#gpx-file:focus-visible) label[for="gpx-file"] { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
 .pf-upload-zone:focus-within, .pf-upload-zone.is-over { border-color: rgb(var(--pf-accent)); background: rgb(var(--pf-accent-soft)); }
 .pf-upload-zone label:focus-within { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 3px; }
 .pf-file-invalid { color: rgb(var(--pf-danger)) !important; }
@@ -283,7 +285,7 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-hero-btn:hover .pf-hero-num { color: rgb(var(--pf-gray-700)); }
 #hero-edit { margin-top: 2px; }
 .pf-hero-in { font: inherit; letter-spacing: inherit; background: transparent; border: 0; border-bottom: 3px solid rgb(var(--pf-accent)); padding: 0; color: rgb(var(--pf-ink)); }
-.pf-hero-in:focus { outline: none; }
+.pf-hero-in:focus, .pf-hero-in:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 3px; border-radius: 6px; }   /* the field being typed in shows it */
 .pf-objpanel { max-width: 440px; margin-top: 12px; }
 .pf-objline { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; font-size: 0.8125rem; color: rgb(var(--pf-gray-600)); }
 .pf-objline b { color: rgb(var(--pf-ink)); font-weight: 600; }

@@ -279,8 +279,9 @@ def taper(sessions: list[st.Session], route, rd: date, today: date, now: datetim
         ctx = []
         if k == 0:
             ctx.append("sans la course")
+        taper_word = f"{share[m][1]} jour{'s' if share[m][1] > 1 else ''} d'affûtage"  # « 1 jour », « 5 jours »
         if t:
-            ctx.append(f"cible {range_hm(*t)}" + (f" · {share[m][1]} jours d'affûtage" if share[m][1] < 7 else ""))
+            ctx.append(f"cible {range_hm(*t)}" + (f" · {taper_word}" if share[m][1] < 7 else ""))
         elif m in base_weeks:
             ctx.append("dans ta base")
         if big:
@@ -292,7 +293,7 @@ def taper(sessions: list[st.Session], route, rd: date, today: date, now: datetim
         spoken += "à venir" if v is None else hm_long(v) if v else "rien"
         if t:
             spoken += f", cible {hm_long(round(t[0] / 5) * 5)} à {hm_long(round(t[1] / 5) * 5)}"
-            spoken += f", dont {share[m][1]} jours d'affûtage" if share[m][1] < 7 else ""
+            spoken += f", dont {taper_word}" if share[m][1] < 7 else ""
         a.append(spoken + ("" if not big else f", une sortie de {hm_long(big.minutes)}"))
         h.append({"href": activities_href(m, this_monday), "label": "Voir dans Activités ›"} if ss else None)
     sel = next((i for i, m in enumerate(mondays) if m == this_monday), n - 1 if this_monday > mondays[-1] else 0)
