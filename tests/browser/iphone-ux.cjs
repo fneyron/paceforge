@@ -45,15 +45,26 @@ const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
     await page.getByRole('button', { name: 'Non enregistré · réessayer' }).click();
     await page.waitForFunction(() => document.querySelector('#save-status').dataset.state === 'saved');
     await page.locator('#plan-more > summary').click();
-    assert.equal(await page.getByRole('menuitem', { name: 'Garder hors connexion' }).isVisible(), true);
-    await page.locator('#plan-more > summary').click();
+    // a plain disclosure: its items are links and buttons (no menu roles without arrow keys)
+    assert.equal(await page.getByRole('link', { name: 'Garder hors connexion' }).isVisible(), true);
+    assert.equal(await page.locator('#plan-more [role="menu"], #plan-more [role="menuitem"]').count(), 0);
+    // « Nom, date et départ » closed with Escape gives the focus back to « … », not to the page
+    await page.getByRole('button', { name: 'Nom, date et départ' }).click();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => document.activeElement.matches('#plan-more > summary')), true, 'Escape returns the focus to the menu button');
     await page.getByRole('button', { name: 'Exporter pour ma montre', exact: true }).click();
     assert.equal(await page.getByRole('button', { name: /TCX course/ }).isVisible(), false);
     await page.getByText('Autres formats', { exact: true }).click();
     assert.equal(await page.getByRole('button', { name: /TCX course/ }).isVisible(), true);
+    // the open sheet keeps Tab inside it, « Autres formats » included
+    for (let i = 0; i < 8; i++) {
+      await page.keyboard.press('Tab');
+      assert.equal(await page.evaluate(() => !!document.activeElement.closest('#export-sheet')), true, 'Tab left the export sheet');
+    }
     await page.evaluate(() => window._sim.closeExport());
+    assert.match(await page.locator('#hero-time').getAttribute('aria-label'), /^Modifier l’objectif : \d+h\d\d$|^Modifier l'objectif : \d+h\d\d$/);
+    assert.match(await page.locator('#elevChart svg').getAttribute('aria-label'), /^Profil d’altitude : [\d,]+ km, [\d  ]+ m de dénivelé positif, point culminant [\d  ]+ m$/);
     await page.goto(base + '/sante', { waitUntil: 'networkidle' });
-    await page.locator('#charge-detail > summary').click();
     const selected = await page.locator('#vfc figure').evaluate(fig => {
       const data = JSON.parse(fig.querySelector('.pf-viz-data').textContent), input = fig.querySelector('.pf-viz-range');
       input.value = Math.max(0, data.d.length - 3); input.dispatchEvent(new Event('input'));
@@ -74,10 +85,9 @@ const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
       sessionStorage.setItem(key, JSON.stringify(saved));
     }, selected);
     await page.goto(base + '/sante?app_nav=return', { waitUntil: 'networkidle' });
-    assert.equal(await page.locator('#charge-detail').evaluate(el => el.open), true, 'optional history still restores its state');
     assert.equal(await page.locator('#comprendre-indicateurs').evaluate(el => el.open), false, 'method information must not reopen from an obsolete saved state');
     assert.equal(await page.locator('#vfc .pf-viz-range').getAttribute('aria-valuetext'), selected.aria, 'tab return restores the dated selection');
-    for (const selector of ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#recuperation-detail figure', '#vfc figure', '#fc figure', '#entrainement-semaine figure', '#tendances figure']) {
+    for (const selector of ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#recuperation-detail figure', '#vfc figure', '#fc figure', '#charge-detail figure', '#tendances figure']) {
       assert.ok(await page.locator(selector).first().isVisible(), `old fold state hid ${selector}`);
     }
     assert.ok(Math.abs(await page.evaluate(() => scrollY) - 720) < 20, 'tab return restores scroll');

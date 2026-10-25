@@ -15,7 +15,7 @@ const brands = /COROS|Garmin|Apple Santé|Apple Watch|Health Connect/;
   try {
     for (const [offset, scenario] of scenarios.entries()) {
       if (focus && !focusedScenarios.includes(scenario)) continue;
-      const base = 'http://127.0.0.1:' + (8871 + offset);
+      const base = 'http://127.0.0.1:' + (Number(process.env.PF_HEALTH_EXPLANATION_PORT || 8871) + offset);  // the first scenario's port
       const fixture = await (await fetch(base + '/__preview/health-explanation')).json();
       assert.equal(fixture.synthetic, true, 'Never run against a real account');
       assert.equal(fixture.scenario, scenario);
@@ -104,7 +104,7 @@ const brands = /COROS|Garmin|Apple Santé|Apple Watch|Health Connect/;
             const data = JSON.parse(el.querySelector('.pf-viz-data').textContent);
             const index = Math.max(0, data.d.length - 3), input = el.querySelector('.pf-viz-range');
             input.value = index; input.dispatchEvent(new Event('input'));
-            return { date: data.dateLabels[index], spoken: data.a[index] };
+            return { date: (data.selectionDates || data.dateLabels)[index], spoken: data.a[index] };
           });
           const readout = await fig.locator('.pf-viz-read').innerText();
           assert.doesNotMatch(readout, brands, key + ': summary graph selection stays source-free');

@@ -35,8 +35,9 @@ const scenarios = [
         // the card of signals left (owner, 2026-10-17): its reason under the Récupération ring, the race on the curves
         assert.equal(await page.locator('#synthese-sante').count(), 0, key);
         const dials = page.locator('.pf-dials'), note = page.locator('.pf-ring-recup .pf-ring-note');
-        assert.match(await page.locator('.pf-curves-race').innerText(), /Ultra synthétique · J\+13/);
-        assert.ok(await page.locator('#vfc .pf-viz-race').count() >= 1, key + ': the race days are marked on the curves');
+        // (since the cards were harmonised, the curves mark no race day: its name and its line left the page)
+        // the Récupération ring's word agrees with its name (« habituelle », « à surveiller », « inhabituelle »)
+        assert.match(await page.locator('.pf-ring-recup .pf-ring-sub').innerText(), /^(habituelle|à surveiller|inhabituelle|pas de score)$/, key);
         assert.doesNotMatch(await page.locator('#main-content').innerText(), /\bNone\b|prêt à|tu peux courir/i);
         if (scenario === 'conflict') {
           assert.ok(await page.locator('.pf-ring-recup').evaluate(el => el.classList.contains('is-warn')));
@@ -45,8 +46,10 @@ const scenarios = [
             'The ring names the measured change without the generic explanatory paragraph; the HRV stays habitual');
           assert.match(await page.locator('#comprendre-indicateurs').textContent(), /fatigue|chaleur|alcool|maladie/i,
             'The explanation remains accessible in the disclosure');
-          assert.match(await page.locator('#fc .pf-viz-read').innerText(), /56/);
-          assert.match(await page.locator('#vfc .pf-viz-read').innerText(), /65/);
+          // the cards rest on their average now: the last night's values are its readout's
+          const lastNight = selector => page.locator(selector + ' .pf-viz-data').evaluate(el => JSON.parse(el.textContent).r.at(-1).join(' '));
+          assert.match(await lastNight('#fc'), /56/);
+          assert.match(await lastNight('#vfc'), /65/);
         } else if (scenario === 'missing') {
           assert.match(await page.locator('.pf-sante-h1').innerText(), /Dernier bilan/);
           assert.match(await page.locator('.pf-sante-head').innerText(), /En attente de la prochaine nuit/);
