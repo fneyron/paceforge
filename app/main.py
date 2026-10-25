@@ -17,6 +17,7 @@ from app.build import BUILD_ID
 from app.config import settings
 from app.exceptions import register_exception_handlers
 from app.log_redaction import install as mask_secrets_in_access_logs
+from app.middleware.body_limit import BodySizeLimitMiddleware
 from app.middleware.security import CrossSiteRequestMiddleware, SecurityHeadersMiddleware
 from app.sentry import init_sentry
 
@@ -215,9 +216,10 @@ def create_app() -> FastAPI:
     mask_secrets_in_access_logs()
 
     # Middleware, innermost first (the last added runs first): the session is read before the headers middleware
-    # answers, which needs it to tell a signed-in page; the cross-site check refuses before any route runs, and its
-    # answer gets the headers too
+    # answers, which needs it to tell a signed-in page; the cross-site check and the body size limit refuse before
+    # any route runs (the limit before any body is read or parsed), and their answers get the headers too
     app.add_middleware(CrossSiteRequestMiddleware)
+    app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     # level 6: most of level 9's gain for a fraction of its CPU on every page and partial
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
