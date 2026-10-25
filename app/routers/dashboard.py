@@ -21,7 +21,7 @@ from app.services.strava import StravaService
 from app.services.strava_activities import adopt_zone, import_recent
 from app.services.timezones import athlete_zone, local_date, zone_of
 from app.services.training_view import MEASURES, spike_ids, training_top
-from app.services.viz import d_short, fr_num, hm
+from app.services.viz import d_short, fr_int, fr_num, hm
 from app.services.viz import dplus as dplus_fmt
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["google_site_verification"] = GOOGLE_SITE_VERIFICATION  # the public pages' head
 templates.env.globals["cycling_enabled"] = cycling_enabled
 templates.env.filters["fr_num"] = fr_num
+templates.env.filters["fr_int"] = fr_int
 
 router = APIRouter(tags=["dashboard"])
 

@@ -1317,7 +1317,7 @@ def _weeks(html: str) -> list[tuple[str, str, list[str]]]:
     """(key, label, the rows' « day dd/mm ») of each week heading."""
     out = []
     for key, label, body in re.findall(r'<section id="week-([\d-]+)">\s*<div class="pf-week-heading">\s*'
-                                       r'<h2 class="pf-h3">([^<]+)</h2>(.*?)</section>', html, re.S):
+                                       r'<h2 class="pf-h3" tabindex="-1">([^<]+)</h2>(.*?)</section>', html, re.S):
         out.append((key, label.strip(), re.findall(r'<span class="pf-item-sub block">(\w+ \d\d/\d\d)', body)))
     return out
 

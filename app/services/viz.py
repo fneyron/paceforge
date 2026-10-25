@@ -71,6 +71,12 @@ def fr_num(v, digits: int | None = None) -> str:
     return (str(v) if digits is None else f"{v:.{digits}f}").replace(".", ",")
 
 
+def fr_int(v) -> str:
+    """Jinja filter: a whole number grouped by thousands as dplus groups it: 2100 → « 2 100 » (narrow no-break
+    space), so an activity's row and its week's heading print a climb alike."""
+    return f"{int(round(v or 0)):,}".replace(",", NNBSP)
+
+
 def span(lo: float, hi: float, digits: int = 0) -> str:
     """A usual range as printed: « 46–50 », or « ≈ 48 » when its ends round to one value (a band narrower than
     the last digit: « 48–48 » said nothing of a range)."""

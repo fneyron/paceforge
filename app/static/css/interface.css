@@ -175,6 +175,9 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-activity-chart .pf-viz-read { min-height: 52px; }
 .pf-activity-chart .pf-viz-read-txt b { font-size: 1.5rem; }
 .pf-activities .pf-week-heading { padding-top: 12px; }
+/* « Voir la semaine › » lands its week's title under the sticky top bar (64 px from 900 px; below, html's
+   scroll-padding-top holds the phone's bar) */
+@media (min-width: 900px) { .pf-activities [id^="week-"] { scroll-margin-top: 64px; } }
 .pf-activities #fc-facile { margin-top: 24px; }
 .pf-activities .pf-head { flex-wrap: wrap; padding-bottom: 12px; }
 .pf-activities .pf-head .pf-btn { min-height: 44px; }
@@ -1135,11 +1138,13 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
     .pf-activity-row .pf-item-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; text-wrap: pretty; }
     .pf-act-stats .pf-label, .pf-act-stats .pf-act-none { display: none; }
     .pf-act-u, .pf-act-pu { display: inline; font-size: 0.8125rem; font-weight: 500; color: rgb(var(--pf-gray-500)); }
-    /* one line each, the unit never under its value: the widths hold an ultra's values (« 147.06 km », « +12000 m »,
+    /* one line each, the unit never under its value: the widths hold an ultra's values (« 147,06 km », « +12 000 m »,
        « 20h58'00" », « 12:34/km », « 152 bpm ») */
     .pf-act-stats b { white-space: nowrap; }
     .pf-act-stats > :nth-child(1) { width: 80px; }
-    .pf-act-stats > .pf-act-dplus { width: 76px; }
+    .pf-act-stats > .pf-act-dplus { width: 84px; }
+    /* « 12 semaines »: the card ends with its plot (≤ 560 px), not half empty across the page */
+    .pf-activities .pf-activity-chart { max-width: calc(560px + 34px); }
     .pf-act-stats > :nth-child(3) { width: 80px; }
     .pf-act-stats > .pf-act-pace { width: 72px; }
     .pf-act-stats > .pf-act-hr { width: 64px; }

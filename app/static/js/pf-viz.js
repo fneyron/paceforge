@@ -122,6 +122,23 @@
       }
     }
 
+    // the readouts of the other panels of this figure's range toggle (Activités: Durée · Distance · D+): measured
+    // with its own, so that switching the measure never moves the plot either (« +2 140 m » wraps where « 5h40 »
+    // does not)
+    function siblings() {
+      var scope = fig.closest("[data-range-panel]") && fig.closest("[data-viz-scope]"), out = [];
+      if (!scope) return out;
+      scope.querySelectorAll("[data-range-panel] figure[data-viz] script.pf-viz-data").forEach(function (el) {
+        if (el === dataEl) return;
+        try {
+          var o = JSON.parse(el.textContent);
+          out = out.concat(o.r || []);
+          if (o.rest) out.push(o.rest);
+        } catch (_) { /* a panel without readouts adds nothing */ }
+      });
+      return out;
+    }
+
     // the readout's tallest line, so that no selection moves the plot: the longest readouts are measured
     // (a dozen at most), with the resting one and « — »; again when the figure's width changes
     var lastW = -1, lastFont = "";
@@ -135,7 +152,7 @@
       var font = getComputedStyle(readBox).fontSize;
       if (w === lastW && font === lastFont) return;
       lastW = w; lastFont = font;
-      var rows = (D.r || []).map(function (r, i) { return { r: r || [], i: i }; });
+      var rows = (D.r || []).concat(siblings()).map(function (r, i) { return { r: r || [], i: i }; });
       function len(r, k) { return ((r[k] || "") + "").length; }
       var cand = rows.slice().sort(function (a, b) { return (len(b.r, 1) + len(b.r, 2)) - (len(a.r, 1) + len(a.r, 2)); })
         .slice(0, 12).concat(rows.slice().sort(function (a, b) { return len(b.r, 0) - len(a.r, 0); }).slice(0, 4))
