@@ -4,7 +4,7 @@ import math
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import delete, func, inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
@@ -234,6 +234,23 @@ async def _revoke_links(db: AsyncSession, user: User) -> None:
             logger.warning("Account deletion of user %d: %s link not revoked", user_id, name, exc_info=True)
     if not clean:
         await db.rollback()
+
+
+@router.get("/settings/export")
+async def export_data(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """« Télécharger mes données »: the account's data as a ZIP of JSON files, streamed (services.data_export). Three
+    an hour at most per account: each one reads every row again."""
+    from app.services import data_export
+    from app.services.auth import RETRY_AFTER, over_quota
+
+    if await over_quota("data_export", user=user.id):
+        return PlainTextResponse("Trop de téléchargements pour l’instant. Réessaie dans une heure.", status_code=429,
+                                 headers={"Retry-After": RETRY_AFTER})
+    logger.info("User %d downloads their data", user.id)
+    return StreamingResponse(data_export.export_zip(db, user), media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="{data_export.filename()}"',
+        "Cache-Control": "private, no-store",
+    })
 
 
 # Tables of the features switched off (the AI analyses, chat, weekly digests, plan generator, old simulations): no

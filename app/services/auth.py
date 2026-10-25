@@ -98,6 +98,7 @@ QUOTAS = {  # action: (window in seconds, {scope: allowed in the window})
     # Strava's events all come from its few egress addresses: a ceiling on the flood only, never on its traffic
     "webhook": (10 * 60, {"ip": 3000}),
     "resend": (60, {"user": 1}),  # verification emails: one a minute per account
+    "data_export": (60 * 60, {"user": 3}),  # the account's data downloaded (Réglages): every row read again
 }
 RETRY_AFTER = "3600"
 
