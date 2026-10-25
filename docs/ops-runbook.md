@@ -100,7 +100,8 @@ drill*) ; à la main, contre un PostgreSQL local dont le schéma a été constru
 
 - **Sentry** (les erreurs de l’app et des workers) : créer un projet, copier son DSN dans la variable
   `SENTRY_DSN` de Coolify, redéployer. Sans DSN rien n’est chargé. Pas de traces de performance ni de données
-  personnelles par défaut ; `release` est l’empreinte du build, celle de `/health`.
+  personnelles : ni corps de requête, ni variables locales, ni chaîne de requête, ni cookies
+  (`app/sentry.py`) ; `release` est l’empreinte du build, celle de `/health`.
 - **Disponibilité** : un moniteur externe (Better Stack, UptimeRobot, Uptime Kuma…) sur
   `https://paceforge.fr/health?deep=1` toutes les 1 à 5 min, attendu : HTTP 200 et `"status":"ok"`. Cette
   route interroge la base (`SELECT 1`) et Redis (`PING`) avec 2 s de délai et répond 503 avec le drapeau en
@@ -116,6 +117,10 @@ drill*) ; à la main, contre un PostgreSQL local dont le schéma a été constru
 Coolify → l’application → *Logs*, par conteneur ; ou sur le serveur :
 
     docker compose -f docker-compose.prod.yml logs -f --tail 200 celery-worker celery-worker-default
+
+Le journal d’accès d’uvicorn masque les valeurs des paramètres porteurs d’un secret (`?token=***`, `code=`,
+`state=`, `hub.verify_token=`…). Un envoi trop gros est refusé avant lecture (413) : `refused: … bytes declared`
+ou `refused: body past … bytes` (les plafonds : `app/middleware/body_limit.py`).
 
 Repères : `Strava round:`, `COROS sync round:`, `Garmin sync round:` (chaque ronde), `… round failed` (une
 ronde en échec, remontée aussi à Sentry), `Strava quota of app` (les synchros attendent la prochaine
