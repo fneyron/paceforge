@@ -1479,18 +1479,17 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-recent-activities a > span { min-width: 0; }.pf-recent-activities a > span:last-child { flex-shrink: 0; text-align: right; }
 .pf-recent-activities b { display: block; overflow-wrap: anywhere; font-size: .875rem; font-weight: 600; }
 .pf-recent-activities small { display: block; font-size: .75rem; color: rgb(var(--pf-gray-600)); margin-top: 3px; }
-/* One place for the (i) on every card: last in its header, on the right edge, on the title's line (a value or a
-   status before it takes the free space, the (i) follows it). Panel headings anchor their tooltip to the panel
-   padding, on the right, so its text stays inside the card. */
-:is(.pf-health-panel-heading, .pf-measurement-head, .pf-card-top) > .pf-help { margin-left: auto; align-self: baseline; }
-:is(.pf-health-panel-heading, .pf-measurement-head, .pf-card-top) > :is(.pf-panel-value, .pf-health-status, .pf-trend-delta) { margin-left: auto; }
-:is(.pf-health-panel-heading, .pf-measurement-head, .pf-card-top) > :is(.pf-panel-value, .pf-health-status, .pf-trend-delta) + .pf-help { margin-left: 0; }
-.pf-large-text .pf-health-panel-heading > .pf-panel-value { margin-left: 0; }   /* 200 %: the value wraps under the title */
-.pf-large-text .pf-health-panel-heading > .pf-panel-value + .pf-help { margin-left: auto; }
+/* One place for the (i) on every card: last in its header, on the right edge, on the title's line; a value, a status
+   or a trend before it goes with it (.pf-head-end: they wrap together, never the (i) alone on the left). Panel
+   headings anchor their tooltip to the panel padding, on the right, so its text stays inside the card. */
+:is(.pf-health-panel-heading, .pf-measurement-head, .pf-card-top) > :is(.pf-help, .pf-head-end) { margin-left: auto; align-self: baseline; }
+.pf-head-end { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 8px 10px; flex: none; max-width: 100%; }
+.pf-head-end > .pf-help { align-self: baseline; }
+.pf-sante4 .pf-head-end > :is(.pf-panel-value, .pf-health-status) { margin-left: 0; }
 @media (min-width: 481px) {
     .pf-health-panel-heading { position: relative; }
-    .pf-health-panel-heading > .pf-help { position: static; }
-    .pf-health-panel-heading > .pf-help > .pf-help-tip { top: 100%; left: auto; right: 16px; max-width: calc(100% - 32px); }
+    .pf-health-panel-heading .pf-help { position: static; }
+    .pf-health-panel-heading .pf-help > .pf-help-tip { top: 100%; left: auto; right: 16px; max-width: calc(100% - 32px); }
 }
 /* a phone: the tip across the screen's foot, over the web tab bar's height (≥ 63 px with its text, its safe area
    under it) and above it in the stacking order (its z-index is 45); the app has no web tab bar */

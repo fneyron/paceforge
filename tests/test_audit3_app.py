@@ -58,7 +58,8 @@ def test_help_bubbles_sit_right_with_human_names_and_clear_the_tab_bar():
         {"key": "weight", "title": "Poids", "delta": "−0,3 kg en 4 sem.", "value": "65 kg", "latest": ""}]})
     head = trends.split('class="pf-measurement-head"')[1].split("</div>")[0]
     assert head.index("pf-trend-delta") < head.index("pf-help") and 'aria-label="À propos du poids"' in head
-    assert ":is(.pf-health-panel-heading, .pf-measurement-head, .pf-card-top) > .pf-help { margin-left: auto;" in CSS
+    assert ":is(.pf-health-panel-heading, .pf-measurement-head, .pf-card-top) > :is(.pf-help, .pf-head-end) { margin-left: auto;" in CSS
+    assert head.count("pf-head-end") == 1  # the delta and the (i) wrap together, never the (i) alone on the left
     phone = CSS.split("@media (max-width: 480px) {\n    .pf-help-tip")[1].split("}\n}")[0]
     assert "z-index: 50" in phone and "bottom: calc(63px + 1.0625rem + env(safe-area-inset-bottom" in phone
     assert ".pf-native .pf-help-tip { bottom: calc(20px + env(safe-area-inset-bottom" in phone

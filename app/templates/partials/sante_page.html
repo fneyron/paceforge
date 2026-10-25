@@ -69,8 +69,8 @@
 <section id="sommeil" class="pf-health-panel" aria-labelledby="h-sommeil">
     <header class="pf-health-panel-heading">
         <h2 id="h-sommeil" class="pf-health-panel-title">Sommeil{% if s.hero %}<small>{{ s.hero.label }}</small>{% endif %}</h2>
-        <span class="pf-panel-value">{{ s.hero.total if s.hero else 'Pas de nuit récente' }}</span>
-        {{ viz.help('sommeil', 'Les horaires et phases sont estimés par ta montre. La répartition montre les durées par phase, pas leur ordre. Le déroulé de la nuit s’affiche lorsque les horaires des phases sont disponibles. Survole ou touche une phase pour la mettre en évidence.', 'du sommeil') }}
+        <span class="pf-head-end"><span class="pf-panel-value">{{ s.hero.total if s.hero else 'Pas de nuit récente' }}</span>
+        {{ viz.help('sommeil', 'Les horaires et phases sont estimés par ta montre. La répartition montre les durées par phase, pas leur ordre. Le déroulé de la nuit s’affiche lorsque les horaires des phases sont disponibles. Survole ou touche une phase pour la mettre en évidence.', 'du sommeil') }}</span>
     </header>
     <div class="pf-panel-body">
     {% if s.state == "old" %}<p class="pf-sante-note">Ta montre n'a enregistré aucune nuit ces 3 derniers mois.</p>
@@ -94,10 +94,8 @@
 <section id="recuperation" class="pf-health-panel" aria-labelledby="h-recuperation">
     <header class="pf-health-panel-heading">
         <h2 id="h-recuperation" class="pf-health-panel-title">Récupération</h2>
-        {% if p.score.value is not none and p.quality and p.quality.partial %}
-        <span class="pf-health-status">Indice partiel</span>
-        {% endif %}
-        {{ viz.help('recuperation', 'Indice sur 100 calculé à partir des signaux nocturnes disponibles et de tes repères personnels. Les seuils 40 et 70 délimitent les zones de lecture. Un score élevé indique des signaux plus favorables ; il ne garantit pas l’absence de fatigue. Les jours sans données restent vides.', 'de la récupération') }}
+        <span class="pf-head-end">{% if p.score.value is not none and p.quality and p.quality.partial %}<span class="pf-health-status">Indice partiel</span>{% endif %}
+        {{ viz.help('recuperation', 'Indice sur 100 calculé à partir des signaux nocturnes disponibles et de tes repères personnels. Les seuils 40 et 70 délimitent les zones de lecture. Un score élevé indique des signaux plus favorables ; il ne garantit pas l’absence de fatigue. Les jours sans données restent vides.', 'de la récupération') }}</span>
     </header>
     <div class="pf-panel-body">
         {% if p.recup %}<div id="recuperation-detail" class="pf-card pf-recup14">
