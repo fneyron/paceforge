@@ -41,9 +41,13 @@
             if (theme === 'true' || (theme === null && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark');
         } catch (_) { /* Storage may be unavailable in private browsers. */ }
     </script>
+    {# htmx and the icons for the app's pages only: the public ones (landing, méthode, privacy, sign-in, errors,
+       /setup) use neither, and app.js checks for them #}
+    {% if user is defined and user %}
     <meta name="htmx-config" content='{"allowScriptTags":true}'>
     <script defer src="/static/vendor/htmx-2.0.4.min.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
     <script defer src="/static/vendor/lucide-0.469.0.min.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
+    {% endif %}
     {% block head %}{% endblock %}
 </head>
 <body class="min-h-full bg-canvas text-ink antialiased{% if user is defined and user %} pf-app{% endif %}">

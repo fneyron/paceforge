@@ -1,6 +1,7 @@
 """Static caches must speed up navigation without freezing an obsolete build; fonts go out as fonts; the icons
 weigh a few kilobytes."""
 import json
+import re
 import struct
 from pathlib import Path
 
@@ -87,3 +88,28 @@ async def test_pages_ask_for_the_new_icons_and_setup_draws_its_mark(client):
         assert f'href="{url}"' in html, url
     assert "logo.png" not in html  # the header's SVG mark, 48 px, in place of the 178 KB PNG
     assert '<a href="/" class="pf-setup-logo" aria-label="PaceForge"><span class="pf-mark"' in html
+
+
+PUBLIC = ("/", "/landing", "/methode", "/privacy", "/auth/login", "/auth/register", "/auth/forgot-password",
+          "/auth/reset-password?token=x", "/auth/check-email", "/setup", "/une-page-qui-n-existe-pas")
+
+
+@pytest.mark.parametrize("path", PUBLIC)
+async def test_public_pages_load_neither_htmx_nor_the_icons(client, path):
+    """Nobody signed in: 56 KB of scripts less on every public page, which uses neither (no hx- attribute, no
+    data-lucide icon: checked here so that a page using them later gets them back)."""
+    html = (await client.get(path)).text
+    assert "<html" in html
+    assert "/static/vendor/htmx-" not in html and "/static/vendor/lucide-" not in html and "htmx-config" not in html
+    assert not re.search(r"\shx-[a-z]+=|data-lucide=", html), path
+
+
+async def test_the_app_pages_still_load_htmx_and_the_icons(client, test_user):
+    from app.dependencies import get_current_user
+
+    client._transport.app.dependency_overrides[get_current_user] = lambda: test_user
+    html = (await client.get("/simulator")).text
+    for script in (f'<script defer src="/static/vendor/htmx-2.0.4.min.js?v={BUILD_ID}"></script>',
+                   f'<script defer src="/static/vendor/lucide-0.469.0.min.js?v={BUILD_ID}"></script>'):
+        assert script in html
+    assert '<meta name="htmx-config" content=\'{"allowScriptTags":true}\'>' in html
