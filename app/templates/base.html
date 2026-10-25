@@ -120,8 +120,9 @@
     </script>
     <script>
     if ('serviceWorker' in navigator) {
-        // update(): the installed worker is refetched at once, so a new worker reaches existing installs
-        navigator.serviceWorker.register('/static/sw.js').then((r) => r.update()).catch(() => {});
+        // the worker (scope /static/) controls no page: it only retires the caches of earlier builds when it installs.
+        // No update() on every page: that was one more request per navigation for a worker that serves nothing
+        navigator.serviceWorker.register('/static/sw.js').catch(() => {});
     }
     </script>
     <script src="/static/js/app.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
