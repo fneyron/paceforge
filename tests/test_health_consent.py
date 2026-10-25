@@ -237,7 +237,7 @@ def test_migration_starts_everyone_without_consent_and_round_trips():
                                                   root / "alembic/versions/j1b2c3d4e5f6_health_consent.py")
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
-    assert migration.down_revision == "i9f0a1b2c3d4"
+    assert migration.down_revision == "j0a1b2c3d4e5"
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "alembic"))
     script = ScriptDirectory.from_config(cfg)
