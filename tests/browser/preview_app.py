@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime,timezone,timedelta
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import create_async_engine,async_sessionmaker
+from app.services.health_consent import HEALTH_CONSENT_VERSION
 from app.main import create_app
 from app.database import Base
 from app.dependencies import get_db,get_current_user
@@ -24,7 +25,8 @@ factory=async_sessionmaker(engine,expire_on_commit=False)
 async def lifespan(app):
     async with engine.begin() as c: await c.run_sync(Base.metadata.create_all)
     async with factory() as db:
-        user=User(firstname='Camille');db.add(user);await db.flush();app.state.user_id=user.id
+        # an athlete who agreed to the health data text (the consent card is tested in tests/test_health_consent)
+        user=User(firstname='Camille',health_consent_at=datetime.now(timezone.utc),health_consent_version=HEALTH_CONSENT_VERSION);db.add(user);await db.flush();app.state.user_id=user.id
         now=datetime.now(timezone.utc)
         course = _course()
         route = Route(user_id=user.id, name='Course test UX', course_json=course.model_dump(),
