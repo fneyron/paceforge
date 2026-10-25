@@ -446,10 +446,26 @@
     });
   }
 
+  // the plot's px per viewBox unit (--pf-viz-k): interface.css keeps a desktop plot's text at a constant size with it
+  // (a 320-unit viewBox drawn 560 px wide would print its axis bigger than the card's title). Layout only, no colour
+  var scaleRO = "ResizeObserver" in window ? new ResizeObserver(function (es) {
+    es.forEach(function (en) { scaleOf(en.target); });
+  }) : null;
+  function scaleOf(svg) {
+    var vb = svg.viewBox && svg.viewBox.baseVal, w = svg.getBoundingClientRect().width;
+    if (vb && vb.width && w) svg.style.setProperty("--pf-viz-k", String(Math.round(w / vb.width * 1e4) / 1e4));
+  }
+  function scaled(svg) {
+    if (svg.__pfk) return;
+    svg.__pfk = true; scaleOf(svg);
+    if (scaleRO) scaleRO.observe(svg);
+  }
+
   function scan(root) {
     root = root && root.querySelectorAll ? root : document;
     root.querySelectorAll("[data-viz-ranges]").forEach(ranges);
     root.querySelectorAll("figure[data-viz]").forEach(setup);
+    root.querySelectorAll("svg.pf-viz-svg").forEach(scaled);
     root.querySelectorAll('.pf-phases').forEach(phases);
   }
 
@@ -469,6 +485,7 @@
   });
   window.PFViz = { scan: scan, dispose: function (root) {
     root.querySelectorAll('figure[data-viz]').forEach(function (fig) { fig.__pfvizDestroy?.(); });
+    if (scaleRO) root.querySelectorAll('svg.pf-viz-svg').forEach(function (svg) { scaleRO.unobserve(svg); });
   } };
   // A ring or a bookmarked chart opens every containing disclosure before
   // scrolling. Native summaries stay operable with keyboard and without JS.
