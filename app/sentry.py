@@ -28,9 +28,9 @@ DROPPED_REQUEST_FIELDS = ("data", "query_string", "cookies")
 DROPPED_HEADERS = frozenset({"cookie", "authorization", "x-forwarded-for", "x-real-ip", "forwarded"})
 
 
-def _scrub(event: dict[str, Any], _hint: Any = None) -> dict[str, Any]:
-    """before_send: the request without body, query, cookies or credentials; the secret query values masked in the
-    messages and breadcrumbs."""
+def _scrub(event: Any, _hint: Any = None) -> Any:
+    """before_send (an event as a dict, the SDK's TypedDict): the request without body, query, cookies or
+    credentials; the secret query values masked in the messages and breadcrumbs."""
     request = event.get("request")
     if isinstance(request, dict):
         for field in DROPPED_REQUEST_FIELDS:

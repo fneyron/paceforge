@@ -142,11 +142,14 @@ class _Sink:
     def __init__(self) -> None:
         self.buffer = bytearray()
 
-    def write(self, data: bytes) -> int:
+    def write(self, data: bytes, /) -> int:
         self.buffer += data
         return len(data)
 
     def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
         pass
 
     def take(self) -> bytes:
