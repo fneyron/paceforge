@@ -629,6 +629,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-card-status.is-plain { font-weight: 500; color: rgb(var(--pf-gray-600)); }
 .pf-card-status b { font-family: var(--pf-font-display); font-weight: 700; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }   /* « −8 % » */
 .pf-dot { flex: none; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: rgb(var(--pf-accent)); transform: translateY(-1px); }
+.pf-pill-soft .pf-dot { background: rgb(var(--pf-gray-400)); }   /* « Non connecté »: a grey dot, never the accent */
 .pf-card-status.is-ok .pf-dot { background: rgb(var(--pf-ok)); }
 .pf-card-status.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }
 .pf-card-status.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
@@ -1121,6 +1122,9 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
     .pf-settings .pf-section:not(.pf-set-id, .pf-set-danger) > :not(:first-child) { grid-column: 2; }
     .pf-settings .pf-section:not(.pf-set-id, .pf-set-danger) > :nth-child(2) { margin-top: 0; }
     .pf-settings .pf-section:not(.pf-set-id, .pf-set-danger) > div:first-child { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 10px; }
+    /* Apparence: its flex gap would open between the grid's 20 rows (≈ 330 px of nothing), its button would stretch */
+    .pf-settings .pf-section.pf-set-appearance { row-gap: 0; }
+    .pf-settings .pf-set-appearance > button { justify-self: start; }
     .pf-set-num { flex: none; width: 128px; }
     .pf-settings .pf-section p { text-wrap: pretty; }  /* no lone word under a helper line */
     .pf-coros-connect p a { white-space: nowrap; }  /* « serveur Europe » is never split */
