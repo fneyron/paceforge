@@ -38,9 +38,12 @@
     var current = document.getElementById('main-content');
     if (current) { current.hidden = active; current.setAttribute('aria-busy', String(active)); }
     if (active && !loading) {
+      // real text for a screen reader (an aria-label on a status is not read), written once the region is in place
       loading = document.createElement('div'); loading.setAttribute('role', 'status');
-      loading.className = 'pf-refresh-status is-loading'; loading.setAttribute('aria-label', 'Chargement');
+      loading.className = 'pf-refresh-status is-loading';
+      var said = document.createElement('span'); said.className = 'sr-only'; loading.appendChild(said);
       loading.style.cssText = 'margin:32px auto;min-height:44px'; current?.after(loading);
+      setTimeout(function () { said.textContent = 'Chargement…'; }, 0);
     } else if (!active && loading) { loading.remove(); loading = null; }
   }
   function notify(nonce, url, status) {
@@ -66,6 +69,9 @@
     updateNavigation();
     window.PFPageState?.restore(state || null, !location.hash || new URL(target).searchParams.has('app_nav'));
     if (!state && !location.hash) scrollTo({ top: 0, behavior: 'instant' });
+    // the new tab's content takes the focus (it stayed on the tab link, now in the other page): a screen reader
+    // reads the new page from its start, the scroll stays where it was restored
+    try { next.focus({ preventScroll: true }); } catch (_) {}
     window.paceforgeRefresh?.loaded();
     document.dispatchEvent(new CustomEvent('pf:tabchange'));
   }

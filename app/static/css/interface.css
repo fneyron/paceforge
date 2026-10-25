@@ -23,7 +23,8 @@ i[data-lucide] { display: inline-block; vertical-align: middle; }
 .pf-num, .tabular-nums { font-variant-numeric: tabular-nums; }
 .font-display, h1, .pf-display { font-family: var(--pf-font-display); }
 :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; border-radius: 6px; }
-button:disabled { cursor: wait; opacity: .55; }
+#main-content:focus { outline: none; }   /* the page itself takes the focus after a tab change or the skip link: no ring around it */
+button:disabled, button[data-load-more][aria-disabled="true"] { cursor: wait; opacity: .55; }
 ::selection { background: rgb(var(--pf-accent) / .18); }
 
 /* ── app shell: top bar (desktop tabs), bottom tab bar (phone) ─────────── */
@@ -51,7 +52,7 @@ button:disabled { cursor: wait; opacity: .55; }
 .pf-tabbar { position: sticky; left: 0; right: 0; bottom: 0; z-index: 45; display: grid; grid-template-columns: repeat(3, 1fr); padding: 6px 8px calc(8px + env(safe-area-inset-bottom, 0px)); background: rgb(var(--pf-bg) / .94); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border-top: 1px solid rgb(var(--pf-line)); }
 .pf-tabbar a { display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 48px; justify-content: center; font-size: 0.6875rem; font-weight: 500; color: rgb(var(--pf-gray-500)); border-radius: 12px; }
 .pf-tabbar a .pf-ic { width: 24px; height: 24px; }
-.pf-tabbar a[aria-current="page"] { color: rgb(var(--pf-accent)); }
+.pf-tabbar a[aria-current="page"] { color: rgb(var(--pf-accent)); font-weight: 700; }   /* not by hue alone: bold too */
 @media (min-width: 900px) {
     .pf-wrap { padding: 0 40px; }
     .pf-nav { display: flex; }
@@ -103,7 +104,9 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: rgb(var(--pf-soft)); border-radius: 999px; padding: 4px; }
 .pf-seg > :is(a, button) { text-align: center; padding: 8px 6px; border-radius: 999px; font-size: 0.875rem; font-weight: 600; color: rgb(var(--pf-gray-600)); line-height: 1.25; white-space: nowrap; }
 .pf-seg > :is(a, button) small { display: block; font-size: 0.75rem; font-weight: 500; color: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
-.pf-seg > [aria-pressed="true"], .pf-seg > [aria-current] { background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); box-shadow: 0 1px 2px rgb(0 0 0 / .06), 0 2px 8px rgb(0 0 0 / .04); }
+/* the chosen one: the surface fill and the 2 px ink ring of the range toggles (≥ 3:1 in both themes, not by fill alone) */
+.pf-seg > [aria-pressed="true"], .pf-seg > [aria-current] { background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }
+@media (forced-colors: active) { .pf-seg > [aria-pressed="true"], .pf-seg > [aria-current] { outline: 2px solid Highlight; outline-offset: -2px; } }
 .pf-seg > [aria-pressed="true"] small { color: rgb(var(--pf-accent)); }
 .pf-seg-sm { display: inline-grid; padding: 3px; }
 .pf-seg-sm > :is(a, button) { padding: 5px 12px; font-size: 0.8125rem; }
@@ -131,8 +134,10 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-note { display: flex; gap: 12px; background: rgb(var(--pf-soft)); border-radius: 16px; padding: 14px 16px; font-size: 0.875rem; color: rgb(var(--pf-gray-600)); }
 
 /* ── forms ────────────────────────────────────────────────────────────── */
-.pf-input { width: 100%; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 1px solid rgb(var(--pf-gray-200)); background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); font-size: 1rem; }
-.pf-input:focus { outline: none; border-color: rgb(var(--pf-accent)); box-shadow: 0 0 0 3px rgb(var(--pf-accent) / .18); }
+/* a field's edge ≥ 3:1 on its background in both themes (gray-400: 4.7:1 light, 6:1 dark), a 2 px accent ring on focus */
+.pf-input { width: 100%; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 1px solid rgb(var(--pf-gray-400)); background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); font-size: 1rem; }
+.dark .pf-input { border-color: rgb(var(--pf-gray-400)); }   /* over the older partials' .dark input */
+.pf-input:focus, .pf-input:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 1px; border-color: rgb(var(--pf-accent)); border-radius: 14px; box-shadow: none; }
 .pf-field-label { display: block; font-size: 0.875rem; font-weight: 500; color: rgb(var(--pf-gray-700)); margin-bottom: 6px; }
 
 /* ── legacy partials (pacing, debrief…) aligned on the A look ─ */
@@ -1221,7 +1226,8 @@ body:has(.pf-sante4) { background: #f4f6f8; }
 .pf-lactate-form { display: grid; gap: 20px; }
 .pf-lactate-fields, .pf-lactate-stage { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
 .pf-lactate label { display: grid; gap: 6px; font-size: 0.8125rem; min-width: 0; }
-.pf-lactate .pf-input { width: 100%; min-width: 0; min-height: 44px; font-size: 1rem; padding: 10px; border: 1px solid rgb(var(--pf-line)); border-radius: 10px; background: rgb(var(--pf-bg)); color: rgb(var(--pf-ink)); }
+.pf-lactate .pf-input { width: 100%; min-width: 0; min-height: 44px; font-size: 1rem; padding: 10px; border: 1px solid rgb(var(--pf-gray-400)); border-radius: 10px; background: rgb(var(--pf-bg)); color: rgb(var(--pf-ink)); }
+.pf-lactate .pf-input:focus, .pf-lactate .pf-input:focus-visible { border-radius: 10px; }
 .pf-lactate-stage { padding: 16px; margin-bottom: 16px; border: 1px solid rgb(var(--pf-line)); border-radius: 14px; }
 .pf-lactate-stage legend { padding-inline: 6px; font-weight: 650; }
 .pf-lactate-actions, .pf-lactate-compare { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
