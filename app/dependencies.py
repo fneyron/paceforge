@@ -67,6 +67,7 @@ async def get_current_user(
         request.session["pending_user_id"] = user.id
         raise HTTPException(status_code=303, headers={"Location": "/auth/check-email"})
 
+    request.state.user = user  # an error page raised later in this request keeps the app's layout (app.exceptions)
     return user
 
 
@@ -85,7 +86,10 @@ async def get_optional_user(
     user = result.scalar_one_or_none()
     if not _current(request, user):
         return None
-    return user if not user.email or user.email_verified else None
+    if user.email and not user.email_verified:
+        return None
+    request.state.user = user
+    return user
 
 
 def _redirect_to_login() -> HTTPException:

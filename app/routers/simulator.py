@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
 from app.dependencies import get_current_user, get_db
+from app.exceptions import RouteNotFoundError
 from app.features import cycling_enabled, hidden_sports, require_cycling, sport_hidden
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
@@ -1014,7 +1015,7 @@ async def route_detail_page(
     )
     route = _visible(result.scalar_one_or_none())
     if not route:
-        raise HTTPException(status_code=404)  # full page: the app's 404 page
+        raise RouteNotFoundError(route_id)  # full page: the app's 404 page, « Cette course n'existe plus. »
 
     if route.sport_type == "triathlon":
         ctx = await _tri_plan_context(request, route, db, user)
@@ -1025,7 +1026,7 @@ async def route_detail_page(
         )
 
     if not route.course_json:
-        raise HTTPException(status_code=404)
+        raise RouteNotFoundError(route_id)
 
     if route.sport_type == "bike":
         ctx = await _bike_plan_context(request, route, db, user)
@@ -1603,7 +1604,7 @@ async def print_route_plan(
 ):
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json:
-        raise HTTPException(status_code=404)
+        raise RouteNotFoundError(route_id)
     return templates.TemplateResponse(request, "simulator_print.html", context=await _print_plan_context(route, db, user))
 
 
