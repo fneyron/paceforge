@@ -44,7 +44,7 @@ jobs:
       SURFACE_FETCH: 'false'
       ACTIVITY_ENV_FETCH: 'false'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false  # the collectors parse remote data: no push credential on disk while they run
       - uses: actions/setup-python@v5
