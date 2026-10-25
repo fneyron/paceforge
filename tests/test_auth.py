@@ -238,6 +238,49 @@ async def test_a_password_reset_signs_out_every_other_session(client, db_session
         assert (await other.get("/settings")).status_code == 200
 
 
+async def _login_from(c, address, email, password="wrong-password"):
+    return await c.post("/auth/login", data={"email": email, "password": password},
+                        headers={"X-Forwarded-For": address})
+
+
+async def test_failed_logins_are_capped_per_account_whatever_the_address(client, db_session, no_commit, checks,
+                                                                       monkeypatch):
+    """A guessing campaign spread over many addresses stays under each address's limits: the account's own cap
+    holds them all, with the same neutral answer and no password checked; a login that works is not charged to it;
+    a password reset lets its owner in again."""
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setitem(auth_service.ACCOUNT_LIMITS, "login", (4, 3600))
+    user = await _member(db_session)
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:
+        for i in range(3):
+            assert "Email ou mot de passe incorrect." in (await _login_from(c, f"203.0.113.{i}", user.email)).text
+        assert (await _login_from(c, "203.0.113.50", user.email, "pw-12345678")).status_code == 302  # not charged
+        await c.post("/auth/logout")
+        assert (await _login_from(c, "203.0.113.3", user.email)).status_code == 200  # the fourth failure
+        n = len(checks)
+        r = await _login_from(c, "198.51.100.7", user.email, "pw-12345678")  # a fresh address, the right password
+        assert r.status_code == 429 and TOO_MANY in r.text and len(checks) == n
+        assert (await _login_from(c, "198.51.100.7", "other@x.fr")).status_code == 200  # another account: checked
+        user.password_reset_token = auth_service.hash_token("reset-token")
+        user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        await db_session.flush()
+        r = await c.post("/auth/reset-password", data={"token": "reset-token", "password": "pw-87654321"})
+        assert r.headers["location"] == "/sante"
+        await c.post("/auth/logout")
+        assert (await _login_from(c, "198.51.100.8", user.email, "pw-87654321")).status_code == 302
+
+
+async def test_one_address_alone_never_locks_an_account(client, db_session, no_commit):
+    """The account's cap counts only the attempts the per-address limits let through (10 per 15 minutes from one
+    address, under the account's 50 an hour): a flood from one address never keeps the owner out elsewhere."""
+    user = await _member(db_session)
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:
+        codes = [(await _login_from(c, "203.0.113.66", user.email)).status_code for _ in range(60)]
+        assert codes.count(200) == 10 and codes.count(429) == 50
+        assert (await _login_from(c, "198.51.100.9", user.email, "pw-12345678")).status_code == 302
+
+
 async def test_api_404s_are_json_pages_stay_html(client, test_user):
     from app.dependencies import get_current_user
 

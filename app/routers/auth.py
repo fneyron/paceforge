@@ -24,6 +24,7 @@ from app.services.auth import (
     TOO_MANY,
     client_ip,
     count_attempt,
+    forget_account_attempts,
     forget_attempts,
     generate_token,
     hash_password_async,
@@ -355,6 +356,8 @@ async def reset_password(
     user.password_reset_expires_at = None
     user.session_version = (user.session_version or 0) + 1  # every other session of the account is signed out
     await db.commit()  # before the redirect: the request that follows it already checks the new session version
+    # an account the per-account login cap holds can sign in again: whoever reset it holds its mailbox
+    await forget_account_attempts("login", (user.email or "").strip().lower())
 
     request.session.clear()
     if not user.email_verified:
