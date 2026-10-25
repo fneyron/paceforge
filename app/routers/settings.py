@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
@@ -236,6 +236,24 @@ async def _revoke_links(db: AsyncSession, user: User) -> None:
         await db.rollback()
 
 
+# Tables of the features switched off (the AI analyses, chat, weekly digests, plan generator, old simulations): no
+# model maps them, the database still has them (alembic h8e9f0a1b2c3) until a release drops them. Their keys do not
+# all cascade from users (generated_plans.user_id has no foreign key, simulations.user_id neither: only its route_id
+# cascades), so an account's rows there are deleted by name, in each table that exists. analyses has no user_id: its
+# rows go by the account's activities. Alembic j0a1b2c3d4e5 removed the orphans the older deletions left.
+LEGACY_USER_TABLES = ("generated_plans", "simulations", "chat_messages", "weekly_digests")
+
+
+async def _delete_legacy_rows(db: AsyncSession, user_id: int) -> None:
+    present = set(await db.run_sync(lambda session: inspect(session.connection()).get_table_names()))
+    if "analyses" in present:
+        await db.execute(text("DELETE FROM analyses WHERE activity_id IN "
+                              "(SELECT id FROM activities WHERE user_id = :uid)"), {"uid": user_id})
+    for table in LEGACY_USER_TABLES:
+        if table in present:  # a name from the constant above, never from the request
+            await db.execute(text(f"DELETE FROM {table} WHERE user_id = :uid"), {"uid": user_id})
+
+
 @router.post("/settings/delete-account")
 async def delete_account(
     request: Request,
@@ -254,9 +272,10 @@ async def delete_account(
     logger.warning("User %d requested account deletion", user_id)
     await _revoke_links(db, user)
 
-    # Every row of the athlete goes with the user: each table hangs on users.id by a foreign key ON DELETE
-    # CASCADE (checkpoints through routes; the legacy tables kept one more release cascade from users or routes where PostgreSQL has their key); migration h8e9f0a1b2c3 gave
-    # the last ones theirs, tests/test_account_deletion checks that none is missing.
+    # Every row of the athlete goes with the user: each mapped table hangs on users.id by a foreign key ON DELETE
+    # CASCADE (checkpoints through routes; migration h8e9f0a1b2c3 gave the last ones theirs), the legacy tables'
+    # rows are deleted by name first; tests/test_account_deletion checks that none is missing.
+    await _delete_legacy_rows(db, user_id)
     await db.execute(delete(User).where(User.id == user_id))
     await db.flush()
 
