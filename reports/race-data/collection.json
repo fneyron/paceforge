@@ -1,47 +1,46 @@
 {
-  "started_at": "2026-10-19T09:06:31.766989+00:00",
+  "started_at": "2026-10-26T09:09:07.086474+00:00",
   "scope": "scheduled queue",
   "updated": [
-    "utmb/ecotrailautomne_2026/50km",
-    "utmb/ecotrailautomne_2026/80km",
-    "utmb/gtauvergne_2026/100m",
-    "utmb/gtauvergne_2026/360solo",
-    "utmb/gtauvergne_2026/50k",
-    "utmb/gtauvergne_2026/80k",
-    "utmb/kodiak_2026/100k",
-    "utmb/kodiak_2026/50k",
-    "utmb/utmj_2026/renarde",
-    "utmb/utmj_2026/utmj",
-    "utmb/chiangmai_2025/ELP100"
+    "utmb/grcathares_2026/GRC",
+    "utmb/grcathares_2026/RB",
+    "utmb/grcathares_2026/TH",
+    "utmb/grcathares_2026/rt",
+    "utmb/tmut_2026/80",
+    "utmb/tmut_2026/tmut44",
+    "utmb/templiers_2026/Templi",
+    "utmb/templiers_2026/endur",
+    "utmb/templiers_2026/integra",
+    "utmb/saintelyon_2025/80km",
+    "utmb/kosciuszko_2025/100k"
   ],
-  "unchanged": [
-    "utmb/chiangmai_2025/CHD160"
-  ],
+  "unchanged": [],
   "excluded": [
-    "utmb/ecotrailautomne_2026/20km",
-    "utmb/traildelbisaura_2026/curta",
-    "utmb/traildelbisaura_2026/mitja",
-    "utmb/traildelbisaura_2026/trail",
-    "utmb/gtauvergne_2026/16k",
-    "utmb/gtauvergne_2026/27k",
-    "utmb/kodiak_2026/10k",
-    "utmb/kodiak_2026/21k",
-    "utmb/munstertrail_2026/mt10",
-    "utmb/munstertrail_2026/mt21",
-    "utmb/munstertrail_2026/mt32"
+    "utmb/grcathares_2026/TNCC",
+    "utmb/grcathares_2026/TP",
+    "utmb/tmut_2026/tmut13",
+    "utmb/tmut_2026/tmut24",
+    "utmb/tmut_2026/tmut5",
+    "utmb/templiers_2026/MarathC",
+    "utmb/templiers_2026/MarathL",
+    "utmb/templiers_2026/Monna",
+    "utmb/templiers_2026/TemplF",
+    "utmb/templiers_2026/dourbie",
+    "utmb/templiers_2026/junior",
+    "utmb/templiers_2026/kd"
   ],
   "errors": [
     {
-      "item": "utmb/kodiak_2026/100mile",
+      "item": "utmb/templiers_2026/Boffi50",
       "error": "IncompleteDownloadError",
-      "detail": "Non-monotonic checkpoint timing"
+      "detail": "Incomplete finisher timing"
     }
   ],
-  "catalog_deferred": 823,
-  "races_deferred": 2705,
-  "finished_at": "2026-10-19T09:41:11.079146+00:00",
-  "requests": 3157,
-  "corpus_sha256": "3ae62226c54ab7ff4bb9d1a6290c269acdf007fe5518855effc75d90ba2cf11f",
-  "archives": 1029,
+  "catalog_deferred": 702,
+  "races_deferred": 2740,
+  "finished_at": "2026-10-26T09:38:48.727902+00:00",
+  "requests": 2600,
+  "corpus_sha256": "3263f249a9546662dae44327c2804ecbb07db8b9c33c8ae7d875946e50a23929",
+  "archives": 1038,
   "status": "partial"
 }
