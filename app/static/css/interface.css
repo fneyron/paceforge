@@ -903,6 +903,8 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-legal :is(p, li) { color: rgb(var(--pf-gray-600)); line-height: 1.65; }
 .pf-legal ul { list-style: disc; padding-left: 1.25rem; }
 .pf-legal li + li { margin-top: 8px; }
+.pf-legal-quote { border-left: 3px solid rgb(var(--pf-line)); padding-left: 14px; }  /* the consent's own text */
+.pf-legal-quote > p + p { margin-top: 8px; }
 .pf-legal strong { color: rgb(var(--pf-ink)); font-weight: 600; }
 .pf-legal code { background: rgb(var(--pf-soft)); padding: 0 4px; border-radius: 4px; font-size: .875em; }
 .pf-legal .pf-legal-date { margin-top: 8px; font-size: 0.875rem; color: rgb(var(--pf-gray-500)); }

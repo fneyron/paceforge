@@ -146,7 +146,9 @@ def page(request: Request, **context):
 
 @router.get("/mobile/privacy")
 async def privacy(request: Request):
-    return page(request, mode="privacy")
+    from app.services import health_consent
+
+    return page(request, mode="privacy", consent_text=health_consent.TEXT)  # the consent's own words
 
 
 @router.get("/mobile/session")

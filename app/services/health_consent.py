@@ -13,11 +13,15 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import delete, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.user import User
 
+# the bike plans (features.cycling_enabled, off in production) use the latest weigh-in too: said only while they are
+# open, and the version follows, so opening them asks everyone again (the public pages make no bike claim otherwise)
+_BIKE = bool(settings.CYCLING_ENABLED)
 # 2026-10-31: the list as collected (naps, sleep phases, kcal and exercise minutes; no VO2 max), the weigh-ins' other
 # uses, what a withdrawal keeps
-HEALTH_CONSENT_VERSION = "2026-10-31"
+HEALTH_CONSENT_VERSION = "2026-10-31" + ("-v" if _BIKE else "")
 
 NBSP = "\u00a0"
 TITLE = "Tes données de santé"
@@ -32,7 +36,7 @@ TEXT = (
     f"PaceForge enregistre les données de santé de tes sources et de tes saisies{NBSP}: {DATA}.",
     # the weigh-ins: athlete_weight (race_prep's carbohydrates, the bike plans' power)
     f"Elles servent à Santé et à la préparation de tes courses{NBSP}; ta dernière pesée sert aussi à tes glucides "
-    "d’avant-course et à ta puissance à vélo. Elles ne sont ni vendues ni partagées.",
+    f"d’avant-course{' et à ta puissance à vélo' if _BIKE else ''}. Elles ne sont ni vendues ni partagées.",
     f"Tu peux retirer ton accord à tout moment dans Réglages{NBSP}: tes sources sont déconnectées, tes téléphones "
     f"dissociés et ces données effacées. Restent {KEPT}.",
 )

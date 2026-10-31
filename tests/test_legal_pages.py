@@ -69,6 +69,62 @@ async def test_the_phone_privacy_page_agrees(client: AsyncClient):
     assert "consentement" in html and 'href="/privacy"' in html
 
 
+async def test_the_policy_says_what_is_true_now(client: AsyncClient):
+    """2026-10-31: the consent's own list and text, the profile's weight and max HR and their basis, COROS « Monde »
+    in the United States, the phone's 180 days, the browser's storage keys, the export from a browser, Strava read
+    only."""
+    from app.routers.mobile import TOKEN_LIFETIME
+    from app.services import health_consent
+
+    html = (await client.get("/privacy")).text
+    text = _text(html)
+    assert health_consent.DATA[1:] in text and "VO2" not in text
+    for paragraph in health_consent.TEXT:
+        assert _text(paragraph) in text
+    for expected in ("Profil sportif (Réglages)", "Poids et FC maximale que tu saisis", "Monde (États-Unis)",
+                     f"expire {TOKEN_LIFETIME.days} jours après son dernier envoi", "darkMode", "pf.map3d", "pf.sport",
+                     "pf-view", "depuis un navigateur (pas dans l’app du téléphone)", "accès en lecture seule",
+                     "Refuser et effacer", "Mise à jour le 31 octobre 2026"):
+        assert expected in text, expected
+
+
+async def test_the_browser_storage_named_by_the_policy_is_all_there_is():
+    import pathlib
+
+    root = pathlib.Path(__file__).parents[1] / "app"
+    keys = set()
+    for path in [*root.glob("static/js/*.js"), *root.glob("templates/**/*.html")]:
+        keys |= set(re.findall(r"localStorage\.(?:get|set|remove)Item\('([^']+)'", path.read_text()))
+    assert keys == {"darkMode", "pf.map3d", "pf.sport"}, keys
+
+
+async def test_the_phone_privacy_page_has_its_own_title_and_a_public_first_link(client: AsyncClient):
+    from app.services import health_consent
+
+    html = (await client.get("/mobile/privacy")).text
+    assert "<title>Confidentialité de l’app · PaceForge</title>" in html and '<meta name="description"' in html
+    first = re.search(r'<main>\s*<a href="([^"]+)"', html)[1]
+    assert first == "/privacy"  # never the login, for a reader signed out
+    assert all(_text(paragraph) in _text(html) for paragraph in health_consent.TEXT)
+    ressenti = html[html.index("Ressenti facultatif"):html.index("Anciennes versions")]
+    assert "qu’avec ton consentement, et effacée si tu le retires" in ressenti
+    visible = re.sub(r"<[^>]+>", " ", re.sub(r"<script.*?</script>|<style.*?</style>", " ", html, flags=re.S))
+    assert not re.search(r"\w ([:;?!])", visible), "a plain space before : ; ? !"
+
+
+async def test_terms_say_how_they_change_and_how_the_service_would_end(client: AsyncClient):
+    text = _text((await client.get("/cgu")).text)
+    assert "annoncée dans l’app ou par e-mail" in text and "sa date figure en haut de cette page" in text
+    assert "prévenu à l’avance, le temps de télécharger tes données" in text
+
+
+@pytest.mark.parametrize("path", LEGAL)
+async def test_the_legal_pages_go_back_where_they_were_opened(client: AsyncClient, path):
+    html = (await client.get(path)).text
+    back = re.search(r'<a href="/" class="pf-back" onclick="([^"]+)">', html)[1]
+    assert "history.back()" in back and "document.referrer" in back and "location.origin" in back
+
+
 @pytest.mark.parametrize("path", PUBLIC + ("/nowhere",) + AUTH)
 async def test_public_pages_have_one_main_landmark_and_the_legal_footer(client: AsyncClient, path):
     r = await client.get(path)
@@ -120,6 +176,9 @@ async def test_register_form_is_labelled_and_states_its_rule(client: AsyncClient
     assert 'autofocus' in html and 'role="alert"' not in html and "aria-invalid" not in html
     legal = re.search(r"En créant un compte, tu acceptes .*?</p>", html, re.S)[0]
     assert 'href="/cgu"' in legal and 'href="/privacy"' in legal and "politique de confidentialité" in legal
+    nbsp = "\N{NO-BREAK SPACE}"
+    assert _text(legal).strip() == (f"En créant un compte, tu acceptes les CGU et confirmes avoir au moins 15{nbsp}ans. "
+                                    f"Tes données{nbsp}: politique de confidentialité .")  # the CGU only are accepted
 
 
 async def test_register_errors_are_announced_on_their_field(client: AsyncClient, test_user, db_session, monkeypatch):
