@@ -3,7 +3,8 @@
 Sommeil compares the measured 24 h (naps included) to an 8-h reference, not a personal physiological need.
 The estimated seven-night gap is shown separately (sante_sleep.deficit). Signaux nocturnes combines the usable
 VFC and night-HR trends with the existing acute-alert, breathing and short-sleep rules (sante_score.score_of).
-It is a descriptive /100 index, never a percentage of recovery or a training clearance. Recorded race/ultra
+It is a descriptive index, printed as a percentage like the two other rings (owner, 2026-10-31), never a
+physiological recovery measure or a training clearance. Recorded race/ultra
 context is dated separately, without score caps or a physiological recovery deadline. Before noon a pending
 night may retain yesterday's explicitly dated cycle.
 Entraînement compares the last seven days' load to the usual week: 100 % is a reference, not a target, and the

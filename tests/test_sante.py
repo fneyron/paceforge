@@ -632,7 +632,7 @@ async def test_rich_wearer_a_far_lower_hrv_makes_the_dial_50_to_watch(db_session
     assert (page["vfc"]["status"]["value"], page["vfc"]["status"]["word"], page["vfc"]["status"]["tone"]) == (
         "\u221250\u00a0%", "plus basse que d'habitude", "warn")
     d = page["dials"][1]
-    assert (d["key"], d["value"], d["unit"], d["sub"], d["tone"]) == ("recup", "50", "/100", "à surveiller", "warn")
+    assert (d["key"], d["value"], d["unit"], d["sub"], d["tone"]) == ("recup", "50", "%", "à surveiller", "warn")
 
 
 async def test_rich_wearer_hypnogram_in_the_hero(db_session: AsyncSession, test_user: User):

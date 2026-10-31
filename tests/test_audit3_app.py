@@ -42,7 +42,7 @@ def _page(**kw) -> tuple[dict, str]:
 
 def test_the_recovery_ring_word_agrees_with_its_name():
     assert sante_score.DIAL_WORDS == {"ok": "habituelle", "warn": "à surveiller", "danger": "inhabituelle"}
-    assert sante_score.index_label(100) == "100/100"  # « 100/100 en moyenne », no space before the denominator
+    assert sante_score.pct(100) == "100\u00a0%"  # « 100 % en moyenne », like the two other rings (owner, 2026-10-31)
 
 
 def test_help_bubbles_sit_right_with_human_names_and_clear_the_tab_bar():

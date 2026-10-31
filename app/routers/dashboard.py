@@ -78,7 +78,7 @@ def _example_rings() -> list[dict]:
     training["usual_marker"] = True
     return [viz.ring("sommeil", .96, "96", "Sommeil", "suffisant", unit="%", tone="sleep",
                      aria="Exemple : sommeil à 96 % du repère de 8 heures"),
-            viz.ring("recup", .72, "72", "Récupération", "habituelle", unit="/100", tone="ok",
+            viz.ring("recup", .72, "72", "Récupération", "habituelle", unit="%", tone="ok",
                      aria="Exemple : récupération 72 sur 100"), training]
 
 
