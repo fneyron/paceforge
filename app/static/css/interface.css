@@ -1553,7 +1553,15 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 @media (max-width: 480px) {
     .pf-help-tip { position: fixed; z-index: 50; top: auto; bottom: calc(63px + 1.0625rem + env(safe-area-inset-bottom, 0px)); left: 20px; right: 20px; width: auto; max-height: calc(100dvh - 180px); overflow-y: auto; }
     .pf-native .pf-help-tip { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+    /* with pf-viz.js the sheet waits for the click (never the press's hover or focus: it landed under the finger and
+       swallowed the click), stays until its ×, Escape or a click elsewhere, and goes up top if it would cover its (i) */
+    .pf-help-js .pf-help:is(:hover, :focus-within) .pf-help-tip { display: none; }
+    .pf-help-js .pf-help.is-open .pf-help-tip { display: block; padding-right: 48px; }
+    .pf-help-js .pf-help.is-open.is-top .pf-help-tip { top: calc(72px + env(safe-area-inset-top, 0px)); bottom: auto; }
+    .pf-help-js .pf-help.is-open .pf-help-close { display: flex; }
 }
+.pf-help-close { display: none; position: absolute; top: 2px; right: 2px; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 999px; font-size: 1.375rem; line-height: 1; color: inherit; }
+.pf-help-close:focus-visible { outline: 2px solid rgb(var(--pf-bg)); outline-offset: -6px; }
 
 .pf-sante4 .pf-viz-hair { stroke: rgb(var(--pf-line)); stroke-dasharray: none; }
 

@@ -38,7 +38,7 @@ def test_page_shows_charge_and_recent_activities_without_disclosure():
     training = html.split('<section id="entrainement"')[1].split('</section>\n\n<section id="activites-recentes"')[0]
     assert 'pf-recent-activities' not in training and 'id="zones-fc"' not in training
     assert "Sortie ancienne" not in html
-    assert 'class="pf-help-tip" role="tooltip"' in html
+    assert '<span class="pf-help-tip"><span role="tooltip" id="help-charge">' in html
     assert "<small>30 jours</small>" not in html and "Repère de forme" not in html
     assert "repère 8h00" not in html and "Tendance 7 j ·" not in html
     assert "Mes horaires habituels" not in html

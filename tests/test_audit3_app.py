@@ -70,6 +70,22 @@ def test_escape_dismisses_a_tip_and_keeps_the_focus():
     assert ".blur()" not in js and 'el.classList.add("is-tip-dismissed")' in js
 
 
+def test_a_phone_opens_the_help_sheet_on_a_click():
+    """Re-audit 2026-10-31: an (i) in the lower third of a phone never opened (the sheet shown at the press landed
+    under the finger and swallowed the click). On a phone a click opens and closes it (aria-expanded), its × and
+    Escape close it (the focus back on the (i)); the text it describes the button with leaves the × out."""
+    js = (ROOT / "app/static/js/pf-viz.js").read_text(encoding="utf-8")
+    assert 'matchMedia("(max-width: 480px)")' in js and 'button.setAttribute("aria-expanded", "true")' in js
+    assert 'if (openHelp) { closeHelp(true); return; }' in js and 'button.focus({ preventScroll: true })' in js
+    assert 'e.target.closest(".pf-help-close")' in js and 'classList.add("pf-help-js")' in js
+    phone = CSS.split("@media (max-width: 480px) {\n    .pf-help-tip")[1].split("}\n}")[0]
+    assert ".pf-help-js .pf-help:is(:hover, :focus-within) .pf-help-tip { display: none; }" in phone
+    assert ".pf-help-js .pf-help.is-open .pf-help-tip { display: block;" in phone
+    html = render("{{ v.help('vfc', 'Texte.', 'de la VFC') }}")
+    assert 'aria-describedby="help-vfc"' in html and '<span role="tooltip" id="help-vfc">Texte.</span>' in html
+    assert '<button type="button" class="pf-help-close" aria-label="Fermer l’aide">' in html
+
+
 def test_the_charge_card_has_one_name():
     _, html = _page()
     assert "Charge accumulée" not in html and "Charge cumulée : choisis un jour" in html
