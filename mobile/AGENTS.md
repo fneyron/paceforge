@@ -28,3 +28,7 @@ before changing sync semantics or supported health categories.
   see `docs/mobile-fluidite.md`), and export both iOS and Android bundles.
 - Signed native distribution requires the owner's developer accounts. Do not
   claim an export of JavaScript bundles is an installed or tested native app.
+- The site and the app stay aligned (owner's request, 2026-10-31): any site
+  change that affects what the app shows, sends or says ships with the matching
+  native change in the same delivery, published on TestFlight (`[testflight]` in
+  the merge message on main).

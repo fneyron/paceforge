@@ -376,6 +376,36 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   assert.equal(await screens.evaluate(()=>authSessions[0]),'https://paceforge.fr/mobile/oauth/strava#ticket','the sheet opens PaceForge’s ticket page');
   await screens.waitForFunction(()=>window.connectionNonce&&scripts.at(-1).includes('connections-unavailable')&&!scripts.at(-1).includes('action='));
   await screens.close();
+  // A push refused without the consent to health data (403 health_consent_required): Santé asks for it itself (its
+  // card); elsewhere the server's sentence alone, with « Ouvrir Santé »; the consent page, then Santé, sends at once.
+  const sentence='Accepte le suivi de tes données de santé dans PaceForge pour envoyer tes mesures.';
+  const consent=await page();await consent.waitForFunction(()=>window.nonce);
+  await consent.evaluate(s=>{window.failStatus=403;window.failBody={detail:s,code:'health_consent_required'};return reply();},sentence);
+  await consent.waitForFunction(()=>collects===1&&writes.some(u=>u.endsWith('/api/mobile/daily')));
+  await consent.waitForTimeout(150);
+  assert.equal(await consent.getByRole('button',{name:/Accepte le suivi/}).count(),0,'Santé asks for the consent itself');
+  await consent.getByRole('tab',{name:'Activités',exact:true}).click();await consent.waitForFunction(()=>actual.includes('/activities'));
+  const consentNotice=consent.getByRole('button',{name:sentence+' Ouvrir Santé.',exact:true});
+  await consentNotice.waitFor();
+  assert.match(await consentNotice.innerText(),/^Accepte le suivi de tes données de santé dans PaceForge pour envoyer tes mesures\.\s*Ouvrir Santé$/,'the sentence once, no step or code');
+  assert.equal(await consent.evaluate(()=>collects),1,'a refusal is not retried at once');
+  assert.equal(await consent.evaluate(()=>JSON.parse(JSON.parse(sessionStorage.getItem('secure'))['paceforge.phone.v1']).token),'fixture','still paired');
+  await consentNotice.click();await consent.waitForFunction(()=>new URL(actual).pathname==='/sante');
+  await consent.getByRole('button',{name:'Réglages et connexions',exact:true}).click();
+  await consent.waitForFunction(()=>window.connectionNonce);
+  await consent.evaluate(()=>reply({type:'connections',name:'Athlete',providers:{coros:'disconnected',garmin:'disconnected',strava:'disconnected'}}));
+  await consent.getByRole('button',{name:/Apple Santé.*Accord à donner.*Gérer/}).click();
+  assert.equal((await consent.locator('body').innerText()).split(sentence).length,2,'said once in the phone receipt');
+  await consent.getByRole('button',{name:'Ouvrir Santé',exact:true}).click();await consent.waitForFunction(()=>new URL(actual).pathname==='/sante');
+  assert.equal(await consent.evaluate(()=>collects),1);
+  const refusedNonce=await consent.evaluate(()=>window.nonce);
+  await consent.evaluate(()=>{navigate('https://paceforge.fr/sante/consentement?next=%2Fsante');window.failStatus=0;window.failBody=undefined;navigate('https://paceforge.fr/sante');});
+  await consent.waitForFunction(n=>window.nonce!==n,refusedNonce);await consent.evaluate(()=>reply());
+  await consent.waitForFunction(()=>collects===2&&refreshes.length===1);
+  await consent.getByRole('tab',{name:'Activités',exact:true}).click();await consent.waitForFunction(()=>actual.includes('/activities'));
+  await consent.waitForTimeout(100);
+  assert.equal(await consent.getByRole('button',{name:/Accepte le suivi/}).count(),0,'cleared once a push is accepted');
+  await consent.close();
   const unavailable=await page(true);
   await unavailable.evaluate(()=>pageFail());
   await unavailable.getByRole('heading',{name:'Écran indisponible'}).waitFor();
@@ -383,6 +413,6 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   assert.equal(await unavailable.evaluate(()=>reloads),1);
   assert.equal(await unavailable.evaluate(()=>pull()),true,'offline retry must reload the document, not refresh an unavailable page');
   await unavailable.close();
-  console.log('Actual App: cold start, pull-only UI, error details, account safety, inline Settings/reentry/cancellation/login/account change, offline, process recovery, late bridge recovery, delayed dashboard loading and connection screens passed (native APIs mocked).');
+  console.log('Actual App: cold start, pull-only UI, error details, account safety, inline Settings/reentry/cancellation/login/account change, offline, process recovery, late bridge recovery, delayed dashboard loading, connection screens and the consent refusal passed (native APIs mocked).');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -292,6 +292,40 @@ test('a locked phone reads nothing: the keychain is « locked », never « not p
   assert.ok(engine.pending());
 });
 
+test('without the consent to health data, each run pushes once and stops; the first run after it sends everything', async () => {
+  let consent = false;
+  const changed = { daysBack: 3, metrics: ['weight'] as Metric[], tokens: { weight: 'w2' } };
+  const f = fixture({ changes: async () => changed });
+  const base = f.deps.send;
+  f.deps.send = async (...args) => {
+    if (!consent) { f.sent.push({ path: args[0], body: args[1], token: args[2], timeout: args[3], readAt: args[4] }); throw new ApiError(403, '', 0, 'Accepte le suivi.'); }
+    return base(...args);
+  };
+  f.stored.state = { ...f.stored.state, tokens: { weight: 'w1' } };
+  const engine = createEngine(f.deps);
+  for (const run of [1, 2]) {
+    assert.equal(await engine.request('task'), 'consent');
+    assert.equal(f.sent.length, run, 'one push per run, stopped at the refusal');
+    assert.equal(f.calls.filter(c => c.startsWith('nights')).length, 0, 'no night read after the refusal');
+  }
+  // Still paired and enabled, no delay, nothing marked sent, Health Connect changes announced again.
+  assert.ok(!f.calls.includes('disable'));
+  assert.equal(f.stored.pair?.token, 'token-2');
+  assert.equal(f.stored.state.enabled, true); assert.equal(f.stored.state.retryAt, 0);
+  assert.deepEqual(f.stored.state.hashes, {});
+  assert.deepEqual(f.stored.state.tokens, { weight: 'w1' });
+  assert.equal(f.stored.receipt?.consent, true); assert.equal(f.stored.receipt?.reconnect, false);
+  assert.equal(f.stored.receipt?.pending, false);
+  assert.deepEqual(f.stored.receipt?.notices, ['Accepte le suivi.']);
+  // The consent given: the next run sends the days and the nights, moves the tokens, clears the state.
+  consent = true;
+  assert.equal(await engine.request('task'), 'sent');
+  assert.deepEqual(f.sent.slice(2).map(s => s.path), ['/api/mobile/daily', '/api/mobile/nights']);
+  assert.deepEqual(f.sent[2].body, { days: f.data.days });
+  assert.deepEqual(f.stored.state.tokens, { weight: 'w2' });
+  assert.ok(!f.stored.receipt?.consent); assert.equal(f.stored.receipt?.complete, true);
+});
+
 test('too many requests waits for the server; off, blocked and unpaired phones never read', async () => {
   const f = fixture({ send: async () => { throw new ApiError(429, '', 120); } }), engine = createEngine(f.deps);
   assert.equal(await engine.request('task'), 'partial');
