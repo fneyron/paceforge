@@ -84,7 +84,10 @@ async def test_every_answer_carries_the_security_headers(client: AsyncClient, mo
     assert r.headers["x-content-type-options"] == "nosniff"
     assert r.headers["x-frame-options"] == "DENY"
     assert r.headers["referrer-policy"] == "strict-origin-when-cross-origin"
-    assert r.headers["permissions-policy"] == "camera=(), microphone=(), geolocation=()"
+    assert r.headers["permissions-policy"] == ("camera=(), microphone=(), geolocation=(), payment=(), usb=(), "
+                                               "interest-cohort=()")
+    assert r.headers["cross-origin-opener-policy"] == "same-origin"
+    assert r.headers["cross-origin-resource-policy"] == "same-site"
     csp = r.headers["content-security-policy"]
     directives = {d.split(" ")[0]: d for d in csp.split("; ")}
     assert directives["default-src"] == "default-src 'self'"

@@ -261,3 +261,26 @@ async def test_a_form_field_past_starlettes_cap_is_refused_in_french(as_user, te
 
     assert form_refusal("Test invalide.") is None and form_refusal(None) is None
     assert form_refusal("Too many fields. Maximum number of fields is 1000.") == "Envoi refusé : trop de champs."
+
+
+# ── isolation headers ────────────────────────────────────────────────────────
+
+def test_no_page_relies_on_a_window_opener():
+    """Cross-Origin-Opener-Policy: same-origin severs a cross-origin opener: nothing may read one (the printable
+    band's own window.open stays on this origin and drops its opener itself)."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "app"
+    files = [*(root / "templates").rglob("*.html"), *(root / "static" / "js").rglob("*.js")]
+    readers = [f"{f.name}: {m}" for f in files
+               for m in re.findall(r".{20}\.opener\b(?!\s*=\s*null).{0,20}", f.read_text(encoding="utf-8"))]
+    assert not readers, readers
+
+
+async def test_isolation_headers_on_pages_files_and_errors(client):
+    for path in ("/", "/auth/login", "/static/js/app.js", "/nothing-here", "/health"):
+        r = await client.get(path)
+        assert r.headers["cross-origin-opener-policy"] == "same-origin", path
+        assert r.headers["cross-origin-resource-policy"] == "same-site", path
+        assert "payment=()" in r.headers["permissions-policy"] and "usb=()" in r.headers["permissions-policy"]
+    assert "includeSubDomains" not in r.headers["strict-transport-security"]  # until www has its certificate
