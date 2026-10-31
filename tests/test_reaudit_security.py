@@ -12,8 +12,9 @@ from app.main import create_app
 from app.models.lactate import LactateTest
 from app.models.route import Route
 from app.models.user import User
+from app.services import auth as auth_service
 from app.services import coros
-from app.services.auth import hash_password, hash_token, verification_token
+from app.services.auth import TOO_MANY, hash_password, hash_token, verification_token
 from app.services.strava import StravaService
 from tests.test_coros import D30, FakeCoros
 from tests.test_lactate import fields
@@ -117,3 +118,111 @@ async def test_a_verified_email_is_committed_before_the_answer(client, db_sessio
     await db_session.flush()
     assert (await client.get(f"/auth/verify-email?token={token}")).status_code == 200
     assert user.email_verified and commits.await_count == 1
+
+
+# ── the account's login cap never locks its owner's own browsers out ─────────
+
+async def _member(db, email="me@x.fr", password="pw-12345678") -> User:
+    user = User(email=email, password_hash=hash_password(password), email_verified=True)
+    db.add(user)
+    await db.flush()
+    return user
+
+
+def _browser(client) -> AsyncClient:
+    return AsyncClient(transport=client._transport, base_url="https://test")
+
+
+async def _login_from(c, address, email, password="wrong-password"):
+    return await c.post("/auth/login", data={"email": email, "password": password},
+                        headers={"X-Forwarded-For": address})
+
+
+@pytest.fixture
+def alerts(monkeypatch) -> list[str]:
+    sent: list[str] = []
+    monkeypatch.setattr("app.routers.auth.send_login_alert_email", lambda to: sent.append(to) or True)
+    return sent
+
+
+async def test_a_browser_that_signed_in_before_passes_the_account_cap(client, db_session, monkeypatch, alerts):
+    """Five addresses × ten wrong passwords used to lock the owner out for an hour: the browser he signed in with
+    before still gets in (the address limits still hold it); any other browser waits, as before."""
+    monkeypatch.setitem(auth_service.ACCOUNT_LIMITS, "login", (4, 3600))
+    user = await _member(db_session)
+    async with _browser(client) as own:
+        assert (await _login_from(own, "198.51.100.1", user.email, "pw-12345678")).status_code == 302
+        await own.post("/auth/logout")
+        for i in range(5):  # the campaign, each attempt from a browser and an address of its own
+            async with _browser(client) as attacker:
+                await _login_from(attacker, f"203.0.113.{i}", user.email)
+        async with _browser(client) as stranger:
+            r = await _login_from(stranger, "198.51.100.2", user.email, "pw-12345678")
+        assert r.status_code == 429 and TOO_MANY in r.text
+        assert (await _login_from(own, "198.51.100.3", user.email, "pw-12345678")).status_code == 302
+        await own.post("/auth/logout")
+        # the address limits still hold the known browser: ten failures from one address, then a wait
+        for _ in range(10):
+            assert (await _login_from(own, "198.51.100.4", user.email)).status_code == 200
+        assert (await _login_from(own, "198.51.100.4", user.email, "pw-12345678")).status_code == 429
+
+
+async def test_the_known_browser_cookie_is_signed_http_only_and_for_the_auth_routes(client, db_session):
+    user = await _member(db_session)
+    async with _browser(client) as c:
+        r = await _login_from(c, "198.51.100.1", user.email, "pw-12345678")
+    cookie = next(v for v in r.headers.get_list("set-cookie") if v.startswith(f"{auth_service.KNOWN_COOKIE}="))
+    attributes = {part.strip().split("=")[0].lower() for part in cookie.split(";")[1:]}
+    assert {"httponly", "secure", "samesite", "path", "max-age"} <= attributes
+    assert "Path=/auth" in cookie and "SameSite=lax" in cookie and "Max-Age=31536000" in cookie
+    value = cookie.split(";")[0].split("=", 1)[1]
+    assert "me@x.fr" not in value and auth_service.known_version(value, user.email) == 0
+    assert auth_service.known_version(value, "other@x.fr") is None  # names this account only
+    assert auth_service.known_version(value[:-2] + "xx", user.email) is None  # forged
+    # a browser remembers its last accounts, the newest first, never one twice
+    value = auth_service.known_cookie(value, "other@x.fr", 3)
+    value = auth_service.known_cookie(value, user.email, 1)
+    assert auth_service.known_version(value, user.email) == 1 and auth_service.known_version(value, "other@x.fr") == 3
+
+
+async def test_a_known_browser_from_before_a_password_reset_no_longer_passes(client, db_session, monkeypatch,
+                                                                            alerts):
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setitem(auth_service.ACCOUNT_LIMITS, "login", (2, 3600))
+    user = await _member(db_session)
+    async with _browser(client) as old, _browser(client) as resetter:
+        assert (await _login_from(old, "198.51.100.1", user.email, "pw-12345678")).status_code == 302
+        await old.post("/auth/logout")
+        user.password_reset_token = hash_token("reset-token")
+        user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        await db_session.flush()
+        r = await resetter.post("/auth/reset-password", data={"token": "reset-token", "password": "pw-87654321"})
+        assert r.status_code == 302 and auth_service.KNOWN_COOKIE in r.headers.get("set-cookie", "")
+        await resetter.post("/auth/logout")
+        for i in range(3):
+            async with _browser(client) as attacker:
+                await _login_from(attacker, f"203.0.113.{i}", user.email)
+        assert (await _login_from(old, "198.51.100.2", user.email, "pw-87654321")).status_code == 429
+        assert (await _login_from(resetter, "198.51.100.3", user.email, "pw-87654321")).status_code == 302
+
+
+async def test_the_owner_is_told_once_when_the_cap_is_first_reached(client, db_session, monkeypatch, alerts):
+    monkeypatch.setitem(auth_service.ACCOUNT_LIMITS, "login", (2, 3600))
+    user = await _member(db_session)
+    codes = []
+    for i in range(5):
+        async with _browser(client) as attacker:
+            codes.append((await _login_from(attacker, f"203.0.113.{i}", user.email)).status_code)
+            codes.append((await _login_from(attacker, f"203.0.113.{i}", "nobody@x.fr")).status_code)
+    assert codes[::2] == [200, 200, 429, 429, 429] and codes[1::2] == [200, 200, 429, 429, 429]
+    assert alerts == [user.email]  # one email, to the account's owner; none for an address without an account
+    from app.services.email import send_login_alert_email
+
+    sent = []
+    monkeypatch.setattr("app.services.email.send_email", lambda to, subject, html: sent.append((to, subject, html)))
+    send_login_alert_email(user.email)
+    (to, subject, html), = sent
+    assert to == user.email and subject == "Tentatives de connexion à ton compte PaceForge"
+    assert "Plusieurs tentatives de connexion à ton compte ont échoué." in html
+    assert "Si ce n'est pas toi, change ton mot de passe." in html and "/auth/forgot-password" in html

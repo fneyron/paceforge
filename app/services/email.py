@@ -75,3 +75,23 @@ def send_password_reset_email(to: str, token: str) -> bool:
     </div>
     """
     return send_email(to, "Réinitialise ton mot de passe — PaceForge", html)
+
+
+def send_login_alert_email(to: str) -> bool:
+    """The account's login cap was just reached (app.services.auth.ACCOUNT_LIMITS): its owner is told, once per
+    window of the cap."""
+    url = f"{settings.BASE_URL}/auth/forgot-password"
+    html = f"""
+    <div style="font-family: Inter, system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px;">
+        <h2 style="font-size: 20px; font-weight: 700; color: #111;">Tentatives de connexion</h2>
+        <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
+            Plusieurs tentatives de connexion à ton compte ont échoué. Pendant une heure, seuls les appareils où tu
+            t'es déjà connecté peuvent s'y connecter. Si ce n'est pas toi, change ton mot de passe.
+        </p>
+        <a href="{url}"
+           style="display: inline-block; margin-top: 16px; padding: 12px 24px; background: #111; color: #fff; border-radius: 10px; text-decoration: none; font-size: 14px; font-weight: 600;">
+            Changer mon mot de passe
+        </a>
+    </div>
+    """
+    return send_email(to, "Tentatives de connexion à ton compte PaceForge", html)

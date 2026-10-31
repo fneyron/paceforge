@@ -290,7 +290,8 @@ async def test_failed_logins_are_capped_per_account_whatever_the_address(client,
         await c.post("/auth/logout")
         assert (await _login_from(c, "203.0.113.3", user.email)).status_code == 200  # the fourth failure
         n = len(checks)
-        r = await _login_from(c, "198.51.100.7", user.email, "pw-12345678")  # a fresh address, the right password
+        async with AsyncClient(transport=client._transport, base_url="https://test") as fresh:  # another browser
+            r = await _login_from(fresh, "198.51.100.7", user.email, "pw-12345678")  # a fresh address, the password
         assert r.status_code == 429 and TOO_MANY in r.text and len(checks) == n
         assert (await _login_from(c, "198.51.100.7", "other@x.fr")).status_code == 200  # another account: checked
         user.password_reset_token = auth_service.hash_token("reset-token")
