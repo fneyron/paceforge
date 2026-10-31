@@ -470,7 +470,7 @@ function Companion() {
           }
           if (data.status === 'cancelled' && sameScreen(event.nativeEvent.url, task.from)) {
             softNavigation.current = null; setTab(tabForUrl(task.from) || 'health');
-            setError('La sauvegarde du ressenti prend trop de temps. Réessaie dans un instant.'); return;
+            setError('La sauvegarde prend trop de temps. Réessaie dans un instant.'); return;
           }
           if (data.status !== 'ready' || !sameScreen(event.nativeEvent.url, task.target)) return;
           softNavigation.current = null; documentReady.current = true;
