@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
-from sqlalchemy import delete, func, inspect, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
@@ -292,22 +292,13 @@ async def export_data(user: User = Depends(get_current_user), db: AsyncSession =
     })
 
 
-# Tables of the features switched off (the AI analyses, chat, weekly digests, plan generator, old simulations): no
-# model maps them, the database still has them (alembic h8e9f0a1b2c3) until a release drops them. Their keys do not
-# all cascade from users (generated_plans.user_id has no foreign key, simulations.user_id neither: only its route_id
-# cascades), so an account's rows there are deleted by name, in each table that exists. analyses has no user_id: its
-# rows go by the account's activities. Alembic j0a1b2c3d4e5 removed the orphans the older deletions left.
-LEGACY_USER_TABLES = ("generated_plans", "simulations", "chat_messages", "weekly_digests")
-
-
 async def _delete_legacy_rows(db: AsyncSession, user_id: int) -> None:
-    present = set(await db.run_sync(lambda session: inspect(session.connection()).get_table_names()))
-    if "analyses" in present:
-        await db.execute(text("DELETE FROM analyses WHERE activity_id IN "
-                              "(SELECT id FROM activities WHERE user_id = :uid)"), {"uid": user_id})
-    for table in LEGACY_USER_TABLES:
-        if table in present:  # a name from the constant above, never from the request
-            await db.execute(text(f"DELETE FROM {table} WHERE user_id = :uid"), {"uid": user_id})
+    """The account's rows in the tables of the features switched off (services/legacy_tables), in each that exists:
+    no model maps them, some have no key to users."""
+    from app.services import legacy_tables
+
+    for table in await legacy_tables.present(db):  # a name from its constant, never from the request
+        await db.execute(text(f"DELETE FROM {table} WHERE {legacy_tables.of_account(table)}"), {"uid": user_id})
 
 
 @router.post("/settings/delete-account")
