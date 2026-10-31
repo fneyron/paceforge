@@ -1,0 +1,1 @@
+event.preventDefault(); var f = this; var msg = 'Effacer définitivement tes données de santé ? Tes sources seront déconnectées et tes téléphones dissociés.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Effacer'); } else if (confirm(msg)) { f.submit(); }

@@ -168,7 +168,11 @@ async def test_the_sante_card_asks_the_accounts_holding_health_data(client, db_s
                                     value=420, source="COROS"))
         await db_session.flush()
         page = (await c.get("/sante")).text
-        assert "consent-card-title" in page and "J’accepte" in page and 'href="/settings#connections"' in page
+        assert "consent-card-title" in page and "J’accepte" in page
+        card = page[page.index('class="pf-consent-card"'):page.index("</section>", page.index("pf-consent-card"))]
+        assert 'action="/settings/health-consent/withdraw"' in card and "Refuser et effacer" in card
+        assert ERASE_CONFIRM in card and 'href="/sante/consentement?next=%2Fsante">Ce qui est enregistré' in card
+        assert 'class="pf-panel' not in card  # white, as the rings' card
         assert page.index("consent-card-title") < page.find('class="pf-dials') or 'class="pf-dials' not in page
         r = await c.post("/sante/consentement", data={"next": "/sante", "accept": "1"})
         assert r.headers["location"] == "/sante"
@@ -181,15 +185,55 @@ async def test_a_linked_source_alone_asks_too(client, db_session, newcomer, no_c
     assert await health_consent.holds_health_data(db_session, newcomer.id)
 
 
-async def test_settings_show_the_consent_and_its_withdrawal(client, test_user, newcomer, no_commit):
+ERASE_CONFIRM = ("var msg = 'Effacer définitivement tes données de santé ? Tes sources seront déconnectées et "
+                 "tes téléphones dissociés.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, "
+                 "'Effacer'); }")
+
+
+async def test_settings_show_the_consent_and_its_withdrawal(client, db_session, test_user, newcomer, no_commit):
     async with _as(client, test_user) as c:
         page = (await c.get("/settings")).text
         assert "consentement donné le 25 octobre 2026" in page
-        assert 'action="/settings/health-consent/withdraw"' in page and "Retirer mon consentement" in page
-        assert "Tes sources seront déconnectées et tes données de santé effacées." in page
+        fold = page[page.index('<details class="pf-consent-withdraw"'):page.index("</details>",
+                                                                                   page.index("pf-consent-withdraw"))]
+        assert 'action="/settings/health-consent/withdraw"' in fold and "Retirer mon consentement" in fold
+        assert ERASE_CONFIRM in fold  # confirmed before anything is erased
+        assert "Tes sources seront déconnectées, tes téléphones dissociés et tes données de santé effacées." in fold
+        assert "Restent Strava, tes activités avec leur fréquence cardiaque, tes plans" in fold
+        assert fold.index('href="/settings/export"') < fold.index('type="submit"')  # the export first
     async with _as(client, newcomer) as c:
         page = (await c.get("/settings")).text
-        assert "pas de consentement" in page and "/settings/health-consent/withdraw" not in page
+        assert "pas de consentement" in page and "/settings/health-consent/withdraw" not in page  # nothing held
+        db_session.add(MobileDaily(user_id=newcomer.id, platform="ios", date=datetime.now(timezone.utc).date(),
+                                   metric="steps", value=8000, sources=["iPhone"]))
+        await db_session.flush()
+        page = (await c.get("/settings")).text
+        fold = page[page.index('<details class="pf-consent-withdraw"'):]
+        assert "<summary class=\"pf-link\">Refuser et effacer</summary>" in fold and ERASE_CONFIRM in fold
+
+
+async def test_settings_link_the_legal_pages_and_say_where_the_export_is_in_the_app(client, test_user, no_commit):
+    async with _as(client, test_user) as c:
+        page = (await c.get("/settings")).text
+    legal = page[page.index('class="pf-set-legal"'):]
+    for href in ("/privacy", "/cgu", "/mentions-legales"):
+        assert f'href="{href}"' in legal[:400], href
+    assert '<p class="pf-native-only text-sm text-gray-500">Export&nbsp;: depuis paceforge.fr dans un navigateur.</p>' in page
+
+
+async def test_refusing_erases_the_health_data_of_an_account_that_never_consented(client, db_session, newcomer,
+                                                                                  no_commit):
+    db_session.add_all([HealthMetric(user_id=newcomer.id, date=datetime.now(timezone.utc).date(), metric="sleep",
+                                     value=420, source="COROS"),
+                        GarminConnection(user_id=newcomer.id, di_client_id="GARMIN", access_token_encrypted=b"x")])
+    await db_session.flush()
+    async with _as(client, newcomer) as c:
+        r = await c.post("/settings/health-consent/withdraw")
+        assert r.status_code == 303 and r.headers["location"] == "/settings#donnees"
+        page = (await c.get("/settings")).text
+    assert 'role="status">Données de santé effacées. Tes sources sont déconnectées.</p>' in page
+    assert not await health_consent.holds_health_data(db_session, newcomer.id)
+    assert "consent-card-title" not in page
 
 
 async def _count(db, model, user_id) -> int:

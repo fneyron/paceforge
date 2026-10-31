@@ -1,0 +1,11 @@
+{#- Réglages › Données et confidentialité: erasing the health data, folded (« Retirer mon consentement » once given,
+    « Refuser et effacer » for an account holding some without it). What goes and what stays, the export first
+    where a browser can save it, then a confirmation (the native one) before anything is erased. -#}
+<details class="pf-consent-withdraw" id="effacer-sante">
+    <summary class="pf-link">{{ erase_summary }}</summary>
+    <form method="post" action="/settings/health-consent/withdraw" onsubmit="{% include 'partials/_erase_confirm.html' %}">
+        <p class="text-sm text-gray-500">Tes sources seront déconnectées, tes téléphones dissociés et tes données de santé effacées. Restent {{ consent_kept }}.</p>
+        <a class="pf-link pf-browser-only" href="/settings/export" download>Télécharger mes données ›</a>
+        <button type="submit" class="pf-btn pf-btn-sm bg-danger text-white">{{ erase_button }}</button>
+    </form>
+</details>
