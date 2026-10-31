@@ -20,6 +20,7 @@ from app.log_redaction import install as mask_secrets_in_access_logs
 from app.middleware.body_limit import BodySizeLimitMiddleware
 from app.middleware.security import CrossSiteRequestMiddleware, SecurityHeadersMiddleware
 from app.sentry import init_sentry
+from app.services.auth import QUOTAS, client_ip, over_quota
 
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
@@ -74,15 +75,23 @@ def register_font_types() -> None:
 class VersionedStaticFiles(StaticFiles):
     """Reuse build-tagged assets without a request on every page navigation."""
 
+    # The icons, the images and the manifest keep URLs of their own (?v=5 in base.html and in the manifest, which a
+    # browser should not see change at every deploy; none on the og image): a week, rather than a revalidation on
+    # every page. A new icon gets a new ?v=.
+    WEEK = 7 * 24 * 60 * 60
+    OWN_VERSIONS = ("img/", "manifest.json")
+
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
         if response.status_code in {200, 304}:
             # Do not freeze an old URL if its request reaches a newer deployment.
             # Private is intentional: SessionMiddleware may refresh its cookie.
-            current = Request(scope).query_params.get("v") == BUILD_ID
-            response.headers["Cache-Control"] = (
-                "private, max-age=31536000, immutable" if current else "no-cache"
-            )
+            if Request(scope).query_params.get("v") == BUILD_ID:
+                response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
+            elif path.replace("\\", "/").startswith(self.OWN_VERSIONS):
+                response.headers["Cache-Control"] = f"private, max-age={self.WEEK}"
+            else:
+                response.headers["Cache-Control"] = "no-cache"
         return response
 
 
@@ -286,12 +295,16 @@ def create_app() -> FastAPI:
                         f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>\n',
                         media_type="application/xml", headers={"Cache-Control": "public, max-age=86400"})
 
-    # Health check: fast for the container's and the proxy's probes. ?deep=1 (an external monitor) also asks
-    # the database and Redis: 503 with the failing flag when one does not answer within 2 s.
+    # Health check: fast for the container's and the proxy's probes (and the deploy's smoke test, which reads the
+    # build). ?deep=1 (an external monitor) also asks the database and Redis: 503 with the failing flag when one does
+    # not answer within 2 s; public, so held to 30 a minute per address (QUOTAS["health"]): 429 past them.
     @app.get("/health")
-    async def health_check(deep: bool = False):
+    async def health_check(request: Request, deep: bool = False):
         body = {"status": "ok", "app": settings.APP_NAME, "build": BUILD_ID}
         status = 200
+        if deep and await over_quota("health", ip=client_ip(request)):
+            return JSONResponse({"detail": "Trop de vérifications : réessaie dans une minute."}, status_code=429,
+                                headers={"Cache-Control": "no-store", "Retry-After": str(QUOTAS["health"][0])})
         if deep:
             body["db"], body["redis"] = await asyncio.gather(_db_answers(), _redis_answers())
             if not (body["db"] and body["redis"]):

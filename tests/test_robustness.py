@@ -45,8 +45,19 @@ async def test_string_hr_caps_do_not_break_the_passage_table(as_user: AsyncClien
 
 
 @pytest.mark.asyncio
-async def test_passage_table_failure_is_a_500_not_a_swapped_error_div(as_user: AsyncClient):
+async def test_passage_table_failure_is_a_500_not_a_swapped_error_div(as_user: AsyncClient, monkeypatch):
+    """A calculation that fails is a bare 500 (the page keeps its table and offers « réessayer »); a plan the page
+    posted unreadable is a 400 in French (re-audit 2026-10-31: it was a 500), never swapped in either."""
+    from app.routers import simulator
+
     r = await as_user.post("/partials/simulator/passage-times", data={"course_json": "{not json", "checkpoints_json": "[]", "start_hour": 6, "start_minute": 0})
+    assert r.status_code == 400 and "Plan illisible" in r.text
+
+    async def fails(*args, **kwargs):
+        raise RuntimeError("calculation bug")
+    monkeypatch.setattr(simulator, "_passage_table_context", fails)
+    route_id = await _create_route(as_user)
+    r = await as_user.post("/partials/simulator/passage-times", data={"route_id": route_id, "checkpoints_json": "[]", "start_hour": 6, "start_minute": 0})
     assert r.status_code == 500 and r.text == ""
 
 

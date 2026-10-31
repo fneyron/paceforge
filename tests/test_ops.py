@@ -80,6 +80,26 @@ async def test_deep_health_is_503_when_the_database_is_down(client, monkeypatch)
     assert body["status"] == "degraded" and body["db"] is False and body["redis"] is True
 
 
+async def test_deep_health_is_rate_limited_per_address_the_plain_one_never(client, engine, monkeypatch):
+    """Public for the monitors, the deep check costs a database and a Redis round trip: 30 a minute per address, then
+    429 (with Retry-After) until the minute is over; another address keeps its own; the plain /health (Coolify's
+    healthcheck, the deploy's smoke test) is never counted and keeps its full answer."""
+    from app import database
+
+    monkeypatch.setattr(database, "engine", engine)
+    _fake_redis(monkeypatch)
+    codes = [(await client.get("/health?deep=1", headers={"X-Forwarded-For": "203.0.113.5"})).status_code
+             for _ in range(31)]
+    assert codes == [200] * 30 + [429]
+    refused = await client.get("/health?deep=1", headers={"X-Forwarded-For": "203.0.113.5"})
+    assert refused.status_code == 429 and refused.headers["retry-after"] == "60"
+    assert refused.headers["cache-control"] == "no-store" and "réessaie dans une minute" in refused.json()["detail"]
+    assert (await client.get("/health?deep=1", headers={"X-Forwarded-For": "198.51.100.5"})).status_code == 200
+    for _ in range(40):
+        r = await client.get("/health", headers={"X-Forwarded-For": "203.0.113.5"})
+        assert r.status_code == 200 and r.json()["status"] == "ok" and len(r.json()["build"]) == 64
+
+
 # ── Sentry ───────────────────────────────────────────────────────────────────
 
 def test_sentry_does_nothing_without_a_dsn(monkeypatch):
@@ -144,9 +164,17 @@ def test_sentry_never_sends_bodies_local_variables_queries_or_cookies(monkeypatc
                     "query_string": "token=S3CRET", "data": {"password": "hunter22", "token": "S3CRET"},
                     "cookies": {"paceforge_session": "abc"},
                     "headers": {"Cookie": "paceforge_session=abc", "Authorization": "Bearer t0k", "User-Agent": "UA",
-                                "X-Forwarded-For": "203.0.113.9"}},
+                                "X-Forwarded-For": "203.0.113.9",
+                                "Referer": "https://paceforge.fr/auth/reset-password?token=R3F"}},
         "logentry": {"message": "GET %s failed", "params": ["/auth/verify-email?token=S3CRET"]},
-        "breadcrumbs": {"values": [{"category": "uvicorn.access", "message": "GET /x?code=C0DE&state=S7 200"}]},
+        "breadcrumbs": {"values": [
+            {"category": "uvicorn.access", "message": "GET /x?code=C0DE&state=S7 200"},
+            # an integration's own crumb: the URL and its query in its data, nested values too
+            {"category": "httplib", "data": {"url": "https://www.strava.com/oauth/token?client_secret=D4TA",
+                                             "http.query": "refresh_token=QU3RY", "status_code": 200,
+                                             "args": ["/auth/verify-email?token=L1ST", 3],
+                                             "extra": {"next": "?ticket=N3ST"}}},
+        ]},
         "exception": {"values": [{"type": "ValueError"}]},
     }
     scrubbed = options["before_send"](event, {})
@@ -154,8 +182,11 @@ def test_sentry_never_sends_bodies_local_variables_queries_or_cookies(monkeypatc
                                    "headers": {"User-Agent": "UA"}}
     assert scrubbed["logentry"]["params"] == ["/auth/verify-email?token=***"]
     assert scrubbed["breadcrumbs"]["values"][0]["message"] == "GET /x?code=***&state=*** 200"
+    assert scrubbed["breadcrumbs"]["values"][1]["data"] == {
+        "url": "https://www.strava.com/oauth/token?client_secret=***", "http.query": "refresh_token=***",
+        "status_code": 200, "args": ["/auth/verify-email?token=***", 3], "extra": {"next": "?ticket=***"}}
     assert scrubbed["exception"] == {"values": [{"type": "ValueError"}]}  # the error itself is what is reported
-    for secret in ("S3CRET", "hunter22", "abc", "t0k", "C0DE", "203.0.113.9"):
+    for secret in ("S3CRET", "hunter22", "abc", "t0k", "C0DE", "203.0.113.9", "R3F", "D4TA", "QU3RY", "L1ST", "N3ST"):
         assert secret not in repr(scrubbed)
 
 
@@ -212,3 +243,81 @@ def test_env_example_documents_every_setting_and_nothing_stale():
                     "AWS_ENDPOINT_URL", "AWS_DEFAULT_REGION"}
     assert keys - fields <= compose_only, keys - fields - compose_only
     assert not keys & AI_SETTINGS
+
+
+# ── the Dockerfile's uvicorn ─────────────────────────────────────────────────
+
+def _uvicorn_command() -> str:
+    cmd = re.search(r'^CMD \["sh", "-c", "(.*)"\]$', (ROOT / "Dockerfile").read_text(encoding="utf-8"), re.M)[1]
+    return cmd.split("exec ", 1)[1]
+
+
+async def test_uvicorn_trusts_the_proxy_headers_from_the_private_networks_only():
+    """Traefik reaches the app over a private network: the X-Forwarded-For hop uvicorn takes as the client (its access
+    log, request.client) is the right-most one outside those networks, the address Traefik saw, never a first hop the
+    client wrote itself; the limits' client_ip reads the same one. No Server header either."""
+    import ipaddress
+
+    from starlette.requests import Request
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    from app.services.auth import client_ip
+
+    command = _uvicorn_command()
+    assert "--proxy-headers" in command and "--no-server-header" in command
+    trusted = re.search(r"--forwarded-allow-ips='([^']+)'", command)[1]
+    assert "*" not in trusted
+    for entry in trusted.split(","):
+        assert ipaddress.ip_network(entry).is_private, entry  # loopback, RFC 1918, IPv6 unique local
+    seen = {}
+
+    async def app(scope, receive, send):
+        seen["client"], seen["limits"] = scope["client"][0], client_ip(Request(scope))
+
+    async def call(peer, forwarded):
+        scope = {"type": "http", "headers": [(b"x-forwarded-for", forwarded.encode())], "client": (peer, 4000)}
+        await ProxyHeadersMiddleware(app, trusted_hosts=trusted)(scope, None, None)
+        return seen["client"], seen["limits"]
+
+    for traefik in ("172.18.0.2", "10.0.1.7", "192.168.5.4", "127.0.0.1"):
+        assert await call(traefik, "6.6.6.6, 203.0.113.7") == ("203.0.113.7", "203.0.113.7")  # the forged hop ignored
+    assert (await call("198.51.100.4", "6.6.6.6"))[0] == "198.51.100.4"  # not the proxy: its header is not read
+
+
+# ── the image's stylesheet: minified, its build id still the tree's ──────────
+
+def test_the_image_minifies_its_stylesheet_after_fixing_its_build_id(tmp_path):
+    """The Dockerfile's step, run on a copy of what it copies: interface.css comes out minified, and the container
+    still reports the checked-out tree's build id (the deploy's smoke test waits for it), fixed before the CSS
+    changed; without that file it would report another one."""
+    import shutil
+    import subprocess
+
+    from app.build import BUILD_ID, DEPLOYED, fingerprint
+
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    step = "RUN python -m app.build > app/BUILD_ID && python -m app.css_minify app/static/css/interface.css"
+    assert dockerfile.index("COPY app/ ./app/") < dockerfile.index(step) < dockerfile.index("USER app")
+    for ignored in (".dockerignore", ".gitignore"):  # only the image's own build writes it
+        assert "app/BUILD_ID" in (ROOT / ignored).read_text().splitlines(), ignored
+    for part in DEPLOYED:
+        source = ROOT / part
+        if source.is_dir():
+            shutil.copytree(source, tmp_path / part, ignore=shutil.ignore_patterns("__pycache__", "BUILD_ID"))
+        else:
+            shutil.copy2(source, tmp_path / part)
+    assert fingerprint(tmp_path, DEPLOYED) == BUILD_ID  # the copy is the tree
+    css = tmp_path / "app/static/css/interface.css"
+    raw = css.stat().st_size
+    for command in step.removeprefix("RUN ").split(" && "):  # « python -m … [> file] », as the image's shell runs it
+        args, target = command.split(), None
+        if ">" in args:
+            args, target = args[:args.index(">")], args[-1]
+        out = subprocess.run([sys.executable, *args[1:]], cwd=tmp_path, capture_output=True, text=True, check=True)
+        if target:
+            (tmp_path / target).write_text(out.stdout)
+    assert css.stat().st_size < raw * 0.8 and "/*" not in css.read_text(encoding="utf-8")
+    assert fingerprint(tmp_path, DEPLOYED) != BUILD_ID  # the minified file alone would change it
+    reported = subprocess.run([sys.executable, "-c", "from app.build import BUILD_ID; print(BUILD_ID)"], cwd=tmp_path,
+                              capture_output=True, text=True, check=True).stdout.strip()
+    assert reported == BUILD_ID

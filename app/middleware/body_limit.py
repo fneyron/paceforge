@@ -8,7 +8,9 @@ route answers then gives way to the 413).
 
 The caps, one table: each route that takes a file or a plan gets what it needs plus a margin, everything else
 DEFAULT_LIMIT. The routes keep their own, finer checks (a GPX past simulator.MAX_GPX_BYTES gets its message from the
-route); tests/test_body_limit checks the two stay consistent.
+route); tests/test_body_limit checks the two stay consistent. A route that needs a signed-in session (a GPX, a plan)
+gets its cap only from a request that carries one (SessionMiddleware runs before this one, app.main): a request
+without one gets DEFAULT_LIMIT, so no one reaches the sign-in redirect with a 13 MB body.
 """
 import logging
 import re
@@ -24,41 +26,55 @@ MiB = 1024 * KiB
 GPX = 12 * MiB  # app.routers.simulator.MAX_GPX_BYTES
 MULTIPART_MARGIN = 1 * MiB  # the form's framing and its other fields
 
-# (path, bytes allowed): the first pattern matching the whole path wins
-BODY_LIMITS: tuple[tuple[re.Pattern[str], int], ...] = tuple((re.compile(pattern), limit) for pattern, limit in (
-    # one GPX file (multipart)
-    (r"/partials/simulator/(bike-)?gpx-upload", GPX + MULTIPART_MARGIN),
-    (r"/api/simulator/routes/\d+/reimport", GPX + MULTIPART_MARGIN),
-    # a triathlon: a bike GPX and a run GPX
-    (r"/api/simulator/triathlon", 2 * GPX + MULTIPART_MARGIN),
-    # a plan not saved yet posts its whole course, URL-encoded (route_validation reads 8 M characters at most;
-    # 1.6 MB for a 150 000-point GPX, 2.2 MB encoded)
-    (r"/api/simulator/routes|/partials/simulator/passage-times", 16 * MiB),
-    # the phone's uploads: the same caps as its routes (routers.mobile.MAX_NIGHT_BYTES, MAX_DAILY_BYTES)
-    (r"/api/mobile/nights", 2 * MiB),
-    (r"/api/mobile/daily", 64 * KiB),
-))
+FORM_FIELD = 1 * MiB  # Starlette's own cap on one form field (Request.form's max_part_size): a 400 past it
+SIGNED_IN, ANYONE = True, False  # who gets a route's cap: a signed-in session only, or any request
+
+# (path, bytes allowed, who gets them): the first pattern matching the whole path wins
+BODY_LIMITS: tuple[tuple[re.Pattern[str], int, bool], ...] = tuple(
+    (re.compile(pattern), limit, who) for pattern, limit, who in (
+        # one GPX file (multipart)
+        (r"/partials/simulator/(bike-)?gpx-upload", GPX + MULTIPART_MARGIN, SIGNED_IN),
+        (r"/api/simulator/routes/\d+/reimport", GPX + MULTIPART_MARGIN, SIGNED_IN),
+        # a triathlon: a bike GPX and a run GPX
+        (r"/api/simulator/triathlon", 2 * GPX + MULTIPART_MARGIN, SIGNED_IN),
+        # a plan not saved yet posts its whole course, URL-encoded, in one field: Starlette refuses a field past
+        # FORM_FIELD (1 MiB), so the course, its points and its weather fit in twice that
+        (r"/api/simulator/routes|/partials/simulator/passage-times", 2 * FORM_FIELD, SIGNED_IN),
+        # the phone's uploads (its bearer token, no session): the same caps as its routes
+        # (routers.mobile.MAX_NIGHT_BYTES, MAX_DAILY_BYTES)
+        (r"/api/mobile/nights", 2 * MiB, ANYONE),
+        (r"/api/mobile/daily", 64 * KiB, ANYONE),
+    ))
 DEFAULT_LIMIT = 1 * MiB  # forms, the webhook's JSON, everything else
 
 TOO_LARGE = "Envoi trop volumineux."  # the phone's routes say the same (routers.mobile.capped_body)
 GPX_TOO_LARGE = f"Ce fichier GPX est trop lourd ({GPX // MiB} Mo au plus)."  # as routers.simulator says it
+# a GPX form posted without a session (it ended while the page stayed open): the file may well be within its cap
+SIGNED_OUT = "Ta session a expiré : reconnecte-toi, puis importe ton fichier à nouveau."
 # the GPX forms show the answer in their own error box (app.js swaps a 413 there, as a 429)
 GPX_FORMS = re.compile(r"/partials/simulator/(bike-)?gpx-upload|/api/simulator/routes/\d+/reimport"
                        r"|/api/simulator/triathlon")
 
 
-def body_limit(path: str) -> int:
-    for pattern, limit in BODY_LIMITS:
+def body_limit(path: str, signed_in: bool = True) -> int:
+    """The bytes a request to `path` may send, with a signed-in session or without one."""
+    for pattern, limit, who in BODY_LIMITS:
         if pattern.fullmatch(path):
-            return limit
+            return limit if signed_in or who is ANYONE else DEFAULT_LIMIT
     return DEFAULT_LIMIT
 
 
-def too_large(path: str) -> Response:
+def too_large(path: str, signed_in: bool = True) -> Response:
     if GPX_FORMS.fullmatch(path):
         return HTMLResponse('<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
-                            f"{GPX_TOO_LARGE}</div>", status_code=413)
+                            f"{GPX_TOO_LARGE if signed_in else SIGNED_OUT}</div>", status_code=413)
     return JSONResponse({"detail": TOO_LARGE}, status_code=413)
+
+
+def _signed_in(scope: Scope) -> bool:
+    """A session that names an account (its signature checked by SessionMiddleware; the route checks the rest)."""
+    session = scope.get("session")
+    return bool(session and session.get("user_id"))
 
 
 class BodyTooLargeError(Exception):
@@ -74,11 +90,12 @@ class BodySizeLimitMiddleware:
             await self.app(scope, receive, send)
             return
         path: str = scope["path"]
-        limit = body_limit(path)
+        signed_in = _signed_in(scope)
+        limit = body_limit(path, signed_in)
         declared = Headers(scope=scope).get("content-length")
         if declared is not None and (not declared.isdigit() or int(declared) > limit):
             logger.warning("%s %s refused: %s bytes declared, %d allowed", scope["method"], path, declared[:20], limit)
-            await too_large(path)(scope, receive, send)
+            await too_large(path, signed_in)(scope, receive, send)
             return
 
         received, over, started = 0, False, False
@@ -109,4 +126,4 @@ class BodySizeLimitMiddleware:
         if over:
             logger.warning("%s %s refused: body past %d bytes", scope["method"], path, limit)
             if not started:
-                await too_large(path)(scope, receive, send)
+                await too_large(path, signed_in)(scope, receive, send)

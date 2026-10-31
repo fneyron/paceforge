@@ -324,7 +324,9 @@ async def delete_account(
     # rows are deleted by name first; tests/test_account_deletion checks that none is missing.
     await _delete_legacy_rows(db, user_id)
     await db.execute(delete(User).where(User.id == user_id))
-    await db.flush()
+    # committed before the redirect: get_db's own commit runs only once the response is sent, so a failed commit
+    # would follow a « Ton compte a été supprimé. » already shown, and the next request could still find the account
+    await db.commit()
 
     request.session.clear()
     logger.warning("Account %d deleted successfully", user_id)

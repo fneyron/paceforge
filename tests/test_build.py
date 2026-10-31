@@ -51,3 +51,22 @@ def test_build_covers_what_a_deploy_ships(tmp_path):
         before = fingerprint(tmp_path, DEPLOYED)
         (tmp_path / name).write_text("new " + name)
         assert fingerprint(tmp_path, DEPLOYED) != before, name
+
+
+def test_an_image_reports_the_build_id_it_fixed_before_minifying(tmp_path):
+    """app/BUILD_ID (written by the Dockerfile before it minifies the CSS) is the build id when it holds one; a tree
+    without it, or with anything else in it, fingerprints itself. It never counts in a fingerprint."""
+    from app.build import FROZEN, frozen
+
+    assert FROZEN.name == "BUILD_ID" and FROZEN.parent.name == "app" and not FROZEN.exists()  # never in a tree
+    kept = tmp_path / "BUILD_ID"
+    assert frozen(kept) is None
+    kept.write_text("ab" * 32 + "\n")
+    assert frozen(kept) == "ab" * 32
+    for junk in ("", "not a build id", "AB" * 32, "ab" * 31):
+        kept.write_text(junk)
+        assert frozen(kept) is None, junk
+    (tmp_path / "app.py").write_text("code")
+    before = fingerprint(tmp_path)
+    kept.write_text("cd" * 32)
+    assert fingerprint(tmp_path) == before

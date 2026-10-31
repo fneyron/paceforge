@@ -102,10 +102,12 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     surface = _surface(html)
     assert surface.count("pf-btn-primary") == 1 and html.count("data-primary-export") == 1 and "Exporter pour ma montre" in html
     assert "pf-btn-icon" not in surface
-    for call in ("exportPace('gpx')", "exportPace('tcx')", "exportPace('csv')", "exportGpx()"):
+    for call in ('data-sim="exportPace" data-sim-arg="gpx"', 'data-sim="exportPace" data-sim-arg="tcx"',
+                 'data-sim="exportPace" data-sim-arg="csv"', 'data-sim="exportGpx"'):  # app/static/js/gpx-result.js
         assert call in html, call
     # Optimiste / Cible / Sécurité are columns of the list (owner, 2026-10-09): no plan selector, no chip
     assert 'id="scn-seg"' not in html and 'id="scn-wrap"' not in html and 'id="scn-chip"' not in html and "setScn" not in html
+    assert "setScn" not in (ROOT / "app/static/js/gpx-result.js").read_text(encoding="utf-8")
     panel = html.split('id="obj-panel"')[1].split('class="pf-arr"')[0]
     assert "Ton estimation" in panel and "pf-objok" in panel
     # no « Outils » column (the desktop side pane holds only the profile), no legend, no weather chip in the meta line
@@ -129,7 +131,8 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
         assert gone not in html, gone
     # the map is an overlay, closed on load, never restored from a remembered state
     assert re.search(r'id="map-wrap" class="hidden pf-mapov"', html)
-    assert "getItem('pf.map')" not in html and "pf.map3d" in html
+    script = (ROOT / "app/static/js/gpx-result.js").read_text(encoding="utf-8")  # the plan's script
+    assert "getItem('pf.map')" not in script and "pf.map3d" in script
     # the old tab strip is gone, the debrief waits for race day
     assert "rtab-plan" not in html and 'id="rtab-realise"' not in html
 
@@ -249,8 +252,9 @@ async def test_menu_lists_share_print_then_race_settings_and_gpx(as_user: AsyncC
     assert menu.count('class="pf-menu-sep"') == 1 and "<small" not in menu
     # a plain disclosure (like Mes courses' row menu): no menu/menuitem roles promising arrow keys it does not have
     assert 'role="menu' not in menu and '<summary class="pf-ibtn pf-more' in menu
-    assert "sharePlan()" in menu and "printPlan()" in menu and "switchRouteTab('reference')" not in menu
-    assert "openRaceSheet()" in menu and "openTool('advanced')" in menu and 'type="file" name="gpx_file"' in menu
+    assert 'data-sim="sharePlan"' in menu and 'data-sim="printPlan"' in menu and 'data-sim-arg="reference"' not in menu
+    assert 'data-sim="openRaceSheet"' in menu and 'data-sim="openTool" data-sim-arg="advanced"' in menu
+    assert 'type="file" name="gpx_file"' in menu
 
 
 def test_debrief_mode_rules():
@@ -286,7 +290,8 @@ async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_ses
     assert _menu_items(html) == ["Exporter pour ma montre", "Partager le plan", "Bande imprimable", "Garder hors connexion",
                                  "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"]
     assert 'id="rtab-realise"' in html and "/result?" in html
-    for call in ("exportPace('gpx')", "exportPace('tcx')", "exportPace('csv')", "exportGpx()"):
+    for call in ('data-sim="exportPace" data-sim-arg="gpx"', 'data-sim="exportPace" data-sim-arg="tcx"',
+                 'data-sim="exportPace" data-sim-arg="csv"', 'data-sim="exportGpx"'):  # app/static/js/gpx-result.js
         assert call in html, call
     # a linked result counts as a run race, even with a date ahead
     rid = await _route(as_user, race_date="2099-10-02")
@@ -351,7 +356,7 @@ async def test_an_opened_row_has_the_leg_how_to_run_it_one_line_of_facts_and_two
     assert "Drop bag ici" in det and "rien de prévu" not in t  # nothing planned in it: just « Drop bag ici. »
     actions = re.findall(r"<button[^>]*>([^<]+)</button>", det.split('class="pf-det-actions"')[1])
     assert actions == ["Modifier ce point", "Voir sur la carte"]
-    assert "openSheet(1)" in det and "flyToCp(1)" in det
+    assert 'data-sim="openSheet" data-sim-arg="1"' in det and 'data-sim="flyToCp" data-sim-arg="1"' in det
     first = t.split('data-detail="0"')[1].split('data-row role="listitem"')[0]
     assert "depuis" not in first and "Point d'eau" in unescape(first)  # the previous row is right above
     # gone from the row: the poste chip, the plans line, pinning and deleting (all in the point dialog)
@@ -396,7 +401,7 @@ async def test_no_checkpoint_shows_the_empty_state(as_user: AsyncClient):
     rid = await _route(as_user, cps=[])
     t = await _rows(as_user, rid, [])
     assert "data-empty-state" in t and "Ajoute tes ravitos pour avoir ton heure de passage à chacun." in t
-    assert "+ Ajouter un ravito" in t and "openAddSheet()" in t
+    assert "+ Ajouter un ravito" in t and 'data-sim="openAddSheet"' in t
     assert "data-empty-state" not in await _rows(as_user, rid, CPS)
 
 

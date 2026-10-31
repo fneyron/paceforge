@@ -557,6 +557,9 @@ async def _passage_table_context(
     }
 
 
+PLAN_UNREADABLE = "Plan illisible : recharge la page."
+
+
 @router.post("/partials/simulator/passage-times", response_class=HTMLResponse)
 async def passage_times(
     request: Request,
@@ -580,6 +583,18 @@ async def passage_times(
 ):
     from app.schemas.simulator import CourseProfile
     from app.services.checkpoints import normalize_checkpoint
+    from app.services.route_validation import read_json
+
+    # what the page posted, read first: unreadable, it is refused (400), never a calculation failure (500)
+    try:
+        posted_course = CourseProfile.model_validate(read_json(course_json)) if course_json else None
+        posted_points = read_json(checkpoints_json)
+        if not isinstance(posted_points, list):
+            raise ValueError("Liste de passages invalide")
+        checkpoints = [normalize_checkpoint(c) for c in posted_points]
+        hourly_weather = read_json(hourly_json) if hourly_json else None
+    except (ValueError, TypeError, AttributeError, OverflowError, RecursionError):  # pydantic's errors are ValueErrors
+        return HTMLResponse(f'<div class="text-sm text-red-600">{PLAN_UNREADABLE}</div>', status_code=400)
 
     try:
         # The course is 175 KB+ of GPX points: once the route is saved the
@@ -590,14 +605,12 @@ async def passage_times(
                 select(Route).where(Route.id == route_id, Route.user_id == user.id)
             )
             route_obj = _visible(r_res.scalar_one_or_none())
-        if course_json:
-            course = CourseProfile(**json.loads(course_json))
+        if posted_course is not None:
+            course = posted_course
         elif route_obj and route_obj.course_json:
             course = CourseProfile(**route_obj.course_json)
         else:
             return HTMLResponse('<div class="text-sm text-red-600">Parcours introuvable.</div>', status_code=404)
-        checkpoints = [normalize_checkpoint(c) for c in json.loads(checkpoints_json)]
-        hourly_weather = json.loads(hourly_json) if hourly_json else None
         if hourly_weather is None and route_obj and route_obj.weather_json:
             hourly_weather = (route_obj.weather_json or {}).get("hourly")
             if heat_factor == 1.0:
@@ -1088,7 +1101,7 @@ async def rename_route(
     if not route:
         return JSONResponse({"error": "Parcours non trouve"}, status_code=404)
     route.name = name.strip()[:200] or route.name  # capped as save_route caps it
-    await db.flush()
+    await _commit(db)  # the list reloads as soon as this answers
     return JSONResponse({"id": route.id, "name": route.name})
 
 
@@ -1730,7 +1743,7 @@ async def delete_route(
     route = _visible(result.scalar_one_or_none())
     if route:
         await db.delete(route)
-        await db.flush()
+        await _commit(db)  # gone for good before the page drops its card
     return JSONResponse({"ok": True})
 
 
@@ -2454,7 +2467,7 @@ async def save_route_params(
     if "scenario_fast_pct" in form or "scenario_safe_pct" in form or "switch_km" in form:  # older clients
         _apply_scenarios(form, p, route)
     route.params_json = p
-    await db.flush()
+    await _commit(db)  # the page recalculates as soon as this answers: with these values
     if "walk_grade" not in form:
         return HTMLResponse(status_code=204)
     ctx = await _pacing_context(request, route, db, user)
@@ -2503,7 +2516,7 @@ async def save_route_scenarios(
     p = dict(route.params_json or {})
     _apply_scenarios(await request.form(), p, route)
     route.params_json = p
-    await db.flush()
+    await _commit(db)  # read by the recalculation the page asks for as soon as this answers
     return HTMLResponse(status_code=204)
 
 

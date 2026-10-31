@@ -898,7 +898,7 @@ async def test_no_phantom_objective_once_the_date_and_its_weather_are_saved(as_u
     # a time he typed (marked): his, before and after the weather, even a minute from the estimate
     rid = await route("Objectif", {"target_time_s": 5 * 3600, "target_v": "2"}, {"target_time_s": 5 * 3600, "target_v": "2"})
     html = await page(rid)
-    assert "Modifier l'objectif" in html and ">Objectif<" in html and "var objectiveSet = true;" in html
+    assert "Modifier l'objectif" in html and ">Objectif<" in html and 'data-objective-set="1"' in html
     rt = await db_session.get(Route, rid)
     ctx = await sim._build_route_context(rt, db_session, test_user.id)
     rt.target_time_s = ctx["estimate_s"] + 30  # 30 s from the estimate: still his
@@ -945,7 +945,7 @@ async def test_after_an_edit_the_page_arrives_with_the_saved_plan(as_user: Async
         "start_hour": 6, "start_minute": 0, "target_v": "2"})
     rid = r.json()["id"]
     page = (await as_user.get(f"/simulator/routes/{rid}")).text
-    loaded = int(re.search(r"var predictedTotalS = (\d+);", page).group(1))
+    loaded = int(re.search(r'data-est-s="(\d+)"', page).group(1))
     base = CPS + [{"name": "Base", "distance_km": 25.0, "kind": "base", "crew": False, "drop_bag": False, "cutoff_clock": None}]
     hot = {"temps": [22.0 + 8 * (10 <= h % 24 < 18) for h in range(48)], "humidity": [60] * 48}
     pinned = [dict(CPS[0], target_s=3000)] + CPS[1:]

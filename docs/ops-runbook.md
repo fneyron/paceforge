@@ -106,7 +106,9 @@ drill*) ; à la main, contre un PostgreSQL local dont le schéma a été constru
   `https://paceforge.fr/health?deep=1` toutes les 1 à 5 min, attendu : HTTP 200 et `"status":"ok"`. Cette
   route interroge la base (`SELECT 1`) et Redis (`PING`) avec 2 s de délai et répond 503 avec le drapeau en
   défaut (`"db": false` ou `"redis": false`) ; un 503 sous charge signale un pool de connexions saturé.
-  `/health` sans paramètre reste l’épreuve rapide des conteneurs et du proxy.
+  Publique, elle est limitée à 30 appels par minute et par adresse (HTTP 429 au-delà, `Retry-After: 60`) :
+  un moniteur par minute en reste loin. `/health` sans paramètre reste l’épreuve rapide des conteneurs et du
+  proxy, jamais limitée.
 - **Coolify** : *Settings → Notifications* (e-mail, Telegram, Discord…) — les déploiements échoués et les
   conteneurs arrêtés ou unhealthy (ce qui couvre `db-backup`).
 - **GitHub** : les e-mails d’échec des Actions (`deploy.yml`, `race-data.yml`) signalent un déploiement non

@@ -34,6 +34,23 @@ async def test_unversioned_and_obsolete_urls_must_revalidate(client, path):
     assert response.headers["cache-control"] == "no-cache"
 
 
+@pytest.mark.parametrize("path", [
+    "/static/img/icon-192.png?v=5", "/static/img/icon-512.png?v=5", "/static/img/icon-maskable-512.png?v=5",
+    "/static/img/apple-touch-icon.png?v=5", "/static/manifest.json?v=5", "/static/img/og-image.png",
+])
+async def test_icons_images_and_the_manifest_are_kept_a_week(client, path):
+    """Their URLs carry versions of their own (?v=5), not the build's: a week in the browser's cache, not a
+    revalidation on every page (re-audit 2026-10-31); the build's own URL stays immutable for a year."""
+    response = await client.get(path)
+    assert response.status_code == 200 and response.headers["cache-control"] == "private, max-age=604800"
+    revalidated = await client.get(path, headers={"If-None-Match": response.headers["etag"]})
+    assert revalidated.status_code == 304 and revalidated.headers["cache-control"] == "private, max-age=604800"
+    current = await client.get(path.split("?")[0] + f"?v={BUILD_ID}")
+    assert current.headers["cache-control"] == "private, max-age=31536000, immutable"
+    manifest = json.loads((ROOT / "app/static/manifest.json").read_text(encoding="utf-8"))
+    assert all(icon["src"].endswith("?v=5") for icon in manifest["icons"])  # what the week covers
+
+
 async def test_fonts_go_out_as_fonts_uncompressed_even_without_a_system_mime_table(monkeypatch):
     """python:3.12-slim has no /etc/mime.types: Python's own table alone (as here) sent .woff2 as
     application/octet-stream, gzipped on top of its own compression. The app registers the font types itself."""

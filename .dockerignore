@@ -14,3 +14,4 @@ tests/
 *.md
 
 mobile/
+app/BUILD_ID

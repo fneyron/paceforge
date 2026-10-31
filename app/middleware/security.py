@@ -22,7 +22,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# The hosts the plan's map reaches (partials/gpx_result.html): OpenFreeMap's styles, tiles, glyphs and sprites,
+# The hosts the plan's map reaches (app/static/js/gpx-result.js): OpenFreeMap's styles, tiles, glyphs and sprites,
 # CARTO's dark style (basemaps.cartocdn.com) and its tiles, glyphs and sprites (tiles*.basemaps.cartocdn.com), the
 # relief (AWS Terrain Tiles). MapLibre fetches them all itself, so connect-src is where they belong.
 MAP_HOSTS = ("https://tiles.openfreemap.org", "https://basemaps.cartocdn.com", "https://*.basemaps.cartocdn.com",
@@ -30,8 +30,9 @@ MAP_HOSTS = ("https://tiles.openfreemap.org", "https://basemaps.cartocdn.com", "
 
 CONTENT_SECURITY_POLICY = "; ".join((
     "default-src 'self'",
-    # inline scripts and handlers on every page; Alpine (setup, activity) and htmx's hx-on build functions from
-    # attributes, which is eval to a browser
+    # inline scripts and handlers still on every page (base.html's; the race plan's own code is a static file now,
+    # its partials hold data only); Alpine (setup, activity) builds functions from attributes, which is eval to a
+    # browser
     "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     # the athlete's Strava avatar comes from Strava's CDNs (several, changing); MapLibre's control icons are data: SVGs
@@ -50,6 +51,10 @@ CONTENT_SECURITY_POLICY = "; ".join((
 NO_STORE_EXEMPT = ("/static/", "/health")
 
 
+# No feature the pages do not use: the camera, the microphone, the location, payments, USB, and the interest cohorts
+PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+
+
 def security_headers() -> tuple[tuple[str, str], ...]:
     """Added to every response unless the route set its own (the phone's pages say no-referrer)."""
     headers = (
@@ -57,10 +62,17 @@ def security_headers() -> tuple[tuple[str, str], ...]:
         ("X-Content-Type-Options", "nosniff"),
         ("X-Frame-Options", "DENY"),
         ("Referrer-Policy", "strict-origin-when-cross-origin"),
-        ("Permissions-Policy", "camera=(), microphone=(), geolocation=()"),
+        ("Permissions-Policy", PERMISSIONS_POLICY),
+        # a page opened from elsewhere gets no handle on ours (no window.opener either way): the sign-ins with
+        # Strava and COROS are redirects, the phone has its own sheet; the plan's printable band opens on this origin
+        ("Cross-Origin-Opener-Policy", "same-origin"),
+        # no other site's page loads what this one serves (www.paceforge.fr is the same site)
+        ("Cross-Origin-Resource-Policy", "same-site"),
     )
     if settings.DEBUG:  # a local http:// server must stay reachable once the browser has seen the production site
         return headers
+    # no includeSubDomains (nor preload) yet: www.paceforge.fr has no valid certificate (its domain is still to be
+    # added in Coolify), and a browser would then refuse it outright instead of letting its redirect through
     return (("Strict-Transport-Security", "max-age=31536000"),) + headers
 
 
