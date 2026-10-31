@@ -117,22 +117,7 @@
     // Already opened older weeks stay a cached snapshot, with their pagination.
     if (retained && old.querySelector('#load-more') && next.querySelector('#load-more')) next.querySelector('#load-more').replaceWith(old.querySelector('#load-more').cloneNode(true));
   }
-  function keepCheckin(old, next, requested) {
-    var current = old.querySelector('#ressenti'), replacement = next.querySelector('#ressenti');
-    if (!current || !replacement || old.dataset.account !== next.dataset.account ||
-        current.elements?.day?.value !== replacement.elements?.day?.value) return;
-    // Keep the live node: an in-flight HTMX save still owns it. A tap completed
-    // during the GET is newer than its response, and so is the track of dots it
-    // redrew. No answer goes into browser storage, and a new account or calendar
-    // day never inherits one.
-    if (current.classList.contains('htmx-request') || current !== requested) {
-      replacement.replaceWith(current);
-      var track = old.querySelector('#ressenti-courbe'), stale = next.querySelector('#ressenti-courbe');
-      if (track && stale) stale.replaceWith(track);
-    }
-  }
-  async function applyDocument(doc, href, requestedCheckin, valid) {
-    if (requestedCheckin === undefined) requestedCheckin = document.querySelector('#main-content #ressenti');
+  async function applyDocument(doc, href, valid) {
     var next = doc.getElementById('main-content');
     if (!next) throw new Error('Reconnecte-toi dans Réglages pour actualiser.');
     // Never swap under a moving finger or during momentum scrolling.
@@ -144,11 +129,10 @@
       window.paceforgeTabs?.clear(); location.replace(href); return;
     }
     var saved = snapshot(old);
-    // The focus inside the old page (a feel chip, the tab's main after a tab change) comes back on the same id in
-    // the new one, else on its main: removing the old page would drop it to <body> (a screen reader back at the top)
+    // The focus inside the old page (a range button, the tab's main after a tab change) comes back on the same id
+    // in the new one, else on its main: removing the old page would drop it to <body> (a screen reader back at the top)
     var active = document.activeElement, hadFocus = !!active && old.contains(active), focusId = hadFocus ? active.id : '';
     keepOlderWeeks(old, next);
-    keepCheckin(old, next, requestedCheckin);
     next.querySelectorAll('details').forEach(function (el) {
       var key = foldKey(el);
       if (key in saved.folds) el.open = saved.folds[key];
@@ -182,10 +166,9 @@
     document.dispatchEvent(new CustomEvent('pf:refreshed'));
   }
   async function replacePage() {
-    var requestedCheckin = document.querySelector('#main-content #ressenti');
     var href = location.href, epoch = window.paceforgeTabs?.epoch();
     var html = await request(href, { headers: { Accept: 'text/html' } });
-    await applyDocument(new DOMParser().parseFromString(html, 'text/html'), href, requestedCheckin,
+    await applyDocument(new DOMParser().parseFromString(html, 'text/html'), href,
       function () { return epoch === window.paceforgeTabs?.epoch(); });
   }
   function refresh(sources) {

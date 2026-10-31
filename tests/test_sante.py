@@ -1,7 +1,7 @@
 """Santé v4 (SANTE_V4_SPEC.md): one page, WHOOP/Oura-like, from past
 activities and the nights only. The routes (login, not connected, no data
-yet, a failure, the old views' links, the old range swap, the check-in POST
-kept harmlessly, the opening sync), Santé kept in both navs alongside the
+yet, a failure, the old views' links, the old range swap, the opening
+sync), Santé kept in both navs alongside the
 daily dashboard, the owner's 8 Oct 2026 as a fixture (his real COROS nights,
 the Transjeju 100M as a plain activity: 02/10 21:00 in Korea, 16h53), a rich
 Garmin wearer, an empty user, and what must never come back: tabs, the
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
@@ -152,24 +152,6 @@ async def test_the_old_views_land_on_the_one_page(as_user: AsyncClient, db_sessi
     # an htmx call (a v3 page left open): a full navigation, never the whole page pasted inside the old one (REG-1)
     r = await as_user.get("/sante/sommeil?r=90", headers={"HX-Request": "true"})
     assert r.status_code == 204 and r.headers["HX-Redirect"] == "/sante?r=90#sommeil" and not r.text
-
-
-async def test_the_check_in_post_is_kept_harmlessly(as_user: AsyncClient, db_session: AsyncSession,
-                                                    test_user: User, on_owner_day):
-    """No check-in on the page; an old form still posting gets its answer stored and the page back, and the
-    recovery never reads it (no « malade » trigger, no Ressenti)."""
-    await seed_owner_v4(db_session, test_user)
-    before = (await sante.health_page(db_session, test_user.id, today=D8))["score"]["value"]
-    assert before is None  # his baselines are building (owner, 2026-10-14: scientific basis)
-    r = await as_user.post("/sante/feel", data={"feel": "3", "toggle": "sick"}, headers={"HX-Request": "true"})
-    assert r.status_code == 204 and r.headers["HX-Redirect"] == "/sante"  # REG-1: htmx navigates, never nests
-    assert (await as_user.post("/sante/feel", data={"feel": "3"})).status_code == 303  # a plain form: a redirect
-    row = (await db_session.execute(select(HealthMetric).where(HealthMetric.metric == "feel"))).scalar_one()
-    assert row.value == 3 and row.details["why"] == ["sick"]
-    page = await sante.health_page(db_session, test_user.id, today=D8)
-    assert page["score"]["value"] == before and page["state"] is None  # a check-in never makes a state
-    html = (await as_user.get("/sante")).text
-    assert "/sante/feel" not in html and "Ce matin" not in html and "Malade" not in html
 
 
 # ── Daily dashboard first ─────────────────────────────────────────────────────────────
@@ -478,7 +460,7 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert main.count('class="pf-phases-bar" aria-hidden="true"') == 1
     assert main.count('class="pf-phases-legend"') == 1
     assert 'aria-label="Profond : 1h10"' in main
-    assert 'action="/sante/ressenti"' in main and "Transjeju" in main and "/activity/" in main
+    assert "/sante/ressenti" not in main and "Transjeju" in main and "/activity/" in main
     assert main.count("<summary>Comment je calcule</summary>") == 0
     assert "Les chiffres de chaque nuit" not in main
     # Cardiac measurements are visible, each once; training keeps its duration both
@@ -494,8 +476,8 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
 
 async def test_nothing_that_was_removed_comes_back(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
                                                    on_owner_day):
-    """No training prescription, brand recovery score or planned-race countdown.
-    Recorded effort context and an optional check-in stay separate from the measured signal index."""
+    """No training prescription, brand recovery score, planned-race countdown or feel (owner, 2026-10-31: a stored
+    one is never shown). Recorded effort context stays separate from the measured signal index."""
     await _link(db_session, test_user)
     await seed_owner_v4(db_session, test_user)
     db_session.add(Route(user_id=test_user.id, name="Transjeju 100M", total_distance_km=162,
@@ -509,8 +491,9 @@ async def test_nothing_that_was_removed_comes_back(as_user: AsyncClient, db_sess
     html = (await as_user.get("/sante")).text
     main = _main(html)
     assert 'role="tablist"' not in html and 'role="tab"' not in html and "pf-stab" not in html
-    # Optional Ressenti is separate; it never asks for a fabricated personal sleep need.
-    assert 'action="/sante/ressenti"' in main and "pf-chip" not in main and "Combien d" not in main
+    # no feel (its stored answer included), and never a fabricated personal sleep need
+    assert "/sante/ressenti" not in main and "pf-feel" not in main and "Ressenti" not in main
+    assert "pf-chip" not in main and "Combien d" not in main
     lower = main.lower()
     for word in NEVER + BRAND:
         assert word.lower() not in lower, word

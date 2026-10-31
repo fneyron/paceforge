@@ -52,7 +52,7 @@ _NEXT_QUERY = {
     "/coros/connect": {"region": ("monde", "europe", "chine"), "next": ("devices", "app")},
     "/sante": {}, "/settings": {}, "/sante/lactate": {}, "/connections/coros": {}, "/connections/garmin": {},
 }
-_FRAGMENTS = ("coros", "garmin", "connections", "donnees", "nouveau-test", "ressenti")
+_FRAGMENTS = ("coros", "garmin", "connections", "donnees", "nouveau-test")
 # asked by a source connection: « Pas maintenant » goes back to the connections, never to the page that asks again
 _SOURCES = ("/coros/connect", "/connections/coros", "/connections/garmin")
 DEFAULT_NEXT = "/sante"
@@ -99,7 +99,7 @@ def consent_url(next_url: str) -> str:
 
 
 def not_now_url(next_url: str) -> str:
-    """« Pas maintenant »: back to `next` (the feel, a lactate test, Réglages), or to Réglages › Connexions when a
+    """« Pas maintenant »: back to `next` (Santé, a lactate test, Réglages), or to Réglages › Connexions when a
     source connection asked (its page would ask again; the phone app opens its own connections screen there)."""
     target = safe_next(next_url)
     parts = urlsplit(target)

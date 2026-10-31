@@ -5,53 +5,9 @@ const assert=require('node:assert/strict');
 const {chromium,webkit}=require('playwright');
 const base=process.env.PF_PREVIEW_URL||'http://127.0.0.1:8852';
 const output=process.env.PF_PREVIEW_OUTPUT||'/tmp';
-async function checkinRefresh(page){
- // The feel in one tap: no draft to keep, but a tap is newer than a GET in flight.
- const pressed=()=>page.evaluate(()=>document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim()||'');
- const storage=()=>page.evaluate(()=>({local:JSON.stringify(localStorage),session:JSON.stringify(sessionStorage)}));
- if(await pressed()){
-  await page.locator('#ressenti button[value="clear"]').click();
-  await page.waitForFunction(()=>!document.querySelector('#ressenti [aria-pressed="true"]'));
- }
- const stored=await storage();
- const badDots=()=>page.locator('#ressenti-courbe .pf-feel-dot.is-bad').count();
- // A late GET must not restore an earlier answer, or its track, after a completed tap.
- async function tapDuringGet(name,expected){
-  let fetched,release;
-  const ready=new Promise(resolve=>fetched=resolve),hold=new Promise(resolve=>release=resolve);
-  await page.route('**/sante',async route=>{const response=await route.fetch();const body=await response.text();fetched();await hold;await route.fulfill({response,body});});
-  await page.evaluate(()=>{window.checkinRefreshPromise=window.paceforgeRefresh.refresh(false)});
-  await ready;
-  await page.locator('#ressenti').getByRole('button',{name}).click();
-  await page.waitForFunction(text=>(document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim()||'')===text,expected);
-  const dots=await badDots();
-  await page.evaluate(()=>window.savedCheckinNode=document.querySelector('#ressenti'));
-  release();await page.evaluate(()=>window.checkinRefreshPromise);await page.unroute('**/sante');
-  assert.equal(await page.evaluate(()=>document.querySelector('#ressenti')===window.savedCheckinNode),true,'stale GET replaced the tap on '+name);
-  assert.equal(await badDots(),dots,'stale GET replaced the track of dots after '+name);
- }
- await tapDuringGet('Cassé','Cassé');
- await tapDuringGet('Cassé','');
- assert.deepEqual(await storage(),stored,'self-report copied into browser storage');
- // A refresh during the POST keeps its live HTMX target until the reply arrives.
- let posted,releasePost;
- const postReady=new Promise(resolve=>posted=resolve),postHold=new Promise(resolve=>releasePost=resolve);
- await page.route('**/sante/ressenti',async route=>{const response=await route.fetch();const body=await response.text();posted();await postHold;await route.fulfill({response,body});});
- await page.locator('#ressenti').getByRole('button',{name:'Moyen'}).click();
- await postReady;
- await page.evaluate(()=>window.paceforgeRefresh.refresh(false));
- releasePost();
- await page.waitForFunction(()=>document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim()==='Moyen');
- await page.unroute('**/sante/ressenti');
- await tapDuringGet('Moyen','');
- // A new calendar day takes the page's form, never the old day's.
- const day=await page.locator('#ressenti input[name="day"]').inputValue();
- const nextDay=new Date(Date.parse(day)+86400000).toISOString().slice(0,10);
- await page.route('**/sante',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace(`name="day" value="${day}"`,`name="day" value="${nextDay}"`)});});
- await page.evaluate(()=>window.paceforgeRefresh.refresh(false));
- assert.equal(await page.locator('#ressenti input[name="day"]').inputValue(),nextDay);
- await page.unroute('**/sante');
- await page.goto(base+'/sante',{waitUntil:'networkidle'});
+async function noFeel(page){
+ // The manual feel is gone (2026-10-31): a refreshed page brings back no chip, no track, no live region.
+ assert.equal(await page.locator('#ressenti, #ressenti-live, #ressenti-courbe, .pf-feel-chip').count(),0,'feel back after a refresh');
 }
 async function check(engine,name,width){
  const browser=await engine.launch({headless:true,...(name==='webkit'&&process.env.PF_WEBKIT_EXECUTABLE?{executablePath:process.env.PF_WEBKIT_EXECUTABLE}:{})});
@@ -98,7 +54,7 @@ async function check(engine,name,width){
  for(let i=0;i<3;i++)await page.evaluate(()=>window.paceforgeRefresh.refresh(false));
  assert.equal(await page.locator('#main-content').count(),1);
  assert.equal(await page.locator(selector+' input').inputValue(),selected);
- await checkinRefresh(page);
+ await noFeel(page);
  // Offline leaves the rendered data intact, with a single connection link.
  await page.route('**/sante',route=>route.abort('internetdisconnected'));
  const unchanged=await page.locator('#main-content').innerHTML();

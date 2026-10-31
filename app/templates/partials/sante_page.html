@@ -8,12 +8,9 @@
 {% if p.state and p.state.text %}<p class="pf-state-text">{{ p.state.text }}</p>{% endif %}
 {% if not p.state %}<p class="pf-state-line">{{ p.line }}</p>{% endif %}
 {% set has_sleep_detail = s and s.state not in ("never", "old") %}
-{% set has_curves = has_sleep_detail or p.vfc or p.fc or p.respiration or p.feel_track %}
+{% set has_curves = has_sleep_detail or p.vfc or p.fc or p.respiration %}
 
 {% if p.connect %}<p class="pf-state-links"><a class="pf-native-only" data-phone-connect href="paceforge://devices"><span>Connecter <span data-phone-health>Apple Santé</span> ›</span></a><span class="pf-browser-only"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></span></p>{% endif %}
-{% include "partials/sante_checkin.html" %}
-{#- a tap on the feel is said here (the form itself is swapped: sante_checkin.html fills this region out of band) -#}
-<p id="ressenti-live" class="sr-only" aria-live="polite"></p>
 
 <div class="pf-health-panels">
 {# The curves stacked on the same days, under the rings (owner, 2026-10-17): a day touched on one is read on all #}
@@ -55,12 +52,6 @@
             {% endif %}
         </div>
     {% endif %}
-    {% if p.feel_track %}
-        <article id="ressenti-courbe" class="pf-card pf-curve" aria-labelledby="h-ressenti-courbe">
-            <div class="pf-measurement-head"><h3 id="h-ressenti-courbe" class="pf-card-h">Ressenti</h3></div>
-            {{ viz.viz_feel_track(p.feel_track, "Ressenti", group="jours") }}
-        </article>
-    {% else %}<div id="ressenti-courbe" hidden></div>{% endif %}
     </div>
 </section>
 {% endif %}

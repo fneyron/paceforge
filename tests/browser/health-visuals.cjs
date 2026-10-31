@@ -37,8 +37,9 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
         const right = await head.evaluate(el => { const h = el.querySelector('.pf-help').getBoundingClientRect(), b = el.getBoundingClientRect(), pad = parseFloat(getComputedStyle(el).paddingRight) || 0; return b.right - pad - h.right; });
         assert.ok(right < 2, `${label}: an (i) off the header's right edge (${right}px)`);
       }
-      assert.equal(await page.locator('#ressenti [aria-pressed="true"]').count(), 0, `${label}: no feeling is inferred from the measurements`);
-      assert.ok(await page.locator('#ressenti-courbe figure').isVisible(), `${label}: the answered days' feel sits under the curves`);
+      // the manual feel is gone (2026-10-31): the fixture's stored answers show nowhere
+      assert.equal(await page.locator('#ressenti, #ressenti-courbe, .pf-feel-chip, .pf-feel-dot').count(), 0, `${label}: no feel left on the page`);
+      assert.doesNotMatch(await page.locator('#main-content').innerText(), /Ressenti/, `${label}: no feel left on the page`);
       await page.evaluate(() => window.paceforgeRememberPage());
       assert.deepEqual(await page.evaluate(() => {
         const key = 'pf-view:' + document.querySelector('#main-content').dataset.account + ':/sante';
@@ -57,11 +58,6 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       await page.screenshot({ path: `${output}/health-top-${capture}.png` });
       await page.locator('.pf-dials').screenshot({ path: `${output}/dials-${capture}.png` });
       assert.match(await page.locator('.pf-ring-recup .pf-ring-value').innerText(), /^100\s*\/100$/, `${label}: fixture must exercise a three-digit index, never a recovery percentage`);
-      for (const choice of await page.locator('.pf-feel-chip').all()) {
-        const box = await choice.boundingBox();
-        assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= width + 1, `${label}: feel chips are readable tap targets`);
-      }
-      await page.locator('#ressenti').screenshot({ path: `${output}/checkin-${capture}.png` });
       // Every available main chart keeps a visible date and accessible value on selection.
       for (const selector of required) for (const figure of await page.locator(selector).all()) {
         const selected = await figure.evaluate(fig => {
@@ -131,6 +127,6 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       assert.deepEqual(errors, [], `${label}: browser errors`);
       await page.close();
     }
-    console.log('Health visuals: no card of signals, the ring word, legends in the series colours, (i) on the right, one-tap feel, main plots, dated selections and readable index/legends at 320/393px, 100/200% text, light/dark passed.');
+    console.log('Health visuals: no card of signals, the ring word, legends in the series colours, (i) on the right, no feel, main plots, dated selections and readable index/legends at 320/393px, 100/200% text, light/dark passed.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

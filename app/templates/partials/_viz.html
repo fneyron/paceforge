@@ -209,17 +209,6 @@
 {% endcall %}
 {% endmacro %}
 
-{# V3b the one-tap feel: a dot per answered day on its answer's row (Bien, Moyen, Cassé), the curves' days #}
-{% macro viz_feel_track(c, title, group=None) %}
-{% call figure(c, title, c.key, group, "journée", "Jour précédent", "Jour suivant", cls="pf-viz-card pf-feel-track", card=True) %}
-<g class="pf-viz-cross"{% if c.at %} transform="translate({{ c.at.x }} 0)"{% endif %}><line x1="0" x2="0" y1="{{ c.top }}" y2="{{ c.bottom }}" class="pf-viz-at"/><circle cx="0" cy="{{ c.at.y if c.at else 0 }}" r="5.5" class="pf-viz-ring"/></g>
-{% for row in c.rows %}<line x1="0" x2="{{ c.X1 }}" y1="{{ row.y }}" y2="{{ row.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ row.y + 3 }}" text-anchor="end" class="pf-feel-row">{{ row.label }}</text>{% endfor %}
-{{ flags(c, c.top, c.bottom) }}
-{% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="3.2" class="pf-viz-dot pf-feel-dot is-{{ d.tone }}{% if d.i == c.sel %} is-sel{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
-{% for t in c.xt %}<text x="{{ t.x }}" y="{{ c.H - 3 }}" text-anchor="middle" class="pf-viz-date-tick{% if loop.first or loop.last or loop.index0 == (loop.length // 2) %} pf-viz-major-tick{% endif %}">{{ t.label }}</text>{% endfor %}
-{% endcall %}
-{% endmacro %}
-
 {# V4 timeline: last night on a clock axis — one bar, or the hypnogram (lanes by position, each named, in its stage's
    colour, the stages bar's); the naps on their own lane #}
 {% macro viz_timeline(t, aria) %}
