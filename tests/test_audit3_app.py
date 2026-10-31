@@ -325,6 +325,13 @@ def test_current_places_and_large_text_hold_more_than_hue():
     assert '<div class="pf-activity-metrics grid grid-cols-2 md:grid-cols-4 gap-3">' in detail
 
 
+def test_large_text_keeps_the_sleep_lanes_and_long_values_inside():
+    """At 200 % text « Profond » ran 4 units into the hypnogram (its lane names end at x 60) and « 14,4 resp./min »
+    widened a 320 or 393 px page to 399 px (found making health-scenarios/health-explanations green, 2026-10-31)."""
+    assert ".pf-large-text .pf-sante4 .pf-tl .pf-tl-lane { font-size: 15px; }" in CSS
+    assert ".pf-large-text .pf-viz-l1 > b { flex-shrink: 1; min-width: 0; overflow-wrap: anywhere; }" in CSS
+
+
 def test_the_strava_setup_says_its_step():
     """Re-audit 2026-10-31: /setup in a <main>, the shown step aria-current="step" and said « Étape N sur 3 », a step not
     reached yet at 5.3:1 (gray-500 on gray-100, was gray-400: 4.3:1)."""

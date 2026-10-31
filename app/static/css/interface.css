@@ -1335,6 +1335,8 @@ body:has(.pf-sante4) { background: #f4f6f8; }
 .pf-large-text .pf-row-val { flex-basis: 100%; align-items: flex-start; text-align: left; margin-left: 0; }
 .pf-large-text .pf-viz-l1 { flex-wrap: wrap; white-space: normal; }
 .pf-large-text .pf-viz-l1 > .pf-viz-w { overflow: visible; }
+/* …and its value wraps rather than widening the page (« 14,4 resp./min » ran to 399 px on a 320 px phone) */
+.pf-large-text .pf-viz-l1 > b { flex-shrink: 1; min-width: 0; overflow-wrap: anywhere; }
 .pf-large-text .pf-health-panel > summary { flex-wrap: wrap; }
 .pf-large-text .pf-health-panel > summary::after { margin-left: auto; }
 .pf-large-text .pf-set-appearance { flex-wrap: wrap; }
@@ -1460,6 +1462,8 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-large-text .pf-sante4 .pf-row-name { white-space: normal; }
 .pf-large-text .pf-sante4 .pf-viz-svg text { font-size: 17px; }
 .pf-large-text .pf-sante4 .pf-tl text { font-size: 17px; }
+/* its lane names end before the chronology (x 60): « Profond » at 17 units ran 4 into the first stages */
+.pf-large-text .pf-sante4 .pf-tl .pf-tl-lane { font-size: 15px; }
 .pf-large-text .pf-tl-label-full, .pf-large-text .pf-tl-tick:not(.pf-tl-major-tick) { display: none; }
 .pf-large-text .pf-tl-label-short { display: inline; }
 .pf-large-text .pf-sante4 .pf-viz-date-tick:not(.pf-viz-major-tick) { display: none; }
