@@ -280,6 +280,12 @@ def test_inputs_tabs_and_segments_carry_more_than_hue():
     assert ".pf-input { width: 100%; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 1px solid rgb(var(--pf-gray-400));" in CSS
     assert ".pf-input:focus, .pf-input:focus-visible { outline: 2px solid rgb(var(--pf-accent));" in CSS
     assert ".pf-hero-in:focus { outline: none; }" not in CSS
+    # the objective's fields: the ring after Tab, not after a tap (re-audit 2026-10-31; a text field matches
+    # :focus-visible on a tap too, app.js marks the pointer)
+    assert ".pf-hero-in:focus-visible { outline: 2px solid rgb(var(--pf-accent));" in CSS
+    assert "[data-pf-pointer] .pf-hero-in:focus-visible { outline: none; }" in CSS
+    app_js = (ROOT / "app/static/js/app.js").read_text(encoding="utf-8")
+    assert 'setAttribute("data-pf-pointer", "")' in app_js and 'event.key === "Tab"' in app_js
     assert '.pf-tabbar a[aria-current="page"] { color: rgb(var(--pf-accent)); font-weight: 700; }' in CSS
     assert '.pf-seg > [aria-pressed="true"], .pf-seg > [aria-current] { background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }' in CSS
 

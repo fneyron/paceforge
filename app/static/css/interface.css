@@ -294,7 +294,10 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-hero-btn:hover .pf-hero-num { color: rgb(var(--pf-gray-700)); }
 #hero-edit { margin-top: 2px; }
 .pf-hero-in { font: inherit; letter-spacing: inherit; background: transparent; border: 0; border-bottom: 3px solid rgb(var(--pf-accent)); padding: 0; color: rgb(var(--pf-ink)); }
-.pf-hero-in:focus, .pf-hero-in:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 3px; border-radius: 6px; }   /* the field being typed in shows it */
+.pf-hero-in:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 3px; border-radius: 6px; }   /* Tab into the field: the ring */
+/* a tap or a click into it: no ring around the half-empty field over « Objectif » (a text field matches :focus-visible
+   on a tap too, so app.js marks <html> after a pointer press, until the next Tab); its caret and selection show it */
+[data-pf-pointer] .pf-hero-in:focus-visible { outline: none; }
 .pf-objpanel { max-width: 440px; margin-top: 12px; }
 .pf-objline { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; font-size: 0.8125rem; color: rgb(var(--pf-gray-600)); }
 .pf-objline b { color: rgb(var(--pf-ink)); font-weight: 600; }
