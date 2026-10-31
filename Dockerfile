@@ -24,6 +24,11 @@ COPY alembic.ini pyproject.toml requirements-dev.lock requirements-research.lock
 COPY alembic/ ./alembic/
 COPY app/ ./app/
 
+# interface.css is kept readable in git (its comments) and served minified, at the same URL: comments and whitespace
+# out, nothing else (app/css_minify.py; tests/browser/css-minified.cjs checks a browser reads the same). The build id
+# is fixed first, on the files as copied, in app/BUILD_ID (app/build.py reads it): the smoke test's still matches.
+RUN python -m app.build > app/BUILD_ID && python -m app.css_minify app/static/css/interface.css
+
 USER app
 
 EXPOSE 8000

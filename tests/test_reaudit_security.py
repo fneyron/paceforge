@@ -54,7 +54,8 @@ async def test_an_account_deletion_is_committed_before_its_redirect(committing_s
     db.add(user)
     await db.flush()
     db.add(CorosConnection(user_id=user.id, issuer=FakeCoros.META["issuer"], client_id="cid-1",
-                           access_token_encrypted=encrypt_secret("at-1"), refresh_token_encrypted=encrypt_secret("rt-1"),
+                           access_token_encrypted=encrypt_secret("at-1"),
+                           refresh_token_encrypted=encrypt_secret("rt-1"),
                            expires_at=datetime.now(timezone.utc) + timedelta(days=30),
                            resource_url=FakeCoros.PRM["resource"], token_endpoint=FakeCoros.META["token_endpoint"],
                            revocation_endpoint=FakeCoros.META["revocation_endpoint"]))
@@ -89,11 +90,13 @@ async def test_the_plan_writes_the_page_reads_at_once_are_committed_first(as_use
     """The settings forms recalculate as soon as they answer, a rename reloads the list, a deletion drops the card."""
     rid = await _create_route(as_user)
     n = commits.await_count
-    assert (await as_user.post(f"/api/simulator/routes/{rid}/scenarios", data={"scenario_fast_pct": "5"})).status_code == 204
+    r = await as_user.post(f"/api/simulator/routes/{rid}/scenarios", data={"scenario_fast_pct": "5"})
+    assert r.status_code == 204
     assert commits.await_count == n + 1
     assert (await as_user.post(f"/api/simulator/routes/{rid}/params", data={"hr_cap_climb": "150"})).status_code == 204
     assert commits.await_count == n + 2
-    assert (await as_user.patch(f"/api/simulator/routes/{rid}", data={"name": "Autre nom"})).json()["name"] == "Autre nom"
+    r = await as_user.patch(f"/api/simulator/routes/{rid}", data={"name": "Autre nom"})
+    assert r.json()["name"] == "Autre nom"
     assert commits.await_count == n + 3
     assert (await as_user.delete(f"/api/simulator/routes/{rid}")).json() == {"ok": True}
     assert commits.await_count == n + 4 and await db_session.get(Route, rid) is None
@@ -295,7 +298,7 @@ async def test_the_plan_page_loads_its_script_cached_and_its_data_escaped(as_use
     root = re.search(r'<div id="simulator-root"([^>]*)>', page)[1]
     assert f'data-route-id="{rid}"' in root and 'data-objective-set="1"' in root and 'data-sport="trail"' in root
     assert re.search(r'data-est-s="\d+"', root) and f'data-asset-v="{BUILD_ID}"' in root
-    waypoints = json.loads(re.search(r'<script type="application/json" id="plan-waypoints">(.*?)</script>', page, re.S)[1])
+    waypoints = json.loads(re.search(r'id="plan-waypoints">(.*?)</script>', page, re.S)[1])
     assert waypoints[0]["name"] == "</script><script>alert(1)</script>"
     for block in ("plan-weather", "plan-live"):
         assert json.loads(re.search(rf'id="{block}">(.*?)</script>', page, re.S)[1]) is None
@@ -333,3 +336,45 @@ async def test_isolation_headers_on_pages_files_and_errors(client):
         assert r.headers["cross-origin-resource-policy"] == "same-site", path
         assert "payment=()" in r.headers["permissions-policy"] and "usb=()" in r.headers["permissions-policy"]
     assert "includeSubDomains" not in r.headers["strict-transport-security"]  # until www has its certificate
+
+
+# ── interface.css minified in the image ──────────────────────────────────────
+
+# read left to right: « l'apostrophe » in a comment opens no string, « /* » in a string opens no comment
+CSS_TOKENS = re.compile(r"/\*.*?\*/|\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'", re.S)
+
+
+def _outside_strings(css: str) -> str:
+    """The stylesheet without its comments, strings blanked, whitespace gone: what a minifier may not change."""
+    return re.sub(r"\s+", "", CSS_TOKENS.sub(lambda m: "" if m[0].startswith("/*") else '""', css))
+
+
+def _strings(css: str) -> list[str]:
+    return [m[0] for m in CSS_TOKENS.finditer(css) if not m[0].startswith("/*")]
+
+
+def test_the_minified_stylesheet_differs_only_by_comments_and_whitespace():
+    """What app/css_minify.py takes out of interface.css: comments, whitespace and a block's last semicolon, nothing
+    else; the strings, the escapes and the custom properties' values as written; the spaces that mean something kept
+    (a browser reads the same rules and computes the same styles: tests/browser/css-minified.cjs)."""
+    from app.css_minify import minify
+
+    raw = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
+    out = minify(raw)
+    assert len(out) < 0.8 * len(raw) and "/*" not in out and "\n" not in out
+    assert _outside_strings(out) == _outside_strings(raw).replace(";}", "}")
+    assert _strings(out) == _strings(raw)
+    assert minify(out) == out  # once is all it takes
+    cases = {
+        ".a /* c */ .b > .c { color : red ; }": ".a .b > .c{color :red}",  # the descendant combinator stays
+        "a :hover , b::after { x: y }": "a :hover,b::after{x:y}",  # « a :hover » is not « a:hover »
+        ".a/**/.b{x:y}": ".a/**/.b{x:y}",  # glued: neither a combinator nor one compound selector
+        ".w-1\\/2 { a: b; }": ".w-1\\/2{a:b}",
+        'td::before { content: attr(x) "\\00a0: /* not a comment */ ; }" ; }':
+            'td::before{content:attr(x) "\\00a0: /* not a comment */ ; }"}',
+        "a { --font:  a,  b ; --empty: ; margin: calc(1px + 2px)  0 !important; }":
+            "a{--font:a,  b;--empty: ;margin:calc(1px + 2px) 0 !important}",
+        "@media (max-width: 600px) { .a { b: c } }": "@media (max-width:600px){.a{b:c}}",
+    }
+    for source, minified in cases.items():
+        assert minify(source) == minified, source
