@@ -75,15 +75,23 @@ def register_font_types() -> None:
 class VersionedStaticFiles(StaticFiles):
     """Reuse build-tagged assets without a request on every page navigation."""
 
+    # The icons, the images and the manifest keep URLs of their own (?v=5 in base.html and in the manifest, which a
+    # browser should not see change at every deploy; none on the og image): a week, rather than a revalidation on
+    # every page. A new icon gets a new ?v=.
+    WEEK = 7 * 24 * 60 * 60
+    OWN_VERSIONS = ("img/", "manifest.json")
+
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
         if response.status_code in {200, 304}:
             # Do not freeze an old URL if its request reaches a newer deployment.
             # Private is intentional: SessionMiddleware may refresh its cookie.
-            current = Request(scope).query_params.get("v") == BUILD_ID
-            response.headers["Cache-Control"] = (
-                "private, max-age=31536000, immutable" if current else "no-cache"
-            )
+            if Request(scope).query_params.get("v") == BUILD_ID:
+                response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
+            elif path.replace("\\", "/").startswith(self.OWN_VERSIONS):
+                response.headers["Cache-Control"] = f"private, max-age={self.WEEK}"
+            else:
+                response.headers["Cache-Control"] = "no-cache"
         return response
 
 
