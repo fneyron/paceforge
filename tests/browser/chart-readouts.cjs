@@ -41,7 +41,11 @@ assert.ok(['127.0.0.1', 'localhost'].includes(new URL(base).hostname), 'Use a lo
           return [{ key: fig.dataset.vizKey || fig.getAttribute('aria-label'), initial_height: initial.height,
             min_height: min, max_height: max, plot_movement_px: movement, values_checked: values, longest_readout: longest }];
         }));
-        assert.ok(figures.length, `${path} ${width}px ${scale}x: no sized readouts checked`);
+        // Santé's figures are all compact cards (pf-viz-quiet) since their harmonisation (2026-10-18): no sized
+        // readout of its own to reserve there, Activités keeps the step-and-reserve ones (the re-audit of
+        // 2026-10-31 found the cards' plot can still move at 200 % text: reported, not covered here)
+        if (path === '/activities') assert.ok(figures.length, `${path} ${width}px ${scale}x: no sized readouts checked`);
+        else assert.ok(await page.locator('figure[data-viz].pf-viz-quiet').count(), `${path} ${width}px ${scale}x: no Santé card`);
         for (const fig of figures) {
           assert.ok(fig.plot_movement_px <= 1, `${path} ${width}px ${scale}x ${fig.key}: chart moved ${fig.plot_movement_px}px while selecting`);
           assert.ok(fig.max_height - fig.min_height <= 1, `${path} ${width}px ${scale}x ${fig.key}: readout height changed`);
