@@ -993,9 +993,10 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-viz-svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y pinch-zoom; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 .pf-viz-on .pf-viz-svg { cursor: crosshair; }
 .pf-viz-svg text { font-size: 11px; fill: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
-/* a desktop plot is drawn wider than its 320-unit viewBox (up to 560 px: × 1.75): its text keeps a constant 12 px
-   (pf-viz.js sets --pf-viz-k, the plot's px per unit; without it, the phone's 11 units) — never bigger than a title */
-@media (min-width: 900px) {
+/* a tablet's or a desktop's plot is drawn wider than its 320-unit viewBox (up to 560 px: × 1.75): its text keeps a
+   constant 12 px (pf-viz.js sets --pf-viz-k, the plot's px per unit; without it, the phone's 11 units) — never bigger
+   than a title (from 600 px: at 768 px the axis read 19 px, over the 17 px card titles); a phone keeps its 11 units */
+@media (min-width: 600px) {
     .pf-viz-svg { font-size: calc(12px / var(--pf-viz-k, 1.0909)); }
     .pf-viz-svg text { font-size: 1em; }
 }
@@ -1489,7 +1490,7 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-feel-dot.is-ok { fill: rgb(var(--pf-gray-500)); }
 .pf-feel-dot.is-bad { fill: rgb(var(--pf-danger)); }
 .pf-viz-svg text.pf-feel-row { font-size: 9px; }
-@media (min-width: 900px) { .pf-viz-svg text.pf-feel-row { font-size: .75em; } }   /* 9 px at the desktop scale too */
+@media (min-width: 600px) { .pf-viz-svg text.pf-feel-row { font-size: .75em; } }   /* 9 px at the tablet and desktop scale too */
 .pf-large-text .pf-sante4 .pf-viz-svg text.pf-feel-row { display: none; }
 /* The curves stacked on the same days, under the rings (owner, 2026-10-17) */
 .pf-curves { display: grid; gap: 12px; }

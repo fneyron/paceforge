@@ -256,6 +256,10 @@ def test_desktop_chart_text_keeps_its_size():
     js = (ROOT / "app/static/js/pf-viz.js").read_text(encoding="utf-8")
     assert '"--pf-viz-k"' in js and 'querySelectorAll("svg.pf-viz-svg").forEach(scaled)' in js
     assert ".pf-viz-svg { font-size: calc(12px / var(--pf-viz-k, 1.0909)); }" in CSS
+    # from 600 px (re-audit 2026-10-31: a 768 px tablet printed its axis at 19 px, over the card titles); a phone keeps
+    # its 11 units
+    assert "@media (min-width: 600px) {\n    .pf-viz-svg { font-size: calc(12px / var(--pf-viz-k, 1.0909)); }" in CSS
+    assert "@media (min-width: 600px) { .pf-viz-svg text.pf-feel-row { font-size: .75em; } }" in CSS
     assert ".pf-activities .pf-activity-chart { max-width: calc(560px + 34px); }" in CSS
 
 
