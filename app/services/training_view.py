@@ -233,7 +233,7 @@ def _chart(weeks: list[dict], key: str, title: str, n_avg: int, sport: str | Non
     if avg is not None:
         mean = _avg_rounded(avg, key)
         over = f"sur {n_avg} semaine{'s' if n_avg > 1 else ''}"
-        return viz.rest(c, [f"Moy. par semaine · {n_avg}{NBSP}sem.", _big(mean, key), ""],
+        return viz.rest(c, [f"Moy. par semaine{NBSP}· {n_avg}{NBSP}sem.", _big(mean, key), ""],
                         f"{_said(mean, key)} par semaine en moyenne, {over} complète{'s' if n_avg > 1 else ''}. "
                         "Choisis une semaine pour voir son total.", back=n - 1)
     return viz.rest(c, ["12 semaines", title, ""],

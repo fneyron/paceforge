@@ -227,7 +227,7 @@ def test_weeks_one_measure_twelve_bars_and_the_average():
     assert [k for k, _ in c["measures"]] == ["duree", "distance"] and c["m"] == "duree"  # no D+: no D+ toggle
     d = data(c["charts"]["duree"])
     mean = round(sum(minutes[:11]) / 11 / 5) * 5  # 745 → to 5 min
-    assert d["rest"] == ["Moy. par semaine · 11 sem.", tv.hm(mean), ""] and d["sel"] == 12
+    assert d["rest"] == ["Moy. par semaine\u00a0· 11\u00a0sem.", tv.hm(mean), ""] and d["sel"] == 12
     assert d["restA"] == (f"{tv.hm_long(mean)} par semaine en moyenne, sur 11 semaines complètes. Choisis une "
                           "semaine pour voir son total.")
     assert d["r"][-2] == ["sem. du 28 sept.", "18h56", ""] and d["r"][-1] == ["Semaine en cours", "3h10", ""]
@@ -244,7 +244,7 @@ def test_weeks_one_measure_twelve_bars_and_the_average():
     assert [k for k, _ in yoga["measures"]] == ["duree"] and yoga["m"] == "duree"  # an unoffered measure: Durée
     # a new athlete: the average reads the complete weeks since the first activity's week only
     new = tv.semaines(_weeks([0] * 9 + [300, 360, 60]), date(2026, 9, 21), None)
-    assert data(new["charts"]["duree"])["rest"] == ["Moy. par semaine · 2 sem.", "5h30", ""]
+    assert data(new["charts"]["duree"])["rest"] == ["Moy. par semaine\u00a0· 2\u00a0sem.", "5h30", ""]
     only_now = tv.semaines(_weeks([0] * 11 + [60]), date(2026, 10, 5), None)
     assert data(only_now["charts"]["duree"])["rest"] == ["12 semaines", "Durée par semaine", ""]
     assert only_now["charts"]["duree"]["avg"] is None  # no complete week: no average line
