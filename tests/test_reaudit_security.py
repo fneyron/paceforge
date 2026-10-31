@@ -226,3 +226,38 @@ async def test_the_owner_is_told_once_when_the_cap_is_first_reached(client, db_s
     assert to == user.email and subject == "Tentatives de connexion à ton compte PaceForge"
     assert "Plusieurs tentatives de connexion à ton compte ont échoué." in html
     assert "Si ce n'est pas toi, change ton mot de passe." in html and "/auth/forgot-password" in html
+
+
+# ── an unreadable plan is refused in French, never a server error ────────────
+
+@pytest.mark.parametrize("course", ["pas du json", "[]", '{"total_distance_km": "loin"}', '{"segments": 3}'])
+async def test_an_unreadable_course_is_a_400_in_french(as_user, course):
+    r = await as_user.post("/partials/simulator/passage-times", data={"course_json": course})
+    assert r.status_code == 400 and "Plan illisible : recharge la page." in r.text
+
+
+async def test_unreadable_points_or_weather_are_a_400_too(as_user):
+    from tests.test_race_plan_services import _course
+
+    course = _course().model_dump_json()
+    for extra in ({"checkpoints_json": "{"}, {"checkpoints_json": "{}"}, {"checkpoints_json": "[3]"},
+                  {"hourly_json": "[NaN"}):
+        r = await as_user.post("/partials/simulator/passage-times", data={"course_json": course, **extra})
+        assert r.status_code == 400 and "Plan illisible" in r.text, extra
+    r = await as_user.post("/partials/simulator/passage-times", data={"course_json": course})
+    assert r.status_code == 200 and 'id="plan-data"' in r.text  # a readable one is calculated as before
+
+
+async def test_a_form_field_past_starlettes_cap_is_refused_in_french(as_user, test_user):
+    login(as_user, test_user)  # a signed-in session: the plan routes' 2 MiB, past Starlette's 1 MiB a field
+    big ='{"name": "' + "x" * (1024 * 1024) + '"}'
+    r = await as_user.post("/partials/simulator/passage-times", data={"course_json": big})
+    assert r.status_code == 400 and r.headers["content-type"].startswith("text/html")
+    assert "Envoi trop volumineux : un champ dépasse 1 Mo." in r.text and "Field exceeded" not in r.text
+    r = await as_user.post("/api/simulator/routes", data={"course_json": big})  # an API caller: JSON, in French
+    assert r.status_code == 400 and r.json() == {"detail": "Envoi trop volumineux : un champ dépasse 1 Mo."}
+    # every other 400 keeps FastAPI's own answer
+    from app.exceptions import form_refusal
+
+    assert form_refusal("Test invalide.") is None and form_refusal(None) is None
+    assert form_refusal("Too many fields. Maximum number of fields is 1000.") == "Envoi refusé : trop de champs."

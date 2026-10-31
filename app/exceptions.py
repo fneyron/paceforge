@@ -1,7 +1,9 @@
 import logging
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.templating import Jinja2Templates
 
 logger = logging.getLogger(__name__)
@@ -99,7 +101,33 @@ async def _not_found_page(request: Request, message: str | None = None) -> HTMLR
     return templates.TemplateResponse(request, "404.html", context=context, status_code=404)
 
 
+# Starlette's own refusals of a form it will not parse (Request.form: a field past 1 MiB, too many fields or files),
+# an English JSON detail by default
+FORM_REFUSALS = {"Field exceeded maximum size": "Envoi trop volumineux : un champ dépasse 1 Mo.",
+                 "Part exceeded maximum size": "Envoi trop volumineux : un champ dépasse 1 Mo.",
+                 "Too many fields": "Envoi refusé : trop de champs.",
+                 "Too many files": "Envoi refusé : trop de fichiers."}
+
+
+def form_refusal(detail: object) -> str | None:
+    """The French message for one of Starlette's form refusals, None for any other 400."""
+    if isinstance(detail, str):
+        return next((french for english, french in FORM_REFUSALS.items() if detail.startswith(english)), None)
+    return None
+
+
 def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(400)
+    async def bad_request_handler(request: Request, exc: StarletteHTTPException) -> Response:
+        """A form Starlette refused to parse is told in French: HTML for a page or htmx, JSON for an API caller.
+        Every other 400 keeps FastAPI's own answer."""
+        message = form_refusal(exc.detail)
+        if message is None:
+            return await http_exception_handler(request, exc)
+        if _api_call(request):
+            return JSONResponse({"detail": message}, status_code=400)
+        return HTMLResponse(f'<div class="text-sm text-red-600" role="alert">{message}</div>', status_code=400)
+
     @app.exception_handler(404)
     async def not_found_handler(request: Request, exc: Exception) -> HTMLResponse | JSONResponse:
         if _api_call(request):
