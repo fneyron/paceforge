@@ -90,7 +90,7 @@ def synthesis(day, nights, calendar_day, efforts, sessions, gap):
         gap_detail += " Les nuits manquantes augmentent l’incertitude ; elles ne comptent pas comme zéro sommeil."
     return {
         "signal": {"label": "Signaux nocturnes", "tone": score["tone"] or "none", "value": score["value"],
-                   "unit": "/100", "summary": state["word"] if state else "Mesures insuffisantes"},
+                   "unit": "%", "summary": state["word"] if state else "Mesures insuffisantes"},
         "reasons": reasons[:2], "more_reasons": reasons[2:],
         "freshness": {"day": assessed.isoformat(), "label": stamp, "current": current, "missing": not current,
                       "source": " · ".join(sources), "last_measured": latest.isoformat() if latest else None},

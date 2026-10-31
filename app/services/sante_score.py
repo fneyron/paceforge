@@ -9,7 +9,7 @@ means low RMSSD, high night HR, the breathing flag or less than six hours of sle
 The existing personal thresholds and acute-alert rules are unchanged. No reason means usual signals.
 Recorded efforts and training load remain contextual: their windows neither add reasons nor cap this index.
 
-The displayed /100 is 100 × the mean of s_VFC = clip((z + 2.5)/2, 0, 1) and s_FC = clip((2.5 − z)/2, 0, 1),
+The displayed index (printed « 65 % » like the two other rings: owner, 2026-10-31) is 100 × the mean of s_VFC = clip((z + 2.5)/2, 0, 1) and s_FC = clip((2.5 − z)/2, 0, 1),
 held to ≤ 69 when orange, ≤ 39 when red, ≥ 70 when green (H). This descriptive scale is not clinically
 validated. Missing data give a reason rather than a number. History is computed using events up to each day.
 Details: docs/sante-estimates.md and docs/recovery-cumulative.md; the dated decisions behind the rules:
@@ -288,11 +288,6 @@ def pct(v: int) -> str:
     return f"{v}{viz.NBSP}%"
 
 
-def index_label(v: int) -> str:
-    """« 64/100 »: the denominator is glued to the number (no space, it is not a unit)."""
-    return f"{v}/100"
-
-
 def dial(score: dict, state: dict | None, href: str | None = None) -> dict:
     """The Récupération dial, the middle one of three (like WHOOP's, kept simple): the indice nocturne (« 65 % »,
     the « % » smaller), its arc in its state's colour, its name under it
@@ -304,8 +299,8 @@ def dial(score: dict, state: dict | None, href: str | None = None) -> dict:
         return viz.ring("recup", None, "—", "Récupération", NO_SCORE, tone="none", href=href,
                         aria="Récupération : pas d’indice nocturne pour cette nuit.")
     word = DIAL_WORDS[state["tone"]]
-    return viz.ring("recup", v / 100, str(v), "Récupération", word, tone=state["tone"], unit="/100", href=href,
-                    note="indice nocturne", aria=f"Récupération : indice nocturne {v} sur 100, {word}.")
+    return viz.ring("recup", v / 100, str(v), "Récupération", word, tone=state["tone"], unit="%", href=href,
+                    note="indice nocturne", aria=f"Récupération : indice nocturne {pct(v)}, {word}.")
 
 
 def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> dict | None:
@@ -329,12 +324,12 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
             r.append(["—", "", f"{viz.d_short(d)} · {NO_MEASURE}"])
             a.append(f"{viz.d_long(d)} : {NO_MEASURE}.")
             continue
-        r.append([index_label(v), f"{st['glyph']} {st['word']}", viz.d_short(d)])
-        a.append(f"{viz.d_long(d)} : indice {v} sur 100, {st['word'].lower()}.")
+        r.append([pct(v), f"{st['glyph']} {st['word']}", viz.d_short(d)])
+        a.append(f"{viz.d_long(d)} : indice {pct(v)}, {st['word'].lower()}.")
     c = viz.day_bars("recuperation", days, values, readouts=r, arias=a, classes=classes, tones=tones, y_max=100,
                      lines=((100, "100"), (70, "70"), (40, "40"), (0, "0")), today=len(days) - 1 if days and days[-1] == today else None,
                      summary=f"Historique des signaux nocturnes : {len(with_score)} indices sur {len(days)} jours")
     title = f"Signaux nocturnes · {len(days)} jours"
-    c = viz.rest(c, [index_label(rounded(statistics.fmean(with_score))), "en moyenne", ""], f"Historique des scores quotidiens sur {len(days)} jours. Choisis un jour pour voir son "
+    c = viz.rest(c, [pct(rounded(statistics.fmean(with_score))), "en moyenne", ""], f"Historique des scores quotidiens sur {len(days)} jours. Choisis un jour pour voir son "
                  "score et son état.", back=len(days) - 1)
-    return {**c, "title": title, "average": index_label(rounded(statistics.fmean(with_score)))}
+    return {**c, "title": title, "average": pct(rounded(statistics.fmean(with_score)))}

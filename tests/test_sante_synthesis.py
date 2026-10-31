@@ -31,15 +31,15 @@ def test_high_nightly_hr_cannot_be_hidden_by_usual_hrv():
     assert day["state"]["word"] == "Signaux à surveiller"
 
 
-def test_index_and_history_do_not_claim_a_recovery_percentage():
+def test_index_and_history_are_percentages_like_the_other_rings_and_stay_an_index():
+    # the three rings in one notation (owner, 2026-10-31); still named an index, never a physiological recovery
     day = _day(_rich())
     dial = sc.dial(day["score"], day["state"])
-    assert (dial["label"], dial["unit"]) == ("Récupération", "/100")
-    assert "%" not in dial["aria"] and "indice nocturne" in dial["aria"]
+    assert (dial["label"], dial["unit"], dial["note"]) == ("Récupération", "%", "indice nocturne")
+    assert dial["aria"].startswith("Récupération : indice nocturne ") and "%" in dial["aria"]
     chart = sc.history_card([(D - timedelta(days=1), day["state"], day["score"]),
                              (D, day["state"], day["score"])], D)
-    assert "/100" in chart["data"] and "%" not in chart["data"]
-    assert sc.pct(70).endswith("%")  # sleep and training still have genuine reference ratios
+    assert "/100" not in chart["data"] and "sur 100" not in chart["data"] and "\u00a0%" in chart["data"]
 
 
 def test_synthesis_limits_front_reasons_but_keeps_the_others_and_alert_explanation():
@@ -127,7 +127,7 @@ def test_compute_exports_provenance_and_synthesis_for_the_template():
     model = page["synthesis"]
     hr = next(m for m in model["methods"] if m["key"] == "hr")
     assert "distincte de la FC de repos" in hr["detail"]
-    assert model["freshness"]["current"] and model["signal"]["unit"] == "/100"
+    assert model["freshness"]["current"] and model["signal"]["unit"] == "%"
     assert page["sleep"]["hero"]["need"] == "repère 8h00"
 
 

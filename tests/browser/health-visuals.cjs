@@ -57,7 +57,7 @@ const required = ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#r
       await page.screenshot({ path: `${output}/health-default-${capture}.png`, fullPage: true });
       await page.screenshot({ path: `${output}/health-top-${capture}.png` });
       await page.locator('.pf-dials').screenshot({ path: `${output}/dials-${capture}.png` });
-      assert.match(await page.locator('.pf-ring-recup .pf-ring-value').innerText(), /^100\s*\/100$/, `${label}: fixture must exercise a three-digit index, never a recovery percentage`);
+      assert.match(await page.locator('.pf-ring-recup .pf-ring-value').innerText(), /^100\s*%$/, `${label}: fixture must exercise a three-digit index, in % like the two other rings`);
       // Every available main chart keeps a visible date and accessible value on selection.
       for (const selector of required) for (const figure of await page.locator(selector).all()) {
         const selected = await figure.evaluate(fig => {

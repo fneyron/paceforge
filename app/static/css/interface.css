@@ -1488,7 +1488,6 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-offline #courses-page .pf-head { flex-wrap: wrap; row-gap: 4px; }
 
 /* A measured night, its limits and the race context: no readiness prescription. */
-.pf-ring-index .pf-ring-unit { display: block; margin: 0; font-size: .4em; line-height: 1; font-weight: 500; letter-spacing: 0; }
 /* The curves stacked on the same days, under the rings (owner, 2026-10-17) */
 .pf-curves { display: grid; gap: 12px; }
 .pf-curves > .pf-card, .pf-curves .pf-health-nights > .pf-card { margin: 0; min-width: 0; }
