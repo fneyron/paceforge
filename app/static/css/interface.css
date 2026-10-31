@@ -155,6 +155,8 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .dark :is(.bg-red-50, .bg-red-50\/40, .bg-red-50\/50, .bg-red-50\/60) { background-color: rgb(var(--pf-danger-soft)) !important; }
 .dark :is(.text-red-400, .text-red-500, .text-red-600, .text-red-700, .text-red-800, .text-red-900) { color: rgb(var(--pf-danger)) !important; }
 .dark .border-red-200 { border-color: rgb(var(--pf-danger) / .4) !important; }
+/* a danger button's white on the dark theme's light red was 2.5:1: the page's dark ink on it (7.6:1; light: 5.9:1) */
+.dark .bg-danger.text-white { color: rgb(var(--pf-bg)); }
 .dark :is(.bg-amber-50, .bg-yellow-50, .bg-orange-50, .bg-orange-50\/40) { background-color: rgb(var(--pf-warn-soft)) !important; }
 .dark :is(.text-amber-500, .text-amber-600, .text-amber-700, .text-amber-800, .text-amber-900, .text-yellow-700, .text-yellow-900, .text-orange-800) { color: rgb(var(--pf-warn)) !important; }
 .dark :is(.border-amber-200, .border-yellow-200, .border-orange-100) { border-color: rgb(var(--pf-warn) / .4) !important; }

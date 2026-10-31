@@ -306,6 +306,13 @@ def test_inputs_tabs_and_segments_carry_more_than_hue():
     assert '.pf-seg > [aria-pressed="true"], .pf-seg > [aria-current] { background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }' in CSS
 
 
+def test_danger_buttons_keep_their_contrast_in_the_dark():
+    """Re-audit 2026-10-31: white on the dark theme's light red (#f88074) was 2.52:1; the page's dark ink is 7.6:1."""
+    assert ".dark .bg-danger.text-white { color: rgb(var(--pf-bg)); }" in CSS
+    theme = (ROOT / "app/static/css/theme.css").read_text(encoding="utf-8")
+    assert "--pf-danger: 248 128 116;" in theme and "--pf-bg: 14 14 16;" in theme
+
+
 def test_tab_changes_move_the_focus_and_say_loading():
     js = (ROOT / "app/static/js/tab-navigation.js").read_text(encoding="utf-8")
     assert "next.focus({ preventScroll: true })" in js and "'Chargement…'" in js and "aria-label', 'Chargement'" not in js
