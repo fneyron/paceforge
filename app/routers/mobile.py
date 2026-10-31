@@ -395,7 +395,9 @@ async def pair(request: Request, challenge: str = Form(), platform: Platform = F
     code = secrets.token_urlsafe(32)
     db.add(MobileDevice(user_id=user.id, platform=platform, code_hash=digest(code), challenge=challenge,
                        expires_at=now + timedelta(minutes=2)))
-    await db.flush()
+    # committed before the code is shown: the phone exchanges it at once, and get_db's own commit runs only once
+    # the response is sent (the receipts, tokens and deletions below are committed before answering for the same reason)
+    await db.commit()
     return page(request, mode="paired", message={"type": "pair", "challenge": challenge, "code": code})
 
 
@@ -420,6 +422,7 @@ async def exchange(body: Exchange, request: Request, db: AsyncSession = Depends(
     if not row:
         raise HTTPException(401, "Association expirée ou invalide.")
     user = await db.get(User, row.user_id)
+    await db.commit()
     return JSONResponse({"token": token, "user_id": user.id, "name": user.firstname or "Athlète"}, headers=HEADERS)
 
 
@@ -477,7 +480,7 @@ async def rotate(authorization: str = Header(default=""), phone: MobileDevice = 
     token = secrets.token_urlsafe(48)
     phone.prev_token_hash, phone.prev_expires_at = bearer(authorization), now + PREVIOUS_TOKEN_GRACE
     phone.token_hash, phone.expires_at = digest(token), now + TOKEN_LIFETIME
-    await db.flush()
+    await db.commit()
     return JSONResponse({"token": token, "user_id": phone.user_id, "expires_at": phone.expires_at.isoformat()},
                         headers=HEADERS)
 
@@ -661,7 +664,7 @@ async def ingest(request: Request, raw: bytes = Depends(daily_bytes), phone: Mob
         received += len(result.all())
     if received:
         await synced(db, phone, now)
-    await db.flush()
+    await db.commit()  # a receipt the phone trusts: it never sends these days again
     # A receipt describes what the server retained, including a later weigh-in
     # already sent by another phone. An ignored old snapshot is not an update.
     return JSONResponse({"received": received, "skipped": len(body.days) - received,
@@ -682,13 +685,14 @@ async def ingest_night(request: Request, raw: bytes = Depends(night_bytes), phon
     now = datetime.now(timezone.utc)
     if received:
         await synced(db, phone, now)
-    await db.flush()
+    await db.commit()  # a receipt the phone trusts: it never sends this night again
     return {"received": received, "checked_at": now.isoformat()}
 
 
 @router.delete("/api/mobile/device")
 async def disconnect(phone: MobileDevice = Depends(device), db: AsyncSession = Depends(get_db)):
     await db.delete(phone)
+    await db.commit()
     return {"disconnected": True}
 
 
@@ -704,6 +708,7 @@ async def revoke(request: Request, device_id: int = Form(), csrf_token: str = Fo
                  user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     check_csrf(request, csrf_token)
     await db.execute(delete(MobileDevice).where(MobileDevice.user_id == user.id, MobileDevice.id == device_id))
+    await db.commit()  # gone before the list it redirects to is read
     return RedirectResponse("/mobile/devices", status_code=303)
 
 
@@ -715,4 +720,5 @@ async def erase(request: Request, csrf_token: str = Form(), user: User = Depends
     await db.execute(delete(HealthMetric).where(HealthMetric.user_id == user.id,
                      HealthMetric.source.startswith(apple_nights.PREFIX)))
     await db.execute(delete(MobileDevice).where(MobileDevice.user_id == user.id))
+    await db.commit()
     return RedirectResponse("/mobile/devices", status_code=303)
