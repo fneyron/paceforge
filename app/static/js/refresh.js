@@ -144,6 +144,9 @@
       window.paceforgeTabs?.clear(); location.replace(href); return;
     }
     var saved = snapshot(old);
+    // The focus inside the old page (a feel chip, the tab's main after a tab change) comes back on the same id in
+    // the new one, else on its main: removing the old page would drop it to <body> (a screen reader back at the top)
+    var active = document.activeElement, hadFocus = !!active && old.contains(active), focusId = hadFocus ? active.id : '';
     keepOlderWeeks(old, next);
     keepCheckin(old, next, requestedCheckin);
     next.querySelectorAll('details').forEach(function (el) {
@@ -166,6 +169,12 @@
         if (index >= 0 && input) { input.value = index; input.dispatchEvent(new Event('input')); }
       } catch (_) { /* An unavailable old selection returns to the latest data. */ }
     });
+    if (hadFocus) {
+      var target = focusId && document.getElementById(focusId);
+      if (!target || !next.contains(target)) target = next;
+      try { target.focus({ preventScroll: true }); } catch (_) { /* an element that cannot take it: main, below */ }
+      if (document.activeElement !== target) try { next.focus({ preventScroll: true }); } catch (_) {}
+    }
     var anchor = saved.anchor && document.getElementById(saved.anchor.id);
     var y = anchor ? window.scrollY + anchor.getBoundingClientRect().top - saved.anchor.top : saved.y;
     // Override the site's smooth anchor scrolling: restoration happens before paint.

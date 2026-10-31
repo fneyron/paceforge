@@ -319,6 +319,15 @@ def test_tab_changes_move_the_focus_and_say_loading():
     assert "#main-content:focus { outline: none; }" in CSS
 
 
+def test_a_replaced_page_keeps_the_focus_where_it_was():
+    """Re-audit 2026-10-31: a pull refresh or a tab's quiet revalidation replaced #main-content and dropped the focus to
+    <body>: it comes back on the same id in the new page (a feel chip), else on its main."""
+    js = (ROOT / "app/static/js/refresh.js").read_text(encoding="utf-8")
+    assert "hadFocus = !!active && old.contains(active), focusId = hadFocus ? active.id : ''" in js
+    assert "if (!target || !next.contains(target)) target = next;" in js
+    assert js.index("target.focus({ preventScroll: true })") > js.index("document.body.insertBefore(next, nav || null)")
+
+
 def test_the_refresh_region_exists_before_it_speaks():
     js = (ROOT / "app/static/js/refresh.js").read_text(encoding="utf-8")
     assert "function liveRegion()" in js and "\n  liveRegion();" in js and ", 6000);" in js
