@@ -11,7 +11,7 @@
 <form method="post"><input type="hidden" name="challenge" value="{{ challenge }}"><input type="hidden" name="platform" value="{{ platform }}"><input type="hidden" name="csrf_token" value="{{ csrf }}">
 {% if consent_text %}<h2>{{ consent_title }}</h2>{% for paragraph in consent_text %}<p>{{ paragraph }}</p>{% endfor %}
 {% if error %}<p id="consent-error" class="err" role="alert">{{ error }}</p>{% endif %}
-<label class="check"><input type="checkbox" name="health_consent" value="1" required{% if error %} aria-invalid="true" aria-describedby="consent-error"{% endif %}><span>{{ consent_label }}</span></label>{% endif %}
+<label class="check"><input type="checkbox" name="health_consent" value="1" aria-required="true"{% if error %} aria-invalid="true" aria-describedby="consent-error"{% endif %}><span>{{ consent_label }}</span></label>{% endif %}
 <button>Continuer avec ce compte</button></form>
 <form method="post" action="/auth/logout"><p><button type="submit" class="link">Changer de compte</button> · <a href="/mobile/privacy">Utilisation des données</a></p></form>
 {% elif mode == 'devices' %}
@@ -31,7 +31,7 @@
 {% elif mode == 'oauth-confirm' %}<h1>Connecter {{ name }}</h1><p>Tes données {{ name }} seront ajoutées au compte PaceForge de <strong>{{ [user.firstname, user.lastname]|select|join(' ') or 'Athlète' }}</strong>{% if user.email %} · {{ user.email }}{% endif %}.</p>
 {% if consent_text %}<form method="post" action="/sante/consentement"><input type="hidden" name="next" value="{{ start }}">
 <h2>{{ consent_title }}</h2>{% for paragraph in consent_text %}<p>{{ paragraph }}</p>{% endfor %}
-<label class="check"><input type="checkbox" name="accept" value="1" required><span>{{ consent_label }}</span></label>
+<label class="check"><input type="checkbox" name="accept" value="1" aria-required="true"><span>{{ consent_label }}</span></label>
 <button>Continuer avec {{ name }}</button></form>
 {% else %}<p><a href="{{ start }}" style="display:inline-block;font:inherit;background:#173e38;color:white;border-radius:12px;padding:12px 20px;text-decoration:none">Continuer avec {{ name }}</a></p>{% endif %}<p><a href="{{ cancel }}">Annuler</a></p>
 {% else %}<h1>Retour dans PaceForge…</h1><p id="bridge-status" role="status">La connexion se termine.</p>

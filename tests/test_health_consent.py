@@ -79,7 +79,7 @@ async def test_the_consent_is_recorded_with_its_version(client, db_session, newc
         page = await c.get("/sante/consentement", params={"next": "/coros/connect?region=europe"})
         assert page.status_code == 200
         box = re.search(r'<input type="checkbox" name="accept"[^>]*>', page.text)[0]
-        assert "checked" not in box and "required" in box  # never ticked for the athlete
+        assert "checked" not in box and 'aria-required="true"' in box  # never ticked; not invalid before any action
         assert health_consent.TEXT[0] in page.text and 'value="/coros/connect?region=europe"' in page.text
         refused = await c.post("/sante/consentement", data={"next": "/sante"})
         assert refused.status_code == 400 and 'role="alert"' in refused.text
