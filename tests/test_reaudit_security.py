@@ -1,4 +1,5 @@
 """Security, operations and performance corrections of the 2026-10-31 re-audit."""
+import json
 import re
 from unittest.mock import AsyncMock
 
@@ -261,6 +262,54 @@ async def test_a_form_field_past_starlettes_cap_is_refused_in_french(as_user, te
 
     assert form_refusal("Test invalide.") is None and form_refusal(None) is None
     assert form_refusal("Too many fields. Maximum number of fields is 1000.") == "Envoi refusé : trop de champs."
+
+
+# ── the race plan's script: a static file, its data in the page ──────────────
+
+ROOT = __import__("pathlib").Path(__file__).resolve().parent.parent
+PLAN_JS = ROOT / "app/static/js/gpx-result.js"
+
+
+def test_the_plan_partials_hold_no_code():
+    """The 115 KB inline script went out with every plan view (no-store) and stood in the way of a strict CSP: its
+    code is app/static/js/gpx-result.js, its controls listeners there (data-sim), the partials only data."""
+    for name in ("partials/gpx_result.html", "partials/passage_times.html"):
+        tpl = re.sub(r"\{#.*?#\}", "", (ROOT / "app/templates" / name).read_text(encoding="utf-8"), flags=re.S)
+        assert not re.findall(r"\son[a-z]+=|hx-on", tpl), name
+        scripts = re.findall(r"<script\b([^>]*)>", tpl)
+        assert all('type="application/json"' in s or "src=" in s for s in scripts), (name, scripts)
+    js = PLAN_JS.read_text(encoding="utf-8")
+    assert "{{" not in js and "{%" not in js and not re.search(r"\son[a-z]+=\\?[\"']", js)  # nor in what it writes
+    assert "document.addEventListener('htmx:afterSettle', boot)" in js  # a plan swapped in later is set up too
+    assert "closeMenus(true)" in js  # Escape in « … » gives the focus back to its button
+
+
+async def test_the_plan_page_loads_its_script_cached_and_its_data_escaped(as_user, db_session):
+    from app.build import BUILD_ID
+
+    rid = await _create_route(as_user, cps=[{"name": "</script><script>alert(1)</script>", "distance_km": 5.0,
+                                             "elevation": 100}])
+    page = (await as_user.get(f"/simulator/routes/{rid}")).text
+    assert page.count(f'<script defer src="/static/js/gpx-result.js?v={BUILD_ID}"></script>') == 1
+    assert "</script><script>alert(1)" not in page  # « </ » escaped in every data block: none closes early
+    root = re.search(r'<div id="simulator-root"([^>]*)>', page)[1]
+    assert f'data-route-id="{rid}"' in root and 'data-objective-set="1"' in root and 'data-sport="trail"' in root
+    assert re.search(r'data-est-s="\d+"', root) and f'data-asset-v="{BUILD_ID}"' in root
+    waypoints = json.loads(re.search(r'<script type="application/json" id="plan-waypoints">(.*?)</script>', page, re.S)[1])
+    assert waypoints[0]["name"] == "</script><script>alert(1)</script>"
+    for block in ("plan-weather", "plan-live"):
+        assert json.loads(re.search(rf'id="{block}">(.*?)</script>', page, re.S)[1]) is None
+    r = await as_user.get(f"/static/js/gpx-result.js?v={BUILD_ID}")
+    assert r.status_code == 200 and r.headers["cache-control"] == "private, max-age=31536000, immutable"
+    assert r.headers["content-type"].startswith("text/javascript") and r.headers["content-encoding"] == "gzip"
+
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None, reason="node checks the script's syntax")
+def test_the_plan_script_parses():
+    import shutil
+    import subprocess
+
+    subprocess.run([shutil.which("node"), "--check", str(PLAN_JS)], check=True, capture_output=True)
 
 
 # ── isolation headers ────────────────────────────────────────────────────────

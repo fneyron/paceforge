@@ -269,11 +269,12 @@ async def test_plan_sheets_menu_profile_and_objective(as_user):
     html = (await as_user.get(f"/simulator/routes/{rid}")).text
     menu = html.split('id="plan-more"')[1].split("</details>")[0]
     assert "role=" not in menu.split("</summary>")[1]
-    assert "button, [href], input, select, textarea, summary, [tabindex]" in html  # the sheet's trap knows « Autres formats »
-    assert "function openerOf(el)" in html  # back to « … » when its menu item is gone
+    js = (ROOT / "app/static/js/gpx-result.js").read_text(encoding="utf-8")  # the plan's script
+    assert "button, [href], input, select, textarea, summary, [tabindex]" in js  # the sheet's trap knows « Autres formats »
+    assert "function openerOf(el)" in js  # back to « … » when its menu item is gone
     assert 'aria-label="Modifier l&#39;objectif : 5h00"' in html or "aria-label=\"Modifier l'objectif : 5h00\"" in html
-    assert "'Modifier l\\'objectif : ' + fmtHM(total)" in html
-    assert "role: 'img'" in html and "Profil d’altitude : " in html
+    assert "'Modifier l\\'objectif : ' + fmtHM(total)" in js
+    assert "role: 'img'" in js and "Profil d’altitude : " in js
 
 
 def test_inputs_tabs_and_segments_carry_more_than_hue():

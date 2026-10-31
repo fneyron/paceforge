@@ -30,14 +30,14 @@
 {% if rp %}{% set dm = (rp.delta_s / 60) | round | int %}
 <div data-replan class="pf-replan" title="{% if rp.mode == 'pin' %}heure fixée à {{ rp.pin_name }} ({{ hhmm(rp.pin_clock_s) }}) tenable : seuls les tronçons jusque-là changent{% elif rp.mode == 'target' %}objectif {{ fmt_time(rp.target_time_s) }} tenable{% if rp.required_ratio < 0.99 %}, {{ ((1 - rp.required_ratio) * 100) | round | int }} % plus vite sur la suite{% endif %}{% else %}{% if rp.target_time_s %}objectif hors de portée · {% endif %}arrivée à ton rythme {{ hhmm(rp.finish_clock_s) }}{% endif %} · recalé depuis {{ rp.anchor_name }} {{ hhmm(rp.anchor_clock_s) }}">
     <span><b>Recalée</b> <span class="tabular-nums {% if dm > 1 %}text-warn{% elif dm < -1 %}text-ok{% else %}text-gray-500{% endif %}">{{ '+' if dm > 0 }}{{ dm }} min</span> <span data-rp-mode class="text-gray-500">· {{ rp_mode(rp) }}</span></span>
-    <button type="button" onclick="window._sim && window._sim.clearPassage()" class="pf-ibtn" title="Effacer le passage réel" aria-label="Effacer le passage réel">×</button>
+    <button type="button" data-sim="clearPassage" class="pf-ibtn" title="Effacer le passage réel" aria-label="Effacer le passage réel">×</button>
 </div>
 {% endif %}
 {# no point yet: say what they are for, with the way to add one (the link under the list steps aside) #}
 {% if sections and sections|length == 1 %}
 <div data-empty-state class="pf-empty-cps">
     <p>Ajoute tes ravitos pour avoir ton heure de passage à chacun.</p>
-    <button type="button" onclick="window._sim && window._sim.openAddSheet()" class="pf-btn pf-btn-secondary pf-btn-sm">+ Ajouter un ravito</button>
+    <button type="button" data-sim="openAddSheet" class="pf-btn pf-btn-secondary pf-btn-sm">+ Ajouter un ravito</button>
 </div>
 {% endif %}
 {% if sc %}<div class="pf-pass-cols" aria-hidden="true"><span></span><span></span><span class="pf-prow-alt"><span title="−{{ sc.fast_pct|round|int }} % de temps total">Optimiste</span><span title="+{{ sc.safe_pct|round|int }} % de temps total">Sécurité</span></span><span></span></div>{% endif %}
@@ -95,8 +95,8 @@
             {% if s.drop_bag and not is_finish %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b>.</span></p>{% endif %}
             {% if editable %}
             <div class="pf-det-actions">
-                <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" onclick="window._sim && window._sim.openSheet({{ ci }})">Modifier ce point</button>
-                {% if coords_on %}<button type="button" class="pf-btn pf-btn-ghost pf-btn-sm pf-maplink" onclick="window._sim && window._sim.flyToCp({{ ci }})">Voir sur la carte</button>{% endif %}
+                <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" data-sim="openSheet" data-sim-arg="{{ ci }}">Modifier ce point</button>
+                {% if coords_on %}<button type="button" class="pf-btn pf-btn-ghost pf-btn-sm pf-maplink" data-sim="flyToCp" data-sim-arg="{{ ci }}">Voir sur la carte</button>{% endif %}
             </div>
             {% endif %}
         </div>

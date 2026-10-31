@@ -161,9 +161,9 @@ NODE = shutil.which("node")
 
 @pytest.mark.skipif(NODE is None, reason="node runs the page's pin sheet")
 def test_the_pin_sheet_reads_a_typed_clock_as_the_server_does(tmp_path):
-    """The page's own functions (gpx_result.html), fed the plan data the server sends: a typed clock lands on the
-    side of the switch it names, closest to the row's own time, and the sheet shows it back as typed."""
-    tpl = (Path(__file__).resolve().parents[1] / "app/templates/partials/gpx_result.html").read_text(encoding="utf-8")
+    """The page's own functions (app/static/js/gpx-result.js), fed the plan data the server sends: a typed clock
+    lands on the side of the switch it names, closest to the row's own time, and the sheet shows it back as typed."""
+    tpl = (Path(__file__).resolve().parents[1] / "app/static/js/gpx-result.js").read_text(encoding="utf-8")
     block = re.search(r"// -- the plan's clock.*?// -- end of the plan's clock --", tpl, re.S).group(0)
     clock, secs = _plan(AUTUMN)
     data = build_plan_data(secs, START_22, True, 30.0, clock=clock)

@@ -39,11 +39,14 @@ async def test_the_map_library_is_served_from_here_with_its_credits(as_user: Asy
     """Base code: maplibre-gl came from unpkg.com at runtime, without integrity check (a compromised CDN release
     ran in every signed-in session), and the map hid every source's attribution."""
     page = (await as_user.get(f"/simulator/routes/{await _route(as_user)}")).text
-    assert "unpkg.com" not in page
-    assert "'/static/vendor/maplibre-gl/maplibre-gl'" in page and f"ASSET_V = '{BUILD_ID}'" in page
-    assert "maplibregl.AttributionControl({ compact: true" in page and "'bottom-right'" in page
+    script = (Path(__file__).resolve().parent.parent / "app/static/js/gpx-result.js").read_text(encoding="utf-8")
+    assert "unpkg.com" not in page and "unpkg.com" not in script
+    # the plan's script, a static file, gets the build id from the page
+    assert f'data-asset-v="{BUILD_ID}"' in page and f'src="/static/js/gpx-result.js?v={BUILD_ID}"' in page
+    assert "MAP_LIB = '/static/vendor/maplibre-gl/maplibre-gl', ASSET_V = ds.assetV" in script
+    assert "maplibregl.AttributionControl({ compact: true" in script and "'bottom-right'" in script
     # the styles carry OpenStreetMap's, CARTO's and OpenFreeMap's credit; the relief source gets its own
-    assert "attribution: DEM_CREDIT" in page and "Terrain Tiles" in page
+    assert "attribution: DEM_CREDIT" in script and "Terrain Tiles" in script
     for name in ("maplibre-gl.js", "maplibre-gl.css"):
         r = await as_user.get(f"/static/vendor/maplibre-gl/{name}?v={BUILD_ID}")
         assert r.status_code == 200 and r.headers["cache-control"] == "private, max-age=31536000, immutable"

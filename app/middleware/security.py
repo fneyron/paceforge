@@ -22,7 +22,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# The hosts the plan's map reaches (partials/gpx_result.html): OpenFreeMap's styles, tiles, glyphs and sprites,
+# The hosts the plan's map reaches (app/static/js/gpx-result.js): OpenFreeMap's styles, tiles, glyphs and sprites,
 # CARTO's dark style (basemaps.cartocdn.com) and its tiles, glyphs and sprites (tiles*.basemaps.cartocdn.com), the
 # relief (AWS Terrain Tiles). MapLibre fetches them all itself, so connect-src is where they belong.
 MAP_HOSTS = ("https://tiles.openfreemap.org", "https://basemaps.cartocdn.com", "https://*.basemaps.cartocdn.com",
@@ -30,8 +30,9 @@ MAP_HOSTS = ("https://tiles.openfreemap.org", "https://basemaps.cartocdn.com", "
 
 CONTENT_SECURITY_POLICY = "; ".join((
     "default-src 'self'",
-    # inline scripts and handlers on every page; Alpine (setup, activity) and htmx's hx-on build functions from
-    # attributes, which is eval to a browser
+    # inline scripts and handlers still on every page (base.html's; the race plan's own code is a static file now,
+    # its partials hold data only); Alpine (setup, activity) builds functions from attributes, which is eval to a
+    # browser
     "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     # the athlete's Strava avatar comes from Strava's CDNs (several, changing); MapLibre's control icons are data: SVGs
