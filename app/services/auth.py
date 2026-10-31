@@ -1,12 +1,13 @@
 import base64
 import hashlib
+import hmac
 import logging
 import re
 import secrets
 import time
 
 import bcrypt
-from itsdangerous import BadSignature, TimestampSigner
+from itsdangerous import BadData, BadSignature, TimestampSigner, URLSafeTimedSerializer
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
@@ -84,8 +85,12 @@ LIMITS = {  # action: (per address and email, per address, window in seconds)
 # Failed logins per account whatever the address: a guessing campaign spread over many addresses is held to this
 # (1 200 a day at most). Counted only for attempts the limits above let through, and higher than one address can
 # reach alone (4 windows of 10 an hour), so no single address can lock anyone out; a password reset clears it.
+# A few addresses together can reach it, though: so a browser that has already signed in to the account (its
+# KNOWN_COOKIE names it) is never held by this cap, only by the address limits, and the account's owner is told
+# by email the first time the cap refuses a login in a window (routers.auth.login).
 ACCOUNT_LIMITS = {"login": (50, 60 * 60)}  # action: (per account, window in seconds)
 TOO_MANY = "Trop de tentatives. Réessaie plus tard."  # windows of 15 minutes to an hour
+ADDRESS, ACCOUNT = "address", "account"  # the limit an attempt is over (count_attempt)
 
 # Quotas on the costly or sensitive requests (over_quota): one window each, counted per signed-in account
 # (user=) and/or per client address (ip=), each on its own key.
@@ -99,15 +104,20 @@ QUOTAS = {  # action: (window in seconds, {scope: allowed in the window})
     "webhook": (10 * 60, {"ip": 3000}),
     "resend": (60, {"user": 1}),  # verification emails: one a minute per account
     "data_export": (60 * 60, {"user": 3}),  # the account's data downloaded (Réglages): every row read again
+    # the email telling an account's owner its login cap was reached: once per window of that cap, per account
+    "login_alert": (ACCOUNT_LIMITS["login"][1], {"account": 1}),
+    # /health?deep=1, public for the external monitors (one every minute or so): a database and a Redis round trip
+    "health": (60, {"ip": 30}),
 }
 RETRY_AFTER = "3600"
 
 
 def client_ip(request) -> str:
     """The client's address for the limits. Deployed behind exactly one proxy (Traefik), which appends the address
-    it saw as the last X-Forwarded-For hop: that hop is used. uvicorn's --proxy-headers with
-    --forwarded-allow-ips='*' takes the first hop instead, which the client writes itself. Another proxy in front
-    (a CDN) would make its own address the last hop: then trust its header instead."""
+    it saw as the last X-Forwarded-For hop: that hop is used, whatever uvicorn made of the header. (Its
+    --forwarded-allow-ips names the private networks, the Dockerfile's: it takes the right-most hop outside them, the
+    same one for a client on the internet; with '*' it took the first, which the client writes itself.) Another proxy
+    in front (a CDN) would make its own address the last hop: then trust its header instead."""
     hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
     if hops:
         return hops[-1]
@@ -232,16 +242,19 @@ def _account_key(action: str, email: str) -> str:
     return f"rl:{action}:account:{_digest(email)}"
 
 
-async def count_attempt(action: str, ip: str, email: str) -> bool:
-    """Count one attempt, before any other work; True when it is over the limit (it must then be refused)."""
+async def count_attempt(action: str, ip: str, email: str) -> str | None:
+    """Count one attempt, before any other work; the limit it is over, when it is (it must then be refused, unless
+    ACCOUNT and the browser is known to the account): ADDRESS (this address and email, or this address), ACCOUNT
+    (the account's own cap, whatever the address); None within them."""
     per_email, per_address, window = LIMITS[action]
     counts = await counter().incr(_keys(action, ip, email), window)
     if counts[0] > per_email or counts[1] > per_address:
-        return True
+        return ADDRESS
     if action in ACCOUNT_LIMITS:
         per_account, account_window = ACCOUNT_LIMITS[action]
-        return (await counter().incr([_account_key(action, email)], account_window))[0] > per_account
-    return False
+        if (await counter().incr([_account_key(action, email)], account_window))[0] > per_account:
+            return ACCOUNT
+    return None
 
 
 async def forget_attempts(action: str, ip: str, email: str) -> None:
@@ -268,6 +281,49 @@ async def over_quota(action: str, **subjects) -> bool:
     keys = [f"rl:{action}:{scope}:{_digest(str(subjects[scope]))}" for scope in scopes]
     counts = await counter().incr(keys, window)
     return any(count > allowed[scope] for scope, count in zip(scopes, counts, strict=True))
+
+
+# ── browsers known to an account (the login cap spares them) ──
+# A signed, HttpOnly cookie, set when a login (or a password reset) succeeds: the accounts this browser signed in
+# to, each as a keyed digest of its email (never the email) with the account's session version then. A password
+# reset bumps that version: a cookie from before it no longer counts. Only the auth routes ever receive it.
+KNOWN_COOKIE = "pf_known"
+KNOWN_MAX_AGE = 365 * 24 * 60 * 60
+KNOWN_ACCOUNTS = 5  # the accounts one browser is remembered for, the most recent first
+
+
+def _known_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(settings.SECRET_KEY, salt="known-browser")
+
+
+def _account_tag(email: str) -> str:
+    return hmac.new(settings.SECRET_KEY.encode(), f"known|{email}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def _known_accounts(cookie: str | None) -> list[tuple[str, int]]:
+    if not cookie:
+        return []
+    try:
+        entries = _known_serializer().loads(cookie, max_age=KNOWN_MAX_AGE)
+    except BadData:  # forged, older than a year, or not ours
+        return []
+    if not isinstance(entries, list):
+        return []
+    return [(e[0], e[1]) for e in entries[:KNOWN_ACCOUNTS]
+            if isinstance(e, list) and len(e) == 2 and isinstance(e[0], str) and isinstance(e[1], int)]
+
+
+def known_version(cookie: str | None, email: str) -> int | None:
+    """The session version this browser's cookie holds for the account of `email`; None when it does not name it."""
+    tag = _account_tag(email)
+    return next((version for t, version in _known_accounts(cookie) if t == tag), None)
+
+
+def known_cookie(cookie: str | None, email: str, session_version: int) -> str:
+    """The cookie's new value once this browser has signed in to the account of `email`."""
+    tag = _account_tag(email)
+    entries = [[tag, session_version]] + [[t, v] for t, v in _known_accounts(cookie) if t != tag]
+    return _known_serializer().dumps(entries[:KNOWN_ACCOUNTS])
 
 
 def generate_token() -> str:

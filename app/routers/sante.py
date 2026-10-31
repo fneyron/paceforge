@@ -132,7 +132,11 @@ async def health_consent_page(request: Request, next: str = "", user: User = Dep
     if health_consent.given(user):
         return RedirectResponse(target, status_code=303)
     return templates.TemplateResponse(request, "health_consent.html", context={
-        "user": user, "next": target, **health_consent.texts()})
+        "user": user, "next": target, "not_now": health_consent.not_now_url(target), **health_consent.texts()})
+
+
+PENDING_FEEL = "pending_feel"  # the feel tapped before the consent (sante_checkin): {day, answers}
+FEEL_TARGET = "/sante#ressenti"
 
 
 @router.post("/sante/consentement", response_class=HTMLResponse)
@@ -143,15 +147,39 @@ async def health_consent_give(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """The box ticked (or Santé's « J'accepte »): the consent is dated and versioned, then `next`."""
+    """The box ticked (or Santé's « J'accepte »): the consent is dated and versioned, then `next`. From Réglages, a
+    line there says so; from a feel tapped before it, that feel is saved now (still today's), back on the feel."""
     target = health_consent.safe_next(next)
     if accept != "1":
         return templates.TemplateResponse(request, "health_consent.html", status_code=400, context={
-            "user": user, "next": target, "error": health_consent.MISSING, **health_consent.texts()})
+            "user": user, "next": target, "not_now": health_consent.not_now_url(target),
+            "error": health_consent.MISSING, **health_consent.texts()})
     health_consent.record(user)
     await db.commit()  # before the redirect: the next request (a COROS connect) reads it
     logger.info("Health data consent given by user %d", user.id)
+    pending = request.session.pop(PENDING_FEEL, None)
+    if target == FEEL_TARGET and isinstance(pending, dict):
+        await _save_pending_feel(db, user, pending)
+    if target == "/settings#donnees":  # Réglages' « Donner mon accord »: said there, as a withdrawal is
+        request.session["health_ok"] = "Consentement enregistré."
     return RedirectResponse(target, status_code=303)
+
+
+async def _save_pending_feel(db: AsyncSession, user: User, pending: dict) -> None:
+    """The feel tapped before the consent, saved as the tap would have been, when its day is still today."""
+    from app.services import sante_checkin as checkins
+    from app.services.sante import athlete_today
+
+    today = await athlete_today(db, user.id)
+    answers = pending.get("answers")
+    if pending.get("day") != today.isoformat() or not isinstance(answers, dict):
+        return
+    try:
+        await checkins.save(db, user.id, today, answers)
+    except ValueError:  # not one of the answers the form offers: nothing saved
+        await db.rollback()
+        return
+    await db.commit()
 
 
 @router.get("/accueil")
@@ -241,15 +269,15 @@ async def sante_checkin(
     from app.services import sante_checkin as checkins
     from app.services.sante import athlete_today
 
-    if action == "save" and not health_consent.given(user):
-        # the feel is health data (GDPR art. 9): asked once, then the athlete taps again on Santé
-        url = health_consent.consent_url("/sante")
-        if request.headers.get("HX-Request"):
-            return Response(status_code=204, headers={"HX-Redirect": url})
-        return RedirectResponse(url, status_code=303)
-    today = await athlete_today(db, user.id)
     answers = {key: value for key, value in (("feel", feel), ("fatigue", fatigue), ("pain", pain), ("effort", effort))
                if value is not None}
+    if action == "save" and not health_consent.given(user):
+        # the feel is health data (GDPR art. 9): the consent first; the tap waits in the session and is saved right
+        # after it (health_consent_give), back on the feel
+        if answers:
+            request.session[PENDING_FEEL] = {"day": day, "answers": answers}
+        return _away(request, health_consent.consent_url("/sante#ressenti"))
+    today = await athlete_today(db, user.id)
     error = None
     if day != today.isoformat():
         error = "Le jour a changé. Vérifie tes réponses pour aujourd’hui."
@@ -294,10 +322,14 @@ async def sante_feel(
     still posting gets its answer stored, as before, and the page back. `feel`
     1 mieux · 2 comme d'habitude · 3 moins bien; with « moins bien », `why`
     (legs, fatigue, sick, stress) or `toggle` one of them; `alcohol` 1/0;
-    `legs` 1/0 the older « jambes lourdes » toggle."""
+    `legs` 1/0 the older « jambes lourdes » toggle. Health data, as /sante/ressenti: nothing is stored without the
+    consent, the consent page is shown instead."""
     from app.models.health import HealthMetric
     from app.services.health import FEEL_WHY
     from app.services.sante import athlete_today
+
+    if not health_consent.given(user):
+        return _away(request, health_consent.consent_url("/sante#ressenti"))
 
     today = await athlete_today(db, user.id)
     row = (await db.execute(select(HealthMetric).where(

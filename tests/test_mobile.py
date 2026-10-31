@@ -434,10 +434,12 @@ async def test_a_body_is_parsed_after_the_token_check_with_no_connection_held(cl
     monkeypatch.setattr(mobile, 'validated', validated)
     monkeypatch.setattr(mobile.apple_nights, 'reduce_night', reduced)
     assert (await client.post('/api/mobile/daily', json={'days': [day()]}, headers=bearer(account['token']))).status_code == 200
-    assert order[:5] == ['body', 'auth', 'auth commit', 'parse', 'request'] and 'request commit' not in order
+    assert order[:5] == ['body', 'auth', 'auth commit', 'parse', 'request']
+    assert 'request commit' in order[5:]  # the receipt is committed before it is sent
     order.clear()
     assert (await client.post('/api/mobile/nights', json=packet(), headers=bearer(account['token']))).status_code == 200
     assert order[:6] == ['body', 'auth', 'auth commit', 'parse', 'reduce', 'request']
+    assert order[-1] == 'request commit'
     assert made == ['request', 'auth'] * 2
 
 

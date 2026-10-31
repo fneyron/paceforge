@@ -246,7 +246,11 @@ async def test_a_password_reset_unpairs_every_phone_of_the_account(client, db_se
     from app.models.mobile import MobileDevice
     from app.routers.mobile import digest
 
+    from app.services import health_consent
+
     user, other = await _member(db_session), await _member(db_session, "other@x.fr")
+    health_consent.record(user)  # their phones may send health data
+    health_consent.record(other)
     in_30_days = datetime.now(timezone.utc) + timedelta(days=30)
     db_session.add_all([MobileDevice(user_id=user.id, platform="ios", token_hash=digest("mine"), expires_at=in_30_days),
                         MobileDevice(user_id=other.id, platform="ios", token_hash=digest("theirs"),
@@ -290,7 +294,8 @@ async def test_failed_logins_are_capped_per_account_whatever_the_address(client,
         await c.post("/auth/logout")
         assert (await _login_from(c, "203.0.113.3", user.email)).status_code == 200  # the fourth failure
         n = len(checks)
-        r = await _login_from(c, "198.51.100.7", user.email, "pw-12345678")  # a fresh address, the right password
+        async with AsyncClient(transport=client._transport, base_url="https://test") as fresh:  # another browser
+            r = await _login_from(fresh, "198.51.100.7", user.email, "pw-12345678")  # a fresh address, the password
         assert r.status_code == 429 and TOO_MANY in r.text and len(checks) == n
         assert (await _login_from(c, "198.51.100.7", "other@x.fr")).status_code == 200  # another account: checked
         user.password_reset_token = auth_service.hash_token("reset-token")
@@ -447,8 +452,12 @@ async def test_the_reset_token_is_committed_before_the_email_goes(committing_ses
 
 
 async def test_the_limits_count_the_address_the_proxy_saw(db_session, no_commit, monkeypatch):
-    """As deployed (uvicorn --proxy-headers --forwarded-allow-ips='*' behind one proxy, Traefik, which appends the
-    address it saw last): a client-chosen first X-Forwarded-For hop never gives a fresh count."""
+    """As deployed (uvicorn --proxy-headers --forwarded-allow-ips=<the Dockerfile's private networks> behind one
+    proxy, Traefik, which appends the address it saw last): a client-chosen first X-Forwarded-For hop never gives a
+    fresh count."""
+    import re
+    from pathlib import Path
+
     from httpx import ASGITransport
     from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
@@ -462,7 +471,9 @@ async def test_the_limits_count_the_address_the_proxy_saw(db_session, no_commit,
     app.dependency_overrides[get_db] = same_db
     monkeypatch.setitem(auth_service.LIMITS, "login", (2, 50, 900))
     user = await _member(db_session)
-    transport = ASGITransport(app=ProxyHeadersMiddleware(app, trusted_hosts="*"))
+    dockerfile = (Path(__file__).resolve().parent.parent / "Dockerfile").read_text(encoding="utf-8")
+    trusted = re.search(r"--forwarded-allow-ips='([^']+)'", dockerfile)[1]
+    transport = ASGITransport(app=ProxyHeadersMiddleware(app, trusted_hosts=trusted))  # from 127.0.0.1, as Traefik
     async with AsyncClient(transport=transport, base_url="https://test") as c:
         async def attempt(forwarded):
             return (await c.post("/auth/login", data={"email": user.email, "password": "wrong-password"},

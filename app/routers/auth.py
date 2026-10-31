@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import delete, select, update
@@ -20,7 +20,10 @@ from app.models.user import User
 from app.services import sessions
 from app.services.app_return import app_return, is_app_return, with_result
 from app.services.auth import (
+    ACCOUNT,
     DUMMY_HASH,
+    KNOWN_COOKIE,
+    KNOWN_MAX_AGE,
     PASSWORD_PREFIX,
     TOO_MANY,
     client_ip,
@@ -30,13 +33,15 @@ from app.services.auth import (
     generate_token,
     hash_password_async,
     hash_token,
+    known_cookie,
+    known_version,
     over_quota,
     valid_email,
     valid_verification_token,
     verification_token,
     verify_password_async,
 )
-from app.services.email import send_password_reset_email, send_verification_email
+from app.services.email import send_login_alert_email, send_password_reset_email, send_verification_email
 from app.services.oauth_attempts import begin_strava, consume_strava
 from app.services.strava import StravaService
 
@@ -178,7 +183,9 @@ async def resend_verification(request: Request, db: AsyncSession = Depends(get_d
     if user and user.email and not user.email_verified and not await over_quota("resend", user=user.id):
         token = verification_token()
         user.email_verify_token = hash_token(token)
-        await db.flush()
+        # committed before the email goes, as at sign-up: get_db's own commit comes only after the response, and a
+        # link opened at once (or a commit that fails) would find the previous token
+        await db.commit()
         sent = await run_in_threadpool(send_verification_email, user.email, token)
         request.session["verification_failed"] = not sent
     return RedirectResponse("/auth/check-email", status_code=303)
@@ -203,7 +210,7 @@ async def verify_email(
 
     if not user.email_verified:
         user.email_verified = True
-        await db.flush()
+        await db.commit()  # before the answer: « Continuer » (or the redirect) is followed at once, by a new request
         logger.info("Email verified for user %d", user.id)
     # the token stays on the account: the link opened again (a double click, an email client that fetched it
     # first) finds the account verified and says so, not « Lien invalide »
@@ -226,9 +233,35 @@ async def login_page(request: Request, next: str = ""):
         "next": _next(next) or _next(request.session.get(_AFTER_LOGIN_KEY))})
 
 
+def _remember_browser(request: Request, response: RedirectResponse, user: User) -> RedirectResponse:
+    """This browser has signed in to `user`'s account: the account's login cap spares it from now on (until the
+    password is reset). Sent back to the auth routes only."""
+    email = (user.email or "").strip().lower()
+    value = known_cookie(request.cookies.get(KNOWN_COOKIE), email, user.session_version or 0)
+    response.set_cookie(KNOWN_COOKIE, value, max_age=KNOWN_MAX_AGE, path="/auth", secure=not settings.DEBUG,
+                        httponly=True, samesite="lax")
+    return response
+
+
+async def _account_capped(request: Request, db: AsyncSession, email: str, tasks: BackgroundTasks) -> bool:
+    """The account's own cap refuses this login: whether it holds (False for a browser that signed in to the account
+    since its last password reset). Its owner gets one email the first time it refuses in a window, whoever tried
+    (sent after the answer, which says the same for an account and for an unknown email)."""
+    first = not await over_quota("login_alert", account=email)  # counted for an unknown email too: as long either way
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if user is None:
+        return True
+    if first and user.email:
+        logger.warning("Login cap reached for user %d: its owner is told by email", user.id)
+        tasks.add_task(send_login_alert_email, user.email)
+    version = known_version(request.cookies.get(KNOWN_COOKIE), email)
+    return version is None or version != (user.session_version or 0)
+
+
 @router.post("/auth/login", dependencies=[Depends(_same_site)])
 async def login(
     request: Request,
+    tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     email: str = Form(...),
     password: str = Form(...),
@@ -238,8 +271,9 @@ async def login(
     next = _next(next) or _next(request.session.get(_AFTER_LOGIN_KEY))
     ip = client_ip(request)
     # counted before anything else: parallel attempts cannot slip past the limit, and a refused one costs
-    # neither a database connection nor a password check
-    if await count_attempt("login", ip, email):
+    # neither a database connection nor a password check (but the account's cap, which looks the account up)
+    over = await count_attempt("login", ip, email)
+    if over and (over != ACCOUNT or await _account_capped(request, db, email, tasks)):
         return templates.TemplateResponse(
             request, "auth/login.html", status_code=429,
             context={"error": TOO_MANY, "email": email, "next": next},
@@ -256,9 +290,10 @@ async def login(
             context={"error": "Email ou mot de passe incorrect.", "error_field": "credentials", "email": email,
                      "next": next},
         )
+    assert user is not None  # `known`: an account with a password
     await forget_attempts("login", ip, email)
 
-    if not user.password_hash.startswith(PASSWORD_PREFIX):
+    if not (user.password_hash or "").startswith(PASSWORD_PREFIX):
         user.password_hash = await hash_password_async(password)
         await db.flush()
     request.session.clear()
@@ -266,11 +301,11 @@ async def login(
         request.session["pending_user_id"] = user.id
         if next:
             request.session[_AFTER_LOGIN_KEY] = next
-        return RedirectResponse("/auth/check-email", status_code=302)
+        return _remember_browser(request, RedirectResponse("/auth/check-email", status_code=302), user)
     sign_in(request, user)
     logger.info("User %d logged in", user.id)
 
-    return RedirectResponse(url=AFTER_LOGIN[next] if next else HOME, status_code=302)
+    return _remember_browser(request, RedirectResponse(url=AFTER_LOGIN[next] if next else HOME, status_code=302), user)
 
 
 async def _sign_out(request: Request, db: AsyncSession) -> None:
@@ -390,11 +425,12 @@ async def reset_password(
     request.session.clear()
     if not user.email_verified:
         request.session["pending_user_id"] = user.id
-        return RedirectResponse("/auth/check-email", status_code=302)
+        return _remember_browser(request, RedirectResponse("/auth/check-email", status_code=302), user)
     sign_in(request, user)
     logger.info("Password reset for user %d", user.id)
 
-    return RedirectResponse(url=HOME, status_code=302)
+    # the new password's browser: known to the account under its new session version (older cookies no longer are)
+    return _remember_browser(request, RedirectResponse(url=HOME, status_code=302), user)
 
 
 # ---------------------------------------------------------------------------
@@ -621,7 +657,13 @@ async def setup_credentials(
 
 @router.get("/privacy", response_class=HTMLResponse)
 async def privacy(request: Request, user: User | None = Depends(get_optional_user)):
-    return templates.TemplateResponse(request, "privacy.html", context={"viewer": user})
+    from app.features import cycling_enabled
+    from app.services import health_consent
+
+    # the consent's own words (its data, its text): the policy never says another list than the one agreed to
+    return templates.TemplateResponse(request, "privacy.html", context={
+        "viewer": user, "consent_data": health_consent.DATA, "consent_text": health_consent.TEXT,
+        "bike": cycling_enabled()})
 
 
 @router.get("/mentions-legales", response_class=HTMLResponse)

@@ -37,7 +37,8 @@
     <details id="nouveau-test" class="pf-health-panel"{% if not current or edit or error %} open{% endif %}>
         <summary><span>{{ 'Modifier le test' if edit else 'Saisir un test' }}</span></summary>
         <div class="pf-panel-body">
-            {% if error %}<p class="pf-lactate-error" role="alert">{{ error }}</p>{% endif %}
+            {% set consent_error = consent_text and error and error == consent_missing %}
+            {% if error and not consent_error %}<p class="pf-lactate-error" role="alert">{{ error }}</p>{% endif %}
             <form action="/sante/lactate" method="post" class="pf-lactate-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf }}">{% if edit %}<input type="hidden" name="test_id" value="{{ edit.id }}">{% endif %}
                 <div class="pf-lactate-fields">
@@ -60,7 +61,9 @@
                 <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" id="add-lactate-stage" hidden>Ajouter un palier</button>
                 <label>Contexte · facultatif<textarea class="pf-input" name="notes" rows="3" maxlength="1000" placeholder="Moment du prélèvement, récupération entre paliers, repas, température…">{{ values.notes }}</textarea></label>
                 {% if consent_text %}<div class="pf-lactate-consent">{% for paragraph in consent_text %}<p>{{ paragraph }}</p>{% endfor %}
-                <label class="pf-consent-check"><input type="checkbox" name="health_consent" value="1" required><span>{{ consent_label }}</span></label></div>{% endif %}
+                {#- its error beside its box, tied to it as on the consent page -#}
+                {% if consent_error %}<p id="lactate-consent-error" class="pf-lactate-error" role="alert">{{ error }}</p>{% endif %}
+                <label class="pf-consent-check"><input type="checkbox" name="health_consent" value="1" required{% if consent_error %} aria-invalid="true" aria-describedby="lactate-consent-error"{% endif %}><span>{{ consent_label }}</span></label></div>{% endif %}
                 <div class="pf-lactate-actions"><button class="pf-btn pf-btn-primary">Enregistrer le test</button>{% if edit %}<a class="pf-link" href="/sante/lactate/{{ edit.id }}">Annuler</a>{% endif %}</div>
             </form>
         </div>

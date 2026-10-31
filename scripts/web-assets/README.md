@@ -20,7 +20,8 @@ licenses are preserved as well.
 All shared scripts are served with the deployed build ID in their URL. Only a
 URL for the currently deployed build receives a long-lived immutable browser
 cache policy. Unversioned and stale URLs revalidate, including the service
-worker. Cache policy is private because the session middleware can refresh a
+worker; the icons, images and manifest, which carry versions of their own
+(`?v=5`), are kept a week. Cache policy is private because the session middleware can refresh a
 session cookie even on static responses. HTML and account data are unaffected.
 
 MapLibre and its map tiles remain on their providers: the trail map loads them

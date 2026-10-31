@@ -1,10 +1,17 @@
-{# Santé, above the rings: the consent to health data an account from before it was asked has not given yet #}
-<section class="pf-panel pf-consent-card" aria-labelledby="consent-card-title">
-    <h2 id="consent-card-title" class="pf-h2">{{ consent_card.consent_title }}</h2>
-    {% for paragraph in consent_card.consent_text %}<p>{{ paragraph }}</p>{% endfor %}
-    <form method="post" action="/sante/consentement" class="pf-consent-actions">
-        <input type="hidden" name="next" value="/sante">
-        <button type="submit" name="accept" value="1" class="pf-btn pf-btn-primary pf-btn-sm">J’accepte</button>
-        <a class="pf-link" href="/settings#connections">Déconnecter mes sources</a>
-    </form>
+{#- Santé, above the rings: the consent to health data an account holding some has not given (or given to an older
+    text). One sentence, its two answers (« Refuser et effacer » confirmed first: partials/health_erase.html's), the
+    whole text one tap away. White as the rings' card, short enough to keep the rings and the feel on the first
+    screen of a phone. -#}
+<section class="pf-consent-card" aria-labelledby="consent-card-title">
+    <p id="consent-card-title">PaceForge a besoin de ton accord pour enregistrer tes données de santé.</p>
+    <div class="pf-consent-actions">
+        <form method="post" action="/sante/consentement">
+            <input type="hidden" name="next" value="/sante">
+            <button type="submit" name="accept" value="1" class="pf-btn pf-btn-primary pf-btn-sm">J’accepte</button>
+        </form>
+        <form method="post" action="/settings/health-consent/withdraw" onsubmit="{% include 'partials/_erase_confirm.html' %}">
+            <button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm">Refuser et effacer</button>
+        </form>
+    </div>
+    <p class="pf-consent-links"><a class="pf-link" href="/sante/consentement?next=%2Fsante">Ce qui est enregistré</a><a class="pf-link pf-browser-only" href="/settings/export" download>Télécharger mes données</a></p>
 </section>

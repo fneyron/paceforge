@@ -2,10 +2,12 @@
 without a secret, behind the sign-in and a quota; the link in Réglages."""
 import io
 import json
+import os
 import re
 import zipfile
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
 from httpx import AsyncClient
 
 from app.crypto import encrypt_secret
@@ -146,6 +148,46 @@ async def test_the_export_has_a_quota_per_account(as_user: AsyncClient, monkeypa
     assert (await as_user.get("/settings/export")).status_code == 200
     response = await as_user.get("/settings/export")
     assert response.status_code == 429 and response.headers["retry-after"] == "3600"
+
+
+async def test_the_export_holds_the_consent_and_explains_its_times(as_user: AsyncClient, test_user):  # noqa: F811
+    files = _zip(await as_user.get("/settings/export"))
+    account = json.loads(files["compte.json"])
+    assert account["health_consent_version"] == test_user.health_consent_version
+    assert account["health_consent_at"].startswith("2026-10-25")
+    readme = files["LISEZMOI.txt"].decode()
+    assert "heures sans fuseau sont en UTC" not in readme  # the samples and the nights are local times
+    assert "sante_echantillons.json), à l’heure locale" in readme
+
+
+@pytest.mark.skipif(bool(os.getenv("TEST_DATABASE_URL")),
+                    reason="the legacy tables are made here as on an old database; alembic made the server's")
+async def test_the_export_holds_the_legacy_tables_rows_of_the_account(as_user: AsyncClient, test_user,  # noqa: F811
+                                                                      db_session):
+    from sqlalchemy import text
+
+    from tests.test_account_deletion import LEGACY, LEGACY_DDL, _legacy_rows
+
+    other = User(email="other@x.fr", email_verified=True)
+    db_session.add(other)
+    await db_session.flush()
+    await _seed(db_session, test_user, "MINE")
+    await _seed(db_session, other, "THEIRS")
+    for ddl in LEGACY_DDL:
+        await db_session.execute(text(ddl))
+    await _legacy_rows(db_session, other, 1)
+    await _legacy_rows(db_session, test_user, 2)
+    files = _zip(await as_user.get("/settings/export"))
+    assert {name for name in files if name.startswith("anciennes_fonctions/")} == {
+        f"anciennes_fonctions/{table}.json" for table in LEGACY}
+    for table in LEGACY:
+        assert [row["id"] for row in json.loads(files[f"anciennes_fonctions/{table}.json"])] == [2], table
+    assert "anciennes_fonctions/" in files["LISEZMOI.txt"].decode()
+
+
+async def test_without_the_legacy_tables_the_export_has_none_of_their_files(as_user: AsyncClient):  # noqa: F811
+    files = _zip(await as_user.get("/settings/export"))
+    assert not [name for name in files if name.startswith("anciennes_fonctions/")]
 
 
 async def test_reglages_links_the_export_beside_the_deletion(as_user: AsyncClient):  # noqa: F811

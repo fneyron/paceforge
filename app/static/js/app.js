@@ -34,6 +34,14 @@
     window.pfToast = pfToast;
     window.pfConfirm = pfConfirm;
 
+    // The last way in was a pointer (a tap, a click), not Tab: data-pf-pointer on <html>, for the few fields whose
+    // focus ring a tap must not draw (a text field matches :focus-visible on a tap too: the objective's big hours
+    // and minutes, interface.css). Only Tab clears it: typing in the field keeps it.
+    document.addEventListener("pointerdown", function () { document.documentElement.setAttribute("data-pf-pointer", ""); }, true);
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Tab") document.documentElement.removeAttribute("data-pf-pointer");
+    }, true);
+
     // Activités › « Semaines précédentes » (partials/load_more.html): aria-disabled while it loads (never disabled:
     // the focus would drop to the page); once the weeks are in, the focus goes to the first one added (its heading)
     // and the polite region under the list says how many came. The button itself is swapped out of band.

@@ -52,8 +52,11 @@
     {# one action: import the GPX (the whole page also takes a dropped file) #}
     <form id="gpx-form" hx-post="/partials/simulator/gpx-upload" hx-target="#gpx-error" hx-swap="innerHTML" hx-encoding="multipart/form-data" hx-indicator="#gpx-loading" hx-sync="this:drop">
         <label for="gpx-file" class="pf-btn pf-btn-primary pf-btn-block pf-only-m cursor-pointer mb-2">{{ ic.icon('upload') }}Importer un GPX<span class="sr-only"> · nouvelle course</span></label>
-        {#- named by its visible label (« Nouvelle course », « Importer un GPX »), which shows its focus ring (interface.css) -#}
-        <input type="file" id="gpx-file" name="gpx_file" accept=".gpx" class="pf-file-input" required aria-describedby="file-name" onchange="submitGpx(this)">
+        {#- its visible labels (« Nouvelle course » on a desktop, « Importer un GPX » below 1024 px) show its focus ring
+            (interface.css); one of them is always display:none, so its name holds both, the words seen in it. Never
+            `required`: it submits itself once a file is chosen, and an empty required field reads « invalide » before
+            anything was done (a wrong format still is, submitGpx's setCustomValidity) -#}
+        <input type="file" id="gpx-file" name="gpx_file" accept=".gpx" class="pf-file-input" aria-label="Importer un GPX, nouvelle course" aria-describedby="file-name" onchange="submitGpx(this)">
         {% if cycling_enabled() %}
         <div class="pf-sport-selector pf-seg pf-seg-sm mt-3" role="radiogroup" aria-label="Sport">
             <button type="button" id="sport-run" role="radio" aria-checked="true" aria-pressed="true" tabindex="0" onclick="setSport('run')">Course à pied</button>

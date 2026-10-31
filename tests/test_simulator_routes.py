@@ -48,7 +48,7 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
     page = await as_user.get(f"/simulator/routes/{route_id}")
     assert page.status_code == 200
     html = page.text
-    assert "Nutrition" not in html and "Pilotage" not in html and "exportPace(" in html
+    assert "Nutrition" not in html and "Pilotage" not in html and 'data-sim="exportPace"' in html
     assert '"kind": "full"' in html and '"drop_bag": true' in html  # checkpoint metadata round-trips to the page
 
     course = _course()

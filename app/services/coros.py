@@ -69,7 +69,7 @@ from app.crypto import decrypt_secret, encrypt_secret
 from app.models.activity import Activity
 from app.models.coros import CorosConnection, OAuthClient
 from app.models.health import HealthMetric
-from app.services import activity_env
+from app.services import activity_env, health_consent
 from app.services.activity_sources import find_twin, merge_twins
 from app.services.health import (
     DAILY_LABELS,
@@ -1510,12 +1510,18 @@ def _parsed(parser, text):
 
 
 async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0,
-                 on_sessions=None, activity_ranges: list[tuple[date, date]] | None = None) -> tuple[dict, int, int, bool]:
+                 on_sessions=None, activity_ranges: list[tuple[date, date]] | None = None, *,
+                 health: bool = True, offset_hint: float | None = None) -> tuple[dict, int, int, bool]:
     """`on_sessions(records, utc_offset)` stores the sessions and returns the
     (labelId, sport code, detail missing, laps missing) of the sessions whose
-    detail (D+) and laps (max HR) to read now."""
+    detail (D+) and laps (max HR) to read now. `health` False (no consent to
+    health data): no night, HRV, heart rate or daily health call at all, the
+    sessions only, placed with `offset_hint` (the athlete's zone) instead of the
+    HRV answer's offset."""
     await mcp.initialize()
     call = _Fetcher(mcp)
+    if not health:
+        return await _fetch_sessions_only(call, today, activity_days, on_sessions, activity_ranges, offset_hint)
     # COROS dates nights in the athlete's time zone: ahead of the server's
     # UTC day in Asia, this morning's night is « tomorrow » here. The window
     # ends a day later (an empty future day costs nothing) and keeps its size.
@@ -1600,6 +1606,26 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
     # the sessions last: the nights matter more on a morning when COROS is slow; their
     # failures never make the health history count as cut short
     data["health_stopped"] = call.stopped
+    await _read_sessions(call, data, hi, activity_days, on_sessions, activity_ranges)
+    return data, call.calls, call.failed, call.stopped
+
+
+async def _fetch_sessions_only(call, today: date, activity_days: int, on_sessions,
+                               activity_ranges: list[tuple[date, date]] | None,
+                               offset_hint: float | None) -> tuple[dict, int, int, bool]:
+    """_fetch without the athlete's consent to health data: its health parts empty, never asked of COROS."""
+    data: dict = {"overview": {}, "naps": {}, "hrv_points": [], "hrv_days": set(), "hrv_failed_days": set(),
+                  "hrv_unreadable_days": set(), "daily": {}, "read": {"sleep": set(), "nap": set()},
+                  "overview_days": set(), "overview_failed_days": set(), "hr_day": {}, "activity": {},
+                  "daily_read": None, "daily_incomplete": False, "health_stopped": False, "health_skipped": True,
+                  "utc_offset": offset_hint}
+    await _read_sessions(call, data, today + timedelta(days=1), activity_days, on_sessions, activity_ranges)
+    return data, call.calls, call.failed, call.stopped
+
+
+async def _read_sessions(call, data: dict, hi: date, activity_days: int, on_sessions,
+                         activity_ranges: list[tuple[date, date]] | None) -> None:
+    """The sessions into `data` (sessions, details, laps, sessions_complete, sessions_pending)."""
     data["sessions"], data["details"], data["laps"], data["sessions_complete"] = [], {}, {}, False
     data["sessions_pending"] = (activity_ranges if activity_ranges is not None else
                                 _ranges(hi - timedelta(days=activity_days - 1), hi, SESSION_CHUNK_DAYS))
@@ -1617,7 +1643,6 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
                 data["details"][label] = _parsed(parse_activity_detail, text)
             if laps and (text := await call("queryActivityLapData", args)) is not None:
                 data["laps"][label] = _parsed(parse_laps, text)
-    return data, call.calls, call.failed, call.stopped
 
 
 async def import_sessions(db: AsyncSession, user_id: int, records: list[dict],
@@ -1803,6 +1828,26 @@ async def apply_details(db: AsyncSession, user_id: int, details: dict[int, dict]
     return n
 
 
+CONSENT_CATCH_UP = timedelta(days=2)  # after a consent to health data: how long a gap before it is still read whole
+
+
+async def _gap_before_consent(db: AsyncSession, user_id: int, now: datetime) -> bool:
+    """A consent to health data given (or given again, a new text) less than CONSENT_CATCH_UP ago, while the newest
+    day stored from COROS is older than the week a sync reads: the syncs in between asked for the sessions only, so
+    the history is owed, read whole (once a day, as any owed history), and those days are not lost."""
+    from app.models.user import User
+
+    consent_at = (await db.execute(select(User.health_consent_at).where(User.id == user_id))).scalar()
+    if consent_at is None:
+        return False
+    if now - (consent_at if consent_at.tzinfo else consent_at.replace(tzinfo=timezone.utc)) > CONSENT_CATCH_UP:
+        return False
+    newest = (await db.execute(select(func.max(HealthMetric.date)).where(
+        HealthMetric.user_id == user_id, HealthMetric.source == SOURCE,
+        HealthMetric.metric.in_(("hr_day", "steps", "sleep"))))).scalar()
+    return newest is not None and newest < now.date() - timedelta(days=RECENT_DAYS - 1)
+
+
 def _pressed_read_allowed(conn: CorosConnection) -> bool:
     """A press of « Synchroniser maintenant » may read an owed history again the same day, once an hour per link
     (Redis); False without Redis (the day's first sync reads it then)."""
@@ -1827,19 +1872,25 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection, *, pressed: b
     # naps that are a night's start were folded into it (2026-10-09); while it
     # is owed, it is read whole at most once a (UTC) day, the first sync of the
     # day: a history COROS keeps cutting short (or never sends) is not 45 calls
-    # every 2 hours; the syncs in between read the last week
-    have = (await db.execute(
-        select(func.count(HealthMetric.id)).where(
-            HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
-            HealthMetric.metric.in_(("hr_day", "steps", "sleep")))
-    )).scalar()
-    owed = (conn.last_sync_at is None or not have or _has_partial(conn.last_error, PARTIAL, HRV_UNREADABLE)
-            or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
-            or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ)
-            or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=NAPS_FOLDED))
-    full = owed and (conn.last_sync_at is None
-                     or _as_utc(conn.last_sync_at).date() < datetime.now(timezone.utc).date()
-                     or (pressed and await asyncio.to_thread(_pressed_read_allowed, conn)))
+    # every 2 hours; the syncs in between read the last week.
+    # Without the athlete's consent to health data, COROS is asked for the sessions only: no night, HRV, heart
+    # rate or daily health call (the history comes with the consent's first sync: nothing of it is stored yet).
+    health = await health_consent.allowed(db, conn.user_id)
+    owed = full = False
+    if health:
+        have = (await db.execute(
+            select(func.count(HealthMetric.id)).where(
+                HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
+                HealthMetric.metric.in_(("hr_day", "steps", "sleep")))
+        )).scalar()
+        owed = (conn.last_sync_at is None or not have or _has_partial(conn.last_error, PARTIAL, HRV_UNREADABLE)
+                or await _gap_before_consent(db, conn.user_id, datetime.now(timezone.utc))
+                or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
+                or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ)
+                or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=NAPS_FOLDED))
+        full = owed and (conn.last_sync_at is None
+                         or _as_utc(conn.last_sync_at).date() < datetime.now(timezone.utc).date()
+                         or (pressed and await asyncio.to_thread(_pressed_read_allowed, conn)))
     days = BACKFILL_DAYS if full else RECENT_DAYS
     now = datetime.now(timezone.utc)
     today = now.date()
@@ -1868,13 +1919,15 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection, *, pressed: b
         sessions.update(counts)
         return todo
 
+    offset_hint = None if health else await _athlete_offset(db, conn.user_id, now)
     async with http_client() as client:
         token = await access_token(db, conn, client)
         for attempt in range(2):
             mcp = McpSession(client, conn.resource_url, token)
             try:
                 data, calls, failed, stopped = await _fetch(mcp, days, today, activity_days, on_sessions,
-                                                          activity_ranges=activity_ranges)
+                                                          activity_ranges=activity_ranges, health=health,
+                                                          offset_hint=offset_hint)
                 break
             except McpUnauthorized:
                 if attempt:
@@ -1927,10 +1980,24 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection, *, pressed: b
                                   and days == BACKFILL_DAYS) or deferred
     flags = [k for k in ("hrv_unreadable", "hrv_incomplete", "sleep_incomplete", "phases_incomplete",
                          "backfill_partial", "activities_incomplete") if result.get(k)]
-    logger.info("COROS sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s%s",
+    logger.info("COROS sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s%s%s",
                 conn.user_id, days, calls, failed, ", stopped" if stopped else "", result["by_metric"], sessions,
-                f", incomplete: {', '.join(flags)}" if flags else "")
+                f", incomplete: {', '.join(flags)}" if flags else "",
+                "" if health else ", health data not read: no consent to health data")
     return result
+
+
+async def _athlete_offset(db: AsyncSession, user_id: int, now: datetime) -> float | None:
+    """The athlete's UTC offset now (s), from their zone (sante_training.athlete_clock): where a sync without the
+    HRV answer (no consent to health data) places the sessions."""
+    from app.services.sante_training import athlete_clock
+
+    try:
+        offset = now.astimezone(await athlete_clock(db, user_id)).utcoffset()
+    except Exception:  # never fails a sync: COROS's own local date still places the session (session_offset)
+        logger.warning("COROS: no zone for user %d", user_id, exc_info=True)
+        return None
+    return offset.total_seconds() if offset is not None else None
 
 
 def _said(error: str | None) -> str | None:

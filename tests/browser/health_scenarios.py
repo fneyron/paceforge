@@ -76,19 +76,23 @@ async def lifespan(app):
             await db.commit()
         app.state.health_scenario = SCENARIO
         app.state.health_scenario_day = today.isoformat()
-        # Keep the pending-night example reproducible after noon as well.
-        # This process serves only synthetic preview data.
+        # Keep the pending-night example reproducible at any hour: the page reads the athlete's clock at 09:00 on the
+        # fixture's day (before noon, a missing night keeps yesterday's « Dernier bilan », sante.cycle_day). The
+        # router imported health_page by name, so its reference is pinned too (pinning the module's alone left the
+        # page on the real clock: « Aujourd'hui » after noon). This process serves only synthetic preview data.
+        from app.routers import sante as sante_router
+
         original_health_page = sante.health_page
 
         async def morning_page(*args, **kwargs):
             kwargs.setdefault("now", datetime.combine(today, time(9), timezone.utc))
             return await original_health_page(*args, **kwargs)
 
-        sante.health_page = morning_page
+        sante.health_page = sante_router.health_page = morning_page
         try:
             yield
         finally:
-            sante.health_page = original_health_page
+            sante.health_page = sante_router.health_page = original_health_page
 
 
 app = preview.app

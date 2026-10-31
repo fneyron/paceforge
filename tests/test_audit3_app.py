@@ -70,6 +70,22 @@ def test_escape_dismisses_a_tip_and_keeps_the_focus():
     assert ".blur()" not in js and 'el.classList.add("is-tip-dismissed")' in js
 
 
+def test_a_phone_opens_the_help_sheet_on_a_click():
+    """Re-audit 2026-10-31: an (i) in the lower third of a phone never opened (the sheet shown at the press landed
+    under the finger and swallowed the click). On a phone a click opens and closes it (aria-expanded), its × and
+    Escape close it (the focus back on the (i)); the text it describes the button with leaves the × out."""
+    js = (ROOT / "app/static/js/pf-viz.js").read_text(encoding="utf-8")
+    assert 'matchMedia("(max-width: 480px)")' in js and 'button.setAttribute("aria-expanded", "true")' in js
+    assert 'if (openHelp) { closeHelp(true); return; }' in js and 'button.focus({ preventScroll: true })' in js
+    assert 'e.target.closest(".pf-help-close")' in js and 'classList.add("pf-help-js")' in js
+    phone = CSS.split("@media (max-width: 480px) {\n    .pf-help-tip")[1].split("}\n}")[0]
+    assert ".pf-help-js .pf-help:is(:hover, :focus-within) .pf-help-tip { display: none; }" in phone
+    assert ".pf-help-js .pf-help.is-open .pf-help-tip { display: block;" in phone
+    html = render("{{ v.help('vfc', 'Texte.', 'de la VFC') }}")
+    assert 'aria-describedby="help-vfc"' in html and '<span role="tooltip" id="help-vfc">Texte.</span>' in html
+    assert '<button type="button" class="pf-help-close" aria-label="Fermer l’aide">' in html
+
+
 def test_the_charge_card_has_one_name():
     _, html = _page()
     assert "Charge accumulée" not in html and "Charge cumulée : choisis un jour" in html
@@ -240,15 +256,23 @@ def test_desktop_chart_text_keeps_its_size():
     js = (ROOT / "app/static/js/pf-viz.js").read_text(encoding="utf-8")
     assert '"--pf-viz-k"' in js and 'querySelectorAll("svg.pf-viz-svg").forEach(scaled)' in js
     assert ".pf-viz-svg { font-size: calc(12px / var(--pf-viz-k, 1.0909)); }" in CSS
+    # from 600 px (re-audit 2026-10-31: a 768 px tablet printed its axis at 19 px, over the card titles); a phone keeps
+    # its 11 units
+    assert "@media (min-width: 600px) {\n    .pf-viz-svg { font-size: calc(12px / var(--pf-viz-k, 1.0909)); }" in CSS
+    assert "@media (min-width: 600px) { .pf-viz-svg text.pf-feel-row { font-size: .75em; } }" in CSS
     assert ".pf-activities .pf-activity-chart { max-width: calc(560px + 34px); }" in CSS
 
 
 # ── accessibility ───────────────────────────────────────────────────────────
 
 async def test_the_gpx_field_is_named_by_its_visible_label(as_user):
+    """Its two visible labels show its focus; one is always display:none (« Nouvelle course » below 1024 px: axe's
+    label-title-only, re-audit 2026-10-31), so its own name holds the words of both. Never required: an empty
+    required field read « invalide » before anything was done."""
     page = (await as_user.get("/simulator")).text
     field = page.split('id="gpx-file"')[1].split(">")[0]
-    assert "aria-label" not in field
+    assert 'aria-label="Importer un GPX, nouvelle course"' in field and "required" not in field
+    assert 'class="pf-btn pf-btn-primary pf-btn-sm pf-only-d cursor-pointer">' in page and "Nouvelle course</label>" in page
     assert '.pf-simulator:has(#gpx-file:focus-visible) label[for="gpx-file"] { outline: 2px solid' in CSS
 
 
@@ -269,25 +293,76 @@ async def test_plan_sheets_menu_profile_and_objective(as_user):
     html = (await as_user.get(f"/simulator/routes/{rid}")).text
     menu = html.split('id="plan-more"')[1].split("</details>")[0]
     assert "role=" not in menu.split("</summary>")[1]
-    assert "button, [href], input, select, textarea, summary, [tabindex]" in html  # the sheet's trap knows « Autres formats »
-    assert "function openerOf(el)" in html  # back to « … » when its menu item is gone
+    js = (ROOT / "app/static/js/gpx-result.js").read_text(encoding="utf-8")  # the plan's script
+    assert "button, [href], input, select, textarea, summary, [tabindex]" in js  # the sheet's trap knows « Autres formats »
+    assert "function openerOf(el)" in js  # back to « … » when its menu item is gone
     assert 'aria-label="Modifier l&#39;objectif : 5h00"' in html or "aria-label=\"Modifier l'objectif : 5h00\"" in html
-    assert "'Modifier l\\'objectif : ' + fmtHM(total)" in html
-    assert "role: 'img'" in html and "Profil d’altitude : " in html
+    assert "'Modifier l\\'objectif : ' + fmtHM(total)" in js
+    assert "role: 'img'" in js and "Profil d’altitude : " in js
 
 
 def test_inputs_tabs_and_segments_carry_more_than_hue():
     assert ".pf-input { width: 100%; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 1px solid rgb(var(--pf-gray-400));" in CSS
     assert ".pf-input:focus, .pf-input:focus-visible { outline: 2px solid rgb(var(--pf-accent));" in CSS
     assert ".pf-hero-in:focus { outline: none; }" not in CSS
+    # the objective's fields: the ring after Tab, not after a tap (re-audit 2026-10-31; a text field matches
+    # :focus-visible on a tap too, app.js marks the pointer)
+    assert ".pf-hero-in:focus-visible { outline: 2px solid rgb(var(--pf-accent));" in CSS
+    assert "[data-pf-pointer] .pf-hero-in:focus-visible { outline: none; }" in CSS
+    app_js = (ROOT / "app/static/js/app.js").read_text(encoding="utf-8")
+    assert 'setAttribute("data-pf-pointer", "")' in app_js and 'event.key === "Tab"' in app_js
     assert '.pf-tabbar a[aria-current="page"] { color: rgb(var(--pf-accent)); font-weight: 700; }' in CSS
     assert '.pf-seg > [aria-pressed="true"], .pf-seg > [aria-current] { background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }' in CSS
+
+
+def test_current_places_and_large_text_hold_more_than_hue():
+    """Re-audit 2026-10-31: the desktop tab is bold (its pill alone is 1.09:1); at 200 % text the sport filter no longer
+    clips the ring of « Tout », an activity's tiles go to one column rather than letting « 5:24/km » spill out."""
+    assert '.pf-nav a[aria-current="page"] { color: rgb(var(--pf-ink)); background: rgb(var(--pf-soft)); font-weight: 700; }' in CSS
+    assert ".pf-large-text .pf-filters { overflow: visible; border-radius: 24px; }" in CSS
+    assert ".pf-activity-metrics { grid-template-columns: repeat(auto-fit, minmax(max(8em, calc((100% - 0.75rem) / 2 - 1px)), 1fr)); }" in CSS
+    assert ".pf-activity-metrics p { overflow-wrap: anywhere; }" in CSS
+    detail = (ROOT / "app/templates/activity_detail.html").read_text(encoding="utf-8")
+    assert '<div class="pf-activity-metrics grid grid-cols-2 md:grid-cols-4 gap-3">' in detail
+
+
+def test_large_text_keeps_the_sleep_lanes_and_long_values_inside():
+    """At 200 % text « Profond » ran 4 units into the hypnogram (its lane names end at x 60) and « 14,4 resp./min »
+    widened a 320 or 393 px page to 399 px (found making health-scenarios/health-explanations green, 2026-10-31)."""
+    assert ".pf-large-text .pf-sante4 .pf-tl .pf-tl-lane { font-size: 15px; }" in CSS
+    assert ".pf-large-text .pf-viz-l1 > b { flex-shrink: 1; min-width: 0; overflow-wrap: anywhere; }" in CSS
+
+
+def test_the_strava_setup_says_its_step():
+    """Re-audit 2026-10-31: /setup in a <main>, the shown step aria-current="step" and said « Étape N sur 3 », a step not
+    reached yet at 5.3:1 (gray-500 on gray-100, was gray-400: 4.3:1)."""
+    setup = (ROOT / "app/templates/setup.html").read_text(encoding="utf-8")
+    assert '<main id="main-content" tabindex="-1" class="min-h-screen bg-white" x-data="{ step: 1 }">' in setup
+    assert setup.count("<main") == 1 and "</main>\n{% endblock content_public %}" in setup
+    assert ''':aria-current="step === s ? 'step' : null"''' in setup and '''x-text="'Étape ' + s + ' sur 3'"''' in setup
+    assert "'bg-gray-100 text-gray-500'" in setup and "text-gray-400'" not in setup
+
+
+def test_danger_buttons_keep_their_contrast_in_the_dark():
+    """Re-audit 2026-10-31: white on the dark theme's light red (#f88074) was 2.52:1; the page's dark ink is 7.6:1."""
+    assert ".dark .bg-danger.text-white { color: rgb(var(--pf-bg)); }" in CSS
+    theme = (ROOT / "app/static/css/theme.css").read_text(encoding="utf-8")
+    assert "--pf-danger: 248 128 116;" in theme and "--pf-bg: 14 14 16;" in theme
 
 
 def test_tab_changes_move_the_focus_and_say_loading():
     js = (ROOT / "app/static/js/tab-navigation.js").read_text(encoding="utf-8")
     assert "next.focus({ preventScroll: true })" in js and "'Chargement…'" in js and "aria-label', 'Chargement'" not in js
     assert "#main-content:focus { outline: none; }" in CSS
+
+
+def test_a_replaced_page_keeps_the_focus_where_it_was():
+    """Re-audit 2026-10-31: a pull refresh or a tab's quiet revalidation replaced #main-content and dropped the focus to
+    <body>: it comes back on the same id in the new page (a feel chip), else on its main."""
+    js = (ROOT / "app/static/js/refresh.js").read_text(encoding="utf-8")
+    assert "hadFocus = !!active && old.contains(active), focusId = hadFocus ? active.id : ''" in js
+    assert "if (!target || !next.contains(target)) target = next;" in js
+    assert js.index("target.focus({ preventScroll: true })") > js.index("document.body.insertBefore(next, nav || null)")
 
 
 def test_the_refresh_region_exists_before_it_speaks():

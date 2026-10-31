@@ -2,10 +2,11 @@
 portability).
 
 What it holds: the account (never its password hash, email or reset tokens, Strava tokens or keys, the Apple
-Health key), every activity with its laps, splits, streams and the provider's payload, the health measurements and
-samples, the phone's daily values, the « ressenti » answers, the race plans with their checkpoints (waypoints,
-cut-offs, pinned times), the lactate tests, the nutrition products, and which services and phones are linked, with
-their dates (never a token, a pairing code or a phone's key).
+Health key; with the consent to health data's date and version), every activity with its laps, splits, streams and
+the provider's payload, the health measurements and samples, the phone's daily values, the « ressenti » answers, the
+race plans with their checkpoints (waypoints, cut-offs, pinned times), the lactate tests, the nutrition products,
+which services and phones are linked, with their dates (never a token, a pairing code or a phone's key), and the
+account's rows in the tables of the features switched off, while the database still has them (legacy_tables).
 
 Streamed: the ZIP is written as it is sent (zipfile on an output that cannot seek: each entry ends with a data
 descriptor), the tables read by keyset batches (a few rows at a time for activities and plans) and compressed off
@@ -20,7 +21,7 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
@@ -42,23 +43,28 @@ FEEL = "feel"  # the « ressenti » answers' metric in health_metrics (services/
 ACCOUNT_FIELDS = ("id", "email", "email_verified", "firstname", "lastname", "profile_picture_url", "created_at",
                   "updated_at", "timezone", "weight_kg", "weight_set_at", "max_heart_rate", "ftp_watts",
                   "health_source", "preferred_sports", "weekly_volume_target_km", "auto_post_comments", "race_name",
-                  "race_date", "race_distance_km", "initial_sync_done")
+                  "race_date", "race_distance_km", "initial_sync_done", "health_consent_at", "health_consent_version")
 LINK_FIELDS = ("connected_at", "last_sync_at", "last_error", "needs_reauth")
 PHONE_FIELDS = ("platform", "created_at", "last_seen_at", "last_sync_at", "expires_at")
 
-README = """Tes données PaceForge, au format JSON (UTF-8). Dates en ISO 8601 ; les heures sans fuseau sont en UTC.
+README = """Tes données PaceForge, au format JSON (UTF-8). Dates en ISO 8601. Les heures portent leur fuseau, sauf
+les heures des nuits et des échantillons de santé (sante_echantillons.json), à l’heure locale ; les données reçues
+des services gardent leur format.
 
-compte.json             ton compte : identité, réglages, objectif de course
+compte.json             ton compte : identité, réglages, objectif de course, consentement aux données de santé
 connexions.json         les services et téléphones liés, et leurs dates (jamais un jeton ni une clé)
 activites.json          tes activités : résumé, tours, flux (fréquence cardiaque, GPS…), données reçues du service
-sante_mesures.json      tes mesures de santé par jour (sommeil, VFC, fréquence cardiaque au repos, poids…)
-sante_echantillons.json les échantillons bruts de ces mesures
+sante_mesures.json      tes mesures de santé par jour (sommeil, VFC, fréquence cardiaque de nuit, pas…)
+sante_echantillons.json les phases de sommeil détaillées (Garmin)
 ressenti.json           tes réponses « ressenti » du matin
 telephone_jours.json    les valeurs du jour envoyées par ton téléphone (pas, poids…)
 parcours.json           tes parcours et plans de course, avec leurs points de passage
 lactate.json            tes tests de lactate
 nutrition.json          tes produits de nutrition
+anciennes_fonctions/    s’il y en a, ce qu’avaient enregistré les fonctions retirées (analyses, messages,
+                        bilans de la semaine, plans générés, simulations)
 """
+LEGACY_DIR = "anciennes_fonctions/"
 
 
 def _plain(value: Any) -> Any:
@@ -122,6 +128,24 @@ async def _batches(db: AsyncSession, model: Any, user_id: int, *conditions: Any,
         yield [_row(r) for r in rows]
 
 
+async def _legacy_batches(db: AsyncSession, table: str, user_id: int,
+                          size: int = BATCH) -> AsyncIterator[list[dict[str, Any]]]:
+    """The account's rows of a legacy table (legacy_tables: unmapped, its name from its constant), by keyset
+    batches as _batches."""
+    from app.services import legacy_tables
+
+    query = text(f"SELECT * FROM {table} WHERE {legacy_tables.of_account(table)} AND id > :last "
+                 "ORDER BY id LIMIT :size")
+    last = 0
+    while True:
+        rows = (await db.execute(query, {"uid": user_id, "last": last, "size": size})).mappings().all()
+        await db.commit()
+        if not rows:
+            return
+        last = rows[-1]["id"]
+        yield [_row(r) for r in rows]
+
+
 async def _routes(db: AsyncSession, user_id: int) -> AsyncIterator[list[dict[str, Any]]]:
     """Each plan with its checkpoints (waypoints, aid stations, cut-offs, pinned passage times)."""
     checkpoints = RouteCheckpoint.__table__
@@ -174,9 +198,12 @@ async def _json_array(zf: zipfile.ZipFile, sink: _Sink, name: str,
 
 async def export_zip(db: AsyncSession, user: User) -> AsyncIterator[bytes]:
     """The ZIP's bytes, as they are made."""
+    from app.services import legacy_tables
+
     await db.refresh(user)  # every column loaded now (one written earlier in the request may be expired)
     uid = user.id
     head = {"compte.json": account(user), "connexions.json": await connections(db, user)}
+    legacy = await legacy_tables.present(db)
     await db.commit()
     sink = _Sink()
     zf = zipfile.ZipFile(sink, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6)
@@ -193,6 +220,7 @@ async def export_zip(db: AsyncSession, user: User) -> AsyncIterator[bytes]:
         ("parcours.json", _routes(db, uid)),
         ("lactate.json", _batches(db, LactateTest, uid)),
         ("nutrition.json", _batches(db, NutritionProduct, uid)),
+        *((f"{LEGACY_DIR}{table}.json", _legacy_batches(db, table, uid)) for table in legacy),
     )
     for name, batches in sections:
         async for chunk in _json_array(zf, sink, name, batches):

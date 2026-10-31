@@ -63,7 +63,11 @@ async def save(db: AsyncSession, user_id: int, day: date, answers: dict | None) 
         allowed = {key: dict(options) for key, _, options in FIELDS}
         if not answers or any(key not in allowed or value not in allowed[key] for key, value in answers.items()):
             raise ValueError("Invalid self-report")
-    row = (await db.execute(_query(user_id, day).with_for_update())).scalar_one_or_none()
+        from app.services import health_consent
+
+        if not await health_consent.allowed(db, user_id):  # health data: written only with the consent
+            raise PermissionError("No consent to health data")
+    row =(await db.execute(_query(user_id, day).with_for_update())).scalar_one_or_none()
     if row is None and answers:
         try:
             async with db.begin_nested():

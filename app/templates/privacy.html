@@ -7,9 +7,9 @@
 {% block content_public %}
 {% include "partials/public_header.html" %}
 <main id="main-content" tabindex="-1" class="pf-legal">
-    <a href="/" class="pf-back">&larr; Retour</a>
+    {% include "partials/legal_back.html" %}
     <h1>Politique de confidentialité</h1>
-    <p class="pf-legal-date">Mise à jour le 25 octobre 2026</p>
+    <p class="pf-legal-date">Mise à jour le 31 octobre 2026</p>
 
     <section aria-labelledby="qui">
         <h2 id="qui">Qui est responsable</h2>
@@ -40,8 +40,14 @@
                     <td data-label="Durée">Tant que ton compte existe. Déconnecter un service garde les activités reçues.</td>
                 </tr>
                 <tr>
+                    <th scope="row">Profil sportif (Réglages)</th>
+                    <td data-label="Données">Poids et FC maximale que tu saisis, FTP, source de santé préférée, tous facultatifs</td>
+                    <td data-label="Base légale">Contrat&nbsp;: tes zones de fréquence cardiaque, tes glucides d’avant-course{% if bike %}, ta puissance à vélo{% endif %}</td>
+                    <td data-label="Durée">Tant que ton compte existe. Vider le champ l’efface. Le retrait du consentement aux données de santé les garde.</td>
+                </tr>
+                <tr>
                     <th scope="row">Données de santé (COROS, Garmin, Apple Santé, Health Connect, tes saisies)</th>
-                    <td data-label="Données">Sommeil, VFC, fréquence cardiaque, respiration, VO2&nbsp;max, stress, pas, poids, masse grasse, ressenti, tests de lactate</td>
+                    <td data-label="Données">{{ consent_data[0]|upper }}{{ consent_data[1:] }}</td>
                     <td data-label="Base légale">Consentement explicite (art.&nbsp;9.2.a RGPD)</td>
                     <td data-label="Durée">Jusqu’au retrait du consentement ou la suppression du compte</td>
                 </tr>
@@ -66,24 +72,24 @@
 
     <section aria-labelledby="sante">
         <h2 id="sante">Données de santé</h2>
-        <p>Ce sont des données sensibles. PaceForge ne les traite qu’avec ton consentement explicite, demandé avant de connecter une source, de noter ton ressenti ou de saisir un test de lactate. Elles servent seulement à afficher ta forme dans Santé.</p>
+        <p>Ce sont des données sensibles. PaceForge ne les traite qu’avec ton consentement explicite, demandé avant de connecter une source, d’associer un téléphone, de noter ton ressenti ou de saisir un test de lactate. Sans lui, aucune n’est enregistrée&nbsp;: tes activités continuent d’arriver, ton téléphone garde ses mesures jusqu’à ton accord, et «&nbsp;Refuser et effacer&nbsp;» (Santé, Réglages) efface celles déjà reçues. Le texte que tu acceptes&nbsp;:</p>
+        <blockquote class="pf-legal-quote">{% for paragraph in consent_text %}<p>{{ paragraph }}</p>{% endfor %}</blockquote>
         <p>Sur ton téléphone, l’application PaceForge lit les catégories que tu autorises dans Apple Santé ou Health Connect et les envoie en HTTPS à ton compte, aussi en arrière-plan. Les points cardiaques bruts ne sont pas conservés, seulement des résumés par jour et par nuit. Le détail&nbsp;: <a href="/mobile/privacy">données de l’application</a>.</p>
-        <p>Tu peux retirer ton consentement à tout moment dans Réglages&nbsp;: tes sources sont déconnectées et tes données de santé effacées. Tes activités et tes plans restent.</p>
         <p>PaceForge n’est pas un dispositif médical et ne pose aucun diagnostic.</p>
     </section>
 
     <section aria-labelledby="effacement">
         <h2 id="effacement">Suppression et sauvegardes</h2>
         <p>Tu peux supprimer ton compte à tout moment depuis Réglages. Tout ce qu’il contient est effacé aussitôt de la base de données. Les sauvegardes, quotidiennes, sont gardées 8 semaines au plus&nbsp;: tes données en disparaissent au plus tard 8 semaines après.</p>
-        <p>Une session de connexion se ferme après 30 jours sans visite, et au plus tard après 90 jours.</p>
+        <p>Une session de connexion se ferme après 30 jours sans visite, et au plus tard après 90 jours. L’accès d’un téléphone associé expire 180 jours après son dernier envoi, et tu peux le révoquer avant dans Réglages.</p>
     </section>
 
     <section aria-labelledby="destinataires">
         <h2 id="destinataires">Qui reçoit quoi</h2>
         <ul>
             <li><strong>OVH SAS</strong> (France)&nbsp;: héberge le serveur, la base de données et les sauvegardes à Gravelines, en France, et envoie les e-mails du compte.</li>
-            <li><strong>Strava</strong> (États-Unis, hors UE), si tu le relies&nbsp;: tes activités y sont déjà, sous la politique de Strava. PaceForge n’y envoie que ses demandes de lecture, faites avec l’accès que tu autorises, et sa révocation quand tu te déconnectes. Ta photo de profil s’affiche depuis Strava.</li>
-            <li><strong>COROS</strong>, si tu le relies&nbsp;: le même principe, sur le serveur de ton compte COROS (Europe, Monde ou Chine&#8239;; ces deux derniers hors UE).</li>
+            <li><strong>Strava</strong> (États-Unis, hors UE), si tu le relies&nbsp;: tes activités y sont déjà, sous la politique de Strava. PaceForge y demande un accès en lecture seule et n’y envoie que ses demandes de lecture, et sa révocation quand tu te déconnectes. Ta photo de profil s’affiche depuis Strava.</li>
+            <li><strong>COROS</strong>, si tu le relies&nbsp;: le même principe, sur le serveur de ton compte COROS&nbsp;: Europe, Monde (États-Unis) ou Chine&#8239;; ces deux derniers hors UE.</li>
             <li><strong>Garmin</strong> (hors UE), si tu le relies&nbsp;: ton e-mail et ton mot de passe Garmin partent une fois chez Garmin pour ouvrir l’accès, sans être conservés&#8239;; ensuite, seulement des demandes de lecture.</li>
             <li><strong>Open-Meteo</strong> (Suisse, protection reconnue par l’UE)&nbsp;: les coordonnées et les dates de ton parcours et de tes activités, pour la météo et l’altitude.</li>
             <li><strong>Serveurs Overpass d’OpenStreetMap</strong> (Allemagne, Autriche)&nbsp;: la zone de ton parcours, pour le terrain.</li>
@@ -96,7 +102,7 @@
         <h2 id="droits">Tes droits</h2>
         <p>Tu peux à tout moment&nbsp;:</p>
         <ul>
-            <li><strong>accéder</strong> à tes données et les <strong>emporter</strong>&nbsp;: «&nbsp;Télécharger mes données&nbsp;» dans Réglages&#8239;;</li>
+            <li><strong>accéder</strong> à tes données et les <strong>emporter</strong>&nbsp;: «&nbsp;Télécharger mes données&nbsp;» dans Réglages, depuis un navigateur (pas dans l’app du téléphone)&#8239;;</li>
             <li>les <strong>rectifier</strong>, dans ton profil et tes plans&#8239;;</li>
             <li>les <strong>effacer</strong>&nbsp;: un plan, un test, ou tout ton compte depuis Réglages&#8239;;</li>
             <li>demander la <strong>limitation</strong> d’un traitement ou t’y <strong>opposer</strong>&#8239;;</li>
@@ -112,7 +118,8 @@
         <ul>
             <li><strong>Âge minimum</strong>&nbsp;: 15 ans.</li>
             <li><strong>Pas de décision automatique</strong>&nbsp;: les estimations et les indices t’informent, rien n’est décidé à ta place.</li>
-            <li><strong>Cookies</strong>&nbsp;: un seul, <code>paceforge_session</code>, strictement nécessaire à la connexion. Aucun cookie de suivi ni de publicité. Ton choix de thème reste dans ton navigateur.</li>
+            <li><strong>Cookies</strong>&nbsp;: deux, strictement nécessaires à la connexion&nbsp;: <code>paceforge_session</code>, ta session, et <code>pf_known</code>, qui reconnaît un navigateur où tu t’es déjà connecté pour qu’il ne soit pas bloqué si quelqu’un essaie de deviner ton mot de passe (une empreinte signée, jamais ton e-mail, gardée un an). Aucun cookie de suivi ni de publicité.</li>
+            <li><strong>Stockage du navigateur</strong>&nbsp;: quelques réglages d’affichage, jamais tes mesures&nbsp;: le thème (<code>darkMode</code>), la carte en relief (<code>pf.map3d</code>), le sport du simulateur (<code>pf.sport</code>)&#8239;; et, tant que l’onglet est ouvert, ta position sur chaque page (<code>pf-view</code>).</li>
             <li><strong>Sécurité</strong>&nbsp;: serveur en France, échanges en HTTPS, mot de passe haché, accès aux services chiffrés.</li>
         </ul>
         <p>Voir aussi les <a href="/cgu">conditions d’utilisation</a> et les <a href="/mentions-legales">mentions légales</a>.</p>

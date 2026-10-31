@@ -64,9 +64,9 @@ athlète) ; les activités déjà reçues restent, comme pour une déconnexion d
 Réglages. La connexion et la déconnexion d’un athlète
 ne doivent pas créer ou supprimer ce webhook partagé. Les apps personnelles
 continuent de gérer leur propre souscription. Les autorisations OAuth demandées
-restent celles du service existant, y compris `activity:write` pour la fonction
-existante de mise à jour des descriptions ; cette livraison ne change pas ce
-comportement.
+sont en lecture seule (`read,activity:read_all`, depuis le 31 octobre 2026) : rien
+n’écrit sur Strava. La fonction de mise à jour des descriptions reste dans le code,
+inutilisée ; s’en servir demanderait de nouveau `activity:write`.
 
 ## Validation avant activation
 

@@ -17,6 +17,7 @@ from app.crypto import encrypt_secret
 from app.dependencies import get_current_user
 from app.exceptions import StravaTokenError
 from app.models.user import User
+from app.services import health_consent
 from app.services.auth import hash_password
 from app.services.strava import StravaService
 
@@ -139,6 +140,7 @@ async def test_device_connection_is_focused_and_login_preserves_destination(clie
         page = await c.get(response.headers['location'])
         assert f'name="next" value="{provider}"' in page.text
         user = User(email=f'{provider}@test.fr', password_hash=hash_password('pw-12345678'), email_verified=True)
+        health_consent.record(user)  # Garmin's page asks for it first (tests/test_health_consent)
         db_session.add(user); await db_session.flush()
         response = await c.post('/auth/login', data={'email': user.email, 'password': 'wrong', 'next': provider})
         assert f'name="next" value="{provider}"' in response.text
