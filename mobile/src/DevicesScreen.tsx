@@ -16,6 +16,8 @@ type Props = {
   status: string; error: string; connections: Connections | null; needsReconnect: boolean;
   connectHealth: () => void; sync: () => void; disconnect: () => void;
   connect: (provider: Provider) => void; act: (action: ConnectionAction) => void; settings: (path?: string) => void;
+  // Santé, where the consent to health data is given (its card): shown while the server refuses without it.
+  openConsent: () => void;
 };
 const healthName = Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect';
 // The apps' own icons (owner, 2026-10-17): Apple's Health icon, the App Store icons of COROS, Garmin Connect, Strava.
@@ -39,7 +41,9 @@ export function DevicesScreen(p: Props) {
   const ui = useDeviceUI(), styles = useDeviceStyles();
   const { detail, pair, busy, last } = p;
   const mismatch = p.needsReconnect || (!!pair && !!p.connections && pair.user_id !== p.connections.user_id);
-  const healthState = mismatch ? 'Compte à confirmer' : !pair ? 'Non connecté' : p.report && !p.report.complete ? 'À actualiser' : 'Connecté';
+  const consent = !!pair && !mismatch && !!p.report?.consent;
+  const healthState = mismatch ? 'Compte à confirmer' : !pair ? 'Non connecté' : consent ? 'Accord à donner' :
+    p.report && !p.report.complete ? 'À actualiser' : 'Connecté';
   return <ScrollView contentContainerStyle={ui.content}>
     {detail && <Link text="‹ Toutes les connexions" onPress={() => p.select(null)} disabled={busy} />}
     <Text accessibilityRole="header" style={ui.title}>{detail === 'health' ? healthName : isProvider(detail) ? providerNames[detail] : detail === 'help' ? 'Comment ça fonctionne ?' : 'Réglages'}</Text>
@@ -92,6 +96,7 @@ export function DevicesScreen(p: Props) {
     </>}
     {!busy && (detail === 'health' || isProvider(detail)) && (p.status || (detail === 'health' && p.report)) ?
       <Text accessibilityLiveRegion="polite" style={ui.body}>{p.status || (p.report && reportText(p.report))}</Text> : null}
+    {!busy && detail === 'health' && consent ? <Link text="Ouvrir Santé" onPress={p.openConsent} /> : null}
     {p.error ? <Text accessibilityRole="alert" style={ui.error} dataDetectorType="link">{p.error}</Text> : null}
   </ScrollView>;
 }

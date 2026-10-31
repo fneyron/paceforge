@@ -1,4 +1,4 @@
-import { ApiError } from './api';
+import { ApiError, CONSENT_REQUIRED } from './api';
 import type { HealthResult, SleepResult } from './types';
 
 export type WeightReceipt = { value: number; measured_at: string };
@@ -12,6 +12,9 @@ export type SyncReport = {
   pending?: boolean; trigger?: Trigger;
   // When the last full reread started, complete or not: never two within ten minutes.
   fullAttemptAt?: string;
+  // The server refused the measurements: no consent to health data yet (403). Nothing was marked sent, the next
+  // run sends them all; the first notice is the server's sentence. Cleared by the next run that is not refused.
+  consent?: boolean;
 };
 type Receipt = { received: number; checked_at: string; latest?: { weight?: WeightReceipt } };
 export type SendMeta = { readAt: string };
@@ -80,6 +83,8 @@ export async function syncHealth(d: Dependencies): Promise<SyncReport> {
   const failed = (e: unknown, stage: string) => {
     complete = false;
     report.reconnect = e instanceof ApiError && e.status === 401;
+    // The missing consent is a state, not a failed step: its sentence alone, once.
+    if (e instanceof ApiError && e.consentRequired) { report.consent = true; report.notices.unshift(e.message); return; }
     report.notices.unshift(`${stage} : ${e instanceof Error ? e.message : 'Synchronisation interrompue. Réessaie.'}`);
   };
   const confirm = (r: Receipt) => {
@@ -116,7 +121,7 @@ export async function syncHealth(d: Dependencies): Promise<SyncReport> {
   } catch (e) {
     failed(e, dailyStage); await save();
     // Authentication/transport failures cannot be repaired by reading 60 nights.
-    report.notices.push('Les nuits restent à synchroniser.');
+    if (!report.consent) report.notices.push('Les nuits restent à synchroniser.');
     report.pending = false;
     await save(); return report;
   }
@@ -152,13 +157,20 @@ export async function syncHealth(d: Dependencies): Promise<SyncReport> {
 }
 
 export function reportText(r: SyncReport): string {
+  if (r.consent) return [...new Set([consentIssue(r), ...r.notices])].join('\n');
   const title = !r.complete ? 'Synchronisation incomplète. Les mesures déjà reçues sont conservées.' :
     r.received ? 'Synchronisation terminée.' : 'Aucune nouvelle mesure reçue.';
   return [title, ...r.notices].join('\n');
 }
 
+/** The server's sentence while the consent to health data is missing, else ''. */
+export function consentIssue(r: SyncReport | null): string {
+  return r?.consent ? r.notices[0] || CONSENT_REQUIRED : '';
+}
+
 export function syncIssue(r: SyncReport, service: string): string {
   if (r.complete) return '';
   if (r.reconnect) return 'Reconnecte le téléphone dans Réglages.';
+  if (r.consent) return consentIssue(r);
   return `${service} · ${r.notices[0] || 'Synchronisation interrompue. Réessaie.'}`;
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiError, rejectedField } from './api';
-import { due, fullDue, syncIssue, syncHealth, SyncReport } from './sync';
+import { consentIssue, due, fullDue, reportText, syncIssue, syncHealth, SyncReport } from './sync';
 import type { Daily, HealthResult, SleepResult } from './types';
 import type { AppleNight } from './night-samples';
 
@@ -192,4 +192,47 @@ test('a pending background run makes the next opening sync at once, at most once
   assert.equal(due(report, 0, now), true);
   assert.equal(due(report, now - 30000, now), false);
   assert.equal(due({ ...report, pending: false }, 0, now), false);
+});
+
+test('without the consent to health data: one calm sentence, nothing marked sent, everything sent after the consent', async () => {
+  const sentence = 'Accepte le suivi de tes données de santé dans PaceForge pour envoyer tes mesures.';
+  const refused = fixture(), recorded: string[] = [];
+  const report = await syncHealth({ ...refused.deps, send: async path => { refused.events.push(path); throw new ApiError(403, '', 0, sentence); },
+    sent: async path => { recorded.push(path); } });
+  // The first push is refused: no night is read or pushed after it.
+  assert.deepEqual(refused.events, ['read daily', '/api/mobile/daily']);
+  assert.deepEqual(recorded, [], 'nothing marked sent');
+  assert.equal(report.consent, true); assert.equal(report.reconnect, false);
+  assert.equal(report.complete, false); assert.equal(report.pending, false);
+  assert.equal(report.received, 0); assert.equal(report.lastReceivedAt, ''); assert.equal(report.weightReceived, null);
+  assert.equal(report.retryFull, true, 'the history is sent whole after the consent');
+  assert.deepEqual(report.notices, [sentence], 'no step prefix, no « nuits restent » line');
+  assert.equal(reportText(report), sentence);
+  assert.equal(syncIssue(report, 'Apple Santé'), sentence);
+  assert.equal(consentIssue(report), sentence);
+  assert.equal(consentIssue({ ...report, notices: [] }), sentence);
+  // A calm state: the usual cadence of an incomplete sync, no immediate retry.
+  assert.equal(due(report, 0, Date.parse(at) + 4 * 60000), false);
+  assert.equal(due(report, 0, Date.parse(at) + 5 * 60000), true);
+  // After the consent, the next run sends the same data and the state is gone.
+  const accepted = fixture(), confirmed: string[] = [];
+  const next = await syncHealth({ ...accepted.deps, previous: report, sent: async path => { confirmed.push(path); } });
+  assert.deepEqual(accepted.events, ['read daily', '/api/mobile/daily', 'read sleep', '/api/mobile/nights']);
+  assert.deepEqual(confirmed, ['/api/mobile/daily', '/api/mobile/nights']);
+  assert.ok(!next.consent); assert.equal(next.complete, true); assert.equal(next.received, 2);
+  assert.equal(syncIssue(next, 'Apple Santé'), ''); assert.equal(consentIssue(next), '');
+});
+
+test('a night refused without the consent stops the queue: the following nights wait too', async () => {
+  const { deps } = fixture(); let nights = 0;
+  deps.sleep = async () => ({ nights: [night, night, night], notices: [], complete: true });
+  deps.send = async path => {
+    if (path.endsWith('/nights')) { nights++; throw new ApiError(403, '', 0, 'Accepte.'); }
+    return { received: 1, checked_at: at };
+  };
+  const report = await syncHealth(deps);
+  assert.equal(nights, 1);
+  assert.equal(report.consent, true); assert.equal(report.complete, false);
+  assert.deepEqual(report.notices, ['Accepte.']);
+  assert.equal(reportText(report), 'Accepte.');
 });

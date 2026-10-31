@@ -72,7 +72,8 @@ brassard ou de ceinture séparément. La lecture Bluetooth directe des versions
 n’est plus proposé. Les enregistrements des fournisseurs restent conservés.
 
 « Connecter Apple Santé / Health Connect » enchaîne confirmation du compte
-(PKCE), demande des permissions puis première lecture et envoi. Une association
+(PKCE, avec l’accord pour les données de santé s’il manque : la case de la page
+d’association), demande des permissions puis première lecture et envoi. Une association
 existante vérifie d’abord le compte web. Une permission demandée ne signifie pas
 permission accordée : « Connecté » décrit l’association, pas la fraîcheur des
 mesures. Le dernier envoi réel est daté dans le détail, qui n’a que deux actions
@@ -255,6 +256,18 @@ changement de compte et déconnexion. Les API natives y sont simulées : vérifi
   retenue par le serveur (ces deux pesées ne sont plus affichées depuis le
   17 octobre 2026). Un ancien relevé ignoré n’est pas compté comme reçu.
   Ni une réponse HTTP réussie ni une lecture vide ne prouvent une mesure récente.
+- Sans l’accord du compte pour ses données de santé (RGPD art. 9, exigé par le
+  site depuis le 31 octobre 2026), le serveur refuse chaque envoi avant de le lire
+  (403 `health_consent_required`). C’est un état, pas une erreur : la phrase du
+  serveur s’affiche une fois, sans étape ni code, avec « Ouvrir Santé » (la carte
+  « J’accepte » de `/sante`) ; Santé demande l’accord elle-même, la bannière
+  n’apparaît donc que sur les autres écrans, et Réglages indique « Accord à donner ».
+  Rien n’est marqué envoyé, les jetons Health Connect ne bougent pas, les nuits
+  sont relues ; le téléphone reste associé (ni reconnexion ni délai d’attente).
+  Au premier plan, la cadence reste celle d’une synchronisation incomplète, et le
+  retour sur Santé ou Activités après la page d’accord synchronise aussitôt ; en
+  arrière-plan, chaque réveil envoie une fois et s’arrête au refus. Le premier
+  envoi accepté envoie tout et efface l’état.
 - Senssun Health iOS doit écrire ses pesées dans Apple Santé. Aucun accès direct
   à EXZACT/Senssun n'est supposé. Senssun → Health Connect sur Android reste à
   vérifier sur le téléphone concerné.
