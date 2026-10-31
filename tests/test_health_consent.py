@@ -151,9 +151,15 @@ async def test_a_lactate_test_needs_the_box(client, db_session, newcomer):
     assert 'name="health_consent"' in page.text
     csrf = re.search(r'name="csrf_token" value="([^"]+)"', page.text)[1]
     f = {**fields(), "csrf_token": csrf}
+    assert "aria-invalid" not in re.search(r'<input type="checkbox" name="health_consent"[^>]*>', page.text)[0]
     refused = await client.post("/sante/lactate", data=f)
     assert refused.status_code == 400 and health_consent.MISSING in refused.text
     assert 'value="Lactate Pro 2"' in refused.text  # what was typed stays
+    # the error beside the box, tied to it (as on the consent page)
+    assert f'<p id="lactate-consent-error" class="pf-lactate-error" role="alert">{health_consent.MISSING}</p>' in refused.text
+    box = re.search(r'<input type="checkbox" name="health_consent"[^>]*>', refused.text)[0]
+    assert 'aria-invalid="true"' in box and 'aria-describedby="lactate-consent-error"' in box
+    assert refused.text.count(health_consent.MISSING) == 1
     assert await db_session.scalar(select(func.count(LactateTest.id))) == 0
     saved = await client.post("/sante/lactate", data={**f, "health_consent": "1"})
     assert saved.status_code == 303 and await db_session.scalar(select(func.count(LactateTest.id))) == 1
