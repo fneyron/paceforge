@@ -212,3 +212,42 @@ def test_env_example_documents_every_setting_and_nothing_stale():
                     "AWS_ENDPOINT_URL", "AWS_DEFAULT_REGION"}
     assert keys - fields <= compose_only, keys - fields - compose_only
     assert not keys & AI_SETTINGS
+
+
+# ── the Dockerfile's uvicorn ─────────────────────────────────────────────────
+
+def _uvicorn_command() -> str:
+    cmd = re.search(r'^CMD \["sh", "-c", "(.*)"\]$', (ROOT / "Dockerfile").read_text(encoding="utf-8"), re.M)[1]
+    return cmd.split("exec ", 1)[1]
+
+
+async def test_uvicorn_trusts_the_proxy_headers_from_the_private_networks_only():
+    """Traefik reaches the app over a private network: the X-Forwarded-For hop uvicorn takes as the client (its access
+    log, request.client) is the right-most one outside those networks, the address Traefik saw, never a first hop the
+    client wrote itself; the limits' client_ip reads the same one. No Server header either."""
+    import ipaddress
+
+    from starlette.requests import Request
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    from app.services.auth import client_ip
+
+    command = _uvicorn_command()
+    assert "--proxy-headers" in command and "--no-server-header" in command
+    trusted = re.search(r"--forwarded-allow-ips='([^']+)'", command)[1]
+    assert "*" not in trusted
+    for entry in trusted.split(","):
+        assert ipaddress.ip_network(entry).is_private, entry  # loopback, RFC 1918, IPv6 unique local
+    seen = {}
+
+    async def app(scope, receive, send):
+        seen["client"], seen["limits"] = scope["client"][0], client_ip(Request(scope))
+
+    async def call(peer, forwarded):
+        scope = {"type": "http", "headers": [(b"x-forwarded-for", forwarded.encode())], "client": (peer, 4000)}
+        await ProxyHeadersMiddleware(app, trusted_hosts=trusted)(scope, None, None)
+        return seen["client"], seen["limits"]
+
+    for traefik in ("172.18.0.2", "10.0.1.7", "192.168.5.4", "127.0.0.1"):
+        assert await call(traefik, "6.6.6.6, 203.0.113.7") == ("203.0.113.7", "203.0.113.7")  # the forged hop ignored
+    assert (await call("198.51.100.4", "6.6.6.6"))[0] == "198.51.100.4"  # not the proxy: its header is not read

@@ -448,8 +448,12 @@ async def test_the_reset_token_is_committed_before_the_email_goes(committing_ses
 
 
 async def test_the_limits_count_the_address_the_proxy_saw(db_session, no_commit, monkeypatch):
-    """As deployed (uvicorn --proxy-headers --forwarded-allow-ips='*' behind one proxy, Traefik, which appends the
-    address it saw last): a client-chosen first X-Forwarded-For hop never gives a fresh count."""
+    """As deployed (uvicorn --proxy-headers --forwarded-allow-ips=<the Dockerfile's private networks> behind one
+    proxy, Traefik, which appends the address it saw last): a client-chosen first X-Forwarded-For hop never gives a
+    fresh count."""
+    import re
+    from pathlib import Path
+
     from httpx import ASGITransport
     from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
@@ -463,7 +467,9 @@ async def test_the_limits_count_the_address_the_proxy_saw(db_session, no_commit,
     app.dependency_overrides[get_db] = same_db
     monkeypatch.setitem(auth_service.LIMITS, "login", (2, 50, 900))
     user = await _member(db_session)
-    transport = ASGITransport(app=ProxyHeadersMiddleware(app, trusted_hosts="*"))
+    dockerfile = (Path(__file__).resolve().parent.parent / "Dockerfile").read_text(encoding="utf-8")
+    trusted = re.search(r"--forwarded-allow-ips='([^']+)'", dockerfile)[1]
+    transport = ASGITransport(app=ProxyHeadersMiddleware(app, trusted_hosts=trusted))  # from 127.0.0.1, as Traefik
     async with AsyncClient(transport=transport, base_url="https://test") as c:
         async def attempt(forwarded):
             return (await c.post("/auth/login", data={"email": user.email, "password": "wrong-password"},

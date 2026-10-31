@@ -34,5 +34,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 # The migrations first, then uvicorn replaces the shell (exec) as PID 1: Docker's SIGTERM reaches it and the
 # requests in flight get 20 s to finish instead of being dropped at every deploy. Keep-alive 75 s: longer than
 # the proxy's idle timeout, so Traefik never reuses a connection the app has just closed (sporadic 502s).
-# Port 8000 is only exposed inside the compose network: the proxy headers can be trusted from any address.
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --proxy-headers --forwarded-allow-ips='*' --timeout-graceful-shutdown 20 --timeout-keep-alive 75"]
+# The proxy headers are trusted from the private networks only, where Traefik reaches the app (the compose and
+# Coolify networks): uvicorn then logs, as the client, the right-most X-Forwarded-For address outside them, the one
+# Traefik saw, never a first hop the client wrote itself (app.services.auth.client_ip reads that same hop). With '*'
+# it took the first one. No Server header.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --proxy-headers --forwarded-allow-ips='127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7' --no-server-header --timeout-graceful-shutdown 20 --timeout-keep-alive 75"]
