@@ -179,15 +179,10 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-activity-chart .pf-viz { margin-top: 4px; }
 .pf-activity-chart .pf-viz-read { min-height: 52px; }
 .pf-activity-chart .pf-viz-read-txt b { font-size: 1.5rem; }
-/* the period over the value on the left, the context beside them, wrapping in its own column down to the value's
-   line: the readout keeps its two lines whatever the measure (« +2 140 m » is wider than « 5h40 »: its context
-   used to wrap under it and move the plot); a narrow phone or 200 % text keeps the flow (pf-viz.js reserves) */
-@media (min-width: 360px) and (max-width: 899px) {   /* a desktop readout has the room: its own flow */
-    :root:not(.pf-large-text) .pf-activity-chart .pf-viz-read-txt { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; }
-    :root:not(.pf-large-text) .pf-activity-chart .pf-viz-read-txt [data-r]:first-child { grid-column: 1; grid-row: 1; }
-    :root:not(.pf-large-text) .pf-activity-chart .pf-viz-read-txt > b { grid-column: 1; grid-row: 2; }
-    :root:not(.pf-large-text) .pf-activity-chart .pf-viz-read-txt [data-r]:nth-child(3) { grid-column: 2; grid-row: 1 / span 2; align-self: end; padding-bottom: 6px; line-height: 1.3; }
-}
+/* two fixed lines, no column: the context on the small top line (« Moy. par semaine · 11 sem. », « sem. du 28 sept. »,
+   « Semaine en cours »), the value alone under it (training_view._chart: « aucune activité » after a « — » only), so
+   « +2 140 m » never wraps where « 5h40 » does not and the plot stays put across the measures and the taps
+   (pf-viz.js reserves the tallest readout of the three measures; a 320 px phone or 200 % text may wrap its top line) */
 .pf-activities .pf-week-heading { padding-top: 12px; }
 /* « Voir la semaine › » lands its week's title under the sticky top bar (64 px from 900 px; below, html's
    scroll-padding-top holds the phone's bar) */
