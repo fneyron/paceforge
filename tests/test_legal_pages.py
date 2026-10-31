@@ -54,7 +54,7 @@ async def test_privacy_policy_is_complete(client: AsyncClient):
         "OVH SAS", "Gravelines", "Strava", "États-Unis, hors UE", "COROS", "Garmin", "Open-Meteo", "Overpass",
         "OpenFreeMap", "CARTO", "Amazon Web Services",
         "Télécharger mes données", "retirer ton consentement", "rectifier", "limitation", "opposer", "directives", "CNIL",
-        "sous un mois", "15 ans", "Pas de décision automatique", "paceforge_session", "ancien outil nutrition",
+        "sous un mois", "15 ans", "Pas de décision automatique", "paceforge_session", "pf_known", "ancien outil nutrition",
     ):
         assert expected in text, expected
     assert 'href="/mobile/privacy"' in html and 'href="https://www.cnil.fr"' in html
