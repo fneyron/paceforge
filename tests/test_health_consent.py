@@ -257,15 +257,74 @@ def test_migration_starts_everyone_without_consent_and_round_trips():
     engine.dispose()
 
 
-async def test_the_feel_is_saved_only_after_the_consent(client, db_session, newcomer, no_commit):
-    """The one-tap feel is health data too: without the consent, a tap leads to the consent page, nothing stored."""
-    app_client = _as(client, newcomer)
-    today = (await app_client.get("/sante")).text
-    day = re.search(r'name="day" value="([0-9-]+)"', today)
-    data = {"day": day.group(1) if day else datetime.now(timezone.utc).date().isoformat(), "feel": "good"}
-    r = await app_client.post("/sante/ressenti", data=data, headers={"HX-Request": "true"})
-    assert r.status_code == 204 and r.headers["HX-Redirect"] == "/sante/consentement?next=%2Fsante"
-    r = await app_client.post("/sante/ressenti", data=data)
-    assert r.status_code == 303 and r.headers["location"] == "/sante/consentement?next=%2Fsante"
-    assert not await db_session.scalar(select(func.count()).select_from(HealthMetric).where(
-        HealthMetric.user_id == newcomer.id))
+FEEL_CONSENT = "/sante/consentement?next=%2Fsante%23ressenti"
+
+
+async def _feels(db, user_id) -> list:
+    from app.services import sante_checkin
+
+    rows = (await db.execute(select(HealthMetric.details).where(HealthMetric.user_id == user_id,
+                                                                HealthMetric.metric == "feel"))).scalars().all()
+    return [(details or {}).get(sante_checkin.KEY, {}).get("feel") for details in rows]
+
+
+async def test_the_feel_waits_for_the_consent_then_is_saved(client, db_session, newcomer, no_commit):
+    """The one-tap feel is health data too: without the consent, a tap leads to the consent page, nothing stored;
+    the tap waits in the session and is saved right after the consent, back on the feel (not before it)."""
+    from app.services.sante import athlete_today
+
+    async with _as(client, newcomer) as c:
+        data = {"day": (await athlete_today(db_session, newcomer.id)).isoformat(), "feel": "bad"}
+        r = await c.post("/sante/ressenti", data=data, headers={"HX-Request": "true"})
+        assert r.status_code == 204 and r.headers["HX-Redirect"] == FEEL_CONSENT
+        assert await _feels(db_session, newcomer.id) == []
+        page = (await c.get(FEEL_CONSENT)).text
+        assert 'value="/sante#ressenti"' in page
+        assert re.search(r'<a class="pf-link" href="/sante#ressenti">Pas maintenant</a>', page)  # back to Santé
+        r = await c.post("/sante/consentement", data={"next": "/sante#ressenti", "accept": "1"})
+        assert r.status_code == 303 and r.headers["location"] == "/sante#ressenti"
+        assert await _feels(db_session, newcomer.id) == ["bad"]
+
+
+async def test_a_waiting_feel_of_another_day_or_another_target_is_dropped(client, db_session, newcomer, no_commit):
+    async with _as(client, newcomer) as c:
+        r = await c.post("/sante/ressenti", data={"day": "2020-01-01", "feel": "good"})  # the page of another day
+        assert r.status_code == 303 and r.headers["location"] == FEEL_CONSENT
+        await c.post("/sante/consentement", data={"next": "/sante#ressenti", "accept": "1"})
+        assert await _feels(db_session, newcomer.id) == []
+        newcomer.health_consent_at = None
+        await c.post("/sante/ressenti", data={"day": datetime.now(timezone.utc).date().isoformat(), "feel": "ok"})
+        await c.post("/sante/consentement", data={"next": "/settings#donnees", "accept": "1"})  # asked elsewhere
+        assert await _feels(db_session, newcomer.id) == []
+
+
+async def test_not_now_goes_back_where_the_consent_was_asked(client, newcomer):
+    async with _as(client, newcomer) as c:
+        for asked, back in (("/sante/lactate", "/sante/lactate"), ("/settings#donnees", "/settings#donnees"),
+                            ("/connections/garmin", "/settings#connections"),
+                            ("/coros/connect?region=europe", "/settings#connections"),
+                            ("/settings#garmin", "/settings#connections")):
+            page = (await c.get("/sante/consentement", params={"next": asked})).text
+            assert f'<a class="pf-link" href="{back}">Pas maintenant</a>' in page, asked
+
+
+async def test_the_deprecated_feel_route_asks_for_the_consent_too(client, db_session, newcomer, no_commit):
+    async with _as(client, newcomer) as c:
+        r = await c.post("/sante/feel", data={"feel": "3", "why": ["sick"]})
+        assert r.status_code == 303 and r.headers["location"] == FEEL_CONSENT
+        r = await c.post("/sante/feel", data={"feel": "1"}, headers={"HX-Request": "true"})
+        assert r.status_code == 204 and r.headers["HX-Redirect"] == FEEL_CONSENT
+        assert not await db_session.scalar(select(func.count()).select_from(HealthMetric).where(
+            HealthMetric.user_id == newcomer.id))
+        health_consent.record(newcomer)
+        assert (await c.post("/sante/feel", data={"feel": "1"})).headers["location"] == "/sante"
+        assert await db_session.scalar(select(func.count()).select_from(HealthMetric).where(
+            HealthMetric.user_id == newcomer.id)) == 1
+
+
+async def test_giving_the_consent_from_reglages_is_said_there(client, newcomer, no_commit):
+    async with _as(client, newcomer) as c:
+        r = await c.post("/sante/consentement", data={"next": "/settings#donnees", "accept": "1"})
+        assert r.headers["location"] == "/settings#donnees"
+        page = (await c.get("/settings")).text
+        assert 'role="status">Consentement enregistré.</p>' in page

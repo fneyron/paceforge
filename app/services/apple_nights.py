@@ -5,6 +5,7 @@ computed recovery score. Explicit wake takes precedence; gaps remain unknown.
 Daily phone averages never enter this pipeline.
 """
 import hashlib
+import logging
 import math
 import statistics
 from collections import defaultdict
@@ -17,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models.health import HealthMetric
 from app.services.health import Daily
 
+logger = logging.getLogger(__name__)
 PREFIX = "Apple Santé:"
 SDNN_METHOD = "apple_sleep_sdnn_v1"
 HR_METHOD = "apple_sleep_hr_v1"
@@ -184,9 +186,13 @@ async def ingest(db, user_id, packet, rows=None):
     import asyncio
     # Overlap checks are quadratic in the intervals: keep them off the event loop
     # (the phone endpoint reduces the night after the token check, with no connection held).
+    from app.models.user import User
+    from app.services import health_consent
+    if not await health_consent.allowed(db, user_id):  # health data: never stored without the consent
+        logger.info("Phone night of user %d not stored: no consent to health data", user_id)
+        return 0
     if rows is None:
         rows = await asyncio.to_thread(reduce_night, packet)
-    from app.models.user import User
     user = await db.get(User, user_id)
     if user is not None and not user.timezone and (zone := athlete_zone_name(packet.timezone)):
         # Until another service sets it, the phone's night zone defines the athlete's local day.

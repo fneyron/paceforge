@@ -38,6 +38,9 @@ async def connection_page(provider: str, request: Request, user: User | None = D
         return RedirectResponse(f"/auth/login?next={provider}", status_code=303)
     state = (strava_status(user) if provider == "strava" else
              await (coros_status if provider == "coros" else garmin_status)(db, user.id))
+    if provider == "garmin" and not state["connected"] and not health_consent.given(user):
+        # Garmin brings health data: the consent first (the phone app opens this page), before a password is typed
+        return RedirectResponse(health_consent.consent_url("/connections/garmin"), status_code=303)
     return templates.TemplateResponse(request, "connection.html", context={
         "user": user, "provider": provider, "name": names[provider], "w": state,
         "ok": request.session.pop(f"{provider}_ok", None),

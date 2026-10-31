@@ -288,11 +288,28 @@ RAW_RETENTION_DAYS = 400
 _INSERT_CHUNK = 2000
 
 
+async def _consented(db: AsyncSession, user_id: int, what: str, n: int, source: str) -> bool:
+    """The storage's gate (GDPR art. 9.2.a): health data is written only with the athlete's consent to the current
+    text; else it is dropped, and logged (never the values)."""
+    from app.services import health_consent
+
+    if await health_consent.allowed(db, user_id):
+        return True
+    if n:
+        logger.info("%s: %d health %s of user %d not stored: no consent to health data", source or "Health", n,
+                    what, user_id)
+    return False
+
+
 async def store_samples(db: AsyncSession, user_id: int, samples: list[Sample]) -> dict:
     """Idempotent upsert of raw samples (key: metric, start, source, stage): Garmin's real stage intervals, the
     hypnogram's timeline only. No daily value is ever made from them (2026-10-14: the aggregation of sample-only
     sources — the Apple import PaceForge had before — had no producer left; a night comes whole, store_daily, the
-    phone's through apple_nights). `days` stays in the counts for its callers: always {}."""
+    phone's through apple_nights). `days` stays in the counts for its callers: always {}. Nothing is written
+    without the athlete's consent to health data (health_consent.allowed): the counts say so."""
+    if not await _consented(db, user_id, "samples", len(samples), samples[0].source if samples else ""):
+        return {"received": len(samples), "inserted": 0, "updated": 0, "unchanged": 0, "by_metric": {}, "days": {},
+                "no_consent": True}
     keyed: dict[tuple, Sample] = {}
     for s in samples:
         keyed[(s.metric, s.start, s.source, s.kind)] = s
@@ -364,7 +381,12 @@ async def store_daily(db: AsyncSession, user_id: int, rows: list[Daily], source:
     those days (2 or more), nothing of it is deleted and it is logged — an
     answer worded anew that its parser half read must never erase the history
     (main only stopped updating it). Returns {inserted, updated, deleted,
-    stale_kept, by_metric}."""
+    stale_kept, by_metric}. Without the athlete's consent to health data
+    (health_consent.allowed) nothing is written nor deleted: the counts are
+    zero, with no_consent, and a log line says so (the sync's activities are
+    stored all the same: they are not written here)."""
+    if not await _consented(db, user_id, "daily values", len(rows), source):
+        return {"inserted": 0, "updated": 0, "deleted": 0, "stale_kept": 0, "by_metric": {}, "no_consent": True}
     keyed = {(r.metric, r.day): r for r in rows}
     inserted = updated = deleted = kept = 0
     for metric, days in sorted((covered or {}).items()):
