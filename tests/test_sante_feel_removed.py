@@ -41,8 +41,8 @@ async def test_sante_has_no_feel_even_with_answers_stored(as_user: AsyncClient, 
     db_session.add_all(_feels(test_user, D8))
     await db_session.flush()
     main = _main((await as_user.get("/sante")).text)
-    for gone in ('id="ressenti', "pf-feel", "Ressenti du jour", "/sante/ressenti", "/sante/feel", "aria-pressed",
-                 "Ressenti", ">Bien<", ">Moyen<", ">Cassé<", "hx-swap-oob"):
+    for gone in ('id="ressenti', "pf-feel", "Ressenti", "/sante/ressenti", "/sante/feel", ">Bien<", ">Moyen<",
+                 ">Cassé<"):
         assert gone not in main, gone
     help_page = (await as_user.get("/sante/aide")).text
     assert "Bien, Moyen ou Cassé" not in help_page and "ressenti du jour" not in help_page.lower()

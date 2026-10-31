@@ -90,7 +90,7 @@ Garmin:
 | `hr_night` | nightly HR | `min`, `max`, `method` (`coros_sleep_summary` or `points`), `nap_day` |
 | `resp_night` | breaths/min (Garmin) | `method` (`points` or `garmin_summary`) |
 
-- Rows written before keep their old shape, and the readers (`health.main_window`, `health.nap_windows`, `health.feel_of`) still accept them.
+- Rows written before keep their old shape, and the readers (`health.main_window`, `health.nap_windows`) still accept them.
 - An `hrv` row without the method is the watch's own average, and it is never read as PaceForge's.
 - COROS sync distinguishes an empty raw series or an assessment without readings from an unreadable response.
   Only understood ranges count as read. A failed latest night gets one retry covering its evening and morning;
