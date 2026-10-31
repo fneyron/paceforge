@@ -1828,6 +1828,26 @@ async def apply_details(db: AsyncSession, user_id: int, details: dict[int, dict]
     return n
 
 
+CONSENT_CATCH_UP = timedelta(days=2)  # after a consent to health data: how long a gap before it is still read whole
+
+
+async def _gap_before_consent(db: AsyncSession, user_id: int, now: datetime) -> bool:
+    """A consent to health data given (or given again, a new text) less than CONSENT_CATCH_UP ago, while the newest
+    day stored from COROS is older than the week a sync reads: the syncs in between asked for the sessions only, so
+    the history is owed, read whole (once a day, as any owed history), and those days are not lost."""
+    from app.models.user import User
+
+    consent_at = (await db.execute(select(User.health_consent_at).where(User.id == user_id))).scalar()
+    if consent_at is None:
+        return False
+    if now - (consent_at if consent_at.tzinfo else consent_at.replace(tzinfo=timezone.utc)) > CONSENT_CATCH_UP:
+        return False
+    newest = (await db.execute(select(func.max(HealthMetric.date)).where(
+        HealthMetric.user_id == user_id, HealthMetric.source == SOURCE,
+        HealthMetric.metric.in_(("hr_day", "steps", "sleep"))))).scalar()
+    return newest is not None and newest < now.date() - timedelta(days=RECENT_DAYS - 1)
+
+
 def _pressed_read_allowed(conn: CorosConnection) -> bool:
     """A press of « Synchroniser maintenant » may read an owed history again the same day, once an hour per link
     (Redis); False without Redis (the day's first sync reads it then)."""
@@ -1864,6 +1884,7 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection, *, pressed: b
                 HealthMetric.metric.in_(("hr_day", "steps", "sleep")))
         )).scalar()
         owed = (conn.last_sync_at is None or not have or _has_partial(conn.last_error, PARTIAL, HRV_UNREADABLE)
+                or await _gap_before_consent(db, conn.user_id, datetime.now(timezone.utc))
                 or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
                 or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ)
                 or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=NAPS_FOLDED))

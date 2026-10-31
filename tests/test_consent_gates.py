@@ -141,6 +141,40 @@ async def test_coros_without_the_consent_brings_the_sessions_only(db_session, ne
     assert await _count(db_session, HealthMetric, newcomer.id) > 0
 
 
+async def test_a_consent_given_after_a_gap_reads_the_coros_history_whole(db_session, newcomer, fake,  # noqa: F811
+                                                                          no_commit):
+    """The days the syncs could not store before a consent (a first one, or a new text) are read once it is given:
+    the week a sync reads would leave them out. Only for two days after it: a watch left in a drawer never makes
+    every day's first sync a 60-day read."""
+    from sqlalchemy import delete
+
+    def hrv_calls() -> int:
+        return len([a for n, a in fake.tool_calls if n == "querySleepHrv"])
+
+    health_consent.record(newcomer)
+    conn = await _link(db_session, newcomer)
+    assert (await coros.run_sync(db_session, conn))["ok"] and hrv_calls() == 9  # the first sync: the 60 days
+    today = datetime.now(timezone.utc).date()
+    db_session.add(HealthMetric(user_id=newcomer.id, date=today - timedelta(days=30), metric="steps", value=9000,
+                                source=coros.SOURCE))  # a day stored long before
+    # the syncs then stored nothing for 20 days (the consent text changed, given again only now)
+    await db_session.execute(delete(HealthMetric).where(HealthMetric.user_id == newcomer.id,
+                                                        HealthMetric.date > today - timedelta(days=20)))
+    newcomer.health_consent_at = datetime.now(timezone.utc) - timedelta(days=3)  # given 3 days ago: too late
+    conn.last_sync_at -= timedelta(days=1)
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"] and hrv_calls() == 1  # the week only
+    await db_session.execute(delete(HealthMetric).where(HealthMetric.user_id == newcomer.id,
+                                                        HealthMetric.date > today - timedelta(days=20)))
+    health_consent.record(newcomer)  # given now
+    conn.last_sync_at -= timedelta(days=1)
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"] and hrv_calls() == 9  # the gap read whole
+    conn.last_sync_at -= timedelta(days=1)
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"] and hrv_calls() == 1  # filled: the week again
+
+
 # ── the phone's pushes ─────────────────────────────────────────────────────
 
 def _bearer(token: str) -> dict:
