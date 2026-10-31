@@ -468,11 +468,71 @@
     root.querySelectorAll("figure[data-viz]").forEach(setup);
     root.querySelectorAll("svg.pf-viz-svg").forEach(scaled);
     root.querySelectorAll('.pf-phases').forEach(phases);
+    helpState(root);
+  }
+
+  // A card's (i) on a phone (max-width: 480px, where its tip is a sheet across the screen's foot, over the tab bar): a
+  // click opens and closes it (aria-expanded), never the press's hover or focus (shown at the press, the sheet landed
+  // under the finger and swallowed the click). Its × closes it, so do Escape (the focus back on its (i)), a click
+  // elsewhere and the focus leaving it; an (i) the sheet would cover first scrolls above it (at the page's end, the
+  // sheet goes up top instead). It stays until then (WCAG 1.4.13). Wider screens keep the tooltip on hover and focus.
+  var sheetMQ = window.matchMedia ? matchMedia("(max-width: 480px)") : null, openHelp = null;
+  document.documentElement.classList.add("pf-help-js");   // interface.css: the phone's sheet waits for the click
+  function sheetMode() { return !!(sheetMQ && sheetMQ.matches); }
+  function helpState(root) {   // the (i)s say whether their sheet is open, on a phone only (a tooltip has no state)
+    (root && root.querySelectorAll ? root : document).querySelectorAll(".pf-help-button").forEach(function (b) {
+      if (!sheetMode()) b.removeAttribute("aria-expanded");
+      else if (!b.hasAttribute("aria-expanded")) b.setAttribute("aria-expanded", "false");
+    });
+  }
+  function closeHelp(refocus) {
+    var box = openHelp;
+    if (!box) return;
+    openHelp = null;
+    box.classList.remove("is-open", "is-top");
+    var button = box.querySelector(".pf-help-button");
+    if (!button) return;
+    button.setAttribute("aria-expanded", "false");
+    if (refocus && box.isConnected) button.focus({ preventScroll: true });
+  }
+  function openHelpBox(box) {
+    closeHelp(false);
+    var button = box.querySelector(".pf-help-button"), tip = box.querySelector(".pf-help-tip");
+    if (!button || !tip) return;
+    openHelp = box;
+    box.classList.add("is-open");
+    button.setAttribute("aria-expanded", "true");
+    var b = button.getBoundingClientRect(), t = tip.getBoundingClientRect();
+    if (b.bottom + 8 > t.top && b.top < t.bottom) {
+      window.scrollBy({ top: b.bottom + 12 - t.top, behavior: "instant" });
+      b = button.getBoundingClientRect();
+      if (b.bottom + 8 > t.top) box.classList.add("is-top");
+    }
+  }
+  document.addEventListener("click", function (e) {
+    if (!sheetMode()) return;
+    var button = e.target.closest(".pf-help-button");
+    if (button) {
+      var box = button.closest(".pf-help");
+      if (box === openHelp) closeHelp(false); else openHelpBox(box);
+      return;
+    }
+    if (e.target.closest(".pf-help-close")) { closeHelp(true); return; }
+    if (openHelp && !openHelp.contains(e.target)) closeHelp(false);
+  });
+  document.addEventListener("focusin", function (e) {
+    if (openHelp && !openHelp.contains(e.target)) closeHelp(false);
+  });
+  if (sheetMQ) {
+    var mqChange = function () { closeHelp(false); helpState(); };
+    if (sheetMQ.addEventListener) sheetMQ.addEventListener("change", mqChange); else if (sheetMQ.addListener) sheetMQ.addListener(mqChange);
   }
 
   // Escape dismisses a shown tip (WCAG 1.4.13) and leaves the focus on its button: the next focus shows it again
+  // (a phone's open sheet closes, the focus on its (i))
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
+    if (openHelp) { closeHelp(true); return; }
     document.querySelectorAll(".pf-help:hover, .pf-help:focus-within, .pf-phase-segment:hover, .pf-phase-segment:focus")
       .forEach(function (el) { el.classList.add("is-tip-dismissed"); });
   });

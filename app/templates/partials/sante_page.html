@@ -114,7 +114,8 @@
     <div class="pf-panel-body">
         {% if p.load %}{% set c = p.load %}
         <section id="charge-detail" class="pf-load-detail">
-            <div class="pf-measurement-head"><h3 class="pf-card-h">Charge cumulée</h3>{{ viz.help('charge', 'La charge combine la durée et l’intensité des activités reçues. La ligne récente réagit plus vite que la ligne habituelle. Les unités sont propres à cet indicateur et ne mesurent pas un risque de blessure.', 'de la charge cumulée') }}</div>
+            {#- no sentence under the chart (owner): what it counts and a usual line still building are said in its (i) -#}
+            <div class="pf-measurement-head"><h3 class="pf-card-h">Charge cumulée</h3>{{ viz.help('charge', 'La charge combine la durée et l’intensité de toutes les activités reçues. La ligne récente réagit plus vite que la ligne habituelle.' ~ ('' if c.ready else ' Le repère habituel est en cours de constitution.') ~ (' ' ~ t.word[:1]|upper ~ t.word[1:] ~ '.' if t.word else '') ~ ' Les unités sont propres à cet indicateur et ne mesurent pas un risque de blessure.', 'de la charge cumulée') }}</div>
             {% call viz.figure(c, "Charge cumulée", "charge-accumulee", unit_word="jour", card=True, quiet=True) %}
                 {% for tick in c.ticks %}<line x1="0" x2="{{ c.X1 }}" y1="{{ tick.y }}" y2="{{ tick.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ tick.y + 4 }}" text-anchor="end">{{ tick.label }}</text>{% endfor %}
                 {% for line in c.series %}<path d="{{ line.path }}" class="pf-viz-line {{ line.cls }}{% if loop.index == 2 %} pf-load-usual{% endif %}"/>{% endfor %}
@@ -122,8 +123,6 @@
                 <g class="pf-viz-cross"><line x1="0" x2="0" y1="10" y2="120"/>{% for line in c.series %}<circle cx="0" cy="0" r="3.5"/>{% endfor %}</g>
             {% endcall %}
             {{ viz.viz_legend([("is-mean", "récente")] + ([("is-ref", "habituelle")] if c.ready else [])) }}
-            <p class="pf-viz-cap">{{ 'Toutes les activités reçues.' if c.ready else 'Repère habituel en cours de constitution.' }}</p>
-            {% if t.word %}<p class="pf-viz-cap">{{ t.word }}</p>{% endif %}
         </section>
         {% endif %}
     </div>
@@ -141,10 +140,10 @@
 <section id="forme" class="pf-health-panel" aria-labelledby="h-forme">
     <header class="pf-health-panel-heading"><h2 id="h-forme" class="pf-health-panel-title">Forme<small>Sur plusieurs semaines</small></h2></header>
     <div class="pf-panel-body">
-        <h3 class="pf-card-h">FC à allure comparable</h3>
+        {#- no sentence under the chart (owner): which runs and the pace they are brought to, in its (i) -#}
+        <div class="pf-measurement-head"><h3 class="pf-card-h">FC à allure comparable</h3>{{ viz.help('forme', 'Chaque point est une sortie facile et plate, sa FC ramenée à ' ~ e.pace ~ '.', 'de la FC à allure comparable') }}</div>
         {{ viz.viz_dots(e, "FC à allure comparable", "forme-footing", quiet=True) }}
         {{ viz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "tes valeurs habituelles")] if e.band else [])) }}
-        <p class="pf-viz-cap">Sorties faciles et plates, ramenées à {{ e.pace }}.</p>
     </div>
 </section>
 {% endif %}

@@ -38,7 +38,7 @@ button:disabled, button[data-load-more][aria-disabled="true"] { cursor: wait; op
 .pf-nav { display: none; gap: 4px; }
 .pf-nav a { padding: 8px 14px; border-radius: 999px; font-size: 0.9375rem; font-weight: 500; color: rgb(var(--pf-gray-600)); }
 .pf-nav a:hover { color: rgb(var(--pf-ink)); }
-.pf-nav a[aria-current="page"] { color: rgb(var(--pf-ink)); background: rgb(var(--pf-soft)); }
+.pf-nav a[aria-current="page"] { color: rgb(var(--pf-ink)); background: rgb(var(--pf-soft)); font-weight: 700; }   /* not by its pill alone (1.09:1): bold, like the tab bar */
 .pf-top-right { display: flex; align-items: center; gap: 4px; }
 .pf-ic { width: 20px; height: 20px; flex: none; display: block; }
 .pf-ic.hidden { display: none; }
@@ -155,6 +155,8 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .dark :is(.bg-red-50, .bg-red-50\/40, .bg-red-50\/50, .bg-red-50\/60) { background-color: rgb(var(--pf-danger-soft)) !important; }
 .dark :is(.text-red-400, .text-red-500, .text-red-600, .text-red-700, .text-red-800, .text-red-900) { color: rgb(var(--pf-danger)) !important; }
 .dark .border-red-200 { border-color: rgb(var(--pf-danger) / .4) !important; }
+/* a danger button's white on the dark theme's light red was 2.5:1: the page's dark ink on it (7.6:1; light: 5.9:1) */
+.dark .bg-danger.text-white { color: rgb(var(--pf-bg)); }
 .dark :is(.bg-amber-50, .bg-yellow-50, .bg-orange-50, .bg-orange-50\/40) { background-color: rgb(var(--pf-warn-soft)) !important; }
 .dark :is(.text-amber-500, .text-amber-600, .text-amber-700, .text-amber-800, .text-amber-900, .text-yellow-700, .text-yellow-900, .text-orange-800) { color: rgb(var(--pf-warn)) !important; }
 .dark :is(.border-amber-200, .border-yellow-200, .border-orange-100) { border-color: rgb(var(--pf-warn) / .4) !important; }
@@ -174,20 +176,22 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-sport-trail { background: rgb(var(--pf-ok-soft)); color: rgb(var(--pf-ok)); }
 .pf-sport-bike { background: rgb(var(--pf-warn-soft)); color: rgb(var(--pf-warn)); }
 .pf-activity-mobile-stats { display: none; }
+/* an activity's tiles: two columns on a phone while each holds 8 em (its text's size), else one (200 % text:
+   « 5:24/km » ran 11 px past its tile at 393 px); a value never spills out of its tile */
+@media (max-width: 767px) {
+    .pf-activity-metrics { grid-template-columns: repeat(auto-fit, minmax(max(8em, calc((100% - 0.75rem) / 2 - 1px)), 1fr)); }
+}
+.pf-activity-metrics > * { min-width: 0; }
+.pf-activity-metrics p { overflow-wrap: anywhere; }
 .pf-activity-chart { --pf-viz-mark: var(--pf-accent); padding: 12px 16px; border: 1px solid rgb(var(--pf-line)); border-radius: 24px; background: rgb(var(--pf-surface)); }
 .pf-activities .pf-activity-chart { margin-top: 12px; }
 .pf-activity-chart .pf-viz { margin-top: 4px; }
 .pf-activity-chart .pf-viz-read { min-height: 52px; }
 .pf-activity-chart .pf-viz-read-txt b { font-size: 1.5rem; }
-/* the period over the value on the left, the context beside them, wrapping in its own column down to the value's
-   line: the readout keeps its two lines whatever the measure (« +2 140 m » is wider than « 5h40 »: its context
-   used to wrap under it and move the plot); a narrow phone or 200 % text keeps the flow (pf-viz.js reserves) */
-@media (min-width: 360px) and (max-width: 899px) {   /* a desktop readout has the room: its own flow */
-    :root:not(.pf-large-text) .pf-activity-chart .pf-viz-read-txt { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; }
-    :root:not(.pf-large-text) .pf-activity-chart .pf-viz-read-txt [data-r]:first-child { grid-column: 1; grid-row: 1; }
-    :root:not(.pf-large-text) .pf-activity-chart .pf-viz-read-txt > b { grid-column: 1; grid-row: 2; }
-    :root:not(.pf-large-text) .pf-activity-chart .pf-viz-read-txt [data-r]:nth-child(3) { grid-column: 2; grid-row: 1 / span 2; align-self: end; padding-bottom: 6px; line-height: 1.3; }
-}
+/* two fixed lines, no column: the context on the small top line (« Moy. par semaine · 11 sem. », « sem. du 28 sept. »,
+   « Semaine en cours »), the value alone under it (training_view._chart: « aucune activité » after a « — » only), so
+   « +2 140 m » never wraps where « 5h40 » does not and the plot stays put across the measures and the taps
+   (pf-viz.js reserves the tallest readout of the three measures; a 320 px phone or 200 % text may wrap its top line) */
 .pf-activities .pf-week-heading { padding-top: 12px; }
 /* « Voir la semaine › » lands its week's title under the sticky top bar (64 px from 900 px; below, html's
    scroll-padding-top holds the phone's bar) */
@@ -299,7 +303,10 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-hero-btn:hover .pf-hero-num { color: rgb(var(--pf-gray-700)); }
 #hero-edit { margin-top: 2px; }
 .pf-hero-in { font: inherit; letter-spacing: inherit; background: transparent; border: 0; border-bottom: 3px solid rgb(var(--pf-accent)); padding: 0; color: rgb(var(--pf-ink)); }
-.pf-hero-in:focus, .pf-hero-in:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 3px; border-radius: 6px; }   /* the field being typed in shows it */
+.pf-hero-in:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 3px; border-radius: 6px; }   /* Tab into the field: the ring */
+/* a tap or a click into it: no ring around the half-empty field over « Objectif » (a text field matches :focus-visible
+   on a tap too, so app.js marks <html> after a pointer press, until the next Tab); its caret and selection show it */
+[data-pf-pointer] .pf-hero-in:focus-visible { outline: none; }
 .pf-objpanel { max-width: 440px; margin-top: 12px; }
 .pf-objline { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; font-size: 0.8125rem; color: rgb(var(--pf-gray-600)); }
 .pf-objline b { color: rgb(var(--pf-ink)); font-weight: 600; }
@@ -996,9 +1003,10 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-viz-svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y pinch-zoom; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 .pf-viz-on .pf-viz-svg { cursor: crosshair; }
 .pf-viz-svg text { font-size: 11px; fill: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
-/* a desktop plot is drawn wider than its 320-unit viewBox (up to 560 px: × 1.75): its text keeps a constant 12 px
-   (pf-viz.js sets --pf-viz-k, the plot's px per unit; without it, the phone's 11 units) — never bigger than a title */
-@media (min-width: 900px) {
+/* a tablet's or a desktop's plot is drawn wider than its 320-unit viewBox (up to 560 px: × 1.75): its text keeps a
+   constant 12 px (pf-viz.js sets --pf-viz-k, the plot's px per unit; without it, the phone's 11 units) — never bigger
+   than a title (from 600 px: at 768 px the axis read 19 px, over the 17 px card titles); a phone keeps its 11 units */
+@media (min-width: 600px) {
     .pf-viz-svg { font-size: calc(12px / var(--pf-viz-k, 1.0909)); }
     .pf-viz-svg text { font-size: 1em; }
 }
@@ -1337,12 +1345,17 @@ body:has(.pf-sante4) { background: #f4f6f8; }
 .pf-large-text .pf-row-val { flex-basis: 100%; align-items: flex-start; text-align: left; margin-left: 0; }
 .pf-large-text .pf-viz-l1 { flex-wrap: wrap; white-space: normal; }
 .pf-large-text .pf-viz-l1 > .pf-viz-w { overflow: visible; }
+/* …and its value wraps rather than widening the page (« 14,4 resp./min » ran to 399 px on a 320 px phone) */
+.pf-large-text .pf-viz-l1 > b { flex-shrink: 1; min-width: 0; overflow-wrap: anywhere; }
 .pf-large-text .pf-health-panel > summary { flex-wrap: wrap; }
 .pf-large-text .pf-health-panel > summary::after { margin-left: auto; }
 .pf-large-text .pf-set-appearance { flex-wrap: wrap; }
 .pf-large-text .pf-sante-head, .pf-large-text .pf-night, .pf-large-text .pf-head { flex-wrap: wrap; }
 .pf-large-text .pf-seg { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .pf-large-text .pf-seg > :is(a, button) { white-space: normal; }
+/* Activités' sport filter on its rows: no scroll box clipping the ink ring of « Tout » to its pill's curve, corners
+   that hold the 44 px pills (22 + its 3 px padding) */
+.pf-large-text .pf-filters { overflow: visible; border-radius: 24px; }
 /* 200 % text: the clock takes its own line above the name, the small clocks beside it; nothing overlaps */
 .pf-large-text .pf-prow-head, .pf-large-text .pf-pass.has-alt .pf-prow-head { grid-template-columns: minmax(0, 1fr) auto 1.125rem; grid-template-areas: "clk alt chev" "main main chev"; row-gap: 2px; }
 .pf-large-text .pf-prow-head > .pf-clk { grid-area: clk; }
@@ -1459,6 +1472,8 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-large-text .pf-sante4 .pf-row-name { white-space: normal; }
 .pf-large-text .pf-sante4 .pf-viz-svg text { font-size: 17px; }
 .pf-large-text .pf-sante4 .pf-tl text { font-size: 17px; }
+/* its lane names end before the chronology (x 60): « Profond » at 17 units ran 4 into the first stages */
+.pf-large-text .pf-sante4 .pf-tl .pf-tl-lane { font-size: 15px; }
 .pf-large-text .pf-tl-label-full, .pf-large-text .pf-tl-tick:not(.pf-tl-major-tick) { display: none; }
 .pf-large-text .pf-tl-label-short { display: inline; }
 .pf-large-text .pf-sante4 .pf-viz-date-tick:not(.pf-viz-major-tick) { display: none; }
@@ -1489,7 +1504,7 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-feel-dot.is-ok { fill: rgb(var(--pf-gray-500)); }
 .pf-feel-dot.is-bad { fill: rgb(var(--pf-danger)); }
 .pf-viz-svg text.pf-feel-row { font-size: 9px; }
-@media (min-width: 900px) { .pf-viz-svg text.pf-feel-row { font-size: .75em; } }   /* 9 px at the desktop scale too */
+@media (min-width: 600px) { .pf-viz-svg text.pf-feel-row { font-size: .75em; } }   /* 9 px at the tablet and desktop scale too */
 .pf-large-text .pf-sante4 .pf-viz-svg text.pf-feel-row { display: none; }
 /* The curves stacked on the same days, under the rings (owner, 2026-10-17) */
 .pf-curves { display: grid; gap: 12px; }
@@ -1565,7 +1580,15 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 @media (max-width: 480px) {
     .pf-help-tip { position: fixed; z-index: 50; top: auto; bottom: calc(63px + 1.0625rem + env(safe-area-inset-bottom, 0px)); left: 20px; right: 20px; width: auto; max-height: calc(100dvh - 180px); overflow-y: auto; }
     .pf-native .pf-help-tip { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+    /* with pf-viz.js the sheet waits for the click (never the press's hover or focus: it landed under the finger and
+       swallowed the click), stays until its ×, Escape or a click elsewhere, and goes up top if it would cover its (i) */
+    .pf-help-js .pf-help:is(:hover, :focus-within) .pf-help-tip { display: none; }
+    .pf-help-js .pf-help.is-open .pf-help-tip { display: block; padding-right: 48px; }
+    .pf-help-js .pf-help.is-open.is-top .pf-help-tip { top: calc(72px + env(safe-area-inset-top, 0px)); bottom: auto; }
+    .pf-help-js .pf-help.is-open .pf-help-close { display: flex; }
 }
+.pf-help-close { display: none; position: absolute; top: 2px; right: 2px; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 999px; font-size: 1.375rem; line-height: 1; color: inherit; }
+.pf-help-close:focus-visible { outline: 2px solid rgb(var(--pf-bg)); outline-offset: -6px; }
 
 .pf-sante4 .pf-viz-hair { stroke: rgb(var(--pf-line)); stroke-dasharray: none; }
 

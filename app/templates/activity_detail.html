@@ -19,8 +19,8 @@
         <p class="text-sm text-gray-400 mt-0.5">{{ activity.start_date.strftime('%d/%m/%Y') }}</p>
     </div>
 
-    <!-- Metrics Grid -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <!-- Metrics Grid (pf-activity-metrics: one column when a tile would be too narrow for its value, 200 % text) -->
+    <div class="pf-activity-metrics grid grid-cols-2 md:grid-cols-4 gap-3">
         {#- a session without a distance (renforcement, mobilité) shows no « 0,0 km » -#}
         {% if activity.distance_km > 0 %}
         <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">

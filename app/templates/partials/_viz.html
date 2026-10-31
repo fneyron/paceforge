@@ -1,7 +1,9 @@
-{#- a card's (i): `key` names the tip (its id), `about` is what the button says it is about, in words
-    (« du poids », « de la VFC »: « À propos du poids »); the macro sits last in its card's header, on its right -#}
+{#- a card's (i): `key` names the tip (its text's id), `about` is what the button says it is about, in words
+    (« du poids », « de la VFC »: « À propos du poids »); the macro sits last in its card's header, on its right.
+    A tooltip on hover and focus; on a phone a sheet over the tab bar that a click opens and closes (pf-viz.js:
+    aria-expanded), with its own × (shown there only; outside the text the button describes itself with) -#}
 {% macro help(key, text, about=None) %}
-<span class="pf-help"><button type="button" class="pf-help-button" aria-label="À propos {{ about or ('de ' ~ key) }}" aria-describedby="help-{{ key|replace(' ', '-') }}">i</button><span class="pf-help-tip" role="tooltip" id="help-{{ key|replace(' ', '-') }}">{{ text }}</span></span>
+<span class="pf-help"><button type="button" class="pf-help-button" aria-label="À propos {{ about or ('de ' ~ key) }}" aria-describedby="help-{{ key|replace(' ', '-') }}">i</button><span class="pf-help-tip"><span role="tooltip" id="help-{{ key|replace(' ', '-') }}">{{ text }}</span><button type="button" class="pf-help-close" aria-label="Fermer l’aide"><span aria-hidden="true">×</span></button></span></span>
 {% endmacro %}
 
 {#- PaceForge chart kit: Jinja macros drawing what app/services/viz.py computed.

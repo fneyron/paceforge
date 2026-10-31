@@ -46,12 +46,23 @@ const brands = /COROS|Garmin|Apple Santé|Apple Watch|Health Connect/;
         assert.equal(await page.locator('.pf-measurement-insight').count(), 0, key + ': no sentence on the cards');
         const insight = (await page.locator('section[aria-labelledby="explain-vfc"] > p').first().textContent()).trim();
         assert.match(await page.locator('#vfc .pf-viz-read').innerText(), /\bms\b/);
-        assert.match(await page.locator('#vfc .pf-viz-read').innerText(), scenario === 'mixed' ? /SDNN/ : /RMSSD/);
+        // the card rests on its mean (« 64 ms en moyenne »): the method is said in the shared explanation, the latest
+        // night's provenance with it — a current SDNN named apart from the RMSSD trend
+        const vfcExplained = await page.locator('section[aria-labelledby="explain-vfc"]').textContent();
+        assert.match(vfcExplained, /RMSSD/, key + ': the trend’s method is said');
+        if (scenario === 'mixed') {
+          assert.match(await page.locator('[data-viz-detail-for="vfc"]').textContent(), /SDNN/, key + ': the latest SDNN is named');
+          assert.match(vfcExplained, /SDNN, distincte de la tendance RMSSD/, key + ': a SDNN is never read as the RMSSD trend');
+        }
         assert.match(await page.locator('#fc .pf-viz-read').innerText(), /\bbpm\b/);
         assert.doesNotMatch(await page.locator('#fc .pf-viz-read').innerText(), /SDNN|RMSSD/);
+        // the cards print no status line since their harmonisation (2026-10-18, only the acute night HR alert keeps
+        // one): a low 7-day VFC trend is said under the Récupération ring; an isolated low night is not a trend
+        const ringNote = await page.locator('.pf-ring-recup .pf-ring-note').allInnerTexts();
+        assert.equal(await page.locator('#vfc .pf-card-status').count(), 0, key + ': no status line on the VFC card');
         if (scenario === 'low' || scenario === 'day-only') {
           assert.match(insight, /baisse.*fatigue ou stress/);
-          assert.match(await page.locator('#vfc .pf-card-status').innerText(), /Tendance 7 j.*En dessous/);
+          assert.match(ringNote.join(' '), /VFC plus basse que d'habitude/, key + ': the low trend is said');
         } else if (scenario === 'mixed') {
           assert.equal(insight, 'Ce relevé n’est pas comparable à la tendance affichée.',
             'Different HRV methods keep their explanation in the shared disclosure');
@@ -59,12 +70,15 @@ const brands = /COROS|Garmin|Apple Santé|Apple Watch|Health Connect/;
             'Changing HRV method must not look like a physiological drop');
         } else {
           assert.match(insight, /Dernière mesure sous le repère, tendance sur 7 jours habituelle|dernier point est bas.*tendance sur 7 jours reste habituelle/);
-          assert.equal(await page.locator('#vfc .pf-card-status').count(), 0);
+          assert.doesNotMatch(ringNote.join(' '), /VFC/, key + ': an isolated low night is not said as a low trend');
         }
         if (scenario === 'respiration') {
           assert.equal(await page.locator('#mesures-nocturnes #respiration').count(), 1);
           assert.equal(await page.locator('#tendances #trend-resp_night-title').count(), 0);
-          assert.match(await page.locator('#respiration .pf-viz-read').innerText(), /18[\s\S]*resp\.\/min/);
+          // the card rests on its mean since the harmonisation (2026-10-18): last night's 18 is its last night's readout
+          assert.match(await page.locator('#respiration .pf-viz-read').innerText(), /resp\.\/min[\s\S]*en moyenne/);
+          assert.match(await page.locator('#respiration .pf-viz-data').evaluate(el => JSON.parse(el.textContent).r.at(-1).join(' ')),
+            /^18[\s\S]*resp\.\/min/, key + ': the received night respiration');
           assert.equal(await page.locator('#sommeil .pf-tl-seg').count(), 10);
         } else {
           assert.equal(await page.locator('#respiration').count(), 0, key + ': no manufactured nocturnal respiration');
@@ -91,8 +105,13 @@ const brands = /COROS|Garmin|Apple Santé|Apple Watch|Health Connect/;
           });
           const readout = await fig.locator('.pf-viz-read').innerText();
           assert.doesNotMatch(readout, brands, key + ': selecting a chart does not restore visible brands');
-          if (selected.key === 'vfc') assert.match(readout, /RMSSD/,
-            key + ': the selected historical RMSSD is distinct from a current SDNN');
+          // the selected historical night says its method where its readout is spoken; its provenance names no SDNN
+          if (selected.key === 'vfc') {
+            assert.match(await fig.locator('.pf-viz-range').getAttribute('aria-valuetext'), /RMSSD/,
+              key + ': the selected historical RMSSD is distinct from a current SDNN');
+            assert.doesNotMatch(await page.locator('[data-viz-detail-for="vfc"]').textContent(), /SDNN/,
+              key + ': the selected RMSSD night is not given the current SDNN');
+          }
           assert.ok(readout.includes(selected.date), key + ': selected date remains visible');
           assert.equal(await fig.locator('.pf-viz-range').getAttribute('aria-valuetext'), selected.spoken);
           // Tendances' night HR has no provenance of its own: the FC de nuit card's is the one explained

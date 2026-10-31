@@ -52,6 +52,12 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     assert "entrainement" not in sante
     assert sante["charge-accumulee"][1:] == ("en moyenne", "")
     assert sante["forme-footing"] == ("", "Tes sorties comparables", "")
+    # no sentence under a Santé chart (owner; re-audit 2026-10-31): what the load counts and the pace the runs are
+    # brought to are said in their card's (i)
+    charge, forme = (page.split(f'id="{k}"')[1].split("</section>")[0] for k in ("charge-detail", "forme"))
+    assert "pf-viz-cap" not in charge and "pf-viz-cap" not in forme
+    assert "Toutes les activités reçues." not in page and "de toutes les activités reçues." in charge
+    assert re.search(r'id="help-forme">Chaque point est une sortie facile et plate, sa FC ramenée à \d+:\d\d/km\.<', forme)
     # the ring prints today's score, the Sommeil row last night's total: the Récupération card rests on its title, no
     # number (the audit, 2026-10-09: its mean decided nothing and looked like the dial's), the sleep's on its means…
     assert sante["recuperation"] == ("100/100", "en moyenne", "")
@@ -69,7 +75,7 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     # this week's hours: Activités' week heading prints them; neither A1 (it rests on the average of the complete
     # weeks, v4.3) nor the taper does by default
     week = readouts(activites)["semaines-duree"]
-    assert week[0].startswith("sur ") and week[2] == "par semaine en moyenne" and "en cours" not in " ".join(week)
+    assert week[0].startswith("Moy. par semaine\u00a0· ") and week[2] == "" and "en cours" not in " ".join(week)
     taper = before["affutage"]
     assert taper[0] == "S‑6 → S0" and taper[1].startswith("base : ") and "en cours" not in taper[0]
     shown = {v for r in (sante, readouts(activites)) for t in r.values() for v in t if re.search(r"\d", v)}

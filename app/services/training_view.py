@@ -14,14 +14,14 @@ right under « Semaines », filtering the chart and the list alike.
   segmented control « Durée · Distance · D+ » (Distance only when some
   activity has one, D+ only when the 12 weeks hold some: an activity
   without D+ adds 0), « Durée » by default (every sport counts). 12 weekly
-  bars and nothing else: the current week lighter (hatched, « en cours » in
-  its readout and the legend), one dashed line at the average of the
+  bars and nothing else: the current week lighter (hatched, « Semaine en
+  cours » in its readout, « semaine en cours » in the legend), one dashed line at the average of the
   complete weeks, labelled « moy. ». The weeks as the list's headings count
   them (week_totals: the athlete's local Mondays, the same sport filter, its duplicates and
   false starts out, moving time): a week's own total only on a tap (its
-  heading prints it); the resting readout is the average, « 12h20 par
-  semaine en moyenne », « sur 11 semaines » (the complete weeks since the
-  first activity). No band, no ◆, no ▲, no D+ marks: the single-run spike
+  heading prints it); the resting readout is the average, « 12h20 » under
+  « Moy. par semaine · 11 sem. » (the complete weeks since the first
+  activity): two lines, the context on the small top one. No band, no ◆, no ▲, no D+ marks: the single-run spike
   (a run > 10 % longer, on distance, than the longest of the 30 days before
   it, never a race nor an effort of 6 h or more; Frandsen 2025: 1.5–2.3×
   overuse injuries) is a worded tag on its row in the list, « plus longue
@@ -206,12 +206,14 @@ def _chart(weeks: list[dict], key: str, title: str, n_avg: int, sport: str | Non
         if v > 0:
             col.update(y=y(v), h=round(132 - y(v), 1))
         cols.append(col)
-        head = rp.week_label(m)
+        # the readout's two lines: its context on the small top line, the value alone under it (« aucune activité »
+        # after a « — » only: short, it never wraps)
+        head = "Semaine en cours" if w["current"] else rp.week_label(m)
         if not w["count"]:
             r.append([head, "—", "aucune activité"])
             a.append(f"Semaine du {d_long(m)}" + (", en cours" if w["current"] else "") + " : aucune activité")
         else:
-            r.append([head, _big(v, key), "en cours" if w["current"] else ""])
+            r.append([head, _big(v, key), ""])
             a.append(f"Semaine du {d_long(m)}" + (", en cours" if w["current"] else "") + f" : {_said(v, key)}")
         # the week in the list below (page 1 holds the last 6 weeks), the filter kept
         weeks_ago = (this_monday - m).days // 7
@@ -225,11 +227,13 @@ def _chart(weeks: list[dict], key: str, title: str, n_avg: int, sport: str | Non
          "summary": f"{title} sur 12 semaines. La semaine en cours est hachurée"
                     + (", une ligne marque la moyenne des semaines complètes." if avg else "."),
          "title": title, **viz._data(xs, [], [w["monday"] for w in weeks], r, a, h=h)}
-    # resting readout: the average (each week's own total is its list heading's: printed there, on a tap here)
+    # resting readout: the average (each week's own total is its list heading's: printed there, on a tap here); its
+    # context on the top line, short enough for one line from a 340 px phone (« Moy. », « sem. »: the app's own
+    # abbreviations), the value alone under it
     if avg is not None:
         mean = _avg_rounded(avg, key)
         over = f"sur {n_avg} semaine{'s' if n_avg > 1 else ''}"
-        return viz.rest(c, [over, _big(mean, key), "par semaine en moyenne"],
+        return viz.rest(c, [f"Moy. par semaine{NBSP}· {n_avg}{NBSP}sem.", _big(mean, key), ""],
                         f"{_said(mean, key)} par semaine en moyenne, {over} complète{'s' if n_avg > 1 else ''}. "
                         "Choisis une semaine pour voir son total.", back=n - 1)
     return viz.rest(c, ["12 semaines", title, ""],
