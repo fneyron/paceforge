@@ -5,7 +5,7 @@
 {% block head %}<script defer src="/static/vendor/alpine-3.14.8.min.js?v={{ request.app.state.build_id }}"></script>{% endblock %}
 
 {% block content_public %}
-<div class="min-h-screen bg-white" x-data="{ step: 1 }">
+<main id="main-content" tabindex="-1" class="min-h-screen bg-white" x-data="{ step: 1 }">
     <div class="max-w-2xl mx-auto px-6 py-12 sm:py-20">
 
         <!-- Header -->
@@ -16,18 +16,20 @@
             <p class="mt-3"><a href="/sante" class="pf-link text-sm">Continuer sans Strava →</a></p>
         </div>
 
-        <!-- Progress bar -->
-        <div class="flex items-center justify-center gap-2 mb-10">
+        <!-- Progress: the step shown is aria-current="step", each one said « Étape N sur 3 »; a step not reached
+             yet prints its number at 5.3:1 (gray-500 on gray-100) -->
+        <ol class="flex items-center justify-center gap-2 mb-10" aria-label="Étapes">
             <template x-for="s in [1, 2, 3]">
-                <div class="flex items-center gap-2">
+                <li class="flex items-center gap-2" :aria-current="step === s ? 'step' : null">
                     <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors"
-                         :class="step >= s ? 'bg-accent text-accent-ink' : 'bg-gray-100 text-gray-400'">
+                         :class="step >= s ? 'bg-accent text-accent-ink' : 'bg-gray-100 text-gray-500'" aria-hidden="true">
                         <span x-text="s"></span>
                     </div>
-                    <div x-show="s < 3" class="w-8 h-0.5" :class="step > s ? 'bg-gray-900' : 'bg-gray-200'"></div>
-                </div>
+                    <span class="sr-only" x-text="'Étape ' + s + ' sur 3'"></span>
+                    <div x-show="s < 3" class="w-8 h-0.5" :class="step > s ? 'bg-gray-900' : 'bg-gray-200'" aria-hidden="true"></div>
+                </li>
             </template>
-        </div>
+        </ol>
 
         <!-- Error display -->
         {% if error %}
@@ -179,5 +181,5 @@
             </p>
         </div>
     </div>
-</div>
+</main>
 {% endblock content_public %}

@@ -38,7 +38,7 @@ button:disabled, button[data-load-more][aria-disabled="true"] { cursor: wait; op
 .pf-nav { display: none; gap: 4px; }
 .pf-nav a { padding: 8px 14px; border-radius: 999px; font-size: 0.9375rem; font-weight: 500; color: rgb(var(--pf-gray-600)); }
 .pf-nav a:hover { color: rgb(var(--pf-ink)); }
-.pf-nav a[aria-current="page"] { color: rgb(var(--pf-ink)); background: rgb(var(--pf-soft)); }
+.pf-nav a[aria-current="page"] { color: rgb(var(--pf-ink)); background: rgb(var(--pf-soft)); font-weight: 700; }   /* not by its pill alone (1.09:1): bold, like the tab bar */
 .pf-top-right { display: flex; align-items: center; gap: 4px; }
 .pf-ic { width: 20px; height: 20px; flex: none; display: block; }
 .pf-ic.hidden { display: none; }
@@ -176,6 +176,13 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-sport-trail { background: rgb(var(--pf-ok-soft)); color: rgb(var(--pf-ok)); }
 .pf-sport-bike { background: rgb(var(--pf-warn-soft)); color: rgb(var(--pf-warn)); }
 .pf-activity-mobile-stats { display: none; }
+/* an activity's tiles: two columns on a phone while each holds 8 em (its text's size), else one (200 % text:
+   « 5:24/km » ran 11 px past its tile at 393 px); a value never spills out of its tile */
+@media (max-width: 767px) {
+    .pf-activity-metrics { grid-template-columns: repeat(auto-fit, minmax(max(8em, calc((100% - 0.75rem) / 2 - 1px)), 1fr)); }
+}
+.pf-activity-metrics > * { min-width: 0; }
+.pf-activity-metrics p { overflow-wrap: anywhere; }
 .pf-activity-chart { --pf-viz-mark: var(--pf-accent); padding: 12px 16px; border: 1px solid rgb(var(--pf-line)); border-radius: 24px; background: rgb(var(--pf-surface)); }
 .pf-activities .pf-activity-chart { margin-top: 12px; }
 .pf-activity-chart .pf-viz { margin-top: 4px; }
@@ -1333,6 +1340,9 @@ body:has(.pf-sante4) { background: #f4f6f8; }
 .pf-large-text .pf-sante-head, .pf-large-text .pf-night, .pf-large-text .pf-head { flex-wrap: wrap; }
 .pf-large-text .pf-seg { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .pf-large-text .pf-seg > :is(a, button) { white-space: normal; }
+/* Activités' sport filter on its rows: no scroll box clipping the ink ring of « Tout » to its pill's curve, corners
+   that hold the 44 px pills (22 + its 3 px padding) */
+.pf-large-text .pf-filters { overflow: visible; border-radius: 24px; }
 /* 200 % text: the clock takes its own line above the name, the small clocks beside it; nothing overlaps */
 .pf-large-text .pf-prow-head, .pf-large-text .pf-pass.has-alt .pf-prow-head { grid-template-columns: minmax(0, 1fr) auto 1.125rem; grid-template-areas: "clk alt chev" "main main chev"; row-gap: 2px; }
 .pf-large-text .pf-prow-head > .pf-clk { grid-area: clk; }

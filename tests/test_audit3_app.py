@@ -262,9 +262,13 @@ def test_desktop_chart_text_keeps_its_size():
 # ── accessibility ───────────────────────────────────────────────────────────
 
 async def test_the_gpx_field_is_named_by_its_visible_label(as_user):
+    """Its two visible labels show its focus; one is always display:none (« Nouvelle course » below 1024 px: axe's
+    label-title-only, re-audit 2026-10-31), so its own name holds the words of both. Never required: an empty
+    required field read « invalide » before anything was done."""
     page = (await as_user.get("/simulator")).text
     field = page.split('id="gpx-file"')[1].split(">")[0]
-    assert "aria-label" not in field
+    assert 'aria-label="Importer un GPX, nouvelle course"' in field and "required" not in field
+    assert 'class="pf-btn pf-btn-primary pf-btn-sm pf-only-d cursor-pointer">' in page and "Nouvelle course</label>" in page
     assert '.pf-simulator:has(#gpx-file:focus-visible) label[for="gpx-file"] { outline: 2px solid' in CSS
 
 
@@ -304,6 +308,27 @@ def test_inputs_tabs_and_segments_carry_more_than_hue():
     assert 'setAttribute("data-pf-pointer", "")' in app_js and 'event.key === "Tab"' in app_js
     assert '.pf-tabbar a[aria-current="page"] { color: rgb(var(--pf-accent)); font-weight: 700; }' in CSS
     assert '.pf-seg > [aria-pressed="true"], .pf-seg > [aria-current] { background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }' in CSS
+
+
+def test_current_places_and_large_text_hold_more_than_hue():
+    """Re-audit 2026-10-31: the desktop tab is bold (its pill alone is 1.09:1); at 200 % text the sport filter no longer
+    clips the ring of « Tout », an activity's tiles go to one column rather than letting « 5:24/km » spill out."""
+    assert '.pf-nav a[aria-current="page"] { color: rgb(var(--pf-ink)); background: rgb(var(--pf-soft)); font-weight: 700; }' in CSS
+    assert ".pf-large-text .pf-filters { overflow: visible; border-radius: 24px; }" in CSS
+    assert ".pf-activity-metrics { grid-template-columns: repeat(auto-fit, minmax(max(8em, calc((100% - 0.75rem) / 2 - 1px)), 1fr)); }" in CSS
+    assert ".pf-activity-metrics p { overflow-wrap: anywhere; }" in CSS
+    detail = (ROOT / "app/templates/activity_detail.html").read_text(encoding="utf-8")
+    assert '<div class="pf-activity-metrics grid grid-cols-2 md:grid-cols-4 gap-3">' in detail
+
+
+def test_the_strava_setup_says_its_step():
+    """Re-audit 2026-10-31: /setup in a <main>, the shown step aria-current="step" and said « Étape N sur 3 », a step not
+    reached yet at 5.3:1 (gray-500 on gray-100, was gray-400: 4.3:1)."""
+    setup = (ROOT / "app/templates/setup.html").read_text(encoding="utf-8")
+    assert '<main id="main-content" tabindex="-1" class="min-h-screen bg-white" x-data="{ step: 1 }">' in setup
+    assert setup.count("<main") == 1 and "</main>\n{% endblock content_public %}" in setup
+    assert ''':aria-current="step === s ? 'step' : null"''' in setup and '''x-text="'Étape ' + s + ' sur 3'"''' in setup
+    assert "'bg-gray-100 text-gray-500'" in setup and "text-gray-400'" not in setup
 
 
 def test_danger_buttons_keep_their_contrast_in_the_dark():
