@@ -86,6 +86,8 @@ async def save(request: Request, user: User = Depends(get_current_user), db: Asy
         for key,value in values.items():
             setattr(row,key,value)
     await db.flush()
+    # committed before the redirect: the test's page is the next request, and get_db commits after the response
+    await db.commit()
     return RedirectResponse(f'/sante/lactate/{row.id}', status_code=303)
 
 
@@ -94,4 +96,5 @@ async def delete(request: Request, test_id: int, csrf_token: str = Form(),
                  user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     check_csrf(request, csrf_token)
     await db.delete(await owned(db,user,test_id))
+    await db.commit()  # gone before the list it redirects to is read
     return RedirectResponse('/sante/lactate', status_code=303)

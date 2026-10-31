@@ -1088,7 +1088,7 @@ async def rename_route(
     if not route:
         return JSONResponse({"error": "Parcours non trouve"}, status_code=404)
     route.name = name.strip()[:200] or route.name  # capped as save_route caps it
-    await db.flush()
+    await _commit(db)  # the list reloads as soon as this answers
     return JSONResponse({"id": route.id, "name": route.name})
 
 
@@ -1730,7 +1730,7 @@ async def delete_route(
     route = _visible(result.scalar_one_or_none())
     if route:
         await db.delete(route)
-        await db.flush()
+        await _commit(db)  # gone for good before the page drops its card
     return JSONResponse({"ok": True})
 
 
@@ -2454,7 +2454,7 @@ async def save_route_params(
     if "scenario_fast_pct" in form or "scenario_safe_pct" in form or "switch_km" in form:  # older clients
         _apply_scenarios(form, p, route)
     route.params_json = p
-    await db.flush()
+    await _commit(db)  # the page recalculates as soon as this answers: with these values
     if "walk_grade" not in form:
         return HTMLResponse(status_code=204)
     ctx = await _pacing_context(request, route, db, user)
@@ -2503,7 +2503,7 @@ async def save_route_scenarios(
     p = dict(route.params_json or {})
     _apply_scenarios(await request.form(), p, route)
     route.params_json = p
-    await db.flush()
+    await _commit(db)  # read by the recalculation the page asks for as soon as this answers
     return HTMLResponse(status_code=204)
 
 

@@ -178,7 +178,9 @@ async def resend_verification(request: Request, db: AsyncSession = Depends(get_d
     if user and user.email and not user.email_verified and not await over_quota("resend", user=user.id):
         token = verification_token()
         user.email_verify_token = hash_token(token)
-        await db.flush()
+        # committed before the email goes, as at sign-up: get_db's own commit comes only after the response, and a
+        # link opened at once (or a commit that fails) would find the previous token
+        await db.commit()
         sent = await run_in_threadpool(send_verification_email, user.email, token)
         request.session["verification_failed"] = not sent
     return RedirectResponse("/auth/check-email", status_code=303)
@@ -203,7 +205,7 @@ async def verify_email(
 
     if not user.email_verified:
         user.email_verified = True
-        await db.flush()
+        await db.commit()  # before the answer: « Continuer » (or the redirect) is followed at once, by a new request
         logger.info("Email verified for user %d", user.id)
     # the token stays on the account: the link opened again (a double click, an email client that fetched it
     # first) finds the account verified and says so, not « Lien invalide »
