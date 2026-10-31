@@ -186,6 +186,7 @@ async def test_the_export_holds_the_legacy_tables_rows_of_the_account(as_user: A
 
 
 async def test_without_the_legacy_tables_the_export_has_none_of_their_files(as_user: AsyncClient):  # noqa: F811
+    # absent (a database made from the models), or present without a row of the account (alembic's, as in production)
     files = _zip(await as_user.get("/settings/export"))
     assert not [name for name in files if name.startswith("anciennes_fonctions/")]
 
