@@ -144,9 +144,17 @@ def test_sentry_never_sends_bodies_local_variables_queries_or_cookies(monkeypatc
                     "query_string": "token=S3CRET", "data": {"password": "hunter22", "token": "S3CRET"},
                     "cookies": {"paceforge_session": "abc"},
                     "headers": {"Cookie": "paceforge_session=abc", "Authorization": "Bearer t0k", "User-Agent": "UA",
-                                "X-Forwarded-For": "203.0.113.9"}},
+                                "X-Forwarded-For": "203.0.113.9",
+                                "Referer": "https://paceforge.fr/auth/reset-password?token=R3F"}},
         "logentry": {"message": "GET %s failed", "params": ["/auth/verify-email?token=S3CRET"]},
-        "breadcrumbs": {"values": [{"category": "uvicorn.access", "message": "GET /x?code=C0DE&state=S7 200"}]},
+        "breadcrumbs": {"values": [
+            {"category": "uvicorn.access", "message": "GET /x?code=C0DE&state=S7 200"},
+            # an integration's own crumb: the URL and its query in its data, nested values too
+            {"category": "httplib", "data": {"url": "https://www.strava.com/oauth/token?client_secret=D4TA",
+                                             "http.query": "refresh_token=QU3RY", "status_code": 200,
+                                             "args": ["/auth/verify-email?token=L1ST", 3],
+                                             "extra": {"next": "?ticket=N3ST"}}},
+        ]},
         "exception": {"values": [{"type": "ValueError"}]},
     }
     scrubbed = options["before_send"](event, {})
@@ -154,8 +162,11 @@ def test_sentry_never_sends_bodies_local_variables_queries_or_cookies(monkeypatc
                                    "headers": {"User-Agent": "UA"}}
     assert scrubbed["logentry"]["params"] == ["/auth/verify-email?token=***"]
     assert scrubbed["breadcrumbs"]["values"][0]["message"] == "GET /x?code=***&state=*** 200"
+    assert scrubbed["breadcrumbs"]["values"][1]["data"] == {
+        "url": "https://www.strava.com/oauth/token?client_secret=***", "http.query": "refresh_token=***",
+        "status_code": 200, "args": ["/auth/verify-email?token=***", 3], "extra": {"next": "?ticket=***"}}
     assert scrubbed["exception"] == {"values": [{"type": "ValueError"}]}  # the error itself is what is reported
-    for secret in ("S3CRET", "hunter22", "abc", "t0k", "C0DE", "203.0.113.9"):
+    for secret in ("S3CRET", "hunter22", "abc", "t0k", "C0DE", "203.0.113.9", "R3F", "D4TA", "QU3RY", "L1ST", "N3ST"):
         assert secret not in repr(scrubbed)
 
 
