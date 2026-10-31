@@ -86,6 +86,13 @@ async def test_the_policy_says_what_is_true_now(client: AsyncClient):
                      "pf-view", "depuis un navigateur (pas dans l’app du téléphone)", "accès en lecture seule",
                      "Refuser et effacer", "Mise à jour le 31 octobre 2026"):
         assert expected in text, expected
+    # the feel left (2026-10-31): no longer collected, its answers given before still said where they are
+    plain = text.replace("\xa0", " ")
+    assert "ressenti" not in health_consent.DATA and "noter ton ressenti" not in plain
+    assert ("Les réponses au « Ressenti du jour » notées jusqu’au 31 octobre 2026, fonction retirée depuis, restent "
+            "enregistrées jusqu’au retrait de ton consentement ou la suppression de ton compte") in plain
+    assert "elles figurent dans « Télécharger mes données »" in plain
+    assert health_consent.HEALTH_CONSENT_VERSION.startswith("2026-10-31")  # collecting less: no new consent
 
 
 async def test_the_browser_storage_named_by_the_policy_is_all_there_is():
@@ -106,8 +113,7 @@ async def test_the_phone_privacy_page_has_its_own_title_and_a_public_first_link(
     first = re.search(r'<main>\s*<a href="([^"]+)"', html)[1]
     assert first == "/privacy"  # never the login, for a reader signed out
     assert all(_text(paragraph) in _text(html) for paragraph in health_consent.TEXT)
-    ressenti = html[html.index("Ressenti facultatif"):html.index("Anciennes versions")]
-    assert "qu’avec ton consentement, et effacée si tu le retires" in ressenti
+    assert "Ressenti" not in html and "ressenti" not in html  # the feel left the app (2026-10-31)
     visible = re.sub(r"<[^>]+>", " ", re.sub(r"<script.*?</script>|<style.*?</style>", " ", html, flags=re.S))
     assert not re.search(r"\w ([:;?!])", visible), "a plain space before : ; ? !"
 
