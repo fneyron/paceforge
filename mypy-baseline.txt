@@ -200,7 +200,6 @@ app/services/race_match.py: error: Argument 1 to "actual_passage_times" has inco
 app/services/race_match.py: error: Argument 1 to "race_elapsed_s" has incompatible type "dict[Any, Any] | None"; expected "list[Any] | None"  [arg-type]
 app/services/race_prep.py: error: "None" object is not iterable  [misc]
 app/services/race_prep.py: error: Argument 1 to "sorted" has incompatible type "dict_items[date | None, Any]"; expected "Iterable[tuple[date, str]]"  [arg-type]
-app/services/race_prep.py: error: Argument 3 to "tag_nights" has incompatible type "dict[date, dict[Any, Any] | None]"; expected "dict[date, dict[Any, Any]] | None"  [arg-type]
 app/services/race_prep.py: error: Expected iterable as variadic argument  [misc]
 app/services/race_prep.py: error: Incompatible return value type (got "tuple[float, ...]", expected "tuple[float, float] | None")  [return-value]
 app/services/race_prep.py: error: Incompatible types in assignment (expression has type "dict[str, Any]", target has type "float")  [assignment]
