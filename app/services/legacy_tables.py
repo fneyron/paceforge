@@ -7,7 +7,7 @@ Their keys do not all cascade from users (generated_plans.user_id has no foreign
 only its route_id cascades), so the rows are found by user_id; analyses has no user_id: its rows are found by the
 account's activities. Alembic j0a1b2c3d4e5 removed the orphans the older deletions left.
 """
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 USER_TABLES = ("generated_plans", "simulations", "chat_messages", "weekly_digests")
@@ -27,3 +27,9 @@ def of_account(table: str) -> str:
     if table == "analyses":
         return "activity_id IN (SELECT id FROM activities WHERE user_id = :uid)"
     return "user_id = :uid"
+
+
+async def holds(db: AsyncSession, table: str, user_id: int) -> bool:
+    """Whether the account has a row in `table` (one of TABLES): the export leaves out the tables it has none in."""
+    return (await db.execute(text(f"SELECT 1 FROM {table} WHERE {of_account(table)} LIMIT 1"),
+                             {"uid": user_id})).first() is not None

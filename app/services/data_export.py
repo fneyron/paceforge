@@ -203,7 +203,8 @@ async def export_zip(db: AsyncSession, user: User) -> AsyncIterator[bytes]:
     await db.refresh(user)  # every column loaded now (one written earlier in the request may be expired)
     uid = user.id
     head = {"compte.json": account(user), "connexions.json": await connections(db, user)}
-    legacy = await legacy_tables.present(db)
+    # only the legacy tables the account has rows in: a database migrated by alembic still has all of them
+    legacy = [table for table in await legacy_tables.present(db) if await legacy_tables.holds(db, table, uid)]
     await db.commit()
     sink = _Sink()
     zf = zipfile.ZipFile(sink, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6)
