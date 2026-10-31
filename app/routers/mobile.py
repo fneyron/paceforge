@@ -146,7 +146,9 @@ def page(request: Request, **context):
 
 @router.get("/mobile/privacy")
 async def privacy(request: Request):
-    return page(request, mode="privacy")
+    from app.services import health_consent
+
+    return page(request, mode="privacy", consent_text=health_consent.TEXT)  # the consent's own words
 
 
 @router.get("/mobile/session")
@@ -160,6 +162,7 @@ async def session(request: Request, nonce: str, user: User = Depends(get_current
 
 
 PROVIDERS = {"coros": "COROS", "garmin": "Garmin", "strava": "Strava"}
+HEALTH_PROVIDERS = ("coros", "garmin")  # their connection asks for the consent to health data
 Provider = Literal["coros", "garmin", "strava"]
 TICKET_TTL_S = 120  # the app opens its sign-in sheet at once: a ticket older than this was never used for it
 TICKET_SALT = "mobile-oauth"
@@ -347,8 +350,9 @@ async def oauth_confirm(request: Request, provider: Literal["coros", "strava"], 
     to someone else cannot quietly attach their COROS or Strava to the sender's account."""
     from app.services import health_consent
     from app.services.app_return import app_return, with_result
-    # COROS brings health data: without the consent, this page asks for it (its box, then the connect)
-    ask = provider == "coros" and not health_consent.given(user)
+    # COROS and Garmin bring health data: without the consent, this page asks for it (its box, then the connect).
+    # Garmin signs in on /connections/garmin in the app, which asks first too (settings.connection_page).
+    ask = provider in HEALTH_PROVIDERS and not health_consent.given(user)
     return page(request, mode="oauth-confirm", user=user, name=PROVIDERS[provider],
                 start="/coros/connect?next=app" if provider == "coros" else "/auth/strava?next=app",
                 cancel=with_result(app_return(provider), "cancelled"), **(health_consent.texts() if ask else {}))
@@ -594,17 +598,21 @@ async def night_bytes(request: Request, _: str = Depends(phone_token)) -> bytes:
     return await capped_body(request, MAX_NIGHT_BYTES)
 
 
-async def uploader(authorization: str = Header(default=""), db: AsyncSession = Depends(get_db),
+async def uploader(request: Request, authorization: str = Header(default=""), db: AsyncSession = Depends(get_db),
                    auth: AsyncSession = Depends(get_db, use_cache=False)) -> MobileDevice:
-    """The phone behind an upload, looked up and budgeted in a session of its own.
+    """The phone behind an upload, looked up and budgeted in a session of its own, with its account's consent to
+    health data (request.state.health_consent: refused_without_consent).
 
     That session is committed at once (sliding expiry, retired previous token), so
     its connection is back in the pool before the body is parsed. The request's
     session is declared first: FastAPI caches the first `get_db` it solves. When
     both are one session (the tests share theirs), it is left to the request.
     """
+    from app.services import health_consent
+
     phone = await device(authorization, auth)
     await limiter.check(phone.id)
+    request.state.health_consent = await health_consent.allowed(auth, phone.user_id)
     if auth is not db:
         await auth.commit()
     return phone
@@ -624,9 +632,25 @@ def parse_night(raw: bytes) -> tuple[AppleNight, list]:
         raise HTTPException(422, str(exc)) from None
 
 
+def refused_without_consent(request: Request, phone: MobileDevice) -> JSONResponse | None:
+    """A push of an account without the consent to health data (read by `uploader`): 403 before its body is
+    parsed, nothing stored. The app (mobile/src/sync.ts, api.ts) then keeps what it read: nothing is marked sent,
+    Health Connect's change tokens do not move, the nights are read again, the phone stays paired (a 401 would ask
+    to pair it again, a 2xx would count the data as received); its next run after the consent sends it all. `code`
+    is for the app."""
+    from app.services import health_consent
+
+    if getattr(request.state, "health_consent", False):
+        return None
+    logger.info("Phone push of user %d refused: no consent to health data", phone.user_id)
+    return JSONResponse(health_consent.PHONE_REFUSED, status_code=403, headers=HEADERS)
+
+
 @router.post("/api/mobile/daily")
-async def ingest(raw: bytes = Depends(daily_bytes), phone: MobileDevice = Depends(uploader),
+async def ingest(request: Request, raw: bytes = Depends(daily_bytes), phone: MobileDevice = Depends(uploader),
                  db: AsyncSession = Depends(get_db), x_paceforge_read_at: str | None = Header(default=None)):
+    if refused := refused_without_consent(request, phone):
+        return refused
     body = await asyncio.to_thread(validated, Import, raw)
     now = datetime.now(timezone.utc)
     seen = read_at(x_paceforge_read_at, now)
@@ -646,10 +670,12 @@ async def ingest(raw: bytes = Depends(daily_bytes), phone: MobileDevice = Depend
 
 
 @router.post("/api/mobile/nights")
-async def ingest_night(raw: bytes = Depends(night_bytes), phone: MobileDevice = Depends(uploader),
+async def ingest_night(request: Request, raw: bytes = Depends(night_bytes), phone: MobileDevice = Depends(uploader),
                        db: AsyncSession = Depends(get_db)):
     if phone.platform != "ios":
         raise HTTPException(422, "Les nuits Apple Santé nécessitent un iPhone.")
+    if refused := refused_without_consent(request, phone):
+        return refused
     # Up to ~25 000 validated objects, then quadratic overlap checks: off the event loop.
     packet, rows = await asyncio.to_thread(parse_night, raw)
     received = await apple_nights.ingest(db, phone.user_id, packet, rows)

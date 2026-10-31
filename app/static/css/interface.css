@@ -903,6 +903,8 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-legal :is(p, li) { color: rgb(var(--pf-gray-600)); line-height: 1.65; }
 .pf-legal ul { list-style: disc; padding-left: 1.25rem; }
 .pf-legal li + li { margin-top: 8px; }
+.pf-legal-quote { border-left: 3px solid rgb(var(--pf-line)); padding-left: 14px; }  /* the consent's own text */
+.pf-legal-quote > p + p { margin-top: 8px; }
 .pf-legal strong { color: rgb(var(--pf-ink)); font-weight: 600; }
 .pf-legal code { background: rgb(var(--pf-soft)); padding: 0 4px; border-radius: 4px; font-size: .875em; }
 .pf-legal .pf-legal-date { margin-top: 8px; font-size: 0.875rem; color: rgb(var(--pf-gray-500)); }
@@ -937,12 +939,20 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-lactate .pf-consent-check { display: flex; font-size: 0.9375rem; }
 .pf-consent-check input { width: 22px; height: 22px; margin-top: 0; flex: none; accent-color: rgb(var(--pf-accent)); }
 .pf-consent-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; margin-top: 20px; }
-.pf-consent-card { margin-top: 16px; }
-.pf-consent-card p { font-size: 0.875rem; line-height: 1.55; color: rgb(var(--pf-gray-600)); margin-top: 8px; }
-.pf-consent-card .pf-consent-actions { margin-top: 14px; }
+/* Santé's card: white as the rings' card under it, one sentence, its answers, its links */
+.pf-consent-card { margin: 16px auto 0; max-width: 630px; padding: 16px 18px 12px; background: rgb(var(--pf-surface)); border-radius: 22px; box-shadow: 0 2px 12px rgb(var(--pf-ink) / .025); }
+.pf-consent-card > p:first-child { font-size: 0.9375rem; line-height: 1.5; color: rgb(var(--pf-ink)); }
+.pf-consent-card .pf-consent-actions { margin-top: 12px; gap: 10px; }
+.pf-consent-links { display: flex; flex-wrap: wrap; column-gap: 18px; margin-top: 4px; font-size: 0.8125rem; }
+@media (min-width: 760px) { .pf-consent-card { max-width: 560px; } }  /* the rings' width there */
 .pf-lactate-consent p { font-size: 0.8125rem; line-height: 1.5; color: rgb(var(--pf-gray-600)); margin-bottom: 10px; }
-.pf-consent-withdraw > summary { cursor: pointer; width: fit-content; }
+/* Réglages: the erasing fold, a disclosure on every width (the phone's inline-flex link lost the marker) */
+.pf-consent-withdraw > summary { cursor: pointer; width: fit-content; list-style: none; display: inline-flex; align-items: center; gap: 8px; }
+.pf-consent-withdraw > summary::-webkit-details-marker { display: none; }
+.pf-consent-withdraw > summary::before { content: ""; flex: none; border-left: 6px solid currentColor; border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; transition: transform .15s; }
+.pf-consent-withdraw[open] > summary::before { transform: rotate(90deg); }
 .pf-consent-withdraw form { margin-top: 10px; display: grid; gap: 10px; justify-items: start; }
+.pf-set-legal { display: flex; flex-wrap: wrap; column-gap: 20px; }
 /* component classes set a display: keep Tailwind's .hidden (toggled by scripts) winning over them */
 :is(.pf-back, .pf-seg, .pf-btn, .pf-tool, .pf-pill, .pf-ibtn, .pf-note, .pf-addpt, .pf-date-pill, .pf-carte, .pf-meta-when, .pf-hero-btn).hidden { display: none; }
 #tool-title:focus { outline: none; }

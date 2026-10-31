@@ -61,6 +61,7 @@ class User(Base):
     )
 
     # Settings
+    # unused: posting to Strava would need its activity:write scope again (services/strava.READ_SCOPE)
     auto_post_comments: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true", nullable=False
     )

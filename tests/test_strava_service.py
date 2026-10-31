@@ -22,8 +22,7 @@ async def test_get_authorize_url(strava_service: StravaService):
     assert "strava.com/oauth/authorize" in url
     from urllib.parse import parse_qs, urlsplit
     params = parse_qs(urlsplit(url).query)
-    assert "activity:read_all" in params["scope"][0]
-    assert "activity:write" in params["scope"][0]
+    assert params["scope"] == ["read,activity:read_all"]  # read only: nothing ever writes to Strava
     assert params["state"] == ["test-state"]
 
 
@@ -99,3 +98,13 @@ async def test_exchange_token_failure(strava_service: StravaService):
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response):
         with pytest.raises(StravaAPIError):
             await strava_service.exchange_token("bad_code")
+
+
+def test_nothing_writes_to_strava():
+    """The read-only scope holds only while no code writes: the one writing method stays unused."""
+    import pathlib
+    import re
+
+    app = pathlib.Path(__file__).parents[1] / "app"
+    calls = [p for p in app.rglob("*.py") if re.search(r"\.update_activity_description\(", p.read_text())]
+    assert calls == []

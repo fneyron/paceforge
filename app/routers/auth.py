@@ -621,7 +621,13 @@ async def setup_credentials(
 
 @router.get("/privacy", response_class=HTMLResponse)
 async def privacy(request: Request, user: User | None = Depends(get_optional_user)):
-    return templates.TemplateResponse(request, "privacy.html", context={"viewer": user})
+    from app.features import cycling_enabled
+    from app.services import health_consent
+
+    # the consent's own words (its data, its text): the policy never says another list than the one agreed to
+    return templates.TemplateResponse(request, "privacy.html", context={
+        "viewer": user, "consent_data": health_consent.DATA, "consent_text": health_consent.TEXT,
+        "bike": cycling_enabled()})
 
 
 @router.get("/mentions-legales", response_class=HTMLResponse)

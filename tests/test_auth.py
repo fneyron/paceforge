@@ -246,7 +246,11 @@ async def test_a_password_reset_unpairs_every_phone_of_the_account(client, db_se
     from app.models.mobile import MobileDevice
     from app.routers.mobile import digest
 
+    from app.services import health_consent
+
     user, other = await _member(db_session), await _member(db_session, "other@x.fr")
+    health_consent.record(user)  # their phones may send health data
+    health_consent.record(other)
     in_30_days = datetime.now(timezone.utc) + timedelta(days=30)
     db_session.add_all([MobileDevice(user_id=user.id, platform="ios", token_hash=digest("mine"), expires_at=in_30_days),
                         MobileDevice(user_id=other.id, platform="ios", token_hash=digest("theirs"),

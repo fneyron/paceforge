@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.models.health import HealthMetric
 from app.models.user import User
-from app.services import sante, sante_checkin as checkin
+from app.services import health_consent, sante, sante_checkin as checkin
 from app.services.health import feel_of
 from tests import test_coros
 from tests.test_nights import night_rows
@@ -47,6 +47,7 @@ async def test_checkin_keeps_legacy_answers_and_clears_only_its_own_data(db_sess
 
 async def test_answers_do_not_cross_date_account_or_source(db_session, test_user):
     other = User(strava_athlete_id=76543210, firstname="Other")
+    health_consent.record(other)
     db_session.add(other)
     await db_session.flush()
     await checkin.save(db_session, other.id, D, {"pain": "present"})

@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 
 from app.models.health import HealthMetric
 from app.models.user import User
-from app.services import apple_nights as apple, nights
+from app.services import apple_nights as apple, health_consent, nights
 from app.services.health import HRV_METHOD
 from app.services.sante import health_page
 from tests.test_mobile import paired
@@ -84,7 +84,7 @@ async def test_ingest_is_scoped_idempotent_and_separated_from_rmssd(client,db_se
     row=await db_session.scalar(select(HealthMetric).where(HealthMetric.metric=='sleep'))
     db_session.add(HealthMetric(user_id=test_user.id,date=d,metric='sleep',value=430,source='COROS',details=row.details))
     db_session.add(HealthMetric(user_id=test_user.id,date=d,metric='hrv',value=100,source='COROS',details={'method':HRV_METHOD}))
-    other=User(firstname='Other'); db_session.add(other); await db_session.flush()
+    other=User(firstname='Other'); health_consent.record(other); db_session.add(other); await db_session.flush()
     await apple.ingest(db_session,other.id,apple.AppleNight(**p))
     rows=await nights.read_rows(db_session,test_user.id,d,d)
     assert rows['sleep'][d][2]=='COROS' and rows['hrv'][d][0]==100

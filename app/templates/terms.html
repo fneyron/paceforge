@@ -7,13 +7,14 @@
 {% block content_public %}
 {% include "partials/public_header.html" %}
 <main id="main-content" tabindex="-1" class="pf-legal">
-    <a href="/" class="pf-back">&larr; Retour</a>
+    {% include "partials/legal_back.html" %}
     <h1>Conditions d’utilisation</h1>
-    <p class="pf-legal-date">Version du 25 octobre 2026</p>
+    <p class="pf-legal-date">Version du 31 octobre 2026</p>
 
     <section aria-labelledby="service">
         <h2 id="service">Le service</h2>
         <p>PaceForge est gratuit. Il est fourni tel quel, sans garantie de disponibilité ni de résultat, et peut évoluer ou s’arrêter.</p>
+        <p>S’il s’arrête, tu en es prévenu à l’avance, le temps de télécharger tes données.</p>
     </section>
 
     <section aria-labelledby="estimations">
@@ -30,6 +31,11 @@
     <section aria-labelledby="donnees">
         <h2 id="donnees">Tes données</h2>
         <p>Elles sont traitées selon la <a href="/privacy">politique de confidentialité</a>.</p>
+    </section>
+
+    <section aria-labelledby="changements">
+        <h2 id="changements">Si ces conditions changent</h2>
+        <p>La nouvelle version est annoncée dans l’app ou par e-mail, et sa date figure en haut de cette page.</p>
     </section>
 
     <section aria-labelledby="droit">

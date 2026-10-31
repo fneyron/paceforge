@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 STRAVA_BASE_URL = "https://www.strava.com"
 STRAVA_API_URL = f"{STRAVA_BASE_URL}/api/v3"
 STRAVA_OAUTH_URL = f"{STRAVA_BASE_URL}/oauth"
+# read only: PaceForge never writes to Strava (the privacy policy says so; Strava's consent screen shows it)
+READ_SCOPE = "read,activity:read_all"
 QUOTA_SHARE = 0.8  # of a Strava rate-limit window, the background syncs' share
 SHARED_SUB_REFRESH_S = 12 * 3600  # the shared app's subscription id is read again this often (kept meanwhile)
 SHARED_SUB_RETRY_S = 5 * 60  # a failed lookup is not tried again before this
@@ -126,7 +128,7 @@ class StravaService:
             "client_id": self.client_id,
             "redirect_uri": f"{settings.BASE_URL}/auth/strava/callback",
             "response_type": "code",
-            "scope": "read,activity:read_all,activity:write",
+            "scope": READ_SCOPE,
             "approval_prompt": "auto",
             "state": state,
         }
@@ -352,6 +354,7 @@ class StravaService:
     async def update_activity_description(
         self, user: User, strava_activity_id: int, description: str
     ) -> dict:
+        # Not called: writing would need activity:write again in READ_SCOPE (and a new consent at Strava).
         response = await self._make_request(
             user,
             "PUT",

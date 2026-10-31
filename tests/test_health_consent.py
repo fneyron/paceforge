@@ -151,9 +151,15 @@ async def test_a_lactate_test_needs_the_box(client, db_session, newcomer):
     assert 'name="health_consent"' in page.text
     csrf = re.search(r'name="csrf_token" value="([^"]+)"', page.text)[1]
     f = {**fields(), "csrf_token": csrf}
+    assert "aria-invalid" not in re.search(r'<input type="checkbox" name="health_consent"[^>]*>', page.text)[0]
     refused = await client.post("/sante/lactate", data=f)
     assert refused.status_code == 400 and health_consent.MISSING in refused.text
     assert 'value="Lactate Pro 2"' in refused.text  # what was typed stays
+    # the error beside the box, tied to it (as on the consent page)
+    assert f'<p id="lactate-consent-error" class="pf-lactate-error" role="alert">{health_consent.MISSING}</p>' in refused.text
+    box = re.search(r'<input type="checkbox" name="health_consent"[^>]*>', refused.text)[0]
+    assert 'aria-invalid="true"' in box and 'aria-describedby="lactate-consent-error"' in box
+    assert refused.text.count(health_consent.MISSING) == 1
     assert await db_session.scalar(select(func.count(LactateTest.id))) == 0
     saved = await client.post("/sante/lactate", data={**f, "health_consent": "1"})
     assert saved.status_code == 303 and await db_session.scalar(select(func.count(LactateTest.id))) == 1
@@ -168,7 +174,11 @@ async def test_the_sante_card_asks_the_accounts_holding_health_data(client, db_s
                                     value=420, source="COROS"))
         await db_session.flush()
         page = (await c.get("/sante")).text
-        assert "consent-card-title" in page and "J’accepte" in page and 'href="/settings#connections"' in page
+        assert "consent-card-title" in page and "J’accepte" in page
+        card = page[page.index('class="pf-consent-card"'):page.index("</section>", page.index("pf-consent-card"))]
+        assert 'action="/settings/health-consent/withdraw"' in card and "Refuser et effacer" in card
+        assert ERASE_CONFIRM in card and 'href="/sante/consentement?next=%2Fsante">Ce qui est enregistré' in card
+        assert 'class="pf-panel' not in card  # white, as the rings' card
         assert page.index("consent-card-title") < page.find('class="pf-dials') or 'class="pf-dials' not in page
         r = await c.post("/sante/consentement", data={"next": "/sante", "accept": "1"})
         assert r.headers["location"] == "/sante"
@@ -181,15 +191,55 @@ async def test_a_linked_source_alone_asks_too(client, db_session, newcomer, no_c
     assert await health_consent.holds_health_data(db_session, newcomer.id)
 
 
-async def test_settings_show_the_consent_and_its_withdrawal(client, test_user, newcomer, no_commit):
+ERASE_CONFIRM = ("var msg = 'Effacer définitivement tes données de santé ? Tes sources seront déconnectées et "
+                 "tes téléphones dissociés.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, "
+                 "'Effacer'); }")
+
+
+async def test_settings_show_the_consent_and_its_withdrawal(client, db_session, test_user, newcomer, no_commit):
     async with _as(client, test_user) as c:
         page = (await c.get("/settings")).text
         assert "consentement donné le 25 octobre 2026" in page
-        assert 'action="/settings/health-consent/withdraw"' in page and "Retirer mon consentement" in page
-        assert "Tes sources seront déconnectées et tes données de santé effacées." in page
+        fold = page[page.index('<details class="pf-consent-withdraw"'):page.index("</details>",
+                                                                                   page.index("pf-consent-withdraw"))]
+        assert 'action="/settings/health-consent/withdraw"' in fold and "Retirer mon consentement" in fold
+        assert ERASE_CONFIRM in fold  # confirmed before anything is erased
+        assert "Tes sources seront déconnectées, tes téléphones dissociés et tes données de santé effacées." in fold
+        assert "Restent Strava, tes activités avec leur fréquence cardiaque, tes plans" in fold
+        assert fold.index('href="/settings/export"') < fold.index('type="submit"')  # the export first
     async with _as(client, newcomer) as c:
         page = (await c.get("/settings")).text
-        assert "pas de consentement" in page and "/settings/health-consent/withdraw" not in page
+        assert "pas de consentement" in page and "/settings/health-consent/withdraw" not in page  # nothing held
+        db_session.add(MobileDaily(user_id=newcomer.id, platform="ios", date=datetime.now(timezone.utc).date(),
+                                   metric="steps", value=8000, sources=["iPhone"]))
+        await db_session.flush()
+        page = (await c.get("/settings")).text
+        fold = page[page.index('<details class="pf-consent-withdraw"'):]
+        assert "<summary class=\"pf-link\">Refuser et effacer</summary>" in fold and ERASE_CONFIRM in fold
+
+
+async def test_settings_link_the_legal_pages_and_say_where_the_export_is_in_the_app(client, test_user, no_commit):
+    async with _as(client, test_user) as c:
+        page = (await c.get("/settings")).text
+    legal = page[page.index('class="pf-set-legal"'):]
+    for href in ("/privacy", "/cgu", "/mentions-legales"):
+        assert f'href="{href}"' in legal[:400], href
+    assert '<p class="pf-native-only text-sm text-gray-500">Export&nbsp;: depuis paceforge.fr dans un navigateur.</p>' in page
+
+
+async def test_refusing_erases_the_health_data_of_an_account_that_never_consented(client, db_session, newcomer,
+                                                                                  no_commit):
+    db_session.add_all([HealthMetric(user_id=newcomer.id, date=datetime.now(timezone.utc).date(), metric="sleep",
+                                     value=420, source="COROS"),
+                        GarminConnection(user_id=newcomer.id, di_client_id="GARMIN", access_token_encrypted=b"x")])
+    await db_session.flush()
+    async with _as(client, newcomer) as c:
+        r = await c.post("/settings/health-consent/withdraw")
+        assert r.status_code == 303 and r.headers["location"] == "/settings#donnees"
+        page = (await c.get("/settings")).text
+    assert 'role="status">Données de santé effacées. Tes sources sont déconnectées.</p>' in page
+    assert not await health_consent.holds_health_data(db_session, newcomer.id)
+    assert "consent-card-title" not in page
 
 
 async def _count(db, model, user_id) -> int:
@@ -257,15 +307,74 @@ def test_migration_starts_everyone_without_consent_and_round_trips():
     engine.dispose()
 
 
-async def test_the_feel_is_saved_only_after_the_consent(client, db_session, newcomer, no_commit):
-    """The one-tap feel is health data too: without the consent, a tap leads to the consent page, nothing stored."""
-    app_client = _as(client, newcomer)
-    today = (await app_client.get("/sante")).text
-    day = re.search(r'name="day" value="([0-9-]+)"', today)
-    data = {"day": day.group(1) if day else datetime.now(timezone.utc).date().isoformat(), "feel": "good"}
-    r = await app_client.post("/sante/ressenti", data=data, headers={"HX-Request": "true"})
-    assert r.status_code == 204 and r.headers["HX-Redirect"] == "/sante/consentement?next=%2Fsante"
-    r = await app_client.post("/sante/ressenti", data=data)
-    assert r.status_code == 303 and r.headers["location"] == "/sante/consentement?next=%2Fsante"
-    assert not await db_session.scalar(select(func.count()).select_from(HealthMetric).where(
-        HealthMetric.user_id == newcomer.id))
+FEEL_CONSENT = "/sante/consentement?next=%2Fsante%23ressenti"
+
+
+async def _feels(db, user_id) -> list:
+    from app.services import sante_checkin
+
+    rows = (await db.execute(select(HealthMetric.details).where(HealthMetric.user_id == user_id,
+                                                                HealthMetric.metric == "feel"))).scalars().all()
+    return [(details or {}).get(sante_checkin.KEY, {}).get("feel") for details in rows]
+
+
+async def test_the_feel_waits_for_the_consent_then_is_saved(client, db_session, newcomer, no_commit):
+    """The one-tap feel is health data too: without the consent, a tap leads to the consent page, nothing stored;
+    the tap waits in the session and is saved right after the consent, back on the feel (not before it)."""
+    from app.services.sante import athlete_today
+
+    async with _as(client, newcomer) as c:
+        data = {"day": (await athlete_today(db_session, newcomer.id)).isoformat(), "feel": "bad"}
+        r = await c.post("/sante/ressenti", data=data, headers={"HX-Request": "true"})
+        assert r.status_code == 204 and r.headers["HX-Redirect"] == FEEL_CONSENT
+        assert await _feels(db_session, newcomer.id) == []
+        page = (await c.get(FEEL_CONSENT)).text
+        assert 'value="/sante#ressenti"' in page
+        assert re.search(r'<a class="pf-link" href="/sante#ressenti">Pas maintenant</a>', page)  # back to Santé
+        r = await c.post("/sante/consentement", data={"next": "/sante#ressenti", "accept": "1"})
+        assert r.status_code == 303 and r.headers["location"] == "/sante#ressenti"
+        assert await _feels(db_session, newcomer.id) == ["bad"]
+
+
+async def test_a_waiting_feel_of_another_day_or_another_target_is_dropped(client, db_session, newcomer, no_commit):
+    async with _as(client, newcomer) as c:
+        r = await c.post("/sante/ressenti", data={"day": "2020-01-01", "feel": "good"})  # the page of another day
+        assert r.status_code == 303 and r.headers["location"] == FEEL_CONSENT
+        await c.post("/sante/consentement", data={"next": "/sante#ressenti", "accept": "1"})
+        assert await _feels(db_session, newcomer.id) == []
+        newcomer.health_consent_at = None
+        await c.post("/sante/ressenti", data={"day": datetime.now(timezone.utc).date().isoformat(), "feel": "ok"})
+        await c.post("/sante/consentement", data={"next": "/settings#donnees", "accept": "1"})  # asked elsewhere
+        assert await _feels(db_session, newcomer.id) == []
+
+
+async def test_not_now_goes_back_where_the_consent_was_asked(client, newcomer):
+    async with _as(client, newcomer) as c:
+        for asked, back in (("/sante/lactate", "/sante/lactate"), ("/settings#donnees", "/settings#donnees"),
+                            ("/connections/garmin", "/settings#connections"),
+                            ("/coros/connect?region=europe", "/settings#connections"),
+                            ("/settings#garmin", "/settings#connections")):
+            page = (await c.get("/sante/consentement", params={"next": asked})).text
+            assert f'<a class="pf-link" href="{back}">Pas maintenant</a>' in page, asked
+
+
+async def test_the_deprecated_feel_route_asks_for_the_consent_too(client, db_session, newcomer, no_commit):
+    async with _as(client, newcomer) as c:
+        r = await c.post("/sante/feel", data={"feel": "3", "why": ["sick"]})
+        assert r.status_code == 303 and r.headers["location"] == FEEL_CONSENT
+        r = await c.post("/sante/feel", data={"feel": "1"}, headers={"HX-Request": "true"})
+        assert r.status_code == 204 and r.headers["HX-Redirect"] == FEEL_CONSENT
+        assert not await db_session.scalar(select(func.count()).select_from(HealthMetric).where(
+            HealthMetric.user_id == newcomer.id))
+        health_consent.record(newcomer)
+        assert (await c.post("/sante/feel", data={"feel": "1"})).headers["location"] == "/sante"
+        assert await db_session.scalar(select(func.count()).select_from(HealthMetric).where(
+            HealthMetric.user_id == newcomer.id)) == 1
+
+
+async def test_giving_the_consent_from_reglages_is_said_there(client, newcomer, no_commit):
+    async with _as(client, newcomer) as c:
+        r = await c.post("/sante/consentement", data={"next": "/settings#donnees", "accept": "1"})
+        assert r.headers["location"] == "/settings#donnees"
+        page = (await c.get("/settings")).text
+        assert 'role="status">Consentement enregistré.</p>' in page

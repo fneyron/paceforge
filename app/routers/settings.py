@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
-from sqlalchemy import delete, func, inspect, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
@@ -38,6 +38,9 @@ async def connection_page(provider: str, request: Request, user: User | None = D
         return RedirectResponse(f"/auth/login?next={provider}", status_code=303)
     state = (strava_status(user) if provider == "strava" else
              await (coros_status if provider == "coros" else garmin_status)(db, user.id))
+    if provider == "garmin" and not state["connected"] and not health_consent.given(user):
+        # Garmin brings health data: the consent first (the phone app opens this page), before a password is typed
+        return RedirectResponse(health_consent.consent_url("/connections/garmin"), status_code=303)
     return templates.TemplateResponse(request, "connection.html", context={
         "user": user, "provider": provider, "name": names[provider], "w": state,
         "ok": request.session.pop(f"{provider}_ok", None),
@@ -63,7 +66,11 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
     flags.setdefault("coros", await coros_status(db, user.id))
     flags.setdefault("garmin", await garmin_status(db, user.id))
     flags.setdefault("strava", strava_status(user))
-    flags.setdefault("health_consent_on", health_consent.given_on(user) if health_consent.given(user) else None)
+    given = health_consent.given(user)
+    flags.setdefault("health_consent_on", health_consent.given_on(user) if given else None)
+    # without the consent, an account holding health data may refuse and erase it (« Refuser et effacer »)
+    flags.setdefault("health_held", not given and await health_consent.holds_health_data(db, user.id))
+    flags.setdefault("consent_kept", health_consent.KEPT)
     return {"request": request, "user": user, "activity_count": total, **flags}
 
 
@@ -246,12 +253,14 @@ async def withdraw_health_consent(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """« Retirer mon consentement » (GDPR art. 7.3): COROS and Garmin disconnected as account deletion does it, the
-    phones unpaired, the health data erased and the consent cleared. Activities, plans and Strava stay."""
+    """« Retirer mon consentement » (GDPR art. 7.3), and « Refuser et effacer » for an account that holds health data
+    without having consented (Santé's card, Réglages): COROS and Garmin disconnected as account deletion does it,
+    the phones unpaired, the health data erased and the consent cleared. Activities, plans and Strava stay. Both
+    pages confirm first (partials/_erase_confirm.html)."""
     from app.models.coros import CorosConnection
     from app.models.garmin import GarminConnection
 
-    user_id = user.id
+    user_id, had_consented = user.id, health_consent.given(user)
     await _revoke_links(db, user, strava=False)
     # a link a provider did not let go of in time (rolled back) is forgotten all the same
     for model in (CorosConnection, GarminConnection):
@@ -259,7 +268,10 @@ async def withdraw_health_consent(
     await health_consent.erase_health_data(db, user_id)
     await db.commit()
     request.session["health_ok"] = "Consentement retiré\u00a0: tes sources sont déconnectées et tes données de santé effacées."
-    logger.warning("User %d withdrew the health data consent: health data erased", user_id)
+    if not had_consented:  # « Refuser et effacer »: nothing to withdraw
+        request.session["health_ok"] = "Données de santé effacées. Tes sources sont déconnectées."
+    logger.warning("User %d %s the health data consent: health data erased", user_id,
+                   "withdrew" if had_consented else "refused")
     return RedirectResponse(url="/settings#donnees", status_code=303)
 
 
@@ -280,22 +292,13 @@ async def export_data(user: User = Depends(get_current_user), db: AsyncSession =
     })
 
 
-# Tables of the features switched off (the AI analyses, chat, weekly digests, plan generator, old simulations): no
-# model maps them, the database still has them (alembic h8e9f0a1b2c3) until a release drops them. Their keys do not
-# all cascade from users (generated_plans.user_id has no foreign key, simulations.user_id neither: only its route_id
-# cascades), so an account's rows there are deleted by name, in each table that exists. analyses has no user_id: its
-# rows go by the account's activities. Alembic j0a1b2c3d4e5 removed the orphans the older deletions left.
-LEGACY_USER_TABLES = ("generated_plans", "simulations", "chat_messages", "weekly_digests")
-
-
 async def _delete_legacy_rows(db: AsyncSession, user_id: int) -> None:
-    present = set(await db.run_sync(lambda session: inspect(session.connection()).get_table_names()))
-    if "analyses" in present:
-        await db.execute(text("DELETE FROM analyses WHERE activity_id IN "
-                              "(SELECT id FROM activities WHERE user_id = :uid)"), {"uid": user_id})
-    for table in LEGACY_USER_TABLES:
-        if table in present:  # a name from the constant above, never from the request
-            await db.execute(text(f"DELETE FROM {table} WHERE user_id = :uid"), {"uid": user_id})
+    """The account's rows in the tables of the features switched off (services/legacy_tables), in each that exists:
+    no model maps them, some have no key to users."""
+    from app.services import legacy_tables
+
+    for table in await legacy_tables.present(db):  # a name from its constant, never from the request
+        await db.execute(text(f"DELETE FROM {table} WHERE {legacy_tables.of_account(table)}"), {"uid": user_id})
 
 
 @router.post("/settings/delete-account")

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from time import perf_counter
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
@@ -244,6 +244,7 @@ def create_app() -> FastAPI:
     # Routers
     from app.routers import activity, auth, coros, dashboard, garmin, mobile, sante, lactate, simulator, webhook
     from app.routers import settings as settings_router
+    from app.routers.garmin_consent import consent_before_connect
 
     app.include_router(auth.router)
     app.include_router(dashboard.router)  # landing (/), activities, sync
@@ -251,7 +252,8 @@ def create_app() -> FastAPI:
     app.include_router(simulator.router)
     app.include_router(settings_router.router)
     app.include_router(coros.router)      # COROS link (OAuth) and sync
-    app.include_router(garmin.router)     # Garmin link (login, MFA) and sync
+    # Garmin link (login, MFA) and sync; its login asks for the consent to health data first
+    app.include_router(garmin.router, dependencies=[Depends(consent_before_connect)])
     app.include_router(mobile.router)
     app.include_router(lactate.router)
     app.include_router(sante.router)      # Santé: recovery, load, trends from the watch

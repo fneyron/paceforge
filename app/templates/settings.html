@@ -105,21 +105,21 @@
         {% if health_consent_on %}
         <div class="pf-consent-set">
             <p class="text-sm">Données de santé&nbsp;: consentement donné le {{ health_consent_on }}.</p>
-            <details class="pf-consent-withdraw">
-                <summary class="pf-link">Retirer mon consentement</summary>
-                <form method="post" action="/settings/health-consent/withdraw">
-                    <p class="text-sm text-gray-500">Tes sources seront déconnectées et tes données de santé effacées.</p>
-                    <button type="submit" class="pf-btn pf-btn-sm bg-danger text-white">Retirer et effacer</button>
-                </form>
-            </details>
+            {% set erase_summary, erase_button = "Retirer mon consentement", "Retirer et effacer" %}
+            {% include "partials/health_erase.html" %}
         </div>
         {% else %}
-        <p class="text-sm">Données de santé&nbsp;: pas de consentement. <a class="pf-link" href="/sante/consentement?next=/settings%23donnees">Donner mon accord</a></p>
+        <div class="pf-consent-set">
+            <p class="text-sm">Données de santé&nbsp;: pas de consentement. <a class="pf-link" href="/sante/consentement?next=/settings%23donnees">Donner mon accord</a></p>
+            {% if health_held %}{% set erase_summary, erase_button = "Refuser et effacer", "Effacer mes données de santé" %}
+            {% include "partials/health_erase.html" %}{% endif %}
+        </div>
         {% endif %}
         <p><a class="pf-link" href="/mobile/devices">Téléphones associés et imports de santé ›</a></p>
-        <p><a class="pf-link" href="/privacy">Confidentialité ›</a></p>
-        {# a browser saves the ZIP; the phone app's web view has no downloads #}
+        <p class="pf-set-legal"><a class="pf-link" href="/privacy">Confidentialité</a><a class="pf-link" href="/cgu">CGU</a><a class="pf-link" href="/mentions-legales">Mentions légales</a></p>
+        {# a browser saves the ZIP; the phone app's web view has no downloads: it says where #}
         <p class="pf-browser-only"><a class="pf-link" href="/settings/export" download>Télécharger mes données ›</a></p>
+        <p class="pf-native-only text-sm text-gray-500">Export&nbsp;: depuis paceforge.fr dans un navigateur.</p>
     </div>
 
     <!-- Danger: collapsed, out of the way -->
