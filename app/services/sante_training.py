@@ -338,11 +338,12 @@ async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = N
     from app.models.health import HealthMetric
     from app.models.mobile import MobileDaily
     from app.services import timezones
+    from app.services.health import FEEL
 
     now = now or datetime.now(timezone.utc)
-    if latest is None:
-        latest = (await db.execute(
-            select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
+    if latest is None:  # a measurement's day, never a former self-report's (its rows are never read)
+        latest = (await db.execute(select(func.max(HealthMetric.date)).where(
+            HealthMetric.user_id == user_id, HealthMetric.metric != FEEL))).scalar()
     mobile_day = await db.scalar(select(func.max(MobileDaily.date)).where(MobileDaily.user_id == user_id))
     latest = max((d for d in (latest, mobile_day) if d is not None), default=None)
     if zone is None:

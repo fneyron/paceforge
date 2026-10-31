@@ -56,10 +56,6 @@ async function sameDocument(page) {
     await sameDocument(page);
     await page.evaluate(() => { history.replaceState(null, '', '/sante'); scrollTo({ top: 0, behavior: 'instant' }); });
     const originalAccount = await page.locator('#main-content').getAttribute('data-account');
-    if (await page.locator('#ressenti button[value="clear"]').count()) {
-      await page.locator('#ressenti button[value="clear"]').click();
-      await page.waitForFunction(() => !document.querySelector('#ressenti [aria-pressed="true"]'));
-    }
     // One existing tab remains immediately readable while the next one is requested.
     await page.evaluate(() => {
       document.querySelector('#main-content').dataset.cachedMarker = 'health-visited';
@@ -98,11 +94,9 @@ async function sameDocument(page) {
     assert.equal(await page.locator('#main-content').getAttribute('data-cached-marker'), 'health-visited', 'Visited page waited for the delayed GET');
     assert.equal(await page.locator('#comprendre-indicateurs').evaluate(el => el.open), true);
     assert.ok(Math.abs((await page.evaluate(() => scrollY)) - savedY) < 4, 'Tab return lost the scroll position');
-    await page.locator('#ressenti').getByRole('button', { name: 'Cassé' }).click();
-    await page.waitForFunction(() => document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim() === 'Cassé');
     release.resolve();
     await page.waitForFunction(() => document.querySelector('#main-content')?.dataset.serverSeq === '2');
-    assert.equal(await page.evaluate(() => document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim()), 'Cassé', 'Late GET replaced a completed tap');
+    assert.equal(await page.locator('#comprendre-indicateurs').evaluate(el => el.open), true, 'Late revalidation closed an open fold');
     await page.unroute('**/sante');
     await go(page, rememberedActivities);
     assert.equal(await page.locator('#main-content').getAttribute('data-measure-marker'), 'distance-visited', 'Measure toggle lost the cached URL');
@@ -110,22 +104,6 @@ async function sameDocument(page) {
     assert.equal(await page.locator('[id^="activity-row-"]').count(), pagedRows, 'Cached return lost older weeks');
     await page.waitForTimeout(350);
     assert.equal(await page.locator('[id^="activity-row-"]').count(), pagedRows, 'Revalidation lost older weeks');
-    await sameDocument(page);
-
-    const clearWaiting = barrier(), releaseClearGet = barrier();
-    await page.route('**/sante', async route => {
-      const response = await route.fetch(); clearWaiting.resolve(); await releaseClearGet.promise;
-      await route.fulfill({ response, body: (await response.text()).replace('id="main-content"', 'id="main-content" data-clear-revalidated="yes"') });
-    });
-    await go(page, '/sante');
-    await clearWaiting.promise;
-    await page.locator('#ressenti button[value="clear"]').click();
-    await page.waitForFunction(() => !document.querySelector('#ressenti [aria-pressed="true"]'));
-    releaseClearGet.resolve();
-    await page.waitForFunction(() => document.querySelector('#main-content')?.dataset.clearRevalidated === 'yes');
-    assert.equal(await page.locator('#ressenti [aria-pressed="true"]').count(), 0, 'Late GET replaced a completed clear');
-    await page.unroute('**/sante');
-    await go(page, rememberedActivities);
     await sameDocument(page);
 
     // A filter's URL, visible records and selected chart measure agree after soft navigation.
@@ -207,26 +185,6 @@ async function sameDocument(page) {
     await sameDocument(syncPage);
     await syncPage.close();
 
-    // A started HTMX write must finish before its live target is detached.
-    const writingPage = await appPage(browser);
-    const posted = barrier(), releasePost = barrier();
-    await writingPage.route('**/sante/ressenti', async route => {
-      const response = await route.fetch(); posted.resolve(); await releasePost.promise;
-      await route.fulfill({ response });
-    });
-    await writingPage.locator('#ressenti').getByRole('button', { name: 'Cassé' }).click();
-    await posted.promise;
-    await writingPage.evaluate(() => { window.leaveDuringWrite = window.paceforgeTabs.navigate('/activities'); });
-    await writingPage.waitForTimeout(200);
-    assert.equal(new URL(writingPage.url()).pathname, '/sante', 'Tab detached an in-flight check-in write');
-    releasePost.resolve();
-    assert.equal(await writingPage.evaluate(() => window.leaveDuringWrite), true);
-    await writingPage.waitForURL(base + '/activities');
-    await go(writingPage, '/sante');
-    assert.equal(await writingPage.evaluate(() => document.querySelector('#ressenti [aria-pressed="true"]')?.textContent.trim()), 'Cassé', 'Completed tap disappeared on tab return');
-    await sameDocument(writingPage);
-    await writingPage.close();
-
     // A changed account must leave the memory snapshots before the full reload.
     const accountPage = await appPage(browser);
     await go(accountPage, '/activities');
@@ -297,7 +255,7 @@ async function sameDocument(page) {
     fs.writeFileSync(output + '/tab-navigation-verification.json', JSON.stringify({ synthetic: true,
       browser: 'Chromium desktop mobile viewport; not physical iPhone', results,
       checked: ['same document', 'ring anchors without GET', 'visited content before delayed GET', 'later revalidation', 'scroll and draft retention',
-        'pagination', 'measure toggle URL retention', 'pending HTMX write before tab change', 'save and clear during cached revalidation', 'sport filter and measure', 'stale GET ignored', 'refresh invalidation', 'provider completion after tab change invalidation', 'account fallback', 'build change full reload for tab and refresh', 'expired session fallback', 'Courses full navigation'] }, null, 2));
+        'pagination', 'measure toggle URL retention', 'open fold kept by a late revalidation', 'sport filter and measure', 'stale GET ignored', 'refresh invalidation', 'provider completion after tab change invalidation', 'account fallback', 'build change full reload for tab and refresh', 'expired session fallback', 'Courses full navigation'] }, null, 2));
     console.log('Tab navigation: cached return, revalidation, pagination, filters, stale requests, account and session isolation passed.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

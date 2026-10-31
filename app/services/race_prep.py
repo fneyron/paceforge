@@ -58,7 +58,6 @@ from app.models.route import Route
 from app.services import nights as nt
 from app.services import sante_training as st
 from app.services import viz
-from app.services.health import feel_of
 from app.services.timezones import athlete_zone, local_date
 from app.services.viz import MOIS, NNBSP, X1, d_long, hm, hm_long, num
 
@@ -487,18 +486,16 @@ def hot(route) -> bool:
 
 async def _nights(db: AsyncSession, user_id: int, today: date, lo: date, sessions, races) -> dict:
     """The nights from `lo` to today, tagged as Santé tags them (nights.load_nights: « sortie intense le soir »
-    from the laps or splits too, the 3 nights after an effort of 6 h or more), plus the check-in's « alcool » and
-    « malade » this page keeps; the alert never fires on the nights after a race (`races`)."""
+    from the laps or splits too, the 3 nights after an effort of 6 h or more); the alert never fires on the nights
+    after a race (`races`)."""
     rows = await nt.read_rows(db, user_id, lo, today)
-    feel = {d: feel_of(v, det) for d, (v, det, _) in rows.get("feel", {}).items()}
     nights = nt.build_nights(rows, today)
     from app.services.heart_rate_reference import for_athlete
 
     rest = nt.rest_hr(nights, today)
     reference = await for_athlete(db, user_id, today, sessions=sessions)
     await nt.load_segments(db, nights, sessions)
-    nt.tag_nights(nights, sessions, feel, rest, reference["reference"],
-                  await nt.day_altitudes(db, user_id, lo, today))
+    nt.tag_nights(nights, sessions, rest, reference["reference"], await nt.day_altitudes(db, user_id, lo, today))
     nt.tag_efforts(nights, nt.anchor_efforts(nights, st.efforts(sessions)))
     nt.tag_alerts(nights, today, races)
     return nights

@@ -83,3 +83,9 @@ l’ordre chronologique. Les citations sont celles du propriétaire.
 | Décision | Raison | Source |
 |---|---|---|
 | Les cinq tables de l’ancienne chaîne IA et des simulations (analyses, chat_messages, weekly_digests, generated_plans, simulations) restent une version de plus, non mappées (leurs modèles sont supprimés, `alembic check` les ignore) ; elles seront supprimées après la première sauvegarde. | chat_messages et generated_plans peuvent contenir des lignes saisies par l’athlète (routeurs coach et séance livrés de juin à septembre) ; la suppression est irréversible et la production n’a pas encore de sauvegarde ; pendant la fenêtre de déploiement, l’ancien worker charge encore `analyses` à chaque lecture complète d’Activity. | Revue de fix2/cleanup, 15 oct. — `alembic/env.py` (include_object), docs/ops-runbook.md |
+
+## 31 octobre 2026
+
+| Décision | Raison | Source |
+|---|---|---|
+| Le ressenti manuel (« Ressenti du jour » : Bien, Moyen, Cassé) est retiré : plus de saisie, plus d’affichage, aucun effet sur un indice, une raison, un graphique, une explication ou une marque de nuit (les « alcool » et « malade » d’un ancien check-in, page de course comprise). Les réponses déjà enregistrées (lignes `feel`) restent en base sans migration : exportées (`ressenti.json`), effacées au retrait du consentement et à la suppression du compte. Le consentement garde sa version 2026-10-31 : il collecte moins. | « Supprime aussi le ressenti manuel ». Une purge des réponses enregistrées serait irréversible : elle reste la décision du propriétaire. | Propriétaire, 31 oct. — `health.FEEL`, `data_export.py`, `health_consent.py`, `tests/test_sante_feel_removed.py` |

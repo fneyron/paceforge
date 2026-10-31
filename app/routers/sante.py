@@ -1,7 +1,8 @@
 """Santé: one visual page from measured nights and recorded activities.
 
-A dated, optional self-report adds context without changing the night index.
-Only a recorded activity can establish the after-race context.
+Only a recorded activity can establish the after-race context. The manual feel (« Ressenti du jour ») is gone
+(owner, 2026-10-31): no input, no display; its stored answers are only exported and erased (data_export,
+health_consent.erase_health_data).
 
 Opening the page syncs a stale watch in the background and reloads quietly
 when something new arrived (sync-status); Réglages manage the links (status,
@@ -12,7 +13,6 @@ from a page left open since an older version gets a full navigation
 (HX-Redirect, HX-Refresh), never a page pasted inside the old one.
 """
 import logging
-from typing import Literal
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -42,9 +42,9 @@ def _landing(vue: str | None, r: str | None) -> str:
 
 
 def _away(request: Request, url: str) -> Response:
-    """A redirect, or for an htmx call (a v3 page left open: its check-in, its
-    range buttons) a full navigation: htmx would follow a 303 and paste the
-    whole page inside the old one."""
+    """A redirect, or for an htmx call (a v3 page left open: its range
+    buttons) a full navigation: htmx would follow a 303 and paste the whole
+    page inside the old one."""
     if request.headers.get("HX-Request"):
         return Response(status_code=204, headers={"HX-Redirect": url})
     return RedirectResponse(url, status_code=303)
@@ -78,15 +78,10 @@ async def _health_context(db: AsyncSession, user: User, r: str | None = None) ->
                         for name, link in (("COROS", status), ("Garmin", garmin_link)))
     auto_sync = _sync_stale(user.id, ((coros, status), (garmin, garmin_link)),
                             STALE_NIGHT if night_missing else STALE_AFTER)
-    from app.services import sante_checkin
-    from app.services.sante import athlete_today
-
-    day = (page or {}).get("calendar_day") or await athlete_today(db, user.id)
-    checkin = await sante_checkin.read(db, user.id, day)
     # the consent to health data not given yet (an account from before it was asked): asked above the rings
     consent_card = not health_consent.given(user) and await health_consent.holds_health_data(db, user.id)
     return {"user": user, "coros": status, "garmin": garmin_link, "page": page, "auto_sync": auto_sync,
-            "checkin": checkin, "consent_card": health_consent.texts() if consent_card else None,
+            "consent_card": health_consent.texts() if consent_card else None,
             "sync_v": await data_version(db, user.id) if auto_sync else None, "sync_n": 0}
 
 
@@ -135,10 +130,6 @@ async def health_consent_page(request: Request, next: str = "", user: User = Dep
         "user": user, "next": target, "not_now": health_consent.not_now_url(target), **health_consent.texts()})
 
 
-PENDING_FEEL = "pending_feel"  # the feel tapped before the consent (sante_checkin): {day, answers}
-FEEL_TARGET = "/sante#ressenti"
-
-
 @router.post("/sante/consentement", response_class=HTMLResponse)
 async def health_consent_give(
     request: Request,
@@ -148,7 +139,7 @@ async def health_consent_give(
     db: AsyncSession = Depends(get_db),
 ):
     """The box ticked (or Santé's « J'accepte »): the consent is dated and versioned, then `next`. From Réglages, a
-    line there says so; from a feel tapped before it, that feel is saved now (still today's), back on the feel."""
+    line there says so."""
     target = health_consent.safe_next(next)
     if accept != "1":
         return templates.TemplateResponse(request, "health_consent.html", status_code=400, context={
@@ -157,29 +148,9 @@ async def health_consent_give(
     health_consent.record(user)
     await db.commit()  # before the redirect: the next request (a COROS connect) reads it
     logger.info("Health data consent given by user %d", user.id)
-    pending = request.session.pop(PENDING_FEEL, None)
-    if target == FEEL_TARGET and isinstance(pending, dict):
-        await _save_pending_feel(db, user, pending)
     if target == "/settings#donnees":  # Réglages' « Donner mon accord »: said there, as a withdrawal is
         request.session["health_ok"] = "Consentement enregistré."
     return RedirectResponse(target, status_code=303)
-
-
-async def _save_pending_feel(db: AsyncSession, user: User, pending: dict) -> None:
-    """The feel tapped before the consent, saved as the tap would have been, when its day is still today."""
-    from app.services import sante_checkin as checkins
-    from app.services.sante import athlete_today
-
-    today = await athlete_today(db, user.id)
-    answers = pending.get("answers")
-    if pending.get("day") != today.isoformat() or not isinstance(answers, dict):
-        return
-    try:
-        await checkins.save(db, user.id, today, answers)
-    except ValueError:  # not one of the answers the form offers: nothing saved
-        await db.rollback()
-        return
-    await db.commit()
 
 
 @router.get("/accueil")
@@ -251,120 +222,6 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
         needs_reauth, error = _flags(conn, service)
         version += "-" + repr((bool(needs_reauth), error))
     return sha256(version.encode()).hexdigest()
-
-
-@router.post("/sante/ressenti", response_class=HTMLResponse)
-async def sante_checkin(
-    request: Request,
-    day: str = Form(...),
-    action: Literal["save", "clear"] = Form(default="save"),
-    feel: Literal["good", "ok", "bad"] | None = Form(default=None),
-    fatigue: Literal["usual", "high"] | None = Form(default=None),
-    pain: Literal["none", "present"] | None = Form(default=None),
-    effort: Literal["usual", "harder", "not_done"] | None = Form(default=None),
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    from app.services import health_consent
-    from app.services import sante_checkin as checkins
-    from app.services.sante import athlete_today
-
-    answers = {key: value for key, value in (("feel", feel), ("fatigue", fatigue), ("pain", pain), ("effort", effort))
-               if value is not None}
-    if action == "save" and not health_consent.given(user):
-        # the feel is health data (GDPR art. 9): the consent first; the tap waits in the session and is saved right
-        # after it (health_consent_give), back on the feel
-        if answers:
-            request.session[PENDING_FEEL] = {"day": day, "answers": answers}
-        return _away(request, health_consent.consent_url("/sante#ressenti"))
-    today = await athlete_today(db, user.id)
-    error = None
-    if day != today.isoformat():
-        error = "Le jour a changé. Vérifie tes réponses pour aujourd’hui."
-    elif action == "save" and not answers:
-        error = "Choisis ton ressenti."
-    if error:
-        checkin = await checkins.read(db, user.id, today)
-    else:
-        checkin = await checkins.save(db, user.id, today, answers if action == "save" else None)
-        await db.commit()
-    if request.headers.get("HX-Request"):
-        from app.services import viz
-        from app.services.sante import CARD_NIGHTS
-        days = [today - timedelta(days=CARD_NIGHTS - 1 - i) for i in range(CARD_NIGHTS)]
-        feels = await checkins.feels(db, user.id, days[0], today)
-        # the curves' track of dots follows the tap (out of band), as the page draws it
-        return templates.TemplateResponse(request, "partials/sante_checkin.html", context={
-            "checkin": checkin, "checkin_error": error, "feel_oob": True,
-            "feel_track": viz.feel_track("ressenti-30", days, feels) if feels else None})
-    if error:
-        context = await _health_context(db, user)
-        context["checkin_error"] = error
-        return templates.TemplateResponse(request, "sante.html", context=context, status_code=409)
-    return RedirectResponse("/sante#ressenti", status_code=303)
-
-
-@router.post("/sante/feel")
-async def sante_feel(
-    request: Request,
-    feel: int | None = Form(default=None),
-    legs: int | None = Form(default=None),
-    why: list[str] | None = Form(default=None),
-    toggle: str | None = Form(default=None),
-    alcohol: int | None = Form(default=None),
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """DEPRECATED (2026-10-14): kept for a grace period, to be removed once no client posts here any more.
-
-    The morning check-in of v3, kept harmlessly: the page no longer asks it
-    (owner, 2026-10-08) and Santé never reads it, but an old form or a client
-    still posting gets its answer stored, as before, and the page back. `feel`
-    1 mieux · 2 comme d'habitude · 3 moins bien; with « moins bien », `why`
-    (legs, fatigue, sick, stress) or `toggle` one of them; `alcohol` 1/0;
-    `legs` 1/0 the older « jambes lourdes » toggle. Health data, as /sante/ressenti: nothing is stored without the
-    consent, the consent page is shown instead."""
-    from app.models.health import HealthMetric
-    from app.services.health import FEEL_WHY
-    from app.services.sante import athlete_today
-
-    if not health_consent.given(user):
-        return _away(request, health_consent.consent_url("/sante#ressenti"))
-
-    today = await athlete_today(db, user.id)
-    row = (await db.execute(select(HealthMetric).where(
-        HealthMetric.user_id == user.id, HealthMetric.metric == "feel", HealthMetric.date == today))).scalar_one_or_none()
-    if row is None:
-        row = HealthMetric(user_id=user.id, date=today, metric="feel", value=2, source="PaceForge", n_samples=1,
-                           details={"why": [], "alcohol": False, "legs_heavy": False, "answered": False})
-        db.add(row)
-    det = dict(row.details or {})
-    reasons = [w for w in det.get("why") or [] if w in FEEL_WHY]
-    if det.get("legs_heavy") and "legs" not in reasons:
-        reasons.append("legs")
-    answered = feel in (1, 2, 3) or why is not None or toggle in FEEL_WHY or legs in (0, 1)
-    if feel in (1, 2, 3):
-        row.value = feel
-        if feel != 3:
-            reasons = []  # the reasons go with « moins bien »
-    if why is not None:
-        reasons = [w for w in FEEL_WHY if w in why]
-    if toggle in FEEL_WHY:
-        reasons = [w for w in reasons if w != toggle] + ([] if toggle in reasons else [toggle])
-    if legs in (0, 1):
-        reasons = [w for w in reasons if w != "legs"] + (["legs"] if legs else [])
-    if reasons:
-        row.value = 3  # a reason is a « moins bien »
-    if alcohol in (0, 1):
-        det["alcohol"] = bool(alcohol)
-    det["why"] = [w for w in FEEL_WHY if w in reasons]
-    det["legs_heavy"] = "legs" in reasons
-    det.setdefault("alcohol", False)
-    if answered:
-        det.pop("answered", None)  # a reply (rows without the key are replies)
-    row.details = det
-    await db.commit()
-    return _away(request, "/sante")
 
 
 _WATCHES = (("COROS", coros), ("Garmin", garmin))

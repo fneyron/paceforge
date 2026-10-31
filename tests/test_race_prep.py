@@ -145,7 +145,7 @@ def _pre_race_nights(rd: date, nap_day: date | None = None, days=range(0, 90)):
     if nap_day:
         rows["nap"][nap_day] = (40, {"windows": [[f"{nap_day}T13:30", f"{nap_day}T14:15"]]}, "Garmin")
     nights = nt.build_nights(rows, D)
-    nt.tag_nights(nights, [], {})  # no race window tag any more: every measured night counts (2026-10-08)
+    nt.tag_nights(nights, [])  # no race window tag any more: every measured night counts (2026-10-08)
     return nights
 
 

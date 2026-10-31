@@ -24,9 +24,9 @@
       window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'tab-location', url: location.href, page_url: location.href }));
     }
   }
-  function remember(force) {
+  function remember() {
     var current = document.getElementById('main-content');
-    if (!current || (!force && current.hidden) || current.dataset.account !== account) return;
+    if (!current || current.hidden || current.dataset.account !== account) return;
     var clone = current.cloneNode(true);
     // Clones have neither JS listeners nor PFViz's instance properties. The
     // initialized document is disposed below; the clone is rehydrated on return.
@@ -102,29 +102,20 @@
     } finally { clearTimeout(timeout); }
   }
   async function revalidate(target, ticket) {
-    var requestedCheckin = document.querySelector('#main-content #ressenti');
     try {
       var doc = await get(target, ticket);
       if (!doc || ticket !== generation || canonical(location.href) !== canonical(target)) return;
       var observed = revision;
-      await window.paceforgeRefresh?.applyDocument(doc, location.href, requestedCheckin,
+      await window.paceforgeRefresh?.applyDocument(doc, location.href,
         function () { return ticket === generation && observed === revision; });
       if (ticket !== generation) return;
       window.paceforgeRefresh?.loaded();
       document.dispatchEvent(new CustomEvent('pf:tabupdated'));
     } catch (_) { /* A failed quiet refresh keeps the dated, already visible view. */ }
   }
-  async function waitCheckin(ticket) {
-    var until = Date.now() + 20000;
-    while (document.querySelector('#ressenti.htmx-request')) {
-      if (ticket !== generation || Date.now() >= until) return false;
-      await new Promise(function (resolve) { setTimeout(resolve, 30); });
-    }
-    return ticket === generation;
-  }
-  async function beforeLeave() {
-    if (!await waitCheckin(generation)) throw new Error('checkin-save-pending');
-  }
+  // The barrier before leaving: the feel's save was all it waited for (removed 2026-10-31). Kept, resolved at once:
+  // the installed apps check that it exists and call it before a tab change or a full leave.
+  function beforeLeave() { return Promise.resolve(); }
   async function navigate(href, nonce, push) {
     if (!eligible(href) || !eligible(mounted)) return false;
     var target = new URL(href, location.href).href;
@@ -133,14 +124,7 @@
     if (!current || current.dataset.account !== account) { hardNavigation(target); return true; }
     if (push !== false && !loading) mounted = location.href;
     var ticket = ++generation; controller?.abort();
-    if (document.querySelector('#ressenti.htmx-request')) {
-      progress(true);
-      if (!await waitCheckin(ticket)) {
-        if (ticket === generation) { progress(false); notify(nonce, target, 'cancelled'); }
-        return true;
-      }
-      remember(true);
-    } else remember();
+    remember();
     var entry = saved.get(path(target));
     if (entry && entry.url === canonical(target) && Date.now() - entry.at < 300000) {
       saved.delete(path(target));

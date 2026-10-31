@@ -67,12 +67,12 @@ docs/decisions.md):
   Très longue, « après grosse sortie »: Hynynen 2010, nightly HR at 130 %
   after a marathon; D+1 → D+4 after an Ultra, « après ultra »: Fachan 2026,
   Kishi 2024; D is the day before the first morning after it, H:
-  anchor_efforts), and the race page's « alcool hier » (Pietilä 2018). The
-  nights of an alert episode are « FC de nuit haute » in the table (H; heart
-  rate alone is never a diagnosis: evidence row 3). Santé reads nothing
-  else: no planned race, no check-in. The race page keeps
-  the « alcool hier » and « malade » chips a check-in stored before v4 holds,
-  and the nights after its race never fire the alert.
+  anchor_efforts). The nights of an alert episode are « FC de nuit haute »
+  in the table (H; heart rate alone is never a diagnosis: evidence row 3).
+  Nothing else is read: no planned race, no self-report (owner, 2026-10-31:
+  the manual feel is gone; a stored check-in's « alcool hier » and « malade »
+  tag no night, the race page's included). The nights after the race page's
+  race never fire the alert.
 - COROS nightly HR on a day with a nap counts like any night, but never fires
   the illness alert until it is shown that COROS leaves the nap out of its
   « Sleep HR » line (docs/sante-v3-data-notes.md: consistent with the main
@@ -185,21 +185,18 @@ TZ_EAST, TZ_WEST = 1.0, 0.5
 JETLAG_ZONES = 3  # « décalage horaire » from 3 zones (Janse van Rensburg 2021), « fuseau changé » under
 TZ_LOOKBACK = 10  # days (H)
 RACE_WINDOW = 7  # (H) the race page: the nights up to J+7 never fire the alert
-ILL_TAIL = 2  # days after the last « malade » (H)
-ILL_MERGE = 3  # « malade » days this close make one episode (H)
 ILL_MAX = 14  # days an alert episode can run (H)
 AXIS = (time(20, 0), time(12, 0))  # the timing chart's local axis
 # whether COROS's « Sleep HR » line leaves a nap out: not shown (no HR curve), see the data notes
 COROS_SLEEP_HR_NAP_VERIFIED = False
 
 # context words, as the readouts print them (glyph ◇)
-# « ill » is the athlete's own « malade » chip; « alert » an alert episode, never worded as a diagnosis (row 3)
+# « alert » an alert episode, never worded as a diagnosis (row 3)
 TAG_WORDS = {"long": "après une sortie longue", "late": "sortie intense le soir", "altitude": "en altitude",
              "tz": "fuseau changé", "jetlag": "décalage horaire", "big": "après grosse sortie",
-             "ultra": "après ultra", "alcohol": "alcool", "ill": "malade", "alert": "FC de nuit haute",
-             "late_nap": "après sieste tardive"}
+             "ultra": "après ultra", "alert": "FC de nuit haute", "late_nap": "après sieste tardive"}
 # the context nights: they count like any night (in the bands, the means, the timing), but never fire the alert
-CONTEXT = ("long", "late", "altitude", "tz", "jetlag", "big", "ultra", "alcohol")
+CONTEXT = ("long", "late", "altitude", "tz", "jetlag", "big", "ultra")
 
 
 def tag_words(tags, words=None) -> list[str]:
@@ -395,13 +392,11 @@ def vigorous(s, rest: float, peak: float | None) -> bool:
     return s.hr >= hard or sum(m for m, hr in (getattr(s, "segs", None) or ()) if hr >= hard) >= VIGOROUS_MIN
 
 
-def tag_nights(nights: dict[date, Night], sessions=(), feel: dict[date, dict] | None = None,
-               rest: float = 50.0, peak: float | None = None, day_alt: dict[date, float] | None = None) -> None:
+def tag_nights(nights: dict[date, Night], sessions=(), rest: float = 50.0, peak: float | None = None,
+               day_alt: dict[date, float] | None = None) -> None:
     """Context tags on each night (see the module docstring), in place.
-    `sessions`: sante_training.Session; `feel`: {day: feel_of(...)} (the race
-    page's stored check-ins); `rest`/`peak`: the athlete's HR bounds;
-    `day_alt`: {day: Garmin's average altitude that day} (day_altitudes)."""
-    feel = feel or {}
+    `sessions`: sante_training.Session; `rest`/`peak`: the athlete's HR
+    bounds; `day_alt`: {day: Garmin's average altitude that day} (day_altitudes)."""
     by_day = defaultdict(list)
     for s in sessions:
         by_day[s.day].append(s)
@@ -411,14 +406,9 @@ def tag_nights(nights: dict[date, Night], sessions=(), feel: dict[date, dict] | 
             n.tags.add("long")
         if any(vigorous(s, rest, peak) for s in late_candidates(n, before + by_day.get(d, []))):
             n.tags.add("late")
-        if (feel.get(d) or {}).get("alcohol"):
-            n.tags.add("alcohol")
     _tag_altitude(nights, sessions, day_alt or {})
     _tag_timezones(nights, sessions)
     _tag_late_naps(nights)
-    for d in illness_days(feel):
-        if d in nights:
-            nights[d].tags.add("ill")
 
 
 def late_candidates(n: Night, sessions) -> list:
@@ -684,26 +674,6 @@ def tag_efforts(nights: dict[date, Night], efforts=()) -> None:
             n = nights.get(e.day + timedelta(days=k))
             if n is not None and (k > 1 or n.start is None or n.start >= e.end):
                 n.tags.add(tag)
-
-
-def illness_days(feel: dict[date, dict]) -> set[date]:
-    """The days of a « malade » episode (H): « malade » days within 3 days of
-    each other make one episode, which runs 2 days after the last. (The nights
-    of an alert episode are alert_episodes', tagged « alert »: heart rate alone
-    never says « malade ».)"""
-    sick = sorted(d for d, f in (feel or {}).items() if f and "sick" in (f.get("why") or []))
-    out = set()
-    i = 0
-    while i < len(sick):
-        j = i
-        while j + 1 < len(sick) and (sick[j + 1] - sick[j]).days <= ILL_MERGE:
-            j += 1
-        d = sick[i]
-        while d <= sick[j] + timedelta(days=ILL_TAIL):
-            out.add(d)
-            d += timedelta(days=1)
-        i = j + 1
-    return out
 
 
 # ── the athlete's normal ────────────────────────────────────────────────────
@@ -1337,13 +1307,12 @@ def alert_episodes(nights: dict[date, Night], today: date, races=(), days: int =
 
 # ── reading ─────────────────────────────────────────────────────────────────
 
-NIGHT_ROWS = ("sleep", "nap", "hrv", "hr_night", "resp_night", "feel")
+NIGHT_ROWS = ("sleep", "nap", "hrv", "hr_night", "resp_night")  # never the former self-report's (health.FEEL)
 
 
 async def read_rows(db: AsyncSession, user_id: int, lo: date, hi: date,
                     metrics: tuple[str, ...] = NIGHT_ROWS) -> dict[str, dict[date, tuple]]:
-    """{metric: {day: (value, details, source)}} of the nightly rows (and the
-    check-ins, unless `metrics` leaves them out: Santé v4 never reads them)."""
+    """{metric: {day: (value, details, source)}} of the nightly rows."""
     from app.services.health_sources import preference, select_metrics
 
     rows = (await db.scalars(
@@ -1380,7 +1349,7 @@ def tag_alerts(nights: dict[date, Night], today: date, races=()) -> None:
             nights[d].tags.add("alert")
 
 
-SANTE_ROWS = ("sleep", "nap", "hrv", "hr_night", "resp_night")  # Santé v4: no check-in
+SANTE_ROWS = NIGHT_ROWS
 
 
 def tag_activities(nights: dict[date, Night], sessions=(), efforts=(), rest: float = 50.0,
@@ -1391,7 +1360,7 @@ def tag_activities(nights: dict[date, Night], sessions=(), efforts=(), rest: flo
     sortie » (`efforts`: sante_training.efforts, anchored on these nights).
     No planned race, no check-in; « FC de nuit haute » comes after
     (tag_alerts)."""
-    tag_nights(nights, sessions, {}, rest, peak, day_alt)
+    tag_nights(nights, sessions, rest, peak, day_alt)
     tag_efforts(nights, anchor_efforts(nights, efforts))
 
 

@@ -36,49 +36,44 @@ assert.ok(['localhost', '127.0.0.1'].includes(new URL(base).hostname));
     assert.equal(new URL(page.url()).pathname, '/activities', 'A deliberate later navigation must still work');
     await page.close();
 
-    // A native-like cancel followed by a full leave still waits for a real HTMX save.
-    const saving = await browser.newPage({ viewport: { width: 393, height: 700 } });
-    await saving.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; });
-    await saving.goto(base + '/sante', { waitUntil: 'networkidle' });
-    let releasePost, posted, savedAtLeave = null, fullLeaves = 0, activityRequests = 0;
-    const postHeld = new Promise(resolve => { releasePost = resolve; });
-    const postStarted = new Promise(resolve => { posted = resolve; });
-    await saving.route(base + '/sante/ressenti', async route => {
+    // A native-like cancel followed by a full leave: nothing is saved in place any more (the feel left on
+    // 2026-10-31), so the leave barrier the installed apps call resolves at once; the cancelled tab never mounts.
+    const leaving = await browser.newPage({ viewport: { width: 393, height: 700 } });
+    await leaving.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; });
+    await leaving.goto(base + '/sante', { waitUntil: 'networkidle' });
+    let fullLeaves = 0, releaseTab, tabRequested;
+    const tabHeld = new Promise(resolve => { releaseTab = resolve; });
+    const tabStarted = new Promise(resolve => { tabRequested = resolve; });
+    await leaving.route(base + '/activities', async route => {
       const response = await route.fetch();
-      posted(); await postHeld;
-      await route.fulfill({ response });
+      tabRequested(); await tabHeld;
+      try { await route.fulfill({ response }); } catch (_) { /* The GET was aborted. */ }
     });
-    saving.on('request', request => {
-      const path = new URL(request.url()).pathname;
-      if (path === '/activities') activityRequests++;
-      if (path === '/simulator' && request.isNavigationRequest()) fullLeaves++;
+    leaving.on('request', request => {
+      if (new URL(request.url()).pathname === '/simulator' && request.isNavigationRequest()) fullLeaves++;
     });
-    await saving.exposeFunction('noteSavedBeforeLeave', summary => { savedAtLeave = summary; });
-    await saving.locator('#ressenti').getByRole('button', { name: 'Cassé' }).click();
-    await postStarted;
-    await saving.evaluate(() => { window.cancelledTab = window.paceforgeTabs.navigate('/activities'); });
-    assert.equal(await saving.locator('#main-content').evaluate(main => main.hidden), true);
-    await saving.evaluate(() => {
+    assert.equal(await leaving.evaluate(() => typeof window.paceforgeTabs.beforeLeave), 'function', 'Installed apps need the leave barrier');
+    await leaving.evaluate(() => { window.cancelledTab = window.paceforgeTabs.navigate('/activities'); });
+    await tabStarted;
+    assert.equal(await leaving.locator('#main-content').evaluate(main => main.hidden), true);
+    await leaving.evaluate(() => {
       window.paceforgeTabs.cancel();
       window.beforeLeaveSettled = false;
-      window.fullLeave = window.paceforgeTabs.beforeLeave().then(async () => {
-        window.beforeLeaveSettled = true;
-        await window.noteSavedBeforeLeave(document.querySelector('#ressenti [aria-pressed="true"]')?.textContent);
-        location.href = '/simulator';
-      });
+      window.fullLeave = window.paceforgeTabs.beforeLeave().then(() => { window.beforeLeaveSettled = true; });
     });
-    await saving.waitForTimeout(200);
-    assert.equal(await saving.evaluate(() => window.beforeLeaveSettled), false, 'Leave barrier resolved before the held save');
-    assert.equal(await saving.locator('#main-content').evaluate(main => main.hidden), false);
-    assert.equal(new URL(saving.url()).pathname, '/sante');
-    assert.equal(fullLeaves, 0, 'Full navigation started while the save was held');
-    releasePost();
-    await saving.waitForURL(base + '/simulator');
-    await saving.waitForLoadState('load');
-    assert.match(savedAtLeave, /Cassé/, 'Leave barrier resolved before the saved HTMX target was updated');
+    await leaving.waitForFunction(() => window.beforeLeaveSettled === true, null, { timeout: 2000 });
+    assert.equal(await leaving.locator('#main-content').evaluate(main => main.hidden), false);
+    assert.equal(await leaving.locator('.pf-refresh-status.is-loading').count(), 0);
+    releaseTab();
+    await leaving.evaluate(() => window.cancelledTab);
+    await leaving.waitForTimeout(100);
+    assert.equal(new URL(leaving.url()).pathname, '/sante', 'Cancelled tab mounted after the leave barrier');
+    assert.equal(fullLeaves, 0);
+    await leaving.evaluate(() => { location.href = '/simulator'; });
+    await leaving.waitForURL(base + '/simulator');
+    await leaving.waitForLoadState('load');
     assert.equal(fullLeaves, 1);
-    assert.equal(activityRequests, 0, 'Cancelled tab resumed after the save completed');
-    await saving.close();
-    console.log('Tab cancellation: late GET ignored, original pane restored, subsequent navigation works; held HTMX save completes before a cancelled pane can leave.');
+    await leaving.close();
+    console.log('Tab cancellation: late GET ignored, original pane restored, subsequent navigation works; the leave barrier resolves at once and a cancelled pane stays put.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

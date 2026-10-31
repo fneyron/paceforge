@@ -117,7 +117,7 @@ def test_bands_count_every_measured_night_on_one_watch():
     s = nt.band(nights, "tst24", D)
     assert (s["center"], s["lo"], s["hi"]) == (440, 410, 470)
     assert not b["provisional"] and nt.band(nights, "hr", D, full=True) == b
-    for k, tag in ((1, "alcohol"), (3, "long"), (5, "ultra"), (7, "jetlag"), (9, "altitude"), (11, "late"),
+    for k, tag in ((3, "long"), (5, "ultra"), (7, "jetlag"), (9, "altitude"), (11, "late"),
                    (13, "big"), (15, "tz"), (17, "alert"), (19, "late_nap")):
         nights[D - timedelta(days=k)].tags.add(tag)  # no tag leaves a night out any more
     assert nt.band(nights, "hr", D) == b and nt.band(nights, "hrv", D) == h and nt.band(nights, "tst24", D) == s
@@ -208,12 +208,11 @@ def test_context_tags_never_leave_a_night_out():
         session(d(5), 18, 45, hr=110, sid=4),  # easy evening run: nothing
         session(d(2), 9, 60, alt=2100, sid=5),  # ended at 2 100 m that day: the night after is at altitude
     ]
-    feel = {d(1): {"value": 2, "why": [], "alcohol": True}}
-    nt.tag_nights(nights, sessions, feel, rest=45, peak=190)
+    nt.tag_nights(nights, sessions, rest=45, peak=190)
     assert nights[D].tags == {"long"}
     # the night after the high session only (v4.4, R2: a run after a night says nothing of that night); not
     # carried to D: the 95-min run of the day before, without a position, says nothing of where D was slept
-    assert nights[d(1)].tags == {"alcohol", "altitude"} and nights[d(2)].tags == {"late"}
+    assert nights[d(1)].tags == {"altitude"} and nights[d(2)].tags == {"late"}
     assert nights[d(3)].tags == set() and nights[d(4)].tags == set()
     # the tagged nights count like the others (owner, 2026-10-08), they only never fire the alert
     assert nt.mean7(nights, "hr", D)["n"] == 6 and nt.mean7(nights, "hrv", D)["n"] == 6
@@ -234,13 +233,13 @@ def test_an_easy_evening_run_never_mutes_the_alert():
     early = session(d(3), 17, 45, hr=170, sid=3)  # ends 17:45, 5 h 15 before sleep
     intervals = session(d(4), 20, 60, hr=142, sid=4)  # ends 21:00, average 70 %
     intervals.segs = ((6, 168),) * 4 + ((3, 120),) * 12  # 4 × 6 min at 168: 24 min above 157
-    nt.tag_nights(nights, [easy, hard, early, intervals], {}, rest=35, peak=188)
+    nt.tag_nights(nights, [easy, hard, early, intervals], rest=35, peak=188)
     hard_hr = 35 + nt.VIGOROUS_HRR * (188 - 35)
     assert 136 < 142 < hard_hr < 165 and nights[D].tags == set()
     assert nights[d(1)].tags == {"late"} and nights[d(2)].tags == set() and nights[d(3)].tags == {"late"}
     intervals.segs = ((6, 168),) * 3 + ((3, 120),) * 12  # 18 min above: under 20, no tag
     again = nt.build_nights(night_rows(range(0, 5)), D)
-    nt.tag_nights(again, [intervals], {}, rest=35, peak=188)
+    nt.tag_nights(again, [intervals], rest=35, peak=188)
     assert again[d(3)].tags == set()
 
 
@@ -293,16 +292,15 @@ def test_late_nap_annotates_only():
     assert nt.day_tst24(nights, D - timedelta(days=1)) == 440 and nt.bar_nap_min(nights, D - timedelta(days=1)) == 0
 
 
-def test_illness_days_from_the_malade_chip():
-    """The race page's stored « malade » check-ins: the days of an episode, a word on that page; no race window
-    tags any night any more (every measured night counts: owner, 2026-10-08)."""
+def test_no_race_window_and_no_self_report_tag():
+    """No race window tags any night any more (every measured night counts: owner, 2026-10-08), nor the former
+    feel's « alcool hier » and « malade » (owner, 2026-10-31: the manual feel is gone)."""
     nights = nt.build_nights(night_rows(range(0, 20)), D)
-    sick = {D - timedelta(days=10): {"value": 3, "why": ["sick"]}, D - timedelta(days=8): {"value": 3, "why": ["sick"]}}
-    nt.tag_nights(nights, (), sick)
+    nt.tag_nights(nights, ())
     assert not hasattr(nt, "EXCLUDING") and "race" not in nt.TAG_WORDS
-    ill = sorted(k for k in range(20) if "ill" in nights[D - timedelta(days=k)].tags)
-    assert ill == [6, 7, 8, 9, 10]  # from the first « malade » to 2 days after the last
-    assert nt.illness_days({D: {"why": ["fatigue"]}}) == set()
+    assert not {"alcohol", "ill"} & set(nt.TAG_WORDS) and "alcohol" not in nt.CONTEXT
+    assert not hasattr(nt, "illness_days") and "feel" not in nt.NIGHT_ROWS
+    assert not any(n.tags for n in nights.values())
 
 
 def test_illness_alert():
@@ -314,9 +312,9 @@ def test_illness_alert():
     assert a["days"] == [D - timedelta(days=1), D] and a["values"] == [52, 52] and a["threshold"] == 50
     assert a["resp_up"] is None  # no respiration (COROS): it never starts one anyway
     assert nt.illness_alert(nights, D - timedelta(days=1)) is None  # one night is never enough
-    nights[D].tags.add("alcohol")  # a context night never fires it
+    nights[D].tags.add("altitude")  # a context night never fires it
     assert nt.illness_alert(nights, D) is None
-    nights[D].tags.discard("alcohol")
+    nights[D].tags.discard("altitude")
     assert nt.illness_alert(nights, D, [(D + timedelta(days=3), "Trail")])  # race week: it still fires
     assert nt.illness_alert(nights, D, [(D - timedelta(days=2), "Trail")]) is None  # the nights after a race: never
     assert nt.alert_episodes(nights, D) == {D - timedelta(days=1), D}
@@ -356,7 +354,8 @@ def test_timing_rounding_and_resettled_wakes():
 
 async def test_load_nights_reads_the_nights_never_the_check_ins_nor_a_race(db_session, test_user):
     """Santé v4: the nights tagged from the activities alone; a stored check-in (« alcool hier », « malade ») and
-    a planned race are never read (owner, 2026-10-08)."""
+    a planned race are never read (owner, 2026-10-08); nor by the race page (owner, 2026-10-31)."""
+    from app.services import race_prep as rp
     from app.models.health import HealthMetric
     from app.services import sante_training as st
 
@@ -378,6 +377,8 @@ async def test_load_nights_reads_the_nights_never_the_check_ins_nor_a_race(db_se
     assert nights[date(2026, 10, 6)].tags == {"ultra"}  # D+3: « après ultra », D+1 → D+4 (v4.2)
     assert set(nights) == {date(2026, 9, 25), date(2026, 9, 29), date(2026, 9, 30), date(2026, 10, 1),
                            date(2026, 10, 6), D}
+    prep = await rp._nights(db_session, test_user.id, D, D - timedelta(days=20), [race], [])
+    assert prep[D].tags == {"ultra"}  # the race page: no « alcool », no « malade » from the stored check-in
 
 
 def test_a_session_without_a_known_offset_never_changes_the_time_zone():
@@ -393,8 +394,8 @@ def test_a_session_without_a_known_offset_never_changes_the_time_zone():
 # ── review fixes (v3) ───────────────────────────────────────────────────────
 
 async def test_alert_nights_say_fc_de_nuit_haute_never_malade(db_session, test_user):
-    """F1: an alert episode with no check-in tags its nights « FC de nuit
-    haute » (out of the band like « malade »); « malade » is the chip's only."""
+    """F1: an alert episode tags its nights « FC de nuit haute » (out of the
+    band), never « malade »."""
     from app.models.health import HealthMetric
     from app.services import race_prep as rp
     from app.services import sante_sleep as sl
@@ -414,11 +415,6 @@ async def test_alert_nights_say_fc_de_nuit_haute_never_malade(db_session, test_u
     assert "◇ FC de nuit haute" in text and "malade" not in text
     prep = await rp._nights(db_session, test_user.id, D, D - timedelta(days=70), [], [])
     assert prep[D].tags == {"alert"}
-    # the athlete's own chip: « malade »
-    sick = {D: {"value": 3, "why": ["sick"]}}
-    chip = nt.build_nights(night_rows(range(0, 3)), D)
-    nt.tag_nights(chip, (), sick)
-    assert nt.TAG_WORDS[sorted(chip[D].tags)[0]] == "malade"
 
 
 def test_a_new_watch_is_never_read_against_the_old_watchs_band():
@@ -563,7 +559,7 @@ def test_a_race_marked_on_strava_only_never_fires_the_alert_after_it():
     base = night_rows(range(4, 70), hr=lambda k: 47 + k % 3)
     after = night_rows([0, 1, 2], hr=lambda k: {2: 60.0, 1: 56.0, 0: 55.0}[k])
     nights = nt.build_nights({m: {**base[m], **after[m]} for m in base}, D)
-    nt.tag_nights(nights, [race], {})
+    nt.tag_nights(nights, [race])
     assert not any("race" in n.tags for n in nights.values())
     assert nt.illness_alert(nights, D, races) is None and nt.alert_episodes(nights, D, races) == set()
     assert nt.illness_alert(nights, D)["values"] == [56, 55]  # without the race: both over its line
