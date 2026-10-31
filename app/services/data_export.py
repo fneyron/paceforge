@@ -3,7 +3,7 @@ portability).
 
 What it holds: the account (never its password hash, email or reset tokens, Strava tokens or keys, the Apple
 Health key; with the consent to health data's date and version), every activity with its laps, splits, streams and
-the provider's payload, the health measurements and samples, the phone's daily values, the « ressenti » answers, the
+the provider's payload, the health measurements and samples, the phone's daily values, the former feel's answers, the
 race plans with their checkpoints (waypoints, cut-offs, pinned times), the lactate tests, the nutrition products,
 which services and phones are linked, with their dates (never a token, a pairing code or a phone's key), and the
 account's rows in the tables of the features switched off, while the database still has them (legacy_tables).
@@ -33,11 +33,11 @@ from app.models.mobile import MobileDaily, MobileDevice
 from app.models.nutrition import NutritionProduct
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
+from app.services.health import FEEL  # the former feel's answers (no longer written since 2026-10-31): their own file
 
 # rows per batch: a batch is what the export holds in memory (an activity with its streams is ~0.3 MB, a plan with
 # its course up to ~2 MB)
 BATCH, ACTIVITY_BATCH, ROUTE_BATCH = 500, 25, 10
-FEEL = "feel"  # the « ressenti » answers' metric in health_metrics (services/sante_checkin)
 
 # the account's own fields; every other users column is a secret, a token or internal bookkeeping
 ACCOUNT_FIELDS = ("id", "email", "email_verified", "firstname", "lastname", "profile_picture_url", "created_at",
@@ -56,7 +56,7 @@ connexions.json         les services et téléphones liés, et leurs dates (jama
 activites.json          tes activités : résumé, tours, flux (fréquence cardiaque, GPS…), données reçues du service
 sante_mesures.json      tes mesures de santé par jour (sommeil, VFC, fréquence cardiaque de nuit, pas…)
 sante_echantillons.json les phases de sommeil détaillées (Garmin)
-ressenti.json           tes réponses « ressenti » du matin
+ressenti.json           tes réponses à l’ancien « Ressenti du jour », fonction retirée le 31 octobre 2026
 telephone_jours.json    les valeurs du jour envoyées par ton téléphone (pas, poids…)
 parcours.json           tes parcours et plans de course, avec leurs points de passage
 lactate.json            tes tests de lactate

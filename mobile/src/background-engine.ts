@@ -30,7 +30,9 @@ const HASHES_MS = 24 * 3600000, HASH_DAYS = 60;
 
 // resume: a wake the foreground sync kept waiting, run once it is over.
 export type Wake = 'healthkit' | 'task' | 'resume';
-export type Outcome = 'off' | 'locked' | 'busy' | 'deferred' | 'unchanged' | 'sent' | 'partial' | 'reconnect' | 'failed';
+// consent: the server refused the measurements without the consent to health data (403); nothing is marked sent,
+// no delay is set: every later run pushes once and stops at the refusal, the first one after the consent sends it all.
+export type Outcome = 'off' | 'locked' | 'busy' | 'deferred' | 'unchanged' | 'sent' | 'partial' | 'reconnect' | 'consent' | 'failed';
 // logout / mismatch: the web session left the paired account; off until it is confirmed again.
 export type Block = '' | 'logout' | 'mismatch';
 export type BackgroundState = {
@@ -352,7 +354,7 @@ export function createEngine(deps: EngineDeps) {
       ? { ...state.tokens, ...Object.fromEntries(Object.entries(plan.tokens).filter(([metric]) => !unread.has(metric))) }
       : state.tokens;
     await saveProgress({ ...state, hashes: recent(skip.hashes, now), tokens, retryAt });
-    return !report.complete ? 'partial' : sent ? 'sent' : 'unchanged';
+    return report.consent ? 'consent' : !report.complete ? 'partial' : sent ? 'sent' : 'unchanged';
   }
 
   return {

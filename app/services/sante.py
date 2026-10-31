@@ -14,7 +14,8 @@ nightly VFC/FC charts remain visible: rolling trends, measured points and provis
 separately. Extra daytime measurements stay visible with recent median references. Measurement dates and
 successful syncs are distinct in the source details.
 
-No check-in, planned race or brand recovery score enters the calculation. Each source is preserved separately;
+No self-report (the former « ressenti » rows are never read: owner, 2026-10-31), planned race or brand recovery
+score enters the calculation. Each source is preserved separately;
 nights.read_rows applies the user's watch preference and baselines remain specific to a series (source and method).
 Missing measurements remain gaps, never zeroes. Heuristic choices are marked (H); these readings are not
 validated clinical measures; the dated decisions behind the rules are in docs/decisions.md. The page's reads come
@@ -41,7 +42,7 @@ from app.services import sante_sleep as sl
 from app.services import sante_today as td
 from app.services import sante_training as st
 from app.services import viz
-from app.services.health import HRV_METHOD, WATCH_SOURCES, fmt_minutes
+from app.services.health import FEEL, HRV_METHOD, WATCH_SOURCES, fmt_minutes
 from app.services.sante_daily import daily_and_trends
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,8 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     from app.models.user import User
 
     now = now or datetime.now(timezone.utc)
-    latest = (await db.execute(select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
+    latest = (await db.execute(select(func.max(HealthMetric.date)).where(
+        HealthMetric.user_id == user_id, HealthMetric.metric != FEEL))).scalar()
     user = await db.get(User, user_id)  # read once, held for the page (every later read of it is this one)
     zone = await st.athlete_clock(db, user_id, user)
     clock = None  # the athlete's wall clock, only for the day the page finds itself (a given day stays as given)
@@ -78,7 +80,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     nights = await nt.load_nights(db, user_id, today, days=HISTORY_DAYS, sessions=sessions,
                                   efforts=st.efforts(sessions), peak=peak, day_alt=day_alt)
     sources = set((await db.execute(select(HealthMetric.source).distinct().where(
-        HealthMetric.user_id == user_id, HealthMetric.metric != "feel"))).scalars().all())
+        HealthMetric.user_id == user_id, HealthMetric.metric != FEEL))).scalars().all())
     # the night awaited is the calendar day's (how soon the page syncs again); the page reads the cycle's day
     night_state = await _night_state(db, user_id, today, sources & set(WATCH_SOURCES))
     until, today = today, cycle_day(nights, today, clock)
@@ -102,11 +104,6 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     # The same real nightly respiratory card lives with Recovery; a phone's resp_day aggregate is never promoted to
     # a night. The other daily cards (FC sur 24 h, stress, respiration sur 24 h) left the page.
     # Tendances now keeps body composition only; night HR already has its curve and steps left this page.
-    # The one-tap feel's dots, under the stacked curves (owner, 2026-10-17), on the days it is asked (the calendar's)
-    from app.services import sante_checkin
-    feel_days = [until - timedelta(days=CARD_NIGHTS - 1 - i) for i in range(CARD_NIGHTS)]
-    feels = await sante_checkin.feels(db, user_id, feel_days[0], until)
-    out["feel_track"] = viz.feel_track("ressenti-30", feel_days, feels) if feels else None
     out["respiration"] = next((c for c in daily if c["key"] == "resp_night"), None)
     out.pop("race_marks", None)
     out["trends"] = [t for t in (trends.get("weight"), trends.get("body_fat")) if t]

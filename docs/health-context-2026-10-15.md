@@ -23,6 +23,8 @@ Les formulations suivent notamment [Buchheit, 2014](https://www.frontiersin.org/
 
 ## Ressenti et conservation
 
+Retiré le 31 octobre 2026 (propriétaire : « Supprime aussi le ressenti manuel ») : Santé ne le demande, ne l’affiche ni ne le lit plus. Les réponses déjà enregistrées restent dans la ligne `feel`, exportées et effacées avec les données de santé ; ce qui suit décrit la fonction telle qu’elle était.
+
 Le volet facultatif enregistre uniquement les réponses explicites sur fatigue, douleur et tolérance du dernier effort. Il est daté selon le jour local du compte, même lorsque le bilan nocturne affiche encore hier. Une soumission après changement de jour demande de vérifier les réponses avant d’écrire.
 
 Les réponses ne changent ni l’indice ni les anciens indicateurs de maladie/alcool. Elles résident dans un objet versionné de la ligne `feel`, avec isolation par utilisateur, date et source. Leur effacement conserve les autres renseignements historiques. Aucun brouillon n’est écrit dans le stockage navigateur ; une actualisation peut conserver le formulaire vivant du même compte et du même jour. La suppression du compte supprime ces données.

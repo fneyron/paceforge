@@ -1,11 +1,24 @@
 export const ORIGIN = 'https://paceforge.fr';
+/** The server's sentence (services/health_consent.PHONE_REFUSED), said when its answer has none. */
+export const CONSENT_REQUIRED = 'Accepte le suivi de tes données de santé dans PaceForge pour envoyer tes mesures.';
 export class ApiError extends Error {
-  constructor(public status: number, field = '', public retryAfter = 0) {
-    super(status === 401 ? 'Connexion expirée. Reconnecte Apple Santé ou Health Connect.' : status === 422 ?
+  /** 403 health_consent_required: the account has not consented to health data (GDPR art. 9), the server stored
+   * nothing. Neither temporary nor a reconnect: the phone stays paired, keeps its data and sends it after the consent. */
+  readonly consentRequired: boolean;
+  constructor(public status: number, field = '', public retryAfter = 0, consent?: string) {
+    super(consent !== undefined ? consent || CONSENT_REQUIRED : status === 401 ? 'Connexion expirée. Reconnecte Apple Santé ou Health Connect.' : status === 422 ?
       `Mesures refusées par PaceForge (422${field ? ` · ${field}` : ''}).` : `Envoi impossible (${status}). Réessaie dans quelques instants.`);
+    this.consentRequired = consent !== undefined;
   }
   /** Too many requests or a server failure: retry later, never a reason to unpair. */
   get temporary() { return this.status === 429 || this.status >= 500; }
+}
+/** A 403's body: the server's sentence when it refused for the missing consent to health data, else null. */
+export function consentRefusal(raw: unknown): string | null {
+  const r = raw as { code?: unknown; detail?: unknown } | null;
+  if (r?.code !== 'health_consent_required') return null;
+  const detail = typeof r.detail === 'string' ? r.detail.trim() : '';
+  return detail && detail.length <= 300 ? detail : CONSENT_REQUIRED;
 }
 // FastAPI validation responses may contain raw measurements in `input`.
 // Expose only a fixed label derived from field names, never that payload.
@@ -29,7 +42,10 @@ export async function api(path: string, method: string, body?: unknown, token?: 
   try {
     const response = await fetch(ORIGIN + path, { method, signal: controller.signal, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers }, body: body === undefined ? undefined : JSON.stringify(body) });
     if (!response.ok) {
-      const field = response.status === 422 ? rejectedField(await response.json().catch(() => null)) : '';
+      const answer = [403, 422].includes(response.status) ? await response.json().catch(() => null) : null;
+      const consent = response.status === 403 ? consentRefusal(answer) : null;
+      if (consent !== null) throw new ApiError(403, '', 0, consent);
+      const field = response.status === 422 ? rejectedField(answer) : '';
       const retryAfter = response.status === 429 ? Number(response.headers?.get?.('Retry-After')) || 0 : 0;
       throw new ApiError(response.status, field, retryAfter);
     }

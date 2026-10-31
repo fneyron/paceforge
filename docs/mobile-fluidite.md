@@ -13,9 +13,10 @@ Deux vues au maximum sont conservées, chacune limitée à deux millions de
 caractères ; aucune mesure n’est ajoutée au stockage navigateur ou au service
 worker. Actualisation, import confirmé, changement de compte, session expirée,
 changement de jour et départ du document invalident ces vues. Les réponses
-tardives sont liées à la navigation qui les a demandées. Une sauvegarde du
-ressenti en cours termine avant le départ ; une réponse plus ancienne ne peut
-pas remplacer une sauvegarde ou un effacement plus récent. Courses conserve
+tardives sont liées à la navigation qui les a demandées. Ces deux onglets
+n’enregistrent plus rien sur place (le ressenti, seule sauvegarde attendue
+avant le départ, est retiré depuis le 31 octobre 2026) : la barrière de départ
+que l’application appelle se résout aussitôt. Courses conserve
 son contrôle de sauvegarde et son chargement complet. Une réponse d’une nouvelle
 version du serveur recharge le document complet pour garder ses fichiers CSS/JS
 compatibles avec le HTML.

@@ -40,9 +40,10 @@ longer yields for the days its parsers read, never a Garmin one):
 - resp_night : overnight respiration (Garmin or Apple Santé); {method}.
 - hr_day     : average heart rate of the day; {min, max} (a « watch worn » marker)
 - steps      : steps of the day; {kcal, exercise (min)} (same)
-- feel       : the morning check-in (source "PaceForge"): 1 mieux, 2 comme
-               d'habitude, 3 moins bien; {why: [legs, fatigue, sick, stress],
-               alcohol: bool} (older rows: {legs_heavy}; read them with feel_of()).
+- feel       : the former self-report (« ressenti », source "PaceForge"), no longer
+               written nor read since 2026-10-31 (owner: « Supprime aussi le
+               ressenti manuel »); the rows stored before stay until the consent's
+               withdrawal or the account's deletion, and are in the export (FEEL).
 
 Brand values (load, recovery, stress, fitness, hrv_norm, body_battery,
 sleep_score, vo2max, the watch's daytime resting HR "rhr") are no longer read
@@ -76,10 +77,10 @@ NIGHT_METRICS = ("sleep", "nap", "hrv", "hr_night", "resp_night")
 # brand values: no longer read nor written; stored rows stay until a later purge
 BRAND_METRICS = ("load", "recovery", "stress", "fitness", "hrv_norm", "body_battery", "sleep_score", "vo2max",
                  "rhr")
-DAILY_METRICS = NIGHT_METRICS + ("hr_day", "steps", "feel") + BRAND_METRICS
+DAILY_METRICS = NIGHT_METRICS + ("hr_day", "steps") + BRAND_METRICS
 # what Réglages lists, in this order (brand rows already stored included: « what is synced »)
 DAILY_LABELS = {"sleep": "Sommeil", "nap": "Siestes", "hrv": "VFC", "hr_night": "FC de nuit",
-                "resp_night": "Respiration", "hr_day": "FC du jour", "steps": "Pas", "feel": "Ressenti",
+                "resp_night": "Respiration", "hr_day": "FC du jour", "steps": "Pas",
                 "load": "Charge", "recovery": "Récupération", "stress": "Stress", "fitness": "Niveau",
                 "hrv_norm": "Normale VFC", "body_battery": "Body Battery", "sleep_score": "Score de sommeil",
                 "vo2max": "VO2 max", "rhr": "FC au repos"}
@@ -263,23 +264,11 @@ def fold_naps(start: datetime, end: datetime, asleep: float, parts, daily: float
     return start, end, round(total), joined, left
 
 
-# ── the check-in ────────────────────────────────────────────────────────────
+# ── the former self-report ──────────────────────────────────────────────────
 
-FEEL_WHY = ("legs", "fatigue", "sick", "stress")
-
-
-def feel_of(value: float | None, details: dict | None) -> dict | None:
-    """{value: 1 mieux | 2 comme d'habitude | 3 moins bien, why: [...], alcohol,
-    answered} from a `feel` row, older rows ({legs_heavy}) included. `answered`
-    is False on a row only « alcool hier » wrote (its value is not a reply)."""
-    if value is None:
-        return None
-    det = details or {}
-    why = [w for w in det.get("why") or [] if w in FEEL_WHY]
-    if det.get("legs_heavy") and "legs" not in why:
-        why.append("legs")
-    return {"value": int(value), "why": why, "alcohol": bool(det.get("alcohol")),
-            "answered": det.get("answered", True) is not False}
+# its rows' metric: kept in the database (data_export's ressenti.json, erased with the health data), never read by a
+# page or a computation (owner, 2026-10-31)
+FEEL = "feel"
 
 
 # ── storage + daily aggregation ─────────────────────────────────────────────

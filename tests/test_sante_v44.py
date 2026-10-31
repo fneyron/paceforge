@@ -71,10 +71,10 @@ async def test_a_coros_only_athlete_keeps_peaks_without_inventing_a_reference(db
 
     nights = nt.build_nights(night_rows(range(0, 20), today=today, hr=45.0), today)  # asleep at 23:00
     evening = run(today - timedelta(days=1), minutes=40, hr=150, hour=21, sid=99)  # ends 21:40
-    nt.tag_nights(nights, [evening], {}, rest=45, peak=st.hr_max(sessions, today, 171))
+    nt.tag_nights(nights, [evening], rest=45, peak=st.hr_max(sessions, today, 171))
     assert "late" in nights[today].tags
     nights = nt.build_nights(night_rows(range(0, 20), today=today, hr=45.0), today)
-    nt.tag_nights(nights, [evening], {}, rest=45, peak=190)  # the old default: 150 < 161
+    nt.tag_nights(nights, [evening], rest=45, peak=190)  # the old default: 150 < 161
     assert "late" not in nights[today].tags
 
     # read once: the next sync asks neither again

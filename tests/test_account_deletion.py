@@ -53,6 +53,9 @@ def _rows(user: User) -> list:
         HealthSample(user_id=uid, metric="hrv", kind="", start_at=NOW.replace(tzinfo=None),
                      end_at=NOW.replace(tzinfo=None), value=60, source="COROS"),
         HealthMetric(user_id=uid, date=NOW.date(), metric="sleep", value=480, source="COROS"),
+        # an answer of the former feel (removed 2026-10-31, its rows kept): erased with the rest
+        HealthMetric(user_id=uid, date=NOW.date(), metric="feel", value=2, source="PaceForge",
+                     details={"daily_checkin": {"v": 1, "feel": "ok"}}),
         NutritionProduct(user_id=uid, name="Gel"),
         OAuthAttempt(state_hash=f"{uid:064d}", user_id=uid, expires_at=NOW + timedelta(minutes=10)),
         MobileDevice(user_id=uid, platform="ios", expires_at=NOW + timedelta(days=30)),

@@ -158,6 +158,7 @@ async def test_the_export_holds_the_consent_and_explains_its_times(as_user: Asyn
     readme = files["LISEZMOI.txt"].decode()
     assert "heures sans fuseau sont en UTC" not in readme  # the samples and the nights are local times
     assert "sante_echantillons.json), à l’heure locale" in readme
+    assert "ressenti.json           tes réponses à l’ancien « Ressenti du jour », fonction retirée le 31 octobre" in readme
 
 
 @pytest.mark.skipif(bool(os.getenv("TEST_DATABASE_URL")),

@@ -1,6 +1,6 @@
 """Regressions of the app bugs and accessibility defects of the late-October 2026 site audit: Santé's help bubbles,
 words and legends, the number formats, the activity page's way back, the logged-in 404, Réglages, the race plan's
-screen-reader names, the checkin's focus and announcement, the tab navigation and the refresh toast."""
+screen-reader names, the tab navigation and the refresh toast."""
 import re
 from datetime import date, datetime, timedelta, timezone
 from html import unescape
@@ -113,26 +113,6 @@ def test_the_recovery_axis_says_100():
     p, html = _page()
     assert [line["label"] for line in p["recup"]["lines"]] == ["100", "70", "40", "0"]
     assert ">100</text>" in html.split('id="recuperation-detail"')[1]
-
-
-async def test_one_tap_keeps_its_chip_ids_and_says_the_answer(client, db_session, test_user, monkeypatch):
-    from unittest.mock import AsyncMock
-
-    from app.services import sante as sante_service
-
-    monkeypatch.setattr(sante_service, "athlete_today", AsyncMock(return_value=D))
-    client._transport.app.dependency_overrides[get_current_user] = lambda: test_user
-    headers = {"HX-Request": "true"}
-    r = await client.post("/sante/ressenti", data={"day": D.isoformat(), "feel": "good"}, headers=headers)
-    assert 'id="feel-good"' in r.text and 'id="feel-ok"' in r.text and 'id="feel-bad"' in r.text
-    assert '<p id="ressenti-live" hx-swap-oob="innerHTML">Ressenti enregistré : Bien</p>' in r.text
-    # the group is a div inside the form (a form keeps its own role)
-    assert '<form id="ressenti" class="pf-feel-form"' in r.text and 'role="group" aria-labelledby="ressenti-label"' in r.text
-    assert not re.search(r'<form[^>]*role="group"', r.text)
-    r = await client.post("/sante/ressenti", data={"day": D.isoformat(), "action": "clear"}, headers=headers)
-    assert '<p id="ressenti-live" hx-swap-oob="innerHTML">Ressenti effacé</p>' in r.text
-    _, html = _page()
-    assert '<p id="ressenti-live" class="sr-only" aria-live="polite"></p>' in html
 
 
 def test_connect_apple_health_is_one_run_of_text():
@@ -259,7 +239,6 @@ def test_desktop_chart_text_keeps_its_size():
     # from 600 px (re-audit 2026-10-31: a 768 px tablet printed its axis at 19 px, over the card titles); a phone keeps
     # its 11 units
     assert "@media (min-width: 600px) {\n    .pf-viz-svg { font-size: calc(12px / var(--pf-viz-k, 1.0909)); }" in CSS
-    assert "@media (min-width: 600px) { .pf-viz-svg text.pf-feel-row { font-size: .75em; } }" in CSS
     assert ".pf-activities .pf-activity-chart { max-width: calc(560px + 34px); }" in CSS
 
 
@@ -358,7 +337,7 @@ def test_tab_changes_move_the_focus_and_say_loading():
 
 def test_a_replaced_page_keeps_the_focus_where_it_was():
     """Re-audit 2026-10-31: a pull refresh or a tab's quiet revalidation replaced #main-content and dropped the focus to
-    <body>: it comes back on the same id in the new page (a feel chip), else on its main."""
+    <body>: it comes back on the same id in the new page (a range button), else on its main."""
     js = (ROOT / "app/static/js/refresh.js").read_text(encoding="utf-8")
     assert "hadFocus = !!active && old.contains(active), focusId = hadFocus ? active.id : ''" in js
     assert "if (!target || !next.contains(target)) target = next;" in js

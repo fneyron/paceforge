@@ -8,7 +8,7 @@ import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { api, ApiError, authorized, Credentials, ORIGIN, rotateToken, rotationDue, trusted } from './src/api';
 import { authorizationNeeded, authorize, collect, collectSleep } from './src/health';
 import { Pair } from './src/types';
-import { due, fullDue, reportText, syncIssue, SyncReport, syncHealth, Trigger } from './src/sync';
+import { consentIssue, due, fullDue, reportText, syncIssue, SyncReport, syncHealth, Trigger } from './src/sync';
 import { KEYS, KeychainLocked, secure } from './src/secure';
 import { backgroundBlock, backgroundPending, blockBackgroundSync, cancelBackgroundSync, disableBackgroundSync, enableBackgroundSync,
   onBackgroundReport, resetBackgroundState, skipSent, syncExclusively } from './src/background';
@@ -94,6 +94,9 @@ function Companion() {
   const canGoBack = useRef(false);
   // What a connection's sign-in sheet ended with, said once the status read after it lands.
   const afterRefresh = useRef('');
+  // The consent page was opened (its box, or Santé's « J'accepte », posts there): back on a reading screen, the
+  // phone's refused measurements are sent at once instead of at the next due sync.
+  const consentSeen = useRef(false);
   // History entries since the last bridge document (pairing, session or connections
   // check), counted from the navigation events: the back key walks only these. A bridge
   // document is never a place to go back to: its load is refused, or it reloads the
@@ -319,7 +322,7 @@ function Companion() {
   // `ask`: the « Synchroniser » button, which also offers a permission not granted yet (Health Connect).
   function sync(quiet = false, consent = false, forceSources = false, ask = false) {
     if (!pair || !start()) return;
-    setHealthIssue('');
+    setHealthIssue(''); consentSeen.current = false;
     syncTrigger.current = quiet && !forceSources ? 'auto' : 'manual';
     syncReturn.current = quiet ? { tab, url: screenUrl(webLocation.current), showWeb } : null;
     const nonce = random(), target = `${ORIGIN}/mobile/session?nonce=${nonce}`;
@@ -470,7 +473,7 @@ function Companion() {
           }
           if (data.status === 'cancelled' && sameScreen(event.nativeEvent.url, task.from)) {
             softNavigation.current = null; setTab(tabForUrl(task.from) || 'health');
-            setError('La sauvegarde du ressenti prend trop de temps. Réessaie dans un instant.'); return;
+            setError('La sauvegarde prend trop de temps. Réessaie dans un instant.'); return;
           }
           if (data.status !== 'ready' || !sameScreen(event.nativeEvent.url, task.target)) return;
           softNavigation.current = null; documentReady.current = true;
@@ -627,7 +630,8 @@ function Companion() {
     if (AppState.currentState !== 'active' || lock.current || softNavigation.current || !ready || offline.view !== null) return;
     flushBackgroundRefresh();
     if (tab !== 'devices' && pair && !needsReconnect && documentReady.current && refreshable(documentUrl.current) &&
-      (due(report, lastAttempt.current) || (backgroundPending() && Date.now() - lastAttempt.current >= 60000))) sync(true);
+      (due(report, lastAttempt.current) || (backgroundPending() && Date.now() - lastAttempt.current >= 60000) ||
+        (consentNeeded && consentSeen.current))) sync(true);
   });
   // Background sync follows the pairing and the account (no switch since 2026-10-17). Registered from
   // the foreground only (iOS: after the HealthKit permission sheet).
@@ -694,6 +698,12 @@ function Companion() {
     afterSave(() => { setTab('devices'); setShowWeb(false); setDetail('health'); setError(''); setStatus(''); });
   }
   function openSettings(path = '/settings') { cancelSoftNavigation(); setTab('devices'); loadFullScreen(ORIGIN + path); setShowWeb(true); }
+  /** The consent to health data is given on Santé (its card, above the rings): the Santé tab, at /sante. */
+  function openConsent() {
+    const kept = tabLocations.current.health;
+    if (!kept || new URL(kept).pathname !== '/sante') tabLocations.current.health = ORIGIN + '/sante';
+    openTab('health');
+  }
   function openSyncDetails() {
     if (healthIssue && !refreshIssue && pair && !needsReconnect) {
       cancelSoftNavigation();
@@ -713,7 +723,11 @@ function Companion() {
   const concealLoading = pageLoading && pending.current === null;
   const checkingConnectionsInline = pending.current?.kind === 'connections' && !!pending.current.pageUrl;
   const navigationLocked = leaving || offline.busy || (busy && !checkingConnectionsInline && (!inlineSync.current || pending.current !== null));
-  const visibleIssue = retryNavigation.current ? error : [healthIssue, refreshIssue].filter(Boolean).join('\n') || error;
+  // Refused without the consent to health data: a state kept with the receipt (background runs included) until a
+  // run is not refused. Santé asks for the consent itself (its card, the consent page); elsewhere one way there.
+  const consentNeeded = !!pair && !needsReconnect && report?.userId === pair.user_id && !!report.consent;
+  const consentNotice = consentNeeded && tab !== 'health' && !retryNavigation.current ? consentIssue(report) : '';
+  const visibleIssue = retryNavigation.current ? error : [consentNeeded ? consentNotice : healthIssue, refreshIssue].filter(Boolean).join('\n') || error;
   const night = dark;
   const textScaleScript = presentationScript(fontScale, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect');
   return <DeviceTheme.Provider value={dark}><SafeAreaView style={[styles.root, night && styles.darkSurface]}>
@@ -726,15 +740,15 @@ function Companion() {
       <ActivityIndicator size="small" color={night ? '#a6a6ad' : '#62736d'} /><Text style={[styles.syncText, night && styles.darkMuted]}>Actualisation…</Text>
     </View> : null}
     {webVisible && visibleIssue && !busy && !leaving && !pageRefreshing ? <Pressable style={[styles.syncNotice, night && styles.darkSurface]} accessibilityRole="button"
-      accessibilityLabel={`${visibleIssue} ${retryNavigation.current ? 'Réessayer la sauvegarde.' : 'Ouvrir les connexions.'}`}
-      onPress={() => retryNavigation.current ? afterSave(retryNavigation.current) : openSyncDetails()}><Text style={[styles.syncText, night && styles.darkMuted]}>{visibleIssue}</Text><Text style={[styles.noticeLink, night && styles.darkAccent]}>{retryNavigation.current ? 'Réessayer' : 'Détails ›'}</Text></Pressable> : null}
+      accessibilityLabel={`${visibleIssue} ${retryNavigation.current ? 'Réessayer la sauvegarde.' : consentNotice ? 'Ouvrir Santé.' : 'Ouvrir les connexions.'}`}
+      onPress={() => retryNavigation.current ? afterSave(retryNavigation.current) : consentNotice ? openConsent() : openSyncDetails()}><Text style={[styles.syncText, night && styles.darkMuted]}>{visibleIssue}</Text><Text style={[styles.noticeLink, night && styles.darkAccent]}>{retryNavigation.current ? 'Réessayer' : consentNotice ? 'Ouvrir Santé' : 'Détails ›'}</Text></Pressable> : null}
     <View style={styles.content}>
     {offline.view !== null && <OfflinePlansScreen plans={offline.library.plans} selected={offline.view} select={offline.setView}
       notice={offline.notice} remove={offline.remove} close={() => { offline.setView(null); setTab('courses'); loadScreen(tabLocations.current.courses || ORIGIN + '/simulator'); }} />}
     {tab === 'devices' && !showWeb && offline.view === null && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} report={report}
       busy={busy} ready={ready} status={status} error={error || (detail === 'health' ? '' : visibleIssue)} connections={connections} needsReconnect={needsReconnect}
       connectHealth={connectHealth} sync={() => sync(false, false, false, true)} disconnect={disconnect}
-      connect={connectProvider} act={refreshConnections} settings={openSettings} />}
+      connect={connectProvider} act={refreshConnections} settings={openSettings} openConsent={openConsent} />}
     {webVisible && tab === 'courses' && (offline.busy || offline.notice) && <View style={[styles.syncStatus, night && styles.darkSurface]} accessibilityLiveRegion="polite">
       {offline.busy && <ActivityIndicator size="small" />}<Text style={[styles.syncText, night && styles.darkMuted]}>{offline.busy ? 'Enregistrement du plan sur le téléphone…' : offline.notice}</Text>
     </View>}
@@ -820,6 +834,7 @@ function Companion() {
           }
           const path = new URL(nav.url).pathname;
           if (path === '/auth/logout') leaveSession(); else logoutSeen.current = false;
+          if (path === '/sante/consentement') consentSeen.current = true;
           if (pending.current && (path.startsWith('/auth/') || path === '/')) {
             setShowWeb(true); if (watchdog.current) clearTimeout(watchdog.current);
           }

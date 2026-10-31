@@ -4,7 +4,7 @@ The consent is the athlete's, dated and versioned on the account (users.health_c
 A new version of the text below means a new consent: bump HEALTH_CONSENT_VERSION when its meaning changes.
 Withdrawing it (Réglages) disconnects the health sources and erases the health data, never the activities or plans.
 Without it, no health data is written (allowed(): health.store_daily and store_samples, the phone's nights and
-days, the feel), while the activities keep coming.
+days), while the activities keep coming.
 """
 from datetime import datetime, timezone
 from urllib.parse import urlencode, urlsplit, parse_qsl
@@ -21,14 +21,15 @@ from app.models.user import User
 _BIKE = bool(settings.CYCLING_ENABLED)
 # 2026-10-31: the list as collected (naps, sleep phases, kcal and exercise minutes; no VO2 max), the weigh-ins' other
 # uses, what a withdrawal keeps
+# kept when the feel left the list later that day: collecting less needs no new consent
 HEALTH_CONSENT_VERSION = "2026-10-31" + ("-v" if _BIKE else "")
 
 NBSP = "\u00a0"
 TITLE = "Tes données de santé"
 # what is collected: what the syncs write (health.store_daily: COROS, Garmin; apple_nights), the phone's days
-# (mobile.Daily), the feel, the lactate tests
+# (mobile.Daily), the lactate tests
 DATA = ("sommeil et ses phases, siestes, VFC, fréquence cardiaque de nuit et du jour, respiration, pas, calories, "
-        "minutes d’exercice, stress et altitude (Garmin), poids, masse grasse, ressenti et tests de lactate")
+        "minutes d’exercice, stress et altitude (Garmin), poids, masse grasse et tests de lactate")
 # what a withdrawal keeps (settings.withdraw_health_consent erases the health data only)
 KEPT = (f"Strava, tes activités avec leur fréquence cardiaque, tes plans, le poids et la FC{NBSP}max saisis dans "
         "Réglages")
@@ -52,7 +53,7 @@ _NEXT_QUERY = {
     "/coros/connect": {"region": ("monde", "europe", "chine"), "next": ("devices", "app")},
     "/sante": {}, "/settings": {}, "/sante/lactate": {}, "/connections/coros": {}, "/connections/garmin": {},
 }
-_FRAGMENTS = ("coros", "garmin", "connections", "donnees", "nouveau-test", "ressenti")
+_FRAGMENTS = ("coros", "garmin", "connections", "donnees", "nouveau-test")
 # asked by a source connection: « Pas maintenant » goes back to the connections, never to the page that asks again
 _SOURCES = ("/coros/connect", "/connections/coros", "/connections/garmin")
 DEFAULT_NEXT = "/sante"
@@ -99,7 +100,7 @@ def consent_url(next_url: str) -> str:
 
 
 def not_now_url(next_url: str) -> str:
-    """« Pas maintenant »: back to `next` (the feel, a lactate test, Réglages), or to Réglages › Connexions when a
+    """« Pas maintenant »: back to `next` (Santé, a lactate test, Réglages), or to Réglages › Connexions when a
     source connection asked (its page would ask again; the phone app opens its own connections screen there)."""
     target = safe_next(next_url)
     parts = urlsplit(target)
@@ -138,8 +139,8 @@ async def holds_health_data(db: AsyncSession, user_id: int) -> bool:
 
 
 async def erase_health_data(db: AsyncSession, user_id: int) -> None:
-    """The health data of the account, and its phones' access: measurements (watches, phones, the self-report),
-    raw samples, phone days, lactate tests. Activities, plans and the profile stay."""
+    """The health data of the account, and its phones' access: measurements (watches, phones, the former feel's
+    answers), raw samples, phone days, lactate tests. Activities, plans and the profile stay."""
     from app.models.health import HealthMetric, HealthSample
     from app.models.lactate import LactateTest
     from app.models.mobile import MobileDaily, MobileDevice

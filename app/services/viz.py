@@ -382,7 +382,7 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
     J-7 → J+7 around a race, gets no out-of-band word nor hollow dot), prov:
     [bool per day] (optional: a « provisoire » band, 7 to 13 nights, H: its
     normal and its words say « (provisoire) »)}.
-    Readout: [date, « VFC 58 ms · FC 46 bpm », « normale 55–63 · ◇ alcool »];
+    Readout: [date, « VFC 58 ms · FC 46 bpm », « normale 55–63 · ◇ en altitude »];
     an out-of-band night is a hollow dot and the word « au-dessus » /
     « en dessous », never colour alone. A night with a context tag (`tags`)
     is drawn as a small diamond (◇). `slot_labels`: [(readout, spoken)] per
@@ -811,36 +811,6 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
                        if abs(t) >= 1000 else num(t)} for t in nice_ticks(lo, hi, 3)], "xt": day_ticks(days, xs),
             "summary": f"{name}, {n} jours : {measured} mesures" if daytime else f"{name}, {n} nuits : {measured} enregistrée{'s' if measured > 1 else ''}",
             "title": name if compact else f"{name} · {n} {'jours' if daytime else 'nuits'}", **_data(xs, [yv], days, r, a, sel=last, night=not daytime)}
-
-
-# ── V3b the one-tap feel as a track of dots (owner, 2026-10-17), on the days of the curves above it ──
-
-FEEL_ROWS = (("good", "Bien"), ("ok", "Moyen"), ("bad", "Cassé"))  # top to bottom
-
-
-def feel_track(key: str, days: list[date], feels: dict[date, str]) -> dict:
-    """A dot per answered day on its answer's row (no line: answers are not measurements), the latest selected.
-    Readout: [« Bien », "", the day]; a day without an answer « — » (never a guessed one)."""
-    n, H = len(days), 58
-    xs = slot_x(n)
-    ys = {key_: 8 + 14 * i for i, (key_, _) in enumerate(FEEL_ROWS)}
-    words = dict(FEEL_ROWS)
-    r, a = [], []
-    for d in days:
-        feel = feels.get(d)
-        if feel in words:
-            r.append([words[feel], "", d_short(d)]); a.append(f"{d_long(d)} : ressenti {words[feel].lower()}")
-        else:
-            r.append(["—", "", f"{d_short(d)} · pas de réponse"]); a.append(f"{d_long(d)} : pas de réponse")
-    answered = [i for i, d in enumerate(days) if feels.get(d) in words]
-    last = answered[-1] if answered else None
-    return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "top": 2, "bottom": H - 16,
-            "rows": [{"y": ys[k], "label": label} for k, label in FEEL_ROWS],
-            "dots": [{"i": i, "x": xs[i], "y": ys[feels[days[i]]], "tone": feels[days[i]]} for i in answered],
-            "at": {"x": xs[last], "y": ys[feels[days[last]]]} if last is not None else None,
-            "xt": day_ticks(days, xs), "answered": len(answered),
-            "summary": f"Ressenti, {n} jours : {len(answered)} réponse{'s' if len(answered) > 1 else ''}",
-            **_data(xs, [[ys.get(feels.get(d, "")) for d in days]], days, r, a, sel=last)}
 
 
 # ── V4 timeline: last night on a clock axis (a bar, or the hypnogram) ───────

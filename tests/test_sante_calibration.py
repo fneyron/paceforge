@@ -48,11 +48,11 @@ def test_the_deficit_waits_for_4_of_the_7_nights():
 def test_chronic_short_sleep_is_owed_never_learnt():
     """6 h every night (none yet this morning): 2 h owed each night, 14 h over the 7 (it never lowered a learnt
     base either); a night's
-    context (an effort, a time zone, « malade ») changes nothing: each measured night counts."""
+    context (an effort, a time zone) changes nothing: each measured night counts."""
     owed = sl.deficit(history(60, 360), D)  # 7/6 × 6 × 2 h, far over its noise floor (56 min)
     assert (owed["minutes"], owed["n"], owed["days"], owed["text"]) == (840, 6, 7, "écart estimé au repère sur 7 jours\u00a0: 14h00")
     assert owed["raw"] > owed["floor"]
-    for tag in (*nt.CONTEXT, "ill"):
+    for tag in nt.CONTEXT:
         nights = {d: replace(n, tags={tag}) for d, n in history(60, 360).items()}
         assert sl.deficit(nights, D)["minutes"] == 840, tag
 
