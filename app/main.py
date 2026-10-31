@@ -20,6 +20,7 @@ from app.log_redaction import install as mask_secrets_in_access_logs
 from app.middleware.body_limit import BodySizeLimitMiddleware
 from app.middleware.security import CrossSiteRequestMiddleware, SecurityHeadersMiddleware
 from app.sentry import init_sentry
+from app.services.auth import QUOTAS, client_ip, over_quota
 
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
@@ -284,12 +285,16 @@ def create_app() -> FastAPI:
                         f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>\n',
                         media_type="application/xml", headers={"Cache-Control": "public, max-age=86400"})
 
-    # Health check: fast for the container's and the proxy's probes. ?deep=1 (an external monitor) also asks
-    # the database and Redis: 503 with the failing flag when one does not answer within 2 s.
+    # Health check: fast for the container's and the proxy's probes (and the deploy's smoke test, which reads the
+    # build). ?deep=1 (an external monitor) also asks the database and Redis: 503 with the failing flag when one does
+    # not answer within 2 s; public, so held to 30 a minute per address (QUOTAS["health"]): 429 past them.
     @app.get("/health")
-    async def health_check(deep: bool = False):
+    async def health_check(request: Request, deep: bool = False):
         body = {"status": "ok", "app": settings.APP_NAME, "build": BUILD_ID}
         status = 200
+        if deep and await over_quota("health", ip=client_ip(request)):
+            return JSONResponse({"detail": "Trop de vérifications : réessaie dans une minute."}, status_code=429,
+                                headers={"Cache-Control": "no-store", "Retry-After": str(QUOTAS["health"][0])})
         if deep:
             body["db"], body["redis"] = await asyncio.gather(_db_answers(), _redis_answers())
             if not (body["db"] and body["redis"]):

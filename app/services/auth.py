@@ -106,6 +106,8 @@ QUOTAS = {  # action: (window in seconds, {scope: allowed in the window})
     "data_export": (60 * 60, {"user": 3}),  # the account's data downloaded (Réglages): every row read again
     # the email telling an account's owner its login cap was reached: once per window of that cap, per account
     "login_alert": (ACCOUNT_LIMITS["login"][1], {"account": 1}),
+    # /health?deep=1, public for the external monitors (one every minute or so): a database and a Redis round trip
+    "health": (60, {"ip": 30}),
 }
 RETRY_AFTER = "3600"
 

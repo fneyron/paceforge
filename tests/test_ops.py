@@ -80,6 +80,26 @@ async def test_deep_health_is_503_when_the_database_is_down(client, monkeypatch)
     assert body["status"] == "degraded" and body["db"] is False and body["redis"] is True
 
 
+async def test_deep_health_is_rate_limited_per_address_the_plain_one_never(client, engine, monkeypatch):
+    """Public for the monitors, the deep check costs a database and a Redis round trip: 30 a minute per address, then
+    429 (with Retry-After) until the minute is over; another address keeps its own; the plain /health (Coolify's
+    healthcheck, the deploy's smoke test) is never counted and keeps its full answer."""
+    from app import database
+
+    monkeypatch.setattr(database, "engine", engine)
+    _fake_redis(monkeypatch)
+    codes = [(await client.get("/health?deep=1", headers={"X-Forwarded-For": "203.0.113.5"})).status_code
+             for _ in range(31)]
+    assert codes == [200] * 30 + [429]
+    refused = await client.get("/health?deep=1", headers={"X-Forwarded-For": "203.0.113.5"})
+    assert refused.status_code == 429 and refused.headers["retry-after"] == "60"
+    assert refused.headers["cache-control"] == "no-store" and "réessaie dans une minute" in refused.json()["detail"]
+    assert (await client.get("/health?deep=1", headers={"X-Forwarded-For": "198.51.100.5"})).status_code == 200
+    for _ in range(40):
+        r = await client.get("/health", headers={"X-Forwarded-For": "203.0.113.5"})
+        assert r.status_code == 200 and r.json()["status"] == "ok" and len(r.json()["build"]) == 64
+
+
 # ── Sentry ───────────────────────────────────────────────────────────────────
 
 def test_sentry_does_nothing_without_a_dsn(monkeypatch):
