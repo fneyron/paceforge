@@ -1,46 +1,63 @@
 {
-  "started_at": "2026-10-26T09:09:07.086474+00:00",
+  "started_at": "2026-11-02T11:27:05.338168+00:00",
   "scope": "scheduled queue",
   "updated": [
-    "utmb/grcathares_2026/GRC",
-    "utmb/grcathares_2026/RB",
-    "utmb/grcathares_2026/TH",
-    "utmb/grcathares_2026/rt",
-    "utmb/tmut_2026/80",
-    "utmb/tmut_2026/tmut44",
-    "utmb/templiers_2026/Templi",
-    "utmb/templiers_2026/endur",
-    "utmb/templiers_2026/integra",
-    "utmb/saintelyon_2025/80km",
-    "utmb/kosciuszko_2025/100k"
+    "utmb/omumarathon_2026/omumar",
+    "utmb/transjeju_2026/100m",
+    "utmb/nicebyutmb_2026/100M",
+    "utmb/nicebyutmb_2026/100k",
+    "utmb/nicebyutmb_2026/50k",
+    "utmb/gongga_2026/100km",
+    "utmb/gongga_2026/40km",
+    "utmb/gongga_2026/60km",
+    "utmb/kosciuszko_2025/50k"
   ],
-  "unchanged": [],
+  "unchanged": [
+    "utmb/kosciuszko_2025/miler"
+  ],
   "excluded": [
-    "utmb/grcathares_2026/TNCC",
-    "utmb/grcathares_2026/TP",
-    "utmb/tmut_2026/tmut13",
-    "utmb/tmut_2026/tmut24",
-    "utmb/tmut_2026/tmut5",
-    "utmb/templiers_2026/MarathC",
-    "utmb/templiers_2026/MarathL",
-    "utmb/templiers_2026/Monna",
-    "utmb/templiers_2026/TemplF",
-    "utmb/templiers_2026/dourbie",
-    "utmb/templiers_2026/junior",
-    "utmb/templiers_2026/kd"
+    "utmb/templiers_2026/trouRan",
+    "utmb/templiers_2026/vo2",
+    "utmb/omumarathon_2026/poarta",
+    "utmb/omumarathon_2026/scaras",
+    "utmb/nicebyutmb_2026/20k",
+    "utmb/nicebyutmb_2026/50kleve",
+    "utmb/tar_2026/miniADU",
+    "utmb/tar_2026/ptar",
+    "utmb/chiltern50_2026/10KM"
   ],
   "errors": [
     {
-      "item": "utmb/templiers_2026/Boffi50",
+      "item": "utmb/templiers_2026/rock",
       "error": "IncompleteDownloadError",
       "detail": "Incomplete finisher timing"
+    },
+    {
+      "item": "utmb/templiers_2026/tefrand",
+      "error": "IncompleteDownloadError",
+      "detail": "Missing race metadata"
+    },
+    {
+      "item": "utmb/templiers_2026/troubad",
+      "error": "IncompleteDownloadError",
+      "detail": "Missing race metadata"
+    },
+    {
+      "item": "utmb/munstertrail_2026/mt4",
+      "error": "IncompleteDownloadError",
+      "detail": "Missing race metadata"
+    },
+    {
+      "item": "utmb/munstertrail_2026/mt69",
+      "error": "IncompleteDownloadError",
+      "detail": "Missing race metadata"
     }
   ],
-  "catalog_deferred": 702,
-  "races_deferred": 2740,
-  "finished_at": "2026-10-26T09:38:48.727902+00:00",
-  "requests": 2600,
-  "corpus_sha256": "3263f249a9546662dae44327c2804ecbb07db8b9c33c8ae7d875946e50a23929",
-  "archives": 1038,
+  "catalog_deferred": 579,
+  "races_deferred": 2738,
+  "finished_at": "2026-11-02T11:53:56.367992+00:00",
+  "requests": 2641,
+  "corpus_sha256": "ea4fee216371742eb11dacefd0c5e123640653b18e499e548939d98ebfd4167d",
+  "archives": 1045,
   "status": "partial"
 }
