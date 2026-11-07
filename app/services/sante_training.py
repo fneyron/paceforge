@@ -659,7 +659,7 @@ def theil_sen(xs: list[float], ys: list[float]) -> tuple[float, float]:
 
 
 def easy_model(sessions: list[Session], today: date, peak: float | None) -> dict | None:
-    """The one easy-pace model Activités (A3) and Santé (the « FC à allure comparable » card) share: each flat easy
+    """The one easy-pace model Activités (A3) and Santé (the « FC en footing » card in Forme) share: each flat easy
     run's HR (its steady flat splits when the athlete's runs have them: _easy_sample) moved to the athlete's
     reference pace (one Theil–Sen slope over the cool runs of 12 months; the pace is their median speed, to 5 s/km),
     and each day's normal, the median of the cool runs of the 28 days before (3 at least, H). None under 6 cool

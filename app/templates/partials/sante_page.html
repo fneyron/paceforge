@@ -131,9 +131,10 @@
 <section id="forme" class="pf-health-panel" aria-labelledby="h-forme">
     <header class="pf-health-panel-heading"><h2 id="h-forme" class="pf-health-panel-title">Forme<small>Sur plusieurs semaines</small></h2></header>
     <div class="pf-panel-body">
-        {#- no sentence under the chart (owner): which runs and the pace they are brought to, in its (i) -#}
-        <div class="pf-measurement-head"><h3 class="pf-card-h">FC à allure comparable</h3>{{ viz.help('forme', 'Chaque point est une sortie facile et plate, sa FC ramenée à ' ~ e.pace ~ '.', 'de la FC à allure comparable') }}</div>
-        {{ viz.viz_dots(e, "FC à allure comparable", "forme-footing", quiet=True) }}
+        {#- the same chart, name and headline as Activités (training_view.footing): no sentence under it (owner), how to
+            read it in its (i) -#}
+        <div class="pf-measurement-head"><h3 class="pf-card-h">FC en footing</h3><span class="pf-head-end">{% if e.trend and e.trend.status %}<span class="pf-health-status">{{ e.trend.status }}</span>{% endif %}{{ viz.help('forme', e.help, 'de la FC en footing') }}</span></div>
+        {{ viz.viz_dots(e, "FC en footing", "forme-footing", quiet=True) }}
         {{ viz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "tes valeurs habituelles")] if e.band else [])) }}
     </div>
 </section>

@@ -64,6 +64,15 @@ WEEKS = 12
 SPIKE, SPIKE_DAYS = 1.10, 30  # Frandsen 2025
 FORM_DAYS = 120
 EASY_DAYS = 182  # the dots of 6 months
+# « FC en footing » leads with a number and a word (owner, 2026-11-07: « FC à allure comparable, je comprends pas
+# trop »): the normal of the last 4 weeks (the band's centre, today included) and its change over 8 weeks (H), named
+# by Nuuttila 2022's 3–4 bpm edge: lower is « en progrès », higher « en hausse », in between « stable ».
+TREND_DAYS = 56
+TREND_BPM = st.EASY_BPM
+EASY_HELP = ("Chaque point est un footing sur du plat, sa FC ramenée à {pace} pour comparer tes sorties entre elles. "
+             "En tête : ta FC habituelle de ces 4 dernières semaines et son évolution sur 8 semaines. Si elle baisse, "
+             "ton cœur travaille moins pour la même allure : ta forme progresse. Une hausse sur plusieurs sorties "
+             "peut venir de la fatigue, de la chaleur ou d’une maladie.")
 FLAG_LINE = "Tes 2 dernières sorties faciles : cœur plus haut que d'habitude, à la même allure."
 AFTER_ULTRA = "après ultra"  # the fold's note instead of « à surveiller », 21 days after an ultra (H)
 SPIKE_TAG = "plus longue que d'habitude"  # the list row's tag of a single-run spike (v4.3)
@@ -258,6 +267,29 @@ def semaines(weeks: list[dict], first: date | None, measure: str | None, sport: 
 
 # ── A2 FC en footing ────────────────────────────────────────────────────────
 
+def easy_trend(model: dict, today: date) -> dict | None:
+    """The chart's headline: {value: « 142 bpm », word: « en progrès » | « stable » | « en hausse » | None,
+    line: « −4 bpm en 8 semaines · en progrès » (« ces 4 dernières semaines » without a normal 8 weeks earlier),
+    status: the same, short (« −4 bpm en 8 sem. · en progrès »; None without a change to say), aria}. None without
+    a normal now (under 3 cool runs in the last 4 weeks)."""
+    after = today + timedelta(days=1)  # the normal of the 4 weeks up to today, today's runs included
+    now = model["centre"](after)
+    if now is None:
+        return None
+    then = model["centre"](after - timedelta(days=TREND_DAYS))
+    value = num(now, 0, "bpm")
+    if then is None:
+        return {"value": value, "word": None, "line": "ces 4 dernières semaines", "status": None,
+                "aria": f"ta FC habituelle de ces 4 dernières semaines : {num(now)} battements par minute"}
+    delta = round(now - then)
+    word = "en progrès" if delta <= -TREND_BPM else "en hausse" if delta >= TREND_BPM else "stable"
+    change = (f"{'+' if delta > 0 else ''}{num(delta, 0, 'bpm')} en 8 semaines" if delta else "")
+    line = f"{change} · {word}" if change else "stable sur 8 semaines"
+    return {"value": value, "word": word, "line": line, "status": line.replace(" semaines", NBSP + "sem."),
+            "aria": (f"ta FC habituelle de ces 4 dernières semaines : {num(now)} battements par minute, "
+                     f"{line.replace(' · ', ', ')}")}
+
+
 def footing(sessions: list[st.Session], today: date, peak: float | None) -> dict | None:
     """The dots of 6 months against the rolling normal (sante_training.easy_model,
     the model Santé's « FC en footing » tile reads too); « à surveiller »
@@ -290,9 +322,13 @@ def footing(sessions: list[st.Session], today: date, peak: float | None) -> dict
     flagged = flagged and not ultra
     mins, secs = divmod(model["pace"], 60)
     line = FLAG_LINE if flagged else f"{FLAG_LINE[:-1]}, {AFTER_ULTRA}." if ultra else None
-    c.update(flagged=flagged, after_ultra=ultra, pace=f"{mins}:{secs:02d}/km", line=line,
+    pace = f"{mins}:{secs:02d}/km"
+    trend = easy_trend(model, today) if model else None
+    c.update(flagged=flagged, after_ultra=ultra, pace=pace, line=line, trend=trend, help=EASY_HELP.format(pace=pace),
              summary=(f"FC en footing sur 6 mois, ramenée à {mins}:{secs:02d} par kilomètre : {len(points)} sortie"
                       f"{'s' if len(points) > 1 else ''} facile{'s' if len(points) > 1 else ''}"))
+    # its number is printed once: Santé › Forme rests on it (sante.py); Activités keeps its latest run and says the
+    # word on its fold
     return c
 
 

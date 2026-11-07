@@ -104,6 +104,25 @@ def test_easy_pace_hr_is_flagged_after_two_runs_3_bpm_above():
     assert tv.footing([easy(k, 140) for k in (3, 60, 100, 150, 200, 250, 300, 350)], T, 185) is None
 
 
+def test_easy_pace_hr_leads_with_the_4_week_normal_and_its_change_over_8_weeks():
+    """« FC à allure comparable, je comprends pas trop » (owner, 2026-11-07): the chart leads with a number (the normal
+    of the last 4 weeks) and a word for its change over 8 weeks, named by the 3 bpm edge (H)."""
+    older = [easy(k, 146) for k in range(31, 200, 3)]
+    t = tv.footing(older + [easy(k, 141) for k in range(1, 30, 3)], T, 185)["trend"]
+    assert (t["value"], t["word"]) == ("141\u202fbpm", "en progrès")
+    assert t["line"] == "\u22125\u202fbpm en 8 semaines · en progrès"
+    assert t["status"] == "\u22125\u202fbpm en 8\u00a0sem. · en progrès"
+    t = tv.footing([easy(k, 140) for k in range(1, 200, 3)], T, 185)["trend"]
+    assert (t["word"], t["line"]) == ("stable", "stable sur 8 semaines")
+    t = tv.footing([easy(k, 141) for k in range(31, 200, 3)] + [easy(k, 143) for k in range(1, 30, 3)], T, 185)
+    assert t["trend"]["line"] == "+2\u202fbpm en 8 semaines · stable"  # under 3 bpm: stable, the change said
+    t = tv.footing([easy(k, 140) for k in range(31, 200, 3)] + [easy(k, 145) for k in range(1, 30, 3)], T, 185)["trend"]
+    assert t["line"] == "+5\u202fbpm en 8 semaines · en hausse" and t["word"] == "en hausse"
+    young = tv.footing([easy(k, 140) for k in range(1, 40, 3)], T, 185)  # no normal 8 weeks ago
+    assert young["trend"]["status"] is None and young["trend"]["line"] == "ces 4 dernières semaines"
+    assert "Si elle baisse, ton cœur travaille moins pour la même allure" in young["help"] and young["pace"] in young["help"]
+
+
 # ── the page ────────────────────────────────────────────────────────────────
 
 async def _add_runs(db: AsyncSession, user: User, today: date, n: int = 140):

@@ -163,10 +163,15 @@ def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: 
         import json
         c = out["fitness"]
         data = json.loads(c["data"])
-        data["r"] = [[r[1], "FC ajustée", r[0] + (" · " + r[2] if r[2] else "")] for r in data["r"]]
+        data["r"] = [[r[1], f"à {c['pace']}", r[0] + (" · " + r[2] if r[2] else "")] for r in data["r"]]
         c["data"] = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-        # The measured values are available on touch, without repeating Activités' latest readout.
-        viz.rest(c, ["", "Tes sorties comparables", ""], c["summary"])
+        # at rest the headline (training_view.easy_trend), printed here only: the number, the pace, the change; Activités
+        # keeps its latest run and says the word on its fold
+        t = c.get("trend")
+        if t:
+            viz.rest(c, [t["value"], f"à {c['pace']}", ""], f"FC en footing à {c['pace']}, {t['aria']}.")
+        else:
+            viz.rest(c, ["", "Tes sorties comparables", ""], c["summary"])
     out["explanations"] = sante_explain.build(out)
     return out
 

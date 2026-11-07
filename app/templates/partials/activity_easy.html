@@ -2,11 +2,12 @@
 {% set e = training.easy %}
 {% if e %}
 <details id="fc-facile" class="pf-train-fold"{% if e.flagged %} open{% endif %}>
-    <summary>FC en footing{% if e.flagged %} <span class="pf-train-warn">· à surveiller</span>{% elif e.after_ultra %} <span class="pf-train-soft">· après ultra</span>{% endif %}</summary>
+    <summary>FC en footing{% if e.flagged %} <span class="pf-train-warn">· à surveiller</span>{% elif e.after_ultra %} <span class="pf-train-soft">· après ultra</span>{% elif e.trend and e.trend.word %} <span class="pf-train-soft">· {{ e.trend.word }}</span>{% endif %}</summary>
     <span id="forme"></span>
+    {#- how to read it in its (i), as on Santé (no sentence under the chart: owner), on the title's line, by the chevron -#}
+    <div class="pf-fold-help">{{ vz.help('footing', e.help, 'de la FC en footing') }}</div>
     {% if e.line %}<p class="pf-train-note">{{ e.line }}</p>{% endif %}
     {{ vz.viz_dots(e, "FC en footing", "footing") }}
     {{ vz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "tes valeurs habituelles")] if e.band else [])) }}
-    <p class="pf-viz-cap">Sorties faciles et plates, FC ramenée à {{ e.pace }}.</p>
 </details>
 {% endif %}
