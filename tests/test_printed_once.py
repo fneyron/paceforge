@@ -51,13 +51,16 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     assert "trend-hr" not in sante  # the duplicate FC de nuit trend left the page
     assert "entrainement" not in sante
     assert sante["charge-accumulee"][1:] == ("en moyenne", "")
-    assert sante["forme-footing"] == ("", "Tes sorties comparables", "")
+    # « FC en footing » leads with its number and word (owner, 2026-11-07), here only: Activités keeps its latest run
+    value, pace, _ = sante["forme-footing"]
+    assert re.fullmatch(r"\d+\u202fbpm", value) and re.fullmatch(r"à \d+:\d\d/km", pace), sante["forme-footing"]
+    assert re.fullmatch(r"\w+\. \d+ \w+\.?", readouts(activites)["footing"][0])  # Activités: its latest run, dated
     # no sentence under a Santé chart (owner; re-audit 2026-10-31): what the load counts and the pace the runs are
     # brought to are said in their card's (i)
     charge, forme = (page.split(f'id="{k}"')[1].split("</section>")[0] for k in ("charge-detail", "forme"))
     assert "pf-viz-cap" not in charge and "pf-viz-cap" not in forme
     assert "Toutes les activités reçues." not in page and "de toutes les activités reçues." in charge
-    assert re.search(r'id="help-forme">Chaque point est une sortie facile et plate, sa FC ramenée à \d+:\d\d/km\.<', forme)
+    assert re.search(r'id="help-forme">Chaque point est un footing sur du plat, sa FC ramenée à \d+:\d\d/km ', forme)
     # the ring prints today's score, the Sommeil row last night's total: the Récupération card rests on its title, no
     # number (the audit, 2026-10-09: its mean decided nothing and looked like the dial's), the sleep's on its means…
     assert sante["recuperation"] == ("100\u00a0%", "en moyenne", "")

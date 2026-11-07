@@ -233,7 +233,9 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-train .pf-filters { margin-top: 10px; }
 .pf-filters > a { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
 .pf-train + .pf-filters, .pf-train + .pf-train-fold { margin-top: 8px; }
-.pf-train-fold { border-top: 1px solid rgb(var(--pf-line)); }
+.pf-train-fold { position: relative; border-top: 1px solid rgb(var(--pf-line)); }
+/* an open fold's (i) on its title's line, left of the chevron (the summary is 52 px high) */
+.pf-train-fold > .pf-fold-help { position: absolute; top: 12px; right: 28px; }
 .pf-viz-avg { stroke: rgb(var(--pf-ink)); stroke-width: 1.25; stroke-dasharray: 5 4; shape-rendering: crispEdges; }   /* the average of the complete weeks, labelled « moy. » */
 .pf-train-fold > summary { display: flex; align-items: center; gap: 6px; min-height: 52px; cursor: pointer; list-style: none; font-family: var(--pf-font-display); font-size: 1.0625rem; font-weight: 650; letter-spacing: -.01em; color: rgb(var(--pf-ink)); }
 .pf-train-fold > summary::-webkit-details-marker { display: none; }

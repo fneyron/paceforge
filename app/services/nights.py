@@ -502,7 +502,7 @@ def hr_segments(laps, splits) -> tuple:
 def km_splits(laps, splits) -> tuple:
     """((minutes, km, average HR, grade or None), …) of an activity's km splits (Strava's splits_metric: their
     elevation difference over their distance is the grade), else of its laps that carry a distance (COROS's auto
-    laps, no grade): what « FC à allure comparable » reads (sante_training.comparable); () without them."""
+    laps, no grade): what « FC en footing » reads (sante_training.comparable); () without them."""
     for rows, graded in ((splits, True), (laps, False)):
         if not isinstance(rows, list):
             continue
