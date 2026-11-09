@@ -33015,5 +33015,73 @@
       ]
     ],
     "date": "2025-06-07"
+  },
+  "dashudao_2026": {
+    "event": "大蜀道越野赛byUTMB®",
+    "races": [
+      [
+        "DSD",
+        "DSD100K",
+        "FINISHED"
+      ],
+      [
+        "csd2026",
+        "CSD70K",
+        "FINISHED"
+      ],
+      [
+        "MSD",
+        "MSD50K",
+        "FINISHED"
+      ],
+      [
+        "ESD",
+        "ESD20K",
+        "FINISHED"
+      ]
+    ],
+    "date": null
+  },
+  "epictrailcostadaurada_2026": {
+    "event": "MUNTANYES DE PRADES EPIC TRAIL COSTA DAURADA 2026",
+    "races": [
+      [
+        "50k",
+        "50K CDF",
+        "FINISHED"
+      ],
+      [
+        "25k",
+        "25K EDA",
+        "FINISHED"
+      ],
+      [
+        "13k",
+        "13K TDB",
+        "FINISHED"
+      ],
+      [
+        "7k",
+        "7K CDB",
+        "FINISHED"
+      ]
+    ],
+    "date": null
+  },
+  "hallo_2026": {
+    "event": "Halloween Walk",
+    "races": [
+      [
+        "25km",
+        "25km",
+        "FINISHED"
+      ],
+      [
+        "10km",
+        "10km ",
+        "FINISHED"
+      ]
+    ],
+    "date": null
   }
 }

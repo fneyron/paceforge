@@ -2888,6 +2888,721 @@
       "checked_at": "2026-11-02T11:53:56.365899+00:00",
       "attempted_at": "2026-11-02T11:53:56.365907+00:00",
       "status": "ok"
+    },
+    "catalog/chefchaouen_2025": {
+      "attempted_at": "2026-11-09T11:50:35.493394+00:00",
+      "checked_at": "2026-11-09T11:50:36.624215+00:00",
+      "status": "unavailable"
+    },
+    "catalog/chefchaouen_2026": {
+      "attempted_at": "2026-11-09T11:50:36.624236+00:00",
+      "checked_at": "2026-11-09T11:50:37.276804+00:00",
+      "status": "unavailable"
+    },
+    "catalog/chiaksan_2025": {
+      "attempted_at": "2026-11-09T11:50:37.276821+00:00",
+      "checked_at": "2026-11-09T11:50:37.929241+00:00",
+      "status": "unavailable"
+    },
+    "catalog/chiaksan_2026": {
+      "attempted_at": "2026-11-09T11:50:37.929261+00:00",
+      "checked_at": "2026-11-09T11:50:38.581601+00:00",
+      "status": "unavailable"
+    },
+    "catalog/chiangmai_2026": {
+      "attempted_at": "2026-11-09T11:50:38.581618+00:00",
+      "checked_at": "2026-11-09T11:50:39.234345+00:00",
+      "status": "unavailable"
+    },
+    "catalog/chongyangdenggao_2025": {
+      "attempted_at": "2026-11-09T11:50:39.234362+00:00",
+      "checked_at": "2026-11-09T11:50:39.886918+00:00",
+      "status": "unavailable"
+    },
+    "catalog/chongyangdenggao_2026": {
+      "attempted_at": "2026-11-09T11:50:39.886938+00:00",
+      "checked_at": "2026-11-09T11:50:40.540040+00:00",
+      "status": "unavailable"
+    },
+    "catalog/clujecotrail_2026": {
+      "attempted_at": "2026-11-09T11:50:40.540059+00:00",
+      "checked_at": "2026-11-09T11:50:41.192266+00:00",
+      "status": "unavailable"
+    },
+    "catalog/clujsemimaraton_2025": {
+      "attempted_at": "2026-11-09T11:50:41.192287+00:00",
+      "checked_at": "2026-11-09T11:50:41.845242+00:00",
+      "status": "unavailable"
+    },
+    "catalog/clujsemimaraton_2026": {
+      "attempted_at": "2026-11-09T11:50:41.845259+00:00",
+      "checked_at": "2026-11-09T11:50:42.498442+00:00",
+      "status": "unavailable"
+    },
+    "catalog/cmur_2025": {
+      "attempted_at": "2026-11-09T11:50:42.498462+00:00",
+      "checked_at": "2026-11-09T11:50:43.151426+00:00",
+      "status": "unavailable"
+    },
+    "catalog/cmur_2026": {
+      "attempted_at": "2026-11-09T11:50:43.151444+00:00",
+      "checked_at": "2026-11-09T11:50:43.803913+00:00",
+      "status": "unavailable"
+    },
+    "catalog/cmv_2025": {
+      "attempted_at": "2026-11-09T11:50:43.803931+00:00",
+      "checked_at": "2026-11-09T11:50:44.456247+00:00",
+      "status": "unavailable"
+    },
+    "catalog/cmv_2026": {
+      "attempted_at": "2026-11-09T11:50:44.456264+00:00",
+      "checked_at": "2026-11-09T11:50:45.108694+00:00",
+      "status": "unavailable"
+    },
+    "catalog/colas_2025": {
+      "attempted_at": "2026-11-09T11:50:45.108715+00:00",
+      "checked_at": "2026-11-09T11:50:45.760883+00:00",
+      "status": "unavailable"
+    },
+    "catalog/colas_2026": {
+      "attempted_at": "2026-11-09T11:50:45.760900+00:00",
+      "checked_at": "2026-11-09T11:50:46.413481+00:00",
+      "status": "unavailable"
+    },
+    "catalog/comblorane_2025": {
+      "attempted_at": "2026-11-09T11:50:46.413500+00:00",
+      "checked_at": "2026-11-09T11:50:47.066419+00:00",
+      "status": "unavailable"
+    },
+    "catalog/crossing_2025": {
+      "attempted_at": "2026-11-09T11:50:47.066437+00:00",
+      "checked_at": "2026-11-09T11:50:47.718706+00:00",
+      "status": "unavailable"
+    },
+    "catalog/crossing_2026": {
+      "attempted_at": "2026-11-09T11:50:47.718723+00:00",
+      "checked_at": "2026-11-09T11:50:48.370880+00:00",
+      "status": "unavailable"
+    },
+    "catalog/crossingswitzerland_2025": {
+      "attempted_at": "2026-11-09T11:50:48.370900+00:00",
+      "checked_at": "2026-11-09T11:50:49.022551+00:00",
+      "status": "unavailable"
+    },
+    "catalog/crossingswitzerland_2026": {
+      "attempted_at": "2026-11-09T11:50:49.022569+00:00",
+      "checked_at": "2026-11-09T11:50:49.674897+00:00",
+      "status": "unavailable"
+    },
+    "catalog/dalamacija_2025": {
+      "attempted_at": "2026-11-09T11:50:49.674913+00:00",
+      "checked_at": "2026-11-09T11:50:50.327404+00:00",
+      "status": "unavailable"
+    },
+    "catalog/dalamacija_2026": {
+      "attempted_at": "2026-11-09T11:50:50.327423+00:00",
+      "checked_at": "2026-11-09T11:50:50.980546+00:00",
+      "status": "unavailable"
+    },
+    "catalog/dalmacijaultratrail_2025": {
+      "attempted_at": "2026-11-09T11:50:50.980564+00:00",
+      "checked_at": "2026-11-09T11:50:51.632897+00:00",
+      "status": "unavailable"
+    },
+    "catalog/dalmacijaultratrail_2026": {
+      "attempted_at": "2026-11-09T11:50:51.632918+00:00",
+      "checked_at": "2026-11-09T11:50:52.285916+00:00",
+      "status": "unavailable"
+    },
+    "catalog/dashudao_2026": {
+      "attempted_at": "2026-11-09T11:50:52.285934+00:00",
+      "checked_at": "2026-11-09T11:50:52.938391+00:00",
+      "status": "ok"
+    },
+    "catalog/ddt2024_2025": {
+      "attempted_at": "2026-11-09T11:50:52.938408+00:00",
+      "checked_at": "2026-11-09T11:50:53.591611+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ddt2024_2026": {
+      "attempted_at": "2026-11-09T11:50:53.591629+00:00",
+      "checked_at": "2026-11-09T11:50:54.243615+00:00",
+      "status": "unavailable"
+    },
+    "catalog/defifav_2025": {
+      "attempted_at": "2026-11-09T11:50:54.243633+00:00",
+      "checked_at": "2026-11-09T11:50:54.896125+00:00",
+      "status": "unavailable"
+    },
+    "catalog/defifav_2026": {
+      "attempted_at": "2026-11-09T11:50:54.896143+00:00",
+      "checked_at": "2026-11-09T11:50:55.548191+00:00",
+      "status": "unavailable"
+    },
+    "catalog/devilsridge_2025": {
+      "attempted_at": "2026-11-09T11:50:55.548208+00:00",
+      "checked_at": "2026-11-09T11:50:56.200792+00:00",
+      "status": "unavailable"
+    },
+    "catalog/devilsridge_2026": {
+      "attempted_at": "2026-11-09T11:50:56.200814+00:00",
+      "checked_at": "2026-11-09T11:50:56.853000+00:00",
+      "status": "unavailable"
+    },
+    "catalog/dmztrail_2025": {
+      "attempted_at": "2026-11-09T11:50:56.853020+00:00",
+      "checked_at": "2026-11-09T11:50:57.505562+00:00",
+      "status": "unavailable"
+    },
+    "catalog/dmztrail_2026": {
+      "attempted_at": "2026-11-09T11:50:57.505581+00:00",
+      "checked_at": "2026-11-09T11:50:58.158060+00:00",
+      "status": "unavailable"
+    },
+    "catalog/donghaeskyrace_2026": {
+      "attempted_at": "2026-11-09T11:50:58.158078+00:00",
+      "checked_at": "2026-11-09T11:50:58.810478+00:00",
+      "status": "unavailable"
+    },
+    "catalog/duathlon_2025": {
+      "attempted_at": "2026-11-09T11:50:58.810499+00:00",
+      "checked_at": "2026-11-09T11:50:59.463119+00:00",
+      "status": "unavailable"
+    },
+    "catalog/duathlon_2026": {
+      "attempted_at": "2026-11-09T11:50:59.463142+00:00",
+      "checked_at": "2026-11-09T11:51:00.116186+00:00",
+      "status": "unavailable"
+    },
+    "catalog/easter_2026": {
+      "attempted_at": "2026-11-09T11:51:00.116207+00:00",
+      "checked_at": "2026-11-09T11:51:00.768816+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ebc_2025": {
+      "attempted_at": "2026-11-09T11:51:00.768833+00:00",
+      "checked_at": "2026-11-09T11:51:01.421476+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ebc_2026": {
+      "attempted_at": "2026-11-09T11:51:01.421495+00:00",
+      "checked_at": "2026-11-09T11:51:02.074172+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ecchile_2025": {
+      "attempted_at": "2026-11-09T11:51:02.074189+00:00",
+      "checked_at": "2026-11-09T11:51:02.727258+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ecchile_2026": {
+      "attempted_at": "2026-11-09T11:51:02.727277+00:00",
+      "checked_at": "2026-11-09T11:51:03.379812+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ecoflo_2025": {
+      "attempted_at": "2026-11-09T11:51:03.379829+00:00",
+      "checked_at": "2026-11-09T11:51:04.032591+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ecoflo_2026": {
+      "attempted_at": "2026-11-09T11:51:04.032610+00:00",
+      "checked_at": "2026-11-09T11:51:04.685253+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ecoparc_2026": {
+      "attempted_at": "2026-11-09T11:51:04.685271+00:00",
+      "checked_at": "2026-11-09T11:51:05.339429+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ecoparccatalan_2026": {
+      "attempted_at": "2026-11-09T11:51:05.339445+00:00",
+      "checked_at": "2026-11-09T11:51:05.991612+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ecotrailautomne_2025": {
+      "attempted_at": "2026-11-09T11:51:05.991629+00:00",
+      "checked_at": "2026-11-09T11:51:06.650253+00:00",
+      "status": "unavailable"
+    },
+    "catalog/edelweiss-megeveski_2026": {
+      "attempted_at": "2026-11-09T11:51:06.650272+00:00",
+      "checked_at": "2026-11-09T11:51:07.301574+00:00",
+      "status": "unavailable"
+    },
+    "catalog/edelweiss_2025": {
+      "attempted_at": "2026-11-09T11:51:07.301594+00:00",
+      "checked_at": "2026-11-09T11:51:07.954408+00:00",
+      "status": "unavailable"
+    },
+    "catalog/edelweiss_2026": {
+      "attempted_at": "2026-11-09T11:51:07.954426+00:00",
+      "checked_at": "2026-11-09T11:51:08.606650+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ensemble_2025": {
+      "attempted_at": "2026-11-09T11:51:08.606668+00:00",
+      "checked_at": "2026-11-09T11:51:09.259041+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ensemble_2026": {
+      "attempted_at": "2026-11-09T11:51:09.259058+00:00",
+      "checked_at": "2026-11-09T11:51:09.910986+00:00",
+      "status": "unavailable"
+    },
+    "catalog/envoleenordique_2025": {
+      "attempted_at": "2026-11-09T11:51:09.911004+00:00",
+      "checked_at": "2026-11-09T11:51:10.564189+00:00",
+      "status": "unavailable"
+    },
+    "catalog/envoleenordique_2026": {
+      "attempted_at": "2026-11-09T11:51:10.564204+00:00",
+      "checked_at": "2026-11-09T11:51:11.216504+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ephesusultra_2025": {
+      "attempted_at": "2026-11-09T11:51:11.216522+00:00",
+      "checked_at": "2026-11-09T11:51:11.869774+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ephesusultra_2026": {
+      "attempted_at": "2026-11-09T11:51:11.869792+00:00",
+      "checked_at": "2026-11-09T11:51:12.522832+00:00",
+      "status": "unavailable"
+    },
+    "catalog/epictrailcostadaurada_2026": {
+      "attempted_at": "2026-11-09T11:51:12.522848+00:00",
+      "checked_at": "2026-11-09T11:51:13.206060+00:00",
+      "status": "ok"
+    },
+    "catalog/ertc-breizhchrono_2025": {
+      "attempted_at": "2026-11-09T11:51:13.206077+00:00",
+      "checked_at": "2026-11-09T11:51:13.858240+00:00",
+      "status": "unavailable"
+    },
+    "catalog/ertc-breizhchrono_2026": {
+      "attempted_at": "2026-11-09T11:51:13.858256+00:00",
+      "checked_at": "2026-11-09T11:51:14.509478+00:00",
+      "status": "unavailable"
+    },
+    "catalog/eventtest_2025": {
+      "attempted_at": "2026-11-09T11:51:14.509495+00:00",
+      "checked_at": "2026-11-09T11:51:15.162378+00:00",
+      "status": "unavailable"
+    },
+    "catalog/evergreen_2025": {
+      "attempted_at": "2026-11-09T11:51:15.162398+00:00",
+      "checked_at": "2026-11-09T11:51:15.814651+00:00",
+      "status": "unavailable"
+    },
+    "catalog/evergreen_2026": {
+      "attempted_at": "2026-11-09T11:51:15.814671+00:00",
+      "checked_at": "2026-11-09T11:51:16.467346+00:00",
+      "status": "unavailable"
+    },
+    "catalog/feleacuhills_2025": {
+      "attempted_at": "2026-11-09T11:51:16.467362+00:00",
+      "checked_at": "2026-11-09T11:51:17.121415+00:00",
+      "status": "unavailable"
+    },
+    "catalog/feleacuhills_2026": {
+      "attempted_at": "2026-11-09T11:51:17.121432+00:00",
+      "checked_at": "2026-11-09T11:51:17.774162+00:00",
+      "status": "unavailable"
+    },
+    "catalog/fiz_2025": {
+      "attempted_at": "2026-11-09T11:51:17.774195+00:00",
+      "checked_at": "2026-11-09T11:51:18.426301+00:00",
+      "status": "unavailable"
+    },
+    "catalog/fiz_2026": {
+      "attempted_at": "2026-11-09T11:51:18.426321+00:00",
+      "checked_at": "2026-11-09T11:51:19.078600+00:00",
+      "status": "unavailable"
+    },
+    "catalog/flowdesgabarriers_2025": {
+      "attempted_at": "2026-11-09T11:51:19.078620+00:00",
+      "checked_at": "2026-11-09T11:51:19.731444+00:00",
+      "status": "unavailable"
+    },
+    "catalog/flowdesgabarriers_2026": {
+      "attempted_at": "2026-11-09T11:51:19.731462+00:00",
+      "checked_at": "2026-11-09T11:51:20.384378+00:00",
+      "status": "unavailable"
+    },
+    "catalog/fonm_2025": {
+      "attempted_at": "2026-11-09T11:51:20.384395+00:00",
+      "checked_at": "2026-11-09T11:51:21.036681+00:00",
+      "status": "unavailable"
+    },
+    "catalog/fonm_2026": {
+      "attempted_at": "2026-11-09T11:51:21.036699+00:00",
+      "checked_at": "2026-11-09T11:51:21.688811+00:00",
+      "status": "unavailable"
+    },
+    "catalog/forestforce_2025": {
+      "attempted_at": "2026-11-09T11:51:21.688831+00:00",
+      "checked_at": "2026-11-09T11:51:22.341137+00:00",
+      "status": "unavailable"
+    },
+    "catalog/forestforce_2026": {
+      "attempted_at": "2026-11-09T11:51:22.341158+00:00",
+      "checked_at": "2026-11-09T11:51:22.993560+00:00",
+      "status": "unavailable"
+    },
+    "catalog/fouleesimmobilier_2026": {
+      "attempted_at": "2026-11-09T11:51:22.993578+00:00",
+      "checked_at": "2026-11-09T11:51:23.645828+00:00",
+      "status": "unavailable"
+    },
+    "catalog/frenchman-breizhchrono_2025": {
+      "attempted_at": "2026-11-09T11:51:23.645845+00:00",
+      "checked_at": "2026-11-09T11:51:24.297388+00:00",
+      "status": "unavailable"
+    },
+    "catalog/frenchman-breizhchrono_2026": {
+      "attempted_at": "2026-11-09T11:51:24.297409+00:00",
+      "checked_at": "2026-11-09T11:51:24.949035+00:00",
+      "status": "unavailable"
+    },
+    "catalog/fujitsu_2025": {
+      "attempted_at": "2026-11-09T11:51:24.949056+00:00",
+      "checked_at": "2026-11-09T11:51:25.601792+00:00",
+      "status": "unavailable"
+    },
+    "catalog/fujitsu_2026": {
+      "attempted_at": "2026-11-09T11:51:25.601809+00:00",
+      "checked_at": "2026-11-09T11:51:26.254496+00:00",
+      "status": "unavailable"
+    },
+    "catalog/fullmoontrail_2025": {
+      "attempted_at": "2026-11-09T11:51:26.254515+00:00",
+      "checked_at": "2026-11-09T11:51:26.907193+00:00",
+      "status": "unavailable"
+    },
+    "catalog/fullmoontrail_2026": {
+      "attempted_at": "2026-11-09T11:51:26.907210+00:00",
+      "checked_at": "2026-11-09T11:51:27.559015+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gaoligongbyutmb_2025": {
+      "attempted_at": "2026-11-09T11:51:27.559032+00:00",
+      "checked_at": "2026-11-09T11:51:28.211838+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gaoligongbyutmb_2026": {
+      "attempted_at": "2026-11-09T11:51:28.211859+00:00",
+      "checked_at": "2026-11-09T11:51:28.864229+00:00",
+      "status": "unavailable"
+    },
+    "catalog/garminepictrail_2025": {
+      "attempted_at": "2026-11-09T11:51:28.864249+00:00",
+      "checked_at": "2026-11-09T11:51:29.516605+00:00",
+      "status": "unavailable"
+    },
+    "catalog/garminepictrail_2026": {
+      "attempted_at": "2026-11-09T11:51:29.516622+00:00",
+      "checked_at": "2026-11-09T11:51:30.169132+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gauja_2025": {
+      "attempted_at": "2026-11-09T11:51:30.169157+00:00",
+      "checked_at": "2026-11-09T11:51:30.821366+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gecekosulari_2026": {
+      "attempted_at": "2026-11-09T11:51:30.821383+00:00",
+      "checked_at": "2026-11-09T11:51:31.473050+00:00",
+      "status": "unavailable"
+    },
+    "catalog/geoje100k_2025": {
+      "attempted_at": "2026-11-09T11:51:31.473067+00:00",
+      "checked_at": "2026-11-09T11:51:32.126375+00:00",
+      "status": "unavailable"
+    },
+    "catalog/geoje100k_2026": {
+      "attempted_at": "2026-11-09T11:51:32.126394+00:00",
+      "checked_at": "2026-11-09T11:51:32.779399+00:00",
+      "status": "unavailable"
+    },
+    "catalog/georgiadeathrace_2025": {
+      "attempted_at": "2026-11-09T11:51:32.779418+00:00",
+      "checked_at": "2026-11-09T11:51:33.432007+00:00",
+      "status": "unavailable"
+    },
+    "catalog/georgiadeathrace_2026": {
+      "attempted_at": "2026-11-09T11:51:33.432027+00:00",
+      "checked_at": "2026-11-09T11:51:34.084497+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gh50m_2025": {
+      "attempted_at": "2026-11-09T11:51:34.084516+00:00",
+      "checked_at": "2026-11-09T11:51:34.736470+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gh50m_2026": {
+      "attempted_at": "2026-11-09T11:51:34.736489+00:00",
+      "checked_at": "2026-11-09T11:51:35.390231+00:00",
+      "status": "unavailable"
+    },
+    "catalog/goat_2025": {
+      "attempted_at": "2026-11-09T11:51:35.390250+00:00",
+      "checked_at": "2026-11-09T11:51:36.042827+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gongga_2025": {
+      "attempted_at": "2026-11-09T11:51:36.042847+00:00",
+      "checked_at": "2026-11-09T11:51:36.702270+00:00",
+      "status": "unavailable"
+    },
+    "catalog/grandraid-reunion-oxybol_2025": {
+      "attempted_at": "2026-11-09T11:51:36.702291+00:00",
+      "checked_at": "2026-11-09T11:51:37.353592+00:00",
+      "status": "unavailable"
+    },
+    "catalog/grandraid-reunion-oxybol_2026": {
+      "attempted_at": "2026-11-09T11:51:37.353609+00:00",
+      "checked_at": "2026-11-09T11:51:38.005614+00:00",
+      "status": "unavailable"
+    },
+    "catalog/grandsenonais_2025": {
+      "attempted_at": "2026-11-09T11:51:38.005635+00:00",
+      "checked_at": "2026-11-09T11:51:38.657600+00:00",
+      "status": "unavailable"
+    },
+    "catalog/grandsenonais_2026": {
+      "attempted_at": "2026-11-09T11:51:38.657618+00:00",
+      "checked_at": "2026-11-09T11:51:39.309648+00:00",
+      "status": "unavailable"
+    },
+    "catalog/grandunionchallenge_2025": {
+      "attempted_at": "2026-11-09T11:51:39.309667+00:00",
+      "checked_at": "2026-11-09T11:51:39.961866+00:00",
+      "status": "unavailable"
+    },
+    "catalog/grandunionchallenge_2026": {
+      "attempted_at": "2026-11-09T11:51:39.961888+00:00",
+      "checked_at": "2026-11-09T11:51:40.613823+00:00",
+      "status": "unavailable"
+    },
+    "catalog/grandwutai_2025": {
+      "attempted_at": "2026-11-09T11:51:40.613838+00:00",
+      "checked_at": "2026-11-09T11:51:41.265987+00:00",
+      "status": "unavailable"
+    },
+    "catalog/grandwutai_2026": {
+      "attempted_at": "2026-11-09T11:51:41.266005+00:00",
+      "checked_at": "2026-11-09T11:51:41.918298+00:00",
+      "status": "unavailable"
+    },
+    "catalog/granvueltavalledelgenal_2025": {
+      "attempted_at": "2026-11-09T11:51:41.918317+00:00",
+      "checked_at": "2026-11-09T11:51:42.570695+00:00",
+      "status": "unavailable"
+    },
+    "catalog/granvueltavalledelgenal_2026": {
+      "attempted_at": "2026-11-09T11:51:42.570713+00:00",
+      "checked_at": "2026-11-09T11:51:43.222906+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gravona_2025": {
+      "attempted_at": "2026-11-09T11:51:43.222935+00:00",
+      "checked_at": "2026-11-09T11:51:43.874599+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gravona_2026": {
+      "attempted_at": "2026-11-09T11:51:43.874614+00:00",
+      "checked_at": "2026-11-09T11:51:44.526952+00:00",
+      "status": "unavailable"
+    },
+    "catalog/grk3vm_2025": {
+      "attempted_at": "2026-11-09T11:51:44.526971+00:00",
+      "checked_at": "2026-11-09T11:51:45.178363+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gtauvergne_2025": {
+      "attempted_at": "2026-11-09T11:51:45.178380+00:00",
+      "checked_at": "2026-11-09T11:51:45.830413+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gtj200_2025": {
+      "attempted_at": "2026-11-09T11:51:45.830430+00:00",
+      "checked_at": "2026-11-09T11:51:46.483388+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gtj200_2026": {
+      "attempted_at": "2026-11-09T11:51:46.483406+00:00",
+      "checked_at": "2026-11-09T11:51:47.136511+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gtsj_2025": {
+      "attempted_at": "2026-11-09T11:51:47.136531+00:00",
+      "checked_at": "2026-11-09T11:51:47.788590+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gtsj_2026": {
+      "attempted_at": "2026-11-09T11:51:47.788611+00:00",
+      "checked_at": "2026-11-09T11:51:48.441365+00:00",
+      "status": "unavailable"
+    },
+    "catalog/guanajuato25_2026": {
+      "attempted_at": "2026-11-09T11:51:48.441385+00:00",
+      "checked_at": "2026-11-09T11:51:49.093428+00:00",
+      "status": "unavailable"
+    },
+    "catalog/guanajuato_2025": {
+      "attempted_at": "2026-11-09T11:51:49.093448+00:00",
+      "checked_at": "2026-11-09T11:51:49.745887+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gudaoyueye_2025": {
+      "attempted_at": "2026-11-09T11:51:49.745905+00:00",
+      "checked_at": "2026-11-09T11:51:50.397864+00:00",
+      "status": "unavailable"
+    },
+    "catalog/gudaoyueye_2026": {
+      "attempted_at": "2026-11-09T11:51:50.397883+00:00",
+      "checked_at": "2026-11-09T11:51:51.050153+00:00",
+      "status": "unavailable"
+    },
+    "catalog/hallo_2026": {
+      "attempted_at": "2026-11-09T11:51:51.050172+00:00",
+      "checked_at": "2026-11-09T11:51:51.728251+00:00",
+      "status": "ok"
+    },
+    "catalog/hardcore100_2025": {
+      "attempted_at": "2026-11-09T11:51:51.728269+00:00",
+      "checked_at": "2026-11-09T11:51:52.380677+00:00",
+      "status": "unavailable"
+    },
+    "catalog/hardcore100_2026": {
+      "attempted_at": "2026-11-09T11:51:52.380696+00:00",
+      "checked_at": "2026-11-09T11:51:53.032768+00:00",
+      "status": "unavailable"
+    },
+    "catalog/hariaextreme_2025": {
+      "attempted_at": "2026-11-09T11:51:53.032789+00:00",
+      "checked_at": "2026-11-09T11:51:53.685150+00:00",
+      "status": "unavailable"
+    },
+    "catalog/hariaextreme_2026": {
+      "attempted_at": "2026-11-09T11:51:53.685171+00:00",
+      "checked_at": "2026-11-09T11:51:54.337892+00:00",
+      "status": "unavailable"
+    },
+    "utmb/chiltern50_2026/25KM": {
+      "checked_at": "2026-11-09T11:51:56.768907+00:00",
+      "attempted_at": "2026-11-09T11:51:56.768923+00:00",
+      "status": "excluded"
+    },
+    "utmb/chiltern50_2026/50KM": {
+      "attempted_at": "2026-11-09T11:51:56.772110+00:00",
+      "status": "failed"
+    },
+    "utmb/swisshighlandtrail_2026/high15": {
+      "checked_at": "2026-11-09T11:51:58.108482+00:00",
+      "attempted_at": "2026-11-09T11:51:58.108500+00:00",
+      "status": "excluded"
+    },
+    "utmb/swisshighlandtrail_2026/high25": {
+      "attempted_at": "2026-11-09T11:51:58.111693+00:00",
+      "status": "failed"
+    },
+    "utmb/swisshighlandtrail_2026/high42": {
+      "attempted_at": "2026-11-09T11:51:58.767023+00:00",
+      "status": "failed"
+    },
+    "utmb/swisshighlandtrail_2026/high60": {
+      "attempted_at": "2026-11-09T11:51:59.423164+00:00",
+      "status": "failed"
+    },
+    "utmb/swisshighlandtrail_2026/highfam": {
+      "attempted_at": "2026-11-09T11:52:00.732404+00:00",
+      "status": "failed"
+    },
+    "utmb/grindstone_2026/100K": {
+      "checked_at": "2026-11-09T11:53:47.140430+00:00",
+      "attempted_at": "2026-11-09T11:53:47.140438+00:00",
+      "status": "ok"
+    },
+    "utmb/grindstone_2026/100M": {
+      "checked_at": "2026-11-09T11:55:10.782120+00:00",
+      "attempted_at": "2026-11-09T11:55:10.782127+00:00",
+      "status": "ok"
+    },
+    "utmb/grindstone_2026/21K": {
+      "checked_at": "2026-11-09T11:55:11.459912+00:00",
+      "attempted_at": "2026-11-09T11:55:11.459926+00:00",
+      "status": "excluded"
+    },
+    "utmb/grindstone_2026/50K": {
+      "checked_at": "2026-11-09T11:57:26.431982+00:00",
+      "attempted_at": "2026-11-09T11:57:26.431989+00:00",
+      "status": "ok"
+    },
+    "utmb/jangsutrailrace_2026/jtr100": {
+      "checked_at": "2026-11-09T11:58:58.578817+00:00",
+      "attempted_at": "2026-11-09T11:58:58.578825+00:00",
+      "status": "ok"
+    },
+    "utmb/jangsutrailrace_2026/jtr20": {
+      "checked_at": "2026-11-09T11:58:59.240477+00:00",
+      "attempted_at": "2026-11-09T11:58:59.240491+00:00",
+      "status": "excluded"
+    },
+    "utmb/jangsutrailrace_2026/jtr38": {
+      "checked_at": "2026-11-09T11:58:59.899801+00:00",
+      "attempted_at": "2026-11-09T11:58:59.899815+00:00",
+      "status": "excluded"
+    },
+    "utmb/jangsutrailrace_2026/jtr40j": {
+      "checked_at": "2026-11-09T12:01:15.188260+00:00",
+      "attempted_at": "2026-11-09T12:01:15.188267+00:00",
+      "status": "ok"
+    },
+    "utmb/jangsutrailrace_2026/jtr5": {
+      "checked_at": "2026-11-09T12:01:15.848684+00:00",
+      "attempted_at": "2026-11-09T12:01:15.848698+00:00",
+      "status": "excluded"
+    },
+    "utmb/jangsutrailrace_2026/jtrmil": {
+      "checked_at": "2026-11-09T12:02:06.529604+00:00",
+      "attempted_at": "2026-11-09T12:02:06.529612+00:00",
+      "status": "ok"
+    },
+    "utmb/julianalps_2026/JAT10K": {
+      "checked_at": "2026-11-09T12:02:07.189367+00:00",
+      "attempted_at": "2026-11-09T12:02:07.189382+00:00",
+      "status": "excluded"
+    },
+    "utmb/julianalps_2026/JAT120K": {
+      "checked_at": "2026-11-09T12:04:23.988910+00:00",
+      "attempted_at": "2026-11-09T12:04:23.988919+00:00",
+      "status": "ok"
+    },
+    "utmb/julianalps_2026/JAT15K": {
+      "checked_at": "2026-11-09T12:04:24.647501+00:00",
+      "attempted_at": "2026-11-09T12:04:24.647516+00:00",
+      "status": "excluded"
+    },
+    "utmb/julianalps_2026/JAT25K": {
+      "checked_at": "2026-11-09T12:04:25.303280+00:00",
+      "attempted_at": "2026-11-09T12:04:25.303295+00:00",
+      "status": "excluded"
+    },
+    "utmb/julianalps_2026/JAT50K": {
+      "checked_at": "2026-11-09T12:06:41.967723+00:00",
+      "attempted_at": "2026-11-09T12:06:41.967730+00:00",
+      "status": "ok"
+    },
+    "utmb/translantau_2025/TL50": {
+      "checked_at": "2026-11-09T12:12:17.120668+00:00",
+      "attempted_at": "2026-11-09T12:12:17.120683+00:00",
+      "status": "ok"
+    },
+    "utmb/translantau_2025/TL80": {
+      "checked_at": "2026-11-09T12:14:33.319679+00:00",
+      "attempted_at": "2026-11-09T12:14:33.319689+00:00",
+      "status": "ok"
     }
   }
 }

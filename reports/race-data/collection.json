@@ -1,63 +1,62 @@
 {
-  "started_at": "2026-11-02T11:27:05.338168+00:00",
+  "started_at": "2026-11-09T11:50:35.454965+00:00",
   "scope": "scheduled queue",
   "updated": [
-    "utmb/omumarathon_2026/omumar",
-    "utmb/transjeju_2026/100m",
-    "utmb/nicebyutmb_2026/100M",
-    "utmb/nicebyutmb_2026/100k",
-    "utmb/nicebyutmb_2026/50k",
-    "utmb/gongga_2026/100km",
-    "utmb/gongga_2026/40km",
-    "utmb/gongga_2026/60km",
-    "utmb/kosciuszko_2025/50k"
+    "utmb/grindstone_2026/100K",
+    "utmb/grindstone_2026/100M",
+    "utmb/grindstone_2026/50K",
+    "utmb/jangsutrailrace_2026/jtr100",
+    "utmb/jangsutrailrace_2026/jtr40j",
+    "utmb/jangsutrailrace_2026/jtrmil",
+    "utmb/julianalps_2026/JAT120K",
+    "utmb/julianalps_2026/JAT50K",
+    "utmb/translantau_2025/TL50",
+    "utmb/translantau_2025/TL80"
   ],
-  "unchanged": [
-    "utmb/kosciuszko_2025/miler"
-  ],
+  "unchanged": [],
   "excluded": [
-    "utmb/templiers_2026/trouRan",
-    "utmb/templiers_2026/vo2",
-    "utmb/omumarathon_2026/poarta",
-    "utmb/omumarathon_2026/scaras",
-    "utmb/nicebyutmb_2026/20k",
-    "utmb/nicebyutmb_2026/50kleve",
-    "utmb/tar_2026/miniADU",
-    "utmb/tar_2026/ptar",
-    "utmb/chiltern50_2026/10KM"
+    "utmb/chiltern50_2026/25KM",
+    "utmb/swisshighlandtrail_2026/high15",
+    "utmb/grindstone_2026/21K",
+    "utmb/jangsutrailrace_2026/jtr20",
+    "utmb/jangsutrailrace_2026/jtr38",
+    "utmb/jangsutrailrace_2026/jtr5",
+    "utmb/julianalps_2026/JAT10K",
+    "utmb/julianalps_2026/JAT15K",
+    "utmb/julianalps_2026/JAT25K"
   ],
   "errors": [
     {
-      "item": "utmb/templiers_2026/rock",
-      "error": "IncompleteDownloadError",
-      "detail": "Incomplete finisher timing"
-    },
-    {
-      "item": "utmb/templiers_2026/tefrand",
+      "item": "utmb/chiltern50_2026/50KM",
       "error": "IncompleteDownloadError",
       "detail": "Missing race metadata"
     },
     {
-      "item": "utmb/templiers_2026/troubad",
+      "item": "utmb/swisshighlandtrail_2026/high25",
       "error": "IncompleteDownloadError",
       "detail": "Missing race metadata"
     },
     {
-      "item": "utmb/munstertrail_2026/mt4",
+      "item": "utmb/swisshighlandtrail_2026/high42",
       "error": "IncompleteDownloadError",
       "detail": "Missing race metadata"
     },
     {
-      "item": "utmb/munstertrail_2026/mt69",
+      "item": "utmb/swisshighlandtrail_2026/high60",
+      "error": "IncompleteDownloadError",
+      "detail": "Missing final ranking"
+    },
+    {
+      "item": "utmb/swisshighlandtrail_2026/highfam",
       "error": "IncompleteDownloadError",
       "detail": "Missing race metadata"
     }
   ],
-  "catalog_deferred": 579,
-  "races_deferred": 2738,
-  "finished_at": "2026-11-02T11:53:56.367992+00:00",
-  "requests": 2641,
-  "corpus_sha256": "ea4fee216371742eb11dacefd0c5e123640653b18e499e548939d98ebfd4167d",
-  "archives": 1045,
+  "catalog_deferred": 491,
+  "races_deferred": 2746,
+  "finished_at": "2026-11-09T12:14:33.322604+00:00",
+  "requests": 2149,
+  "corpus_sha256": "e3b6dac9fb82392ee9c5e6e8e507b012c64122bdd97127e75b1d03c85d33ec34",
+  "archives": 1053,
   "status": "partial"
 }
