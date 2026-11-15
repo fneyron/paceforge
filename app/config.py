@@ -59,9 +59,45 @@ class Settings(BaseSettings):
     # Error reporting (Sentry) when set; nothing is loaded or sent while empty (app/sentry.py)
     SENTRY_DSN: str = ""
 
+    # Official connectors (app/connectors, docs/official-connectors.md). Each one is active only when it is enabled
+    # AND its client id and secret are set: until then its routes answer 404, nothing is scheduled, no page shows it
+    # and nothing calls the provider. The URLs default to what public sources say; *_URLS overrides any single
+    # endpoint, as a JSON object ({"token": "https://…"}), once the provider's own documentation is read.
+    # COROS Partner API (support.coros.com « Partner API Access »)
+    COROS_PARTNER_ENABLED: bool = False
+    COROS_PARTNER_CLIENT_ID: str = ""
+    COROS_PARTNER_CLIENT_SECRET: str = ""
+    COROS_PARTNER_BASE_URL: str = "https://open.coros.com"
+    COROS_PARTNER_URLS: str = ""
+    # the hosts a workout's FIT file may be downloaded from (comma-separated; a host or any of its subdomains)
+    COROS_PARTNER_FIT_HOSTS: str = "coros.com"
+    # Garmin Connect Developer Program (OAuth 2.0 PKCE, push delivery)
+    GARMIN_CONNECT_ENABLED: bool = False
+    GARMIN_CONNECT_CLIENT_ID: str = ""
+    GARMIN_CONNECT_CLIENT_SECRET: str = ""
+    GARMIN_CONNECT_AUTHORIZE_URL: str = "https://connect.garmin.com/oauth2Confirm"
+    GARMIN_CONNECT_TOKEN_URL: str = "https://diauth.garmin.com/di-oauth2-service/oauth/token"
+    GARMIN_CONNECT_API_BASE_URL: str = "https://apis.garmin.com"
+    GARMIN_CONNECT_URLS: str = ""
+    # a push must carry the garmin-client-id header with this app's client id (as public integrations read it)
+    GARMIN_CONNECT_REQUIRE_CLIENT_HEADER: bool = True
+    # while set (PaceForge account ids, comma-separated), only those accounts see and can start the official
+    # connections: a first try in production on the owner's own account. Empty: every account.
+    OFFICIAL_CONNECTORS_PILOT_USERS: str = ""
+
     @property
     def strava_shared_ready(self) -> bool:
         return bool(self.STRAVA_SHARED_APP_ENABLED and self.STRAVA_CLIENT_ID and self.STRAVA_CLIENT_SECRET)
+
+    @property
+    def coros_partner_ready(self) -> bool:
+        return bool(self.COROS_PARTNER_ENABLED and self.COROS_PARTNER_CLIENT_ID.strip()
+                    and self.COROS_PARTNER_CLIENT_SECRET.strip())
+
+    @property
+    def garmin_connect_ready(self) -> bool:
+        return bool(self.GARMIN_CONNECT_ENABLED and self.GARMIN_CONNECT_CLIENT_ID.strip()
+                    and self.GARMIN_CONNECT_CLIENT_SECRET.strip())
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
