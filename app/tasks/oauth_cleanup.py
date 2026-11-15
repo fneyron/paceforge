@@ -3,6 +3,8 @@
 - Expired Strava link attempts (oauth_attempts, 10 minutes) go, even when
   nobody starts another one: an attempt begun with app keys typed in the setup
   wizard holds them, encrypted, until it is purged.
+- API keys revoked more than 30 days ago go (api_tokens.KEPT_REVOKED: until
+  then a call with one is told it was revoked).
 - Strava tokens still stored in clear (written before they were encrypted)
   are written again, encrypted: a refresh token Strava hands back unchanged is
   never rewritten by the refresh itself. Done once; nothing to do afterwards.
@@ -21,10 +23,12 @@ def purge_oauth_attempts() -> int:
 
 async def _run() -> int:
     from app.database import get_task_session
+    from app.services.api_tokens import purge_revoked
     from app.services.oauth_attempts import purge_expired
 
     async with get_task_session() as db:
         purged = await purge_expired(db)
+        await purge_revoked(db)
         await db.commit()
         await encrypt_clear_strava_tokens(db)
     return purged

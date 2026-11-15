@@ -9,15 +9,18 @@ each line, the request line kept: method, path, status. The same masking serves 
 import logging
 import re
 
-# a query parameter whose name ends with one of these words (token, verify_token, access_token, client_secret…),
-# its value up to the next parameter, fragment, space or quote
-SECRET_QUERY = re.compile(r"(?i)([?&;][\w.\-]*?(?:token|ticket|code|state|secret|password)=)[^&;#\s\"']*")
+# a query parameter whose name ends with one of these words (token, verify_token, access_token, client_secret,
+# api_key…), its value up to the next parameter, fragment, space or quote
+SECRET_QUERY = re.compile(r"(?i)([?&;][\w.\-]*?(?:token|ticket|code|state|secret|password|key)=)[^&;#\s\"']*")
+# a personal API key (api_tokens.SHAPE) wherever it is written: the API takes it in its Authorization header only,
+# but one pasted in a URL or an error message is masked all the same
+API_KEY = re.compile(r"\bpf_[A-Za-z0-9_-]{20,}")
 MASK = "***"
 
 
 def redact(text: str) -> str:
-    """`text` with the values of the secret-bearing query parameters masked."""
-    return SECRET_QUERY.sub(lambda m: m.group(1) + MASK, text)
+    """`text` with the values of the secret-bearing query parameters, and any API key, masked."""
+    return API_KEY.sub("pf_" + MASK, SECRET_QUERY.sub(lambda m: m.group(1) + MASK, text))
 
 
 class SecretQueryFilter(logging.Filter):

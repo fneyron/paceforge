@@ -65,9 +65,9 @@ class PhoneLimiter:
     alone, which still bounds a looping phone. A full manual sync is ~62 requests.
     """
 
-    def __init__(self, limit: int = 200, window: int = 600):
-        self.limit, self.window = limit, window
-        self.local: dict[int, tuple[int, int]] = {}
+    def __init__(self, limit: int = 200, window: int = 600, prefix: str = "mobile:rate"):
+        self.limit, self.window, self.prefix = limit, window, prefix
+        self.local: dict[int | str, tuple[int, int]] = {}
         self.redis = None
         self.redis_down_until = 0.0
 
@@ -86,11 +86,11 @@ class PhoneLimiter:
             return int(count)
         except Exception:
             # Not a request failure: count in this process for a minute, then retry Redis.
-            logger.warning("Phone rate limit: Redis unavailable, counting per worker")
+            logger.warning("Rate limit %s: Redis unavailable, counting per worker", self.prefix)
             self.redis, self.redis_down_until = None, time.monotonic() + 60
             return None
 
-    def _local_count(self, device_id: int, slot: int) -> int:
+    def _local_count(self, device_id: int | str, slot: int) -> int:
         seen_slot, count = self.local.get(device_id, (slot, 0))
         count = count + 1 if seen_slot == slot else 1
         if len(self.local) > 10000:
@@ -98,14 +98,18 @@ class PhoneLimiter:
         self.local[device_id] = (slot, count)
         return count
 
-    async def check(self, device_id: int) -> None:
+    async def over(self, key: int | str) -> int | None:
+        """Count one request of `key` in the current window: the seconds until the next one when it is over the
+        limit (Retry-After), else None. The windows are fixed slots (a day's is the UTC day)."""
         now = time.time()
         slot = int(now // self.window)
-        count = await self._redis_count(f"mobile:rate:{device_id}:{slot}")
+        count = await self._redis_count(f"{self.prefix}:{key}:{slot}")
         if count is None:
-            count = self._local_count(device_id, slot)
-        if count > self.limit:
-            retry = max(1, int((slot + 1) * self.window - now))
+            count = self._local_count(key, slot)
+        return max(1, int((slot + 1) * self.window - now)) if count > self.limit else None
+
+    async def check(self, device_id: int) -> None:
+        if (retry := await self.over(device_id)) is not None:
             raise HTTPException(429, "Trop d’envois depuis ce téléphone. Réessaie plus tard.",
                                 headers={"Retry-After": str(retry)})
 

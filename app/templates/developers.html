@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block meta_title %}API pour les développeurs · PaceForge{% endblock meta_title %}
+{% block title %}{{ self.meta_title() }}{% endblock title %}
+{% block meta_description %}Lis tes données PaceForge en JSON avec ta clé personnelle&nbsp;: plans de course, temps de passage, activités et santé. Lecture seule.{% endblock meta_description %}
+
+{% block content_public %}
+{% include "partials/public_header.html" %}
+<main id="main-content" tabindex="-1" class="pf-legal">
+    {% include "partials/legal_back.html" %}
+    <h1>L’API PaceForge</h1>
+    <p class="pf-legal-date">Version 1 · 15 novembre 2026</p>
+
+    <section aria-labelledby="principe">
+        <h2 id="principe">Le principe</h2>
+        <p>Avec une clé personnelle, un script, un tableur ou une application lit <strong>tes propres données</strong> en JSON&nbsp;: tes plans de course et leurs temps de passage, tes activités et, si tu l’autorises, tes mesures de santé. L’API est en lecture seule&nbsp;: elle ne modifie rien.</p>
+        <p>Toutes les adresses commencent par <code>{{ base }}/api/v1</code>. Le schéma OpenAPI&nbsp;: <a href="/api/v1/openapi.json">/api/v1/openapi.json</a>.</p>
+    </section>
+
+    <section aria-labelledby="cle">
+        <h2 id="cle">Ta clé</h2>
+        <p>Crée-la dans <a href="/settings#api">Réglages › Accès API</a> (adresse e-mail confirmée), {{ max_keys }} clés au plus. Elle s’affiche une seule fois&nbsp;: copie-la aussitôt. Envoie-la dans l’en-tête <code>Authorization</code>, jamais dans l’adresse&nbsp;: une clé passée dans l’URL est refusée.</p>
+        <pre><code>curl -H "Authorization: Bearer pf_…" {{ base }}/api/v1/me</code></pre>
+        <p>Une clé donne accès en lecture à tout ce qu’elle couvre. Garde-la secrète, ne la mets ni dans une page web ni dans un dépôt de code, et révoque-la dans Réglages si elle a circulé&nbsp;: elle est refusée aussitôt. Un nouveau mot de passe révoque toutes tes clés.</p>
+    </section>
+
+    <section aria-labelledby="regles">
+        <h2 id="regles">Les règles communes</h2>
+        <ul>
+            <li><strong>Limites</strong>&nbsp;: {{ per_minute }} requêtes par minute et {{ per_day }} par jour (UTC) et par clé&nbsp;; {{ plan_quota }} détails de plan par heure et par compte (chacun est recalculé). Au-delà&nbsp;: <code>429</code>, avec l’en-tête <code>Retry-After</code> en secondes.</li>
+            <li><strong>Format</strong>&nbsp;: JSON en UTF-8, noms de champs en anglais, stables dans la version 1. Les ajouts de champs ne changent pas de version&nbsp;; lis-les sans les exiger.</li>
+            <li><strong>Dates</strong>&nbsp;: ISO&nbsp;8601 avec leur décalage (<code>2026-11-14T08:03:00+01:00</code>), sur ton fuseau pour les activités, sur celui de la course pour les plans.</li>
+            <li><strong>Unités</strong>&nbsp;: mètres, secondes, mètres par seconde, battements par minute (bpm), kilogrammes&nbsp;; la VFC en millisecondes.</li>
+            <li><strong>Pages</strong>&nbsp;: <code>limit</code> (50 par défaut, {{ max_page }} au plus)&nbsp;; la réponse donne <code>next_cursor</code>, à renvoyer en <code>cursor</code> pour la page suivante, <code>null</code> à la fin.</li>
+        </ul>
+    </section>
+
+    <section aria-labelledby="me">
+        <h2 id="me"><code>GET /api/v1/me</code></h2>
+        <p>Ton compte, ton fuseau et la clé utilisée.</p>
+        <pre><code>{{ examples.me }}</code></pre>
+    </section>
+
+    <section aria-labelledby="plans">
+        <h2 id="plans"><code>GET /api/v1/plans</code></h2>
+        <p>Tes plans de course, du plus récent au plus ancien&nbsp;: date, heure de départ, distance, dénivelés et ton objectif (<code>null</code> sans objectif).</p>
+        <pre><code>curl -H "Authorization: Bearer pf_…" "{{ base }}/api/v1/plans?limit=20"</code></pre>
+        <pre><code>{{ examples.plans }}</code></pre>
+    </section>
+
+    <section aria-labelledby="plan">
+        <h2 id="plan"><code>GET /api/v1/plans/{id}</code></h2>
+        <p>Un plan comme sa page le calcule&nbsp;: l’estimation, le temps visé et, pour chaque point de passage puis l’arrivée, la distance, le dénivelé cumulé, le ravitaillement (<code>water</code>, <code>full</code>, <code>base</code>), l’assistance, le sac, l’arrêt prévu, la barrière horaire et ta marge, le temps que tu as fixé, et le passage de chaque scénario&nbsp;: <code>target</code> (Cible), <code>fast</code> (Optimiste), <code>safe</code> (Sécurité). Chaque passage donne le temps de course (<code>elapsed_s</code>), l’heure (<code>clock</code>, <code>day</code>&nbsp;0 le jour de la course) et l’instant (<code>at</code>, <code>null</code> sans date de course). <code>basis</code> dit sur quoi le plan repose&nbsp;: <code>objective</code>, <code>pinned</code> (temps fixés), <code>estimate</code>, ou <code>race_day</code> une fois recalé sur un passage réel (Cible seule).</p>
+        <pre><code>curl -H "Authorization: Bearer pf_…" {{ base }}/api/v1/plans/7</code></pre>
+        <pre><code>{{ examples.plan }}</code></pre>
+    </section>
+
+    <section aria-labelledby="activities">
+        <h2 id="activities"><code>GET /api/v1/activities</code></h2>
+        <p>Tes activités, de la plus récente à la plus ancienne, avec leur résumé et les services qui les ont envoyées. Filtres&nbsp;: <code>since</code> et <code>until</code> (une date <code>AAAA-MM-JJ</code>, jours inclus, ou un instant ISO&nbsp;8601), <code>sport</code> (<code>run</code>, <code>trail</code>, <code>bike</code>, <code>other</code>, ou un type précis comme <code>TrailRun</code>).</p>
+        <pre><code>curl -H "Authorization: Bearer pf_…" "{{ base }}/api/v1/activities?since=2026-11-01&amp;sport=trail"</code></pre>
+        <pre><code>{{ examples.activities }}</code></pre>
+        <h3><code>GET /api/v1/activities/{id}</code></h3>
+        <p>Le même résumé, avec ses kilomètres (<code>splits</code>)&nbsp;:</p>
+        <pre><code>{{ examples.activity_split }}</code></pre>
+    </section>
+
+    <section aria-labelledby="health">
+        <h2 id="health"><code>GET /api/v1/health/daily</code></h2>
+        <p>Tes mesures par jour, telles que Santé les lit&nbsp;: <code>from</code> et <code>to</code> (dates incluses, {{ max_health_days }} jours au plus par appel&nbsp;; les 30 derniers jours par défaut). Une valeur par jour, mesure et source.</p>
+        <table class="pf-legal-table">
+            <thead><tr><th scope="col">Mesure</th><th scope="col">Unité</th><th scope="col">Ce que c’est</th></tr></thead>
+            <tbody>
+                <tr><th scope="row"><code>sleep</code></th><td data-label="Unité">s</td><td data-label="Ce que c’est">Sommeil de la nuit principale, ses heures et ses phases (<code>stages_s</code>)</td></tr>
+                <tr><th scope="row"><code>nap</code></th><td data-label="Unité">s</td><td data-label="Ce que c’est">Siestes de la journée</td></tr>
+                <tr><th scope="row"><code>hrv</code></th><td data-label="Unité">ms</td><td data-label="Ce que c’est">VFC de la nuit (<code>method</code> dit comment elle est calculée)</td></tr>
+                <tr><th scope="row"><code>hr_night</code></th><td data-label="Unité">bpm</td><td data-label="Ce que c’est">FC de nuit, ton repère de FC au repos</td></tr>
+                <tr><th scope="row"><code>resp_night</code>, <code>resp_day</code></th><td data-label="Unité">rpm</td><td data-label="Ce que c’est">Respiration de la nuit, du jour (respirations par minute)</td></tr>
+                <tr><th scope="row"><code>hr_day</code></th><td data-label="Unité">bpm</td><td data-label="Ce que c’est">FC moyenne sur 24&nbsp;h</td></tr>
+                <tr><th scope="row"><code>steps</code></th><td data-label="Unité">count</td><td data-label="Ce que c’est">Pas</td></tr>
+                <tr><th scope="row"><code>stress</code></th><td data-label="Unité">score</td><td data-label="Ce que c’est">Stress estimé par la montre (0 à 100)</td></tr>
+                <tr><th scope="row"><code>weight</code>, <code>body_fat</code></th><td data-label="Unité">kg, %</td><td data-label="Ce que c’est">Pesées et masse grasse</td></tr>
+            </tbody>
+        </table>
+        <pre><code>curl -H "Authorization: Bearer pf_…" "{{ base }}/api/v1/health/daily?from=2026-11-01&amp;to=2026-11-14"</code></pre>
+        <pre><code>{{ examples.health }}</code></pre>
+        <p>Ces données sont sensibles. Elles ne sont lues qu’avec une clé créée avec «&nbsp;Inclure mes données de santé&nbsp;» <strong>et</strong> tant que ton consentement aux données de santé est donné&nbsp;: sinon <code>403</code>, avec le code <code>health_scope_required</code> ou <code>health_consent_required</code>. Retirer ton consentement retire cet accès à toutes tes clés.</p>
+    </section>
+
+    <section aria-labelledby="erreurs">
+        <h2 id="erreurs">Les erreurs</h2>
+        <p>Une erreur répond en JSON&nbsp;: <code>{"detail": "…", "code": "…"}</code>, la phrase en français, le code stable.</p>
+        <table class="pf-legal-table">
+            <thead><tr><th scope="col">Statut</th><th scope="col">Codes</th><th scope="col">Quand</th></tr></thead>
+            <tbody>
+                <tr><th scope="row">400</th><td data-label="Codes"><code>token_in_url</code>, <code>invalid_cursor</code></td><td data-label="Quand">Une clé dans l’adresse, un curseur abîmé</td></tr>
+                <tr><th scope="row">401</th><td data-label="Codes"><code>token_missing</code>, <code>token_invalid</code>, <code>token_revoked</code></td><td data-label="Quand">Pas de clé, une clé inconnue ou révoquée</td></tr>
+                <tr><th scope="row">403</th><td data-label="Codes"><code>health_scope_required</code>, <code>health_consent_required</code>, <code>email_unverified</code></td><td data-label="Quand">Les données de santé sans leur accès, une adresse non confirmée</td></tr>
+                <tr><th scope="row">404</th><td data-label="Codes"><code>not_found</code></td><td data-label="Quand">Rien à cette adresse, ou rien qui soit à toi</td></tr>
+                <tr><th scope="row">405</th><td data-label="Codes"><code>method_not_allowed</code></td><td data-label="Quand">Autre chose qu’un <code>GET</code></td></tr>
+                <tr><th scope="row">422</th><td data-label="Codes"><code>invalid_parameter</code></td><td data-label="Quand">Un paramètre illisible ou hors limites</td></tr>
+                <tr><th scope="row">429</th><td data-label="Codes"><code>rate_limited</code></td><td data-label="Quand">Une limite atteinte&nbsp;: attends <code>Retry-After</code> secondes</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section aria-labelledby="cadre">
+        <h2 id="cadre">Le cadre</h2>
+        <p>L’API sert ton usage personnel&nbsp;: lire tes données avec tes clés. Elle est fournie sans garantie de disponibilité, comme le reste du service (<a href="/cgu">conditions d’utilisation</a>)&nbsp;; ce que PaceForge garde de tes clés est dans la <a href="/privacy">politique de confidentialité</a>. Une question, une idée d’intégration&#8239;? <a href="mailto:contact@paceforge.fr">contact@paceforge.fr</a></p>
+    </section>
+</main>
+{% include "partials/public_footer.html" %}
+{% endblock content_public %}

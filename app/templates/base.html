@@ -26,7 +26,7 @@
     <meta name="twitter:description" content="{{ _meta_desc | trim }}">
     <meta name="twitter:image" content="https://paceforge.fr/static/img/og-image.png">
     <meta name="description" content="{{ _meta_desc | trim }}">
-    {% if request is defined and request and request.url.path in ("/", "/landing", "/methode", "/privacy", "/mentions-legales", "/cgu") %}
+    {% if request is defined and request and request.url.path in ("/", "/landing", "/methode", "/privacy", "/mentions-legales", "/cgu", "/developpeurs") %}
     <link rel="canonical" href="https://paceforge.fr{{ '/' if request.url.path == '/landing' else request.url.path }}">
     {% if google_site_verification %}<meta name="google-site-verification" content="{{ google_site_verification }}">{% endif %}
     {% endif %}

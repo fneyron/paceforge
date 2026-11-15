@@ -5,8 +5,8 @@ What it holds: the account (never its password hash, email or reset tokens, Stra
 Health key; with the consent to health data's date and version), every activity with its laps, splits, streams and
 the provider's payload, the health measurements and samples, the phone's daily values, the former feel's answers, the
 race plans with their checkpoints (waypoints, cut-offs, pinned times), the lactate tests, the nutrition products,
-which services and phones are linked, with their dates (never a token, a pairing code or a phone's key), and the
-account's rows in the tables of the features switched off, while the database still has them (legacy_tables).
+which services and phones are linked, with their dates (never a token, a pairing code or a phone's key), the API
+keys' names, first characters, scopes and dates (never a key nor its hash), and the account's rows in the tables of the features switched off, while the database still has them (legacy_tables).
 
 Streamed: the ZIP is written as it is sent (zipfile on an output that cannot seek: each entry ends with a data
 descriptor), the tables read by keyset batches (a few rows at a time for activities and plans) and compressed off
@@ -25,6 +25,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
+from app.models.api_token import ApiToken
 from app.models.coros import CorosConnection
 from app.models.garmin import GarminConnection
 from app.models.health import HealthMetric, HealthSample
@@ -46,13 +47,14 @@ ACCOUNT_FIELDS = ("id", "email", "email_verified", "firstname", "lastname", "pro
                   "race_date", "race_distance_km", "initial_sync_done", "health_consent_at", "health_consent_version")
 LINK_FIELDS = ("connected_at", "last_sync_at", "last_error", "needs_reauth")
 PHONE_FIELDS = ("platform", "created_at", "last_seen_at", "last_sync_at", "expires_at")
+API_KEY_FIELDS = ("name", "prefix", "scopes", "created_at", "last_used_at", "revoked_at")  # never token_hash
 
 README = """Tes données PaceForge, au format JSON (UTF-8). Dates en ISO 8601. Les heures portent leur fuseau, sauf
 les heures des nuits et des échantillons de santé (sante_echantillons.json), à l’heure locale ; les données reçues
 des services gardent leur format.
 
 compte.json             ton compte : identité, réglages, objectif de course, consentement aux données de santé
-connexions.json         les services et téléphones liés, et leurs dates (jamais un jeton ni une clé)
+connexions.json         les services, téléphones et clés d’API liés, et leurs dates (jamais un jeton ni une clé)
 activites.json          tes activités : résumé, tours, flux (fréquence cardiaque, GPS…), données reçues du service
 sante_mesures.json      tes mesures de santé par jour (sommeil, VFC, fréquence cardiaque de nuit, pas…)
 sante_echantillons.json les phases de sommeil détaillées (Garmin)
@@ -91,12 +93,14 @@ def account(user: User) -> dict[str, Any]:
 
 
 async def connections(db: AsyncSession, user: User) -> dict[str, Any]:
-    """Which services and phones are linked, since when, their last sync: no token, code, key or app secret."""
+    """Which services, phones and API keys are linked, since when, their last use: no token, code, key, key hash or
+    app secret."""
     coros = await db.scalar(select(CorosConnection).where(CorosConnection.user_id == user.id))
     garmin = await db.scalar(select(GarminConnection).where(GarminConnection.user_id == user.id))
     phones = (await db.scalars(select(MobileDevice).where(MobileDevice.user_id == user.id,
                                                           MobileDevice.token_hash.is_not(None))
                                .order_by(MobileDevice.created_at))).all()
+    keys = (await db.scalars(select(ApiToken).where(ApiToken.user_id == user.id).order_by(ApiToken.id))).all()
     return {
         "strava": {"lie": user.has_strava_linked, "athlete_id": user.strava_athlete_id,
                    "application": ("la tienne" if user.has_own_strava_app else
@@ -109,6 +113,7 @@ async def connections(db: AsyncSession, user: User) -> dict[str, Any]:
         "raccourci_apple_sante": {"cree_le": _plain(user.health_key_created_at),
                                   "dernier_envoi": _plain(user.health_last_push_at),
                                   "valeurs_du_dernier_envoi": user.health_last_push_count},
+        "cles_api": [{field: _plain(getattr(k, field)) for field in API_KEY_FIELDS} for k in keys],
     }
 
 

@@ -19,6 +19,7 @@ from app.database import Base
 from app.dependencies import get_current_user
 from app.models import (
     Activity,
+    ApiToken,
     CorosConnection,
     GarminConnection,
     HealthMetric,
@@ -59,6 +60,7 @@ def _rows(user: User) -> list:
         NutritionProduct(user_id=uid, name="Gel"),
         OAuthAttempt(state_hash=f"{uid:064d}", user_id=uid, expires_at=NOW + timedelta(minutes=10)),
         MobileDevice(user_id=uid, platform="ios", expires_at=NOW + timedelta(days=30)),
+        ApiToken(user_id=uid, name="Script", prefix="pf_abcde", token_hash=f"{uid:064d}", scopes="read health"),
         MobileDaily(user_id=uid, platform="ios", date=NOW.date(), metric="weight", value=70, sources=["x"]),
         LactateTest(user_id=uid, tested_on=NOW.date(), mode="pace", device="d", protocol="p", stages=[]),
         CorosConnection(user_id=uid, issuer=FakeCoros.META["issuer"], client_id="cid-1",
