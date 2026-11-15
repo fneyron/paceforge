@@ -26,7 +26,8 @@ async def test_legal_notice(client: AsyncClient):
     text = _text(r.text)
     # the publisher is Hello Stay since 2026-11-15 (owner: « met Hello Stay en éditeur »), registry facts only
     for expected in ("PaceForge est édité par Hello Stay", "RCS de Paris sous le numéro 979\u00a0645\u00a0082",
-                     "58 rue de Monceau, 75008 Paris", "Directeur de la publication : Florent Neyron, gérant",
+                     "58 rue de Monceau, 75008 Paris", "au capital de 1\u00a0000\u00a0€", "+33\u00a06\u00a077\u00a093\u00a091\u00a014",
+                     "Directeur de la publication : Florent Neyron, gérant",
                      "OVH SAS, 2 rue Kellermann, 59100 Roubaix, France", "+33 9 72 10 10 07",
                      "Gravelines", "Propriété du contenu"):
         assert expected in text, expected
