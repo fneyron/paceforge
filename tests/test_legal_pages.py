@@ -24,7 +24,9 @@ async def test_legal_notice(client: AsyncClient):
     r = await client.get("/mentions-legales")
     assert r.status_code == 200
     text = _text(r.text)
-    for expected in ("Florent Neyron, particulier", "Directeur de la publication : Florent Neyron",
+    # the publisher is Hello Stay since 2026-11-15 (owner: « met Hello Stay en éditeur »), registry facts only
+    for expected in ("PaceForge est édité par Hello Stay", "RCS de Paris sous le numéro 979\u00a0645\u00a0082",
+                     "58 rue de Monceau, 75008 Paris", "Directeur de la publication : Florent Neyron, gérant",
                      "OVH SAS, 2 rue Kellermann, 59100 Roubaix, France", "+33 9 72 10 10 07",
                      "Gravelines", "Propriété du contenu"):
         assert expected in text, expected
@@ -47,7 +49,7 @@ async def test_privacy_policy_is_complete(client: AsyncClient):
     html = (await client.get("/privacy")).text
     text = _text(html)
     for expected in (
-        "Florent Neyron", "Finalité", "Base légale", "Durée",
+        "Hello Stay", "979\u00a0645\u00a0082", "Florent Neyron", "Finalité", "Base légale", "Durée",
         "Consentement explicite (art. 9.2.a RGPD)", "Intérêt légitime", "Contrat",
         "Apple Santé", "Health Connect", "tests de lactate", "masse grasse",
         "valable 24 h", "1 h", "90 jours", "8 semaines",
