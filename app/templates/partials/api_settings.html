@@ -1,0 +1,84 @@
+{#- Réglages › Accès API (routers.settings, routers.api_v1): the key made just before, once, with « Copier » (a
+    selectable field where the clipboard is refused, the phone app's web view included); the live keys, each with
+    « Révoquer » behind the app's confirmation; « Créer une clé », folded. The key itself is never in the page again. -#}
+<div class="pf-section space-y-3" id="api">
+    <h2 class="pf-h2">Accès API</h2>
+    <p class="text-sm text-gray-500">Une clé permet à un script ou à une application de lire tes données PaceForge en JSON&nbsp;: plans de course, temps de passage, activités{% if health_consent_on %} et, si tu le choisis, santé{% endif %}. Lecture seule. <a class="pf-link" href="/developpeurs">Documentation de l’API</a></p>
+    {% if api_ok %}<p class="pf-note !text-ok" role="status">{{ api_ok }}</p>{% endif %}
+    {% if api_error %}<p class="text-sm text-danger" role="alert">{{ api_error }}</p>{% endif %}
+    {% if api_new %}
+    <div class="pf-api-new" role="status">
+        <label for="api-new-key" class="pf-field-label">Ta nouvelle clé «&nbsp;{{ api_new.name }}&nbsp;»</label>
+        <div class="pf-api-copy">
+            <textarea id="api-new-key" class="pf-input pf-api-secret" rows="1" readonly autocomplete="off" autocapitalize="off" spellcheck="false" onfocus="this.select()">{{ api_new.token }}</textarea>
+            <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" data-api-copy="api-new-key">Copier</button>
+        </div>
+        <p class="text-sm font-medium">Copie-la maintenant&nbsp;: elle ne sera plus affichée.</p>
+        <p class="text-xs text-gray-500" data-api-copied aria-live="polite"></p>
+    </div>
+    {% endif %}
+    {% if api_tokens %}
+    <ul class="pf-api-keys" aria-label="Tes clés d’API">
+        {% for key in api_tokens %}
+        <li class="pf-api-key">
+            <div class="min-w-0">
+                <p class="text-sm font-semibold truncate">{{ key.name }} <code class="pf-api-prefix">{{ key.prefix }}…</code></p>
+                <p class="text-xs text-gray-500">{{ 'Lecture et santé' if key.health else 'Lecture' }} · créée le {{ key.created }} · {% if key.last_used %}dernière utilisation le {{ key.last_used }}{% else %}jamais utilisée{% endif %}</p>
+            </div>
+            <form method="post" action="/settings/api-tokens/{{ key.id }}/revoke"
+                  onsubmit="event.preventDefault(); var f = this; var msg = {{ ('Révoquer la clé « ' ~ key.name ~ ' » ? Ce qui l’utilise perdra l’accès aussitôt.')|tojson|forceescape }}; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Révoquer'); } else if (confirm(msg)) { f.submit(); }">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm text-danger">Révoquer</button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% if api_tokens|length < api_max %}
+    <details class="pf-consent-withdraw pf-api-create"{% if api_error or not api_tokens %} open{% endif %}>
+        <summary class="pf-link">Créer une clé</summary>
+        <form method="post" action="/settings/api-tokens" class="pf-api-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="w-full max-w-md">
+                <label for="api-name" class="pf-field-label">Nom de la clé</label>
+                <input id="api-name" name="name" type="text" required maxlength="60" placeholder="Ex.&nbsp;: mon tableur" autocomplete="off" class="pf-input">
+            </div>
+            {% if health_consent_on %}
+            <label class="pf-consent-check pf-api-health">
+                <input type="checkbox" name="health" value="1">
+                <span>Inclure mes données de santé<span class="block text-xs text-gray-500 mt-1">La clé pourra aussi lire ton sommeil, ta VFC, ta FC de nuit, ta respiration, tes pas et ton poids. Retirer ton consentement lui retire cet accès.</span></span>
+            </label>
+            {% endif %}
+            <button type="submit" class="pf-btn pf-btn-primary pf-btn-sm">Créer la clé</button>
+        </form>
+    </details>
+    {% else %}
+    <p class="text-sm text-gray-500">{{ api_max }} clés au plus&nbsp;: révoque-en une pour en créer une autre.</p>
+    {% endif %}
+    <p class="text-xs text-gray-500">Une clé donne accès en lecture à tout ce qu’elle couvre&nbsp;: garde-la secrète et révoque-la si elle a circulé.</p>
+</div>
+{% if api_new %}
+<script>
+document.querySelectorAll('[data-api-copy]').forEach(function (button) {
+    var shown = document.getElementById(button.getAttribute('data-api-copy'));
+    if (shown) { shown.style.height = 'auto'; shown.style.height = (shown.scrollHeight + 2) + 'px'; }  // every line of it
+    button.addEventListener('click', function () {
+        var field = document.getElementById(button.getAttribute('data-api-copy'));
+        var said = document.querySelector('[data-api-copied]');
+        function done(ok) {
+            if (said) said.textContent = ok ? 'Clé copiée.' : 'Sélectionne la clé puis copie-la.';
+            if (ok) button.textContent = 'Copiée';
+        }
+        function fallback() {
+            field.focus(); field.select();
+            try { done(document.execCommand('copy')); } catch (e) { done(false); }
+        }
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(field.value).then(function () { done(true); }, fallback);
+        } else {
+            fallback();
+        }
+    });
+});
+</script>
+{% endif %}

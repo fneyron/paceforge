@@ -84,7 +84,7 @@ async def test_the_policy_says_what_is_true_now(client: AsyncClient):
     for expected in ("Profil sportif (Réglages)", "Poids et FC maximale que tu saisis", "Monde (États-Unis)",
                      f"expire {TOKEN_LIFETIME.days} jours après son dernier envoi", "darkMode", "pf.map3d", "pf.sport",
                      "pf-view", "depuis un navigateur (pas dans l’app du téléphone)", "accès en lecture seule",
-                     "Refuser et effacer", "Mise à jour le 31 octobre 2026"):
+                     "Refuser et effacer", "Mise à jour le 15 novembre 2026"):
         assert expected in text, expected
     # the feel left (2026-10-31): no longer collected, its answers given before still said where they are
     plain = text.replace("\xa0", " ")

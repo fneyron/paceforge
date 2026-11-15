@@ -9,7 +9,7 @@
 <main id="main-content" tabindex="-1" class="pf-legal">
     {% include "partials/legal_back.html" %}
     <h1>Politique de confidentialité</h1>
-    <p class="pf-legal-date">Mise à jour le 31 octobre 2026</p>
+    <p class="pf-legal-date">Mise à jour le 15 novembre 2026</p>
 
     <section aria-labelledby="qui">
         <h2 id="qui">Qui est responsable</h2>
@@ -52,6 +52,12 @@
                     <td data-label="Durée">Jusqu’au retrait du consentement ou la suppression du compte</td>
                 </tr>
                 <tr>
+                    <th scope="row">Accès API (les clés que tu crées)</th>
+                    <td data-label="Données">Nom de la clé, ses 8 premiers caractères, son empreinte (jamais la clé elle-même), ses droits (lecture, données de santé), ses dates de création, de dernière utilisation et de révocation</td>
+                    <td data-label="Base légale">Contrat&nbsp;; pour les données de santé, ton consentement explicite</td>
+                    <td data-label="Durée">Jusqu’à la révocation (la clé est effacée 30 jours après) ou la suppression du compte</td>
+                </tr>
+                <tr>
                     <th scope="row">Sécurité</th>
                     <td data-label="Données">Adresse IP, journaux techniques (requêtes, erreurs), compteurs de tentatives</td>
                     <td data-label="Base légale">Intérêt légitime&nbsp;: protéger le service et ton compte</td>
@@ -76,6 +82,7 @@
         <blockquote class="pf-legal-quote">{% for paragraph in consent_text %}<p>{{ paragraph }}</p>{% endfor %}</blockquote>
         <p>Les réponses au «&nbsp;Ressenti du jour&nbsp;» notées jusqu’au 31&nbsp;octobre&nbsp;2026, fonction retirée depuis, restent enregistrées jusqu’au retrait de ton consentement ou la suppression de ton compte, sans être affichées ni utilisées&nbsp;; elles figurent dans «&nbsp;Télécharger mes données&nbsp;».</p>
         <p>Sur ton téléphone, l’application PaceForge lit les catégories que tu autorises dans Apple Santé ou Health Connect et les envoie en HTTPS à ton compte, aussi en arrière-plan. Les points cardiaques bruts ne sont pas conservés, seulement des résumés par jour et par nuit. Le détail&nbsp;: <a href="/mobile/privacy">données de l’application</a>.</p>
+        <p>Une clé d’API ne lit tes données de santé que si tu l’as créée avec «&nbsp;Inclure mes données de santé&nbsp;», et tant que ton consentement est donné&nbsp;: le retirer retire cet accès à toutes tes clés.</p>
         <p>PaceForge n’est pas un dispositif médical et ne pose aucun diagnostic.</p>
     </section>
 
@@ -83,6 +90,7 @@
         <h2 id="effacement">Suppression et sauvegardes</h2>
         <p>Tu peux supprimer ton compte à tout moment depuis Réglages. Tout ce qu’il contient est effacé aussitôt de la base de données. Les sauvegardes, quotidiennes, sont gardées 8 semaines au plus&nbsp;: tes données en disparaissent au plus tard 8 semaines après.</p>
         <p>Une session de connexion se ferme après 30 jours sans visite, et au plus tard après 90 jours. L’accès d’un téléphone associé expire 180 jours après son dernier envoi, et tu peux le révoquer avant dans Réglages.</p>
+        <p>Une clé d’API donne accès en lecture, sans limite de durée, à tout ce qu’elle couvre (plans, temps de passage, activités, et santé si tu l’as choisi)&nbsp;: garde-la secrète et révoque-la dans Réglages si elle a circulé. Un nouveau mot de passe révoque toutes tes clés. Seule son empreinte est conservée&nbsp;: PaceForge ne peut pas te la réafficher.</p>
     </section>
 
     <section aria-labelledby="destinataires">

@@ -100,25 +100,7 @@ async def simulator_page(
                 await link_result(db, rt, act, user.id, profile=profile)
             except Exception:
                 logger.exception("automatic race link failed for route %s", rt.id)
-    # a time an older page saved: his objective, or that page's own estimate (_objective_s), read on the course
-    # for those routes alone (per worker for a while: _legacy_estimate_s)
-    for rt in saved_routes:
-        rt.legacy_estimate_s = 0
-        imp = rt.imported_estimate_s
-        if (rt.target_time_s and rt.has_course and (rt.params_json or {}).get("target_v") != TARGET_VERSION
-                and (rt.sport_type or "trail") not in ("bike", "triathlon")
-                and not (imp and abs(rt.target_time_s - imp) <= LEGACY_TARGET_SHARE * imp)):  # the import's: settled
-            try:
-                known, m = _legacy_cached(rt)
-                if not known:
-                    if "course_json" in inspect(rt).unloaded:
-                        await db.refresh(rt, attribute_names=["course_json"])
-                    if profile is None:
-                        profile = await build_athlete_gradient_profile(db, user.id)
-                    m = _legacy_estimate_s(rt, await _legacy_profile(db, user.id, profile))
-                rt.legacy_estimate_s = m or 0
-            except Exception:
-                logger.exception("legacy objective check failed for route %s", rt.id)
+    profile = await _read_legacy_estimates(saved_routes, db, user, profile)
     estimates, profile = await _listed_estimates(saved_routes, db, user, profile=profile)
     run = await _races_vs_plan([rt for rt in saved_routes if rt.result_json], db, user, profile=profile)
     for rt in saved_routes:
@@ -204,6 +186,33 @@ async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User, prof
             plan = _plan_finish_s(await _plan_bundle(rt, db, user, profile=profile))
         out[rt.id] = (_real_elapsed_s(rt.result_json, acts.get(rt.result_json.get("activity_id"))), plan)
     return out
+
+
+async def _read_legacy_estimates(routes: list[Route], db: AsyncSession, user: User, profile=None):
+    """A time an older page saved: his objective, or that page's own estimate (_objective_s), read on the course
+    for those routes alone (per worker for a while: _legacy_estimate_s). Each route gets ``legacy_estimate_s``
+    (0 when not read); its ``imported_estimate_s`` and ``has_course`` are read first (« Mes courses », the API's
+    plan list). The athlete's profile, built here when needed, is handed back for the rest of the page."""
+    from app.services.race_simulator import build_athlete_gradient_profile
+
+    for rt in routes:
+        rt.legacy_estimate_s = 0
+        imp = rt.imported_estimate_s
+        if (rt.target_time_s and rt.has_course and (rt.params_json or {}).get("target_v") != TARGET_VERSION
+                and (rt.sport_type or "trail") not in ("bike", "triathlon")
+                and not (imp and abs(rt.target_time_s - imp) <= LEGACY_TARGET_SHARE * imp)):  # the import's: settled
+            try:
+                known, m = _legacy_cached(rt)
+                if not known:
+                    if "course_json" in inspect(rt).unloaded:
+                        await db.refresh(rt, attribute_names=["course_json"])
+                    if profile is None:
+                        profile = await build_athlete_gradient_profile(db, user.id)
+                    m = _legacy_estimate_s(rt, await _legacy_profile(db, user.id, profile))
+                rt.legacy_estimate_s = m or 0
+            except Exception:
+                logger.exception("legacy objective check failed for route %s", rt.id)
+    return profile
 
 
 async def _listed_estimates(routes: list[Route], db: AsyncSession, user: User,
@@ -1658,8 +1667,10 @@ async def offline_route_plan(
     return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
 
-async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dict:
-    """One saved plan calculation for print and the phone's offline copy."""
+async def _plan_snapshot(route: Route, db: AsyncSession, user: User) -> dict:
+    """The saved plan as the page shows it, for print, the phone's offline copy and the API (/api/v1/plans/{id}):
+    the bundle (_plan_bundle), its sections replanned from the race-day passage when one is set (``live_applied``:
+    then no scenarios), and the Cible / Optimiste / Sécurité columns."""
     from app.services.race_simulator import build_scenarios, replan_from_passage
 
     b = await _plan_bundle(route, db, user)
@@ -1689,6 +1700,15 @@ async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dic
         switch_km=pp.get("switch_km"), total_distance_km=course.total_distance_km,
         clock=b["clock"],
     )
+    return {"bundle": b, "sections": sections, "scenarios": scenarios, "live_applied": live_applied}
+
+
+async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dict:
+    """One saved plan calculation for print and the phone's offline copy."""
+    snap = await _plan_snapshot(route, db, user)
+    b, sections, scenarios, live_applied = snap["bundle"], snap["sections"], snap["scenarios"], snap["live_applied"]
+    course = b["course"]
+    start_offset_s = b["start_offset_s"]
 
     guide = (await _pacing_guide_for(route, db, user, b)) if b["sport"] != "bike" else None
     legs_guide = None
@@ -2376,6 +2396,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
         "estimate_s": estimate_s, "objective_s": objective_s, "plan_target_s": target,
         "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset_s,
         "clock": plan_clock,  # the race's clock (plan_clock.PlanClock): the rows' wall clock across a DST change
+        "race_clock": clock,  # race_match.race_clock's {race_date, utc_offset_s, tz}: the instants the API dates
         # the sections' plan (adjusted_*) is the one to follow: on the objective, else on the estimate, as the page
         "stop_min": stop_min, "aid_kms": aid, "use_target": True,
         # named a plan (« le plan », « Objectif », the phone's « plan enregistré ») only when he set one: an

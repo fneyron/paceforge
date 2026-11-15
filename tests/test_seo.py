@@ -22,15 +22,16 @@ async def test_robots_keeps_the_app_out_and_points_to_the_sitemap(client: AsyncC
         assert f"Disallow: {private}" in lines
     # the sign-in pages are crawlable, so that their noindex is read
     assert not any(line in ("Disallow: /", "Disallow: /methode", "Disallow: /privacy", "Disallow: /auth/",
-                            "Disallow: /cgu", "Disallow: /mentions-legales") for line in lines)
+                            "Disallow: /cgu", "Disallow: /mentions-legales", "Disallow: /developpeurs",
+                            "Disallow: /api") for line in lines)
 
 
 async def test_the_sitemap_lists_the_public_pages(client: AsyncClient):
     r = await client.get("/sitemap.xml")
     assert r.status_code == 200 and r.headers["content-type"].startswith("application/xml")
     base = settings.BASE_URL.rstrip("/")
-    assert r.text.count("<loc>") == 5 == len(PUBLIC_PAGES)
-    for path in ("/", "/methode", "/privacy", "/mentions-legales", "/cgu"):
+    assert r.text.count("<loc>") == 6 == len(PUBLIC_PAGES)
+    for path in ("/", "/methode", "/privacy", "/mentions-legales", "/cgu", "/developpeurs"):
         assert f"<loc>{base}{path}</loc>" in r.text
 
 

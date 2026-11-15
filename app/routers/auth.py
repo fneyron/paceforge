@@ -17,7 +17,7 @@ from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db, get_optional_user, sign_in
 from app.models.mobile import MobileDevice
 from app.models.user import User
-from app.services import sessions
+from app.services import api_tokens, sessions
 from app.services.app_return import app_return, is_app_return, with_result
 from app.services.auth import (
     ACCOUNT,
@@ -418,6 +418,7 @@ async def reset_password(
     # and every paired phone (180-day tokens of their own): whoever reset the password pairs them again; the days
     # they sent stay (mobile_daily.device_id is set to NULL)
     await db.execute(delete(MobileDevice).where(MobileDevice.user_id == user.id))
+    await api_tokens.revoke_all(db, user.id)  # and every API key: refused at once, new ones made in Réglages
     await db.commit()  # before the redirect: the request that follows it already checks the new session version
     # an account the per-account login cap holds can sign in again: whoever reset it holds its mailbox
     await forget_account_attempts("login", (user.email or "").strip().lower())

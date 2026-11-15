@@ -13,6 +13,7 @@ from httpx import AsyncClient
 from app.crypto import encrypt_secret
 from app.models import (
     Activity,
+    ApiToken,
     CorosConnection,
     GarminConnection,
     HealthMetric,
@@ -68,6 +69,8 @@ async def _seed(db, user: User, tag: str, activities: int = 1) -> None:
                         expires_at=NOW + timedelta(days=30), resource_url="https://coros.example/mcp",
                         token_endpoint="https://coros.example/token", last_sync_at=NOW),
         GarminConnection(user_id=uid, di_client_id="GARMIN", access_token_encrypted=encrypt_secret(f"garmin-{tag}")),
+        ApiToken(user_id=uid, name=f"Clé {tag}", prefix=f"pf_{tag[:5]}", token_hash=digest(f"api-key-{tag}"),
+                 scopes="read health"),
     ])
     await db.flush()
 
@@ -123,12 +126,13 @@ async def test_the_export_holds_the_athletes_data_theirs_only_and_no_secret(as_u
     assert links["strava"]["lie"] is True and links["strava"]["application"] == "la tienne"
     assert links["coros"]["last_sync_at"] and links["garmin"] is not None
     assert [p["platform"] for p in links["telephones"]] == ["ios"]
+    assert [(k["name"], k["prefix"], k["scopes"]) for k in links["cles_api"]] == [("Clé MINE", "pf_MINE", "read health")]
 
     everything = b"".join(files.values()).decode()
     assert "THEIRS" not in everything and "other@x.fr" not in everything  # nobody else's
     for secret in (test_user.password_hash, hash_token("reset-me"), "test_access_token", "test_refresh_token",
                    "strava-secret", digest("apple-key"), "pfk_abcd", digest("phone-token-MINE"),
-                   digest("old-token-MINE"), "coros-access-MINE", "coros-refresh-MINE", "coros-client-MINE",
+                   digest("old-token-MINE"), digest("api-key-MINE"), "token_hash", "coros-access-MINE", "coros-refresh-MINE", "coros-client-MINE",
                    "garmin-MINE"):
         assert secret not in everything, secret
     for field in ("password_hash", "password_reset_token", "email_verify_token", "strava_access_token",

@@ -59,6 +59,14 @@ class PlanClock:
         local = (self._start_utc + timedelta(seconds=elapsed_s)).astimezone(self.zone)
         return (local.date() - self._day0).days * 86400 + local.hour * 3600 + local.minute * 60 + local.second
 
+    def instant(self, elapsed_s: float) -> datetime | None:
+        """The moment ``elapsed_s`` seconds after the start, in the race's zone (the API's dates); None without a
+        zone."""
+        start = self._start_utc
+        if self.zone is None or start is None:
+            return None
+        return (start + timedelta(seconds=elapsed_s)).astimezone(self.zone)
+
     def occurrences(self, clock_s: float) -> list[int]:
         """The seconds after the start at which the plan's clock reads ``clock_s``, in order: one, two on the
         repeated autumn hour; a time inside the spring gap (none) reads with the offset before the change."""
