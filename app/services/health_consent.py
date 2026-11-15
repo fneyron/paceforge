@@ -49,13 +49,15 @@ PHONE_REFUSED = {"detail": "Accepte le suivi de tes données de santé dans Pace
 
 # Where the consent page may send the athlete back (anything else: Santé). Only these paths, and for each only
 # these query values: the page never redirects to a place its link chose.
-_NEXT_QUERY = {
+_NEXT_QUERY: dict[str, dict[str, tuple[str, ...]]] = {
     "/coros/connect": {"region": ("monde", "europe", "chine"), "next": ("devices", "app")},
     "/sante": {}, "/settings": {}, "/sante/lactate": {}, "/connections/coros": {}, "/connections/garmin": {},
+    # the official connectors (app.connectors), while one is active
+    "/connect/coros": {"next": ("devices", "app")}, "/connect/garmin": {"next": ("devices", "app")},
 }
-_FRAGMENTS = ("coros", "garmin", "connections", "donnees", "nouveau-test")
+_FRAGMENTS = ("coros", "garmin", "connections", "donnees", "nouveau-test", "official-coros", "official-garmin")
 # asked by a source connection: « Pas maintenant » goes back to the connections, never to the page that asks again
-_SOURCES = ("/coros/connect", "/connections/coros", "/connections/garmin")
+_SOURCES = ("/coros/connect", "/connections/coros", "/connections/garmin", "/connect/coros", "/connect/garmin")
 DEFAULT_NEXT = "/sante"
 
 
@@ -104,7 +106,8 @@ def not_now_url(next_url: str) -> str:
     source connection asked (its page would ask again; the phone app opens its own connections screen there)."""
     target = safe_next(next_url)
     parts = urlsplit(target)
-    if parts.path in _SOURCES or (parts.path == "/settings" and parts.fragment in ("coros", "garmin")):
+    if parts.path in _SOURCES or (parts.path == "/settings" and parts.fragment in (
+            "coros", "garmin", "official-coros", "official-garmin")):
         return "/settings#connections"
     return target
 
@@ -125,16 +128,18 @@ def given_on(user: User) -> str:
 
 
 async def holds_health_data(db: AsyncSession, user_id: int) -> bool:
-    """A health source linked (COROS, Garmin, a paired phone) or health data stored (measurements, phone days,
+    """A health source linked (COROS, Garmin, their official links, a paired phone) or health data stored (measurements, phone days,
     lactate tests): the Santé page then asks for the consent the athlete has not given yet."""
     from app.models.coros import CorosConnection
     from app.models.garmin import GarminConnection
     from app.models.health import HealthMetric, HealthSample
     from app.models.lactate import LactateTest
     from app.models.mobile import MobileDaily, MobileDevice
+    from app.models.official_connection import OfficialConnection
 
     held = or_(*(exists().where(model.user_id == user_id) for model in (
-        CorosConnection, GarminConnection, MobileDevice, HealthMetric, HealthSample, MobileDaily, LactateTest)))
+        CorosConnection, GarminConnection, OfficialConnection, MobileDevice, HealthMetric, HealthSample, MobileDaily,
+        LactateTest)))
     return bool(await db.scalar(select(held)))
 
 

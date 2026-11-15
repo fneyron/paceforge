@@ -5,6 +5,7 @@ from celery.schedules import crontab
 from kombu import Exchange, Queue
 
 from app.config import settings
+from app.connectors import beat_schedule as official_beat_schedule
 from app.sentry import init_sentry
 
 logging.getLogger("httpx").setLevel(logging.WARNING)  # request URLs can carry tokens
@@ -16,7 +17,7 @@ celery_app = Celery(
     broker=settings.CELERY_BROKER_URL,
     backend=settings.REDIS_URL,
     include=["app.tasks.initial_sync", "app.tasks.poll_activities", "app.tasks.webhook_sync",
-             "app.tasks.coros_sync", "app.tasks.garmin_sync"],
+             "app.tasks.coros_sync", "app.tasks.garmin_sync", "app.tasks.official_connectors"],
 )
 
 # ── Time limits ─────────────────────────────────────────────────────────────
@@ -88,7 +89,8 @@ celery_app.conf.task_queues = tuple(  # each its own binding (two on one key wou
 celery_app.conf.task_default_queue = "celery"
 celery_app.conf.task_routes = {name: {"queue": "long"} for name in (
     "paceforge.initial_sync", "paceforge.sync_coros", "paceforge.sync_garmin",
-    "paceforge.sync_coros_user", "paceforge.sync_garmin_user")}
+    "paceforge.sync_coros_user", "paceforge.sync_garmin_user", "paceforge.official_coros_sync",
+    "paceforge.official_round")}
 
 # Expired Strava link attempts are purged every hour (app.tasks.oauth_cleanup)
 celery_app.conf.include = [*celery_app.conf.include, "app.tasks.oauth_cleanup"]
@@ -96,3 +98,6 @@ celery_app.conf.beat_schedule["purge-oauth-attempts"] = {
     "task": "paceforge.purge_oauth_attempts",
     "schedule": crontab(minute=37),
 }
+
+# The official COROS and Garmin connectors' round (app.connectors): scheduled only while one of them is active
+celery_app.conf.beat_schedule.update(official_beat_schedule())

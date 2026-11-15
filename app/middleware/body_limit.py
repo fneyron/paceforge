@@ -47,6 +47,18 @@ BODY_LIMITS: tuple[tuple[re.Pattern[str], int, bool], ...] = tuple(
     ))
 DEFAULT_LIMIT = 1 * MiB  # forms, the webhook's JSON, everything else
 
+# The official connectors' pushes (app.connectors, docs/official-connectors.md), their caps only while the connector
+# is active (else DEFAULT_LIMIT, and the route answers 404). Garmin's activity details carry the session's samples
+# (a long ultra: tens of MB; reduced to laps before being queued), the other summaries far less; its lifecycle
+# notices are a few user ids. COROS pushes workout summaries only (the FIT file is fetched, never pushed).
+OFFICIAL_LIMITS: tuple[tuple[re.Pattern[str], int, str], ...] = tuple(
+    (re.compile(pattern), limit, provider) for pattern, limit, provider in (
+        (r"/webhook/garmin/(deregistrations|userPermissionsChange)", 64 * KiB, "garmin"),
+        (r"/webhook/garmin(/activityDetails)?", 32 * MiB, "garmin"),
+        (r"/webhook/garmin/[A-Za-z]+", 8 * MiB, "garmin"),
+        (r"/webhook/coros", 1 * MiB, "coros"),
+    ))
+
 TOO_LARGE = "Envoi trop volumineux."  # the phone's routes say the same (routers.mobile.capped_body)
 GPX_TOO_LARGE = f"Ce fichier GPX est trop lourd ({GPX // MiB} Mo au plus)."  # as routers.simulator says it
 # a GPX form posted without a session (it ended while the page stayed open): the file may well be within its cap
@@ -58,6 +70,12 @@ GPX_FORMS = re.compile(r"/partials/simulator/(bike-)?gpx-upload|/api/simulator/r
 
 def body_limit(path: str, signed_in: bool = True) -> int:
     """The bytes a request to `path` may send, with a signed-in session or without one."""
+    if path.startswith("/webhook/"):
+        from app.connectors import ready
+
+        for pattern, official_limit, provider in OFFICIAL_LIMITS:
+            if pattern.fullmatch(path):
+                return official_limit if ready(provider) else DEFAULT_LIMIT
     for pattern, limit, who in BODY_LIMITS:
         if pattern.fullmatch(path):
             return limit if signed_in or who is ANYONE else DEFAULT_LIMIT
