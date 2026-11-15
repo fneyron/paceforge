@@ -33,3 +33,7 @@ comme incomplet. Les réponses vides normales restent distinctes des erreurs.
 le nombre d’appels échoués, les ajouts et la nécessité de reprendre l’historique.
 Cette colonne ne contient ni jeton, ni identifiant Garmin, ni mesure de santé.
 La migration ajoute une colonne JSON nullable, sans modifier les données existantes.
+
+La connexion officielle (Garmin Connect Developer Program, livraison par push), prête mais éteinte, est
+décrite dans `docs/official-connectors.md` ; elle écrit sous la même source « Garmin » et remplace ce lien quand
+l’athlète la choisit.
