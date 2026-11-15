@@ -5,8 +5,8 @@ logger line, the route (path without its query) and the request's method and hea
 (max_request_body_size="never": no form, password, GPX or health payload), a frame's local variables
 (include_local_variables=False: they held tokens, passwords and athletes' data), the query string, cookies, the
 Authorization and Referer headers, user ids or addresses (send_default_pii=False). before_send drops whatever an
-integration still attached of these, and masks the secret-bearing query values (?token=, ?code=…) left in a
-breadcrumb (its message and its data) or a message (app.log_redaction). No performance tracing. The integrations
+integration still attached of these, and masks the secret-bearing query values (?token=, ?code=…) and the API keys
+(pf_…) left in a breadcrumb (its message and its data), a message or an error's message (app.log_redaction). No performance tracing. The integrations
 are named rather than auto-enabled, so no breadcrumb records the query strings of outgoing requests (Strava's can
 carry a token).
 
@@ -63,6 +63,10 @@ def _scrub(event: Any, _hint: Any = None) -> Any:
             logentry["params"] = [redact(p) if isinstance(p, str) else p for p in logentry["params"]]
     if isinstance(event.get("message"), str):
         event["message"] = redact(event["message"])
+    exception = event.get("exception")
+    for error in (exception.get("values") if isinstance(exception, dict) else None) or ():
+        if isinstance(error, dict) and isinstance(error.get("value"), str):  # an error's own message
+            error["value"] = redact(error["value"])
     breadcrumbs = event.get("breadcrumbs")
     values = breadcrumbs.get("values") if isinstance(breadcrumbs, dict) else breadcrumbs
     for crumb in values if isinstance(values, list) else ():

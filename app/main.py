@@ -27,7 +27,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 # the pages a search engine may list (sitemap.xml; base.html gives each its canonical URL)
-PUBLIC_PAGES = ("/", "/methode", "/privacy", "/mentions-legales", "/cgu")
+PUBLIC_PAGES = ("/", "/methode", "/privacy", "/mentions-legales", "/cgu", "/developpeurs")
 logger = logging.getLogger(__name__)
 # httpx logs every request URL at INFO, query string included (Strava's
 # deauthorize and webhook calls carry a token or the app secret there)
@@ -251,7 +251,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # Routers
-    from app.routers import activity, auth, coros, dashboard, garmin, mobile, sante, lactate, simulator, webhook
+    from app.routers import activity, api_v1, auth, coros, dashboard, garmin, mobile, sante, lactate, simulator, webhook
     from app.routers import settings as settings_router
     from app.routers.garmin_consent import consent_before_connect
 
@@ -267,6 +267,8 @@ def create_app() -> FastAPI:
     app.include_router(lactate.router)
     app.include_router(sante.router)      # Santé: recovery, load, trends from the watch
     app.include_router(webhook.router)
+    app.include_router(api_v1.router)     # the personal API: read-only, a key per use (Réglages › Accès API)
+    app.include_router(api_v1.pages)      # its documentation, /developpeurs
 
     # Browsers ask for /favicon.ico at the root, whatever the page links to
     @app.get("/favicon.ico", include_in_schema=False)

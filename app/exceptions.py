@@ -1,7 +1,9 @@
 import logging
+from collections.abc import Mapping
 
 from fastapi import FastAPI, Request
-from fastapi.exception_handlers import http_exception_handler
+from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.templating import Jinja2Templates
@@ -57,6 +59,28 @@ class RouteNotFoundError(PaceForgeError):
         super().__init__("Cette course n'existe plus.")
 
 
+class ApiError(Exception):
+    """An error of the personal API (/api/v1): JSON {"detail": a French sentence, "code": a stable name}, with its
+    status and headers (Retry-After, WWW-Authenticate)."""
+
+    def __init__(self, status_code: int, detail: str, code: str, headers: dict[str, str] | None = None) -> None:
+        self.status_code, self.detail, self.code, self.headers = status_code, detail, code, headers or {}
+        super().__init__(detail)
+
+
+API_V1 = "/api/v1/"
+API_HEADERS = {"Cache-Control": "no-store"}
+
+
+def _api_v1(request: Request) -> bool:
+    return request.url.path.startswith(API_V1)
+
+
+def api_error(status_code: int, detail: str, code: str, headers: Mapping[str, str] | None = None) -> JSONResponse:
+    return JSONResponse({"detail": detail, "code": code}, status_code=status_code,
+                        headers={**API_HEADERS, **(headers or {})})
+
+
 class UserNotFoundError(PaceForgeError):
     """User not found."""
 
@@ -66,8 +90,10 @@ class UserNotFoundError(PaceForgeError):
 
 
 def _api_call(request: Request) -> bool:
-    """A JSON API caller (the phone app, a script): /api/*, unless a browser opened it as a page."""
-    return request.url.path.startswith("/api/") and "text/html" not in request.headers.get("accept", "")
+    """A JSON API caller (the phone app, a script): /api/*, unless a browser opened it as a page; the personal API
+    (/api/v1) answers in JSON always."""
+    return _api_v1(request) or (request.url.path.startswith("/api/")
+                                and "text/html" not in request.headers.get("accept", ""))
 
 
 async def _viewer(request: Request):
@@ -128,15 +154,38 @@ def register_exception_handlers(app: FastAPI) -> None:
             return JSONResponse({"detail": message}, status_code=400)
         return HTMLResponse(f'<div class="text-sm text-red-600" role="alert">{message}</div>', status_code=400)
 
+    @app.exception_handler(ApiError)
+    async def api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
+        return api_error(exc.status_code, exc.detail, exc.code, exc.headers)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_handler(request: Request, exc: RequestValidationError) -> Response:
+        """/api/v1: a parameter it cannot read, said in French with its name; elsewhere FastAPI's own 422 (the
+        phone reads its field names)."""
+        if not _api_v1(request):
+            return await request_validation_exception_handler(request, exc)
+        names = sorted({str((err.get("loc") or ("",))[-1]) for err in exc.errors()})
+        return api_error(422, f"Paramètre invalide : {', '.join(names)}.", "invalid_parameter")
+
+    @app.exception_handler(405)
+    async def method_handler(request: Request, exc: StarletteHTTPException) -> Response:
+        if not _api_v1(request):
+            return await http_exception_handler(request, exc)
+        return api_error(405, "L’API est en lecture seule : GET uniquement.", "method_not_allowed", exc.headers)
+
     @app.exception_handler(404)
     async def not_found_handler(request: Request, exc: Exception) -> HTMLResponse | JSONResponse:
+        if _api_v1(request):
+            return api_error(404, "Introuvable.", "not_found")
         if _api_call(request):
             return JSONResponse({"detail": getattr(exc, "detail", None) or "Not Found"}, status_code=404)
         return await _not_found_page(request)
 
     @app.exception_handler(500)
-    async def server_error_handler(request: Request, _exc: Exception) -> HTMLResponse:
+    async def server_error_handler(request: Request, _exc: Exception) -> HTMLResponse | JSONResponse:
         logger.exception("Internal server error")
+        if _api_v1(request):
+            return api_error(500, "Erreur du serveur. Réessaie dans un instant.", "server_error")
         return templates.TemplateResponse(
             request, "500.html", status_code=500
         )
