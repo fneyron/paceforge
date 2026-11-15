@@ -64,6 +64,8 @@ _STORED = (
     ("COROS", "coros_connections", "refresh_token_encrypted", False),
     ("Garmin", "garmin_connections", "access_token_encrypted", False),
     ("Garmin", "garmin_connections", "refresh_token_encrypted", False),
+    ("Official connectors", "official_connections", "access_token_encrypted", False),
+    ("Official connectors", "official_connections", "refresh_token_encrypted", False),
     ("Strava app keys", "users", "strava_client_secret_encrypted", False),
     ("Strava", "users", "strava_access_token", True),
     ("Strava", "users", "strava_refresh_token", True),
