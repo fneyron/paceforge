@@ -108,6 +108,11 @@ QUOTAS = {  # action: (window in seconds, {scope: allowed in the window})
     "login_alert": (ACCOUNT_LIMITS["login"][1], {"account": 1}),
     # /health?deep=1, public for the external monitors (one every minute or so): a database and a Redis round trip
     "health": (60, {"ip": 30}),
+    # the personal API (routers.api_v1): keys refused per address (a valid key is never held by it), the plans
+    # computed per account (each a full prediction), the keys made per account (Réglages)
+    "api_auth": (10 * 60, {"ip": 60}),
+    "api_plan": (60 * 60, {"user": 120}),
+    "api_token": (60 * 60, {"user": 20}),
 }
 RETRY_AFTER = "3600"
 

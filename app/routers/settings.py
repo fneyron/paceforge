@@ -9,10 +9,12 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
+from app.csrf import check_csrf, csrf
 from app.dependencies import get_current_user, get_optional_user, get_db
 from app.features import cycling_enabled
 from app.models.activity import Activity
 from app.models.user import User
+from app.services import api_tokens
 from app.services import coros as coros_service
 from app.services import garmin as garmin_service
 from app.services import health_consent
@@ -71,7 +73,29 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
     # without the consent, an account holding health data may refuse and erase it (« Refuser et effacer »)
     flags.setdefault("health_held", not given and await health_consent.holds_health_data(db, user.id))
     flags.setdefault("consent_kept", health_consent.KEPT)
+    flags.setdefault("api_tokens", await _api_rows(db, user))
+    flags.setdefault("api_max", api_tokens.MAX_ACTIVE)
+    flags.setdefault("csrf_token", csrf(request))
     return {"request": request, "user": user, "activity_count": total, **flags}
+
+
+def _when(moment: datetime | None, zone, with_time: bool = False) -> str | None:
+    """« 15 novembre 2026 », « … à 14:32 », on the athlete's clock."""
+    from app.services.model_stats import fmt_date
+
+    if moment is None:
+        return None
+    local = (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).astimezone(zone)
+    return fmt_date(local.date().isoformat()) + (f" à {local:%H:%M}" if with_time else "")
+
+
+async def _api_rows(db: AsyncSession, user: User) -> list[dict]:
+    """Réglages › Accès API: the account's live keys, the newest first (never the key, only its first characters)."""
+    from app.services.timezones import athlete_zone
+
+    zone = athlete_zone(user)
+    return [{"id": t.id, "name": t.name, "prefix": t.prefix, "health": t.health, "created": _when(t.created_at, zone),
+             "last_used": _when(t.last_used_at, zone, with_time=True)} for t in await api_tokens.active(db, user.id)]
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -90,8 +114,69 @@ async def settings_page(
         strava_error=request.session.pop("strava_error", None),
         garmin_error=request.session.pop("garmin_error", None),
         health_ok=request.session.pop("health_ok", None),
+        # Accès API: the key made just before, shown on this page only (api_tokens.take_flash), and its messages
+        api_new=api_tokens.take_flash(request.session),
+        api_ok=request.session.pop("api_ok", None),
+        api_error=request.session.pop("api_error", None),
     )
     return templates.TemplateResponse(request, "settings.html", context=ctx)
+
+
+# ── Accès API: personal keys (routers.api_v1), made and revoked here ──
+API_TARGET = "/settings#api"
+
+
+@router.post("/settings/api-tokens")
+async def create_api_token(
+    request: Request,
+    name: str = Form(default="", max_length=200),
+    health: str | None = Form(default=None),
+    csrf_token: str = Form(default=""),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """« Créer la clé »: a confirmed email, a name, the health data only with the consent, MAX_ACTIVE live keys at
+    most. The key goes to the next page through the session, encrypted, and is shown there once."""
+    from app.services.auth import over_quota
+
+    check_csrf(request, csrf_token)
+    label, wants_health = api_tokens.clean_name(name), health == "1"
+    error = None
+    if not user.email or not user.email_verified:
+        error = "Confirme ton adresse e-mail avant de créer une clé."
+    elif not label:
+        error = "Donne un nom à ta clé."
+    elif wants_health and not health_consent.given(user):
+        error = "Donne d’abord ton accord pour tes données de santé."
+    elif await api_tokens.active_count(db, user.id) >= api_tokens.MAX_ACTIVE:
+        error = f"{api_tokens.MAX_ACTIVE} clés au plus : révoque-en une pour en créer une autre."
+    elif await over_quota("api_token", user=user.id):
+        error = "Trop de clés créées pour l’instant. Réessaie dans une heure."
+    if error:
+        request.session["api_error"] = error
+        return RedirectResponse(API_TARGET, status_code=303)
+    row, token = await api_tokens.create(db, user.id, label, wants_health)
+    await db.commit()  # before the page that shows it: get_db's own commit runs once the response is sent
+    api_tokens.flash(request.session, label, token)
+    logger.info("User %d created API key %d (%s)", user.id, row.id, row.scopes)
+    return RedirectResponse(API_TARGET, status_code=303)
+
+
+@router.post("/settings/api-tokens/{token_id}/revoke")
+async def revoke_api_token(
+    token_id: int,
+    request: Request,
+    csrf_token: str = Form(default=""),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """« Révoquer » (after the app's confirmation): refused by the API at once."""
+    check_csrf(request, csrf_token)
+    if await api_tokens.revoke(db, user.id, token_id):
+        await db.commit()  # refused from now on, and gone from the list the redirect shows
+        request.session["api_ok"] = "Clé révoquée : elle ne fonctionne plus."
+        logger.info("User %d revoked API key %d", user.id, token_id)
+    return RedirectResponse(API_TARGET, status_code=303)
 
 
 @router.post("/settings", response_class=HTMLResponse)
