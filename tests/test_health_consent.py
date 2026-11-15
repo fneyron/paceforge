@@ -21,17 +21,19 @@ from app.models import (
     MobileDaily,
     MobileDevice,
     NutritionProduct,
+    OfficialConnection,
     Route,
     RouteCheckpoint,
     User,
 )
 from app.services import coros, health_consent
 from app.services.health_consent import HEALTH_CONSENT_VERSION, safe_next
-from tests.test_account_deletion import _athlete, fake_coros, strava  # noqa: F401 (fixtures)
+from tests.test_account_deletion import _athlete, fake_coros, fake_official, strava  # noqa: F401 (fixtures)
 from tests.test_lactate import fields
 from tests.test_mobile import login
 
-HEALTH = (HealthMetric, HealthSample, MobileDaily, MobileDevice, LactateTest, CorosConnection, GarminConnection)
+HEALTH = (HealthMetric, HealthSample, MobileDaily, MobileDevice, LactateTest, CorosConnection, GarminConnection,
+          OfficialConnection)
 KEPT = (Activity, Route, RouteCheckpoint, NutritionProduct)
 
 
@@ -248,7 +250,7 @@ async def _count(db, model, user_id) -> int:
 
 
 async def test_withdrawal_erases_exactly_the_health_data(committing_session, committing_client, fake_coros,
-                                                         strava):
+                                                         fake_official, strava):
     db = committing_session
     other = await _athlete(db, "other@x.fr")
     user = await _athlete(db, "leaving@x.fr")
@@ -260,6 +262,7 @@ async def test_withdrawal_erases_exactly_the_health_data(committing_session, com
     r = await committing_client.post("/settings/health-consent/withdraw")
     assert r.status_code == 303 and r.headers["location"] == "/settings#donnees"
     assert [h["token_type_hint"] for h in fake_coros.revoked] == ["refresh_token", "access_token"]  # COROS let go
+    assert fake_official.deregistered == ["Bearer og-1"] and fake_official.deauthorized == ["oc-1"]  # official ones too
     strava["deauthorize"].assert_not_called()  # Strava (activities) stays linked
     await db.rollback()  # only what was committed counts
     for model in HEALTH:

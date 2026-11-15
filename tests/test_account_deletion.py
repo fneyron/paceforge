@@ -28,6 +28,7 @@ from app.models import (
     MobileDevice,
     NutritionProduct,
     OAuthAttempt,
+    OfficialConnection,
     Route,
     RouteCheckpoint,
     User,
@@ -67,6 +68,12 @@ def _rows(user: User) -> list:
                         token_endpoint=FakeCoros.META["token_endpoint"],
                         revocation_endpoint=FakeCoros.META["revocation_endpoint"]),
         GarminConnection(user_id=uid, di_client_id="GARMIN", access_token_encrypted=encrypt_secret("g-1")),
+        # the official links (app.connectors): Garmin's registration deleted, COROS deauthorized, then gone
+        OfficialConnection(user_id=uid, provider="garmin", provider_user_id=f"garmin-{uid}",
+                           access_token_encrypted=encrypt_secret("og-1"), refresh_token_encrypted=encrypt_secret("ogr"),
+                           expires_at=NOW + timedelta(hours=20)),
+        OfficialConnection(user_id=uid, provider="coros", provider_user_id=f"coros-{uid}",
+                           access_token_encrypted=encrypt_secret("oc-1"), expires_at=NOW + timedelta(days=30)),
     ]
 
 
@@ -97,6 +104,17 @@ def fake_coros(monkeypatch) -> FakeCoros:
 
 
 @pytest.fixture
+def fake_official(monkeypatch):
+    """The official connectors' providers (app.connectors.base's transport), recording what they are told."""
+    from app.connectors import base
+    from tests.test_official_connectors import FakeProviders
+
+    f = FakeProviders()
+    monkeypatch.setattr(base, "_transport", httpx.MockTransport(f.handler))
+    return f
+
+
+@pytest.fixture
 def strava(monkeypatch):
     calls = {"deauthorize": AsyncMock(), "delete_webhook_subscription": AsyncMock(return_value=True)}
     for name, mock in calls.items():
@@ -121,7 +139,7 @@ async def _delete(client: AsyncClient, user: User):
 
 
 async def test_deletion_revokes_every_provider_then_empties_every_table(committing_session, committing_client,
-                                                                        fake_coros, strava, caplog):
+                                                                        fake_coros, fake_official, strava, caplog):
     """Foreign keys enforced (as on PostgreSQL), commits for real: nothing of the athlete is left, the other
     athlete keeps everything."""
     db = committing_session
@@ -135,6 +153,7 @@ async def test_deletion_revokes_every_provider_then_empties_every_table(committi
     strava["deauthorize"].assert_awaited_once()  # POST /oauth/deauthorize with its access token
     strava["delete_webhook_subscription"].assert_awaited_once_with(77)  # its own app stops pushing to us
     assert [r["token_type_hint"] for r in fake_coros.revoked] == ["refresh_token", "access_token"]
+    assert fake_official.deregistered == ["Bearer og-1"] and fake_official.deauthorized == ["oc-1"]
     await db.rollback()  # only what was committed counts
     after = await _counts(db)
     assert after == {table: n // 2 for table, n in before.items()}, after  # the other athlete's half stays
@@ -155,7 +174,7 @@ def test_every_table_goes_with_the_athlete_by_cascade():
 
 
 async def test_a_provider_that_hangs_or_fails_never_stops_the_deletion(committing_session, committing_client,
-                                                                        fake_coros, strava, monkeypatch):
+                                                                        fake_coros, fake_official, strava, monkeypatch):
     db = committing_session
     user = await _athlete(db, "leaving@x.fr")
     await db.commit()
