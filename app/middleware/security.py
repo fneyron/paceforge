@@ -8,7 +8,7 @@ CrossSiteRequestMiddleware (CSRF): an unsafe request (POST, PUT, PATCH, DELETE) 
 this site. Its Origin, when sent, must be this origin (BASE_URL's, or the host the request was made to, which no
 other site's page can make a browser send); without one, its Sec-Fetch-Site must say same-origin or none; a
 client sending neither (a script, an old browser) goes through, as the session cookie's SameSite=Lax already
-covers it. Exempt: the Strava webhook and the phone's bearer API, pairing exchange included (a browser cannot
+covers it. Exempt: the Strava, COROS and Garmin webhooks and the phone's bearer API, pairing exchange included (a browser cannot
 send an Authorization header cross-site without a preflight, and the exchange carries no cookie).
 """
 import logging
@@ -108,6 +108,8 @@ class SecurityHeadersMiddleware:
 
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 EXEMPT_PATHS = frozenset({"/webhook/strava", "/api/mobile/exchange"})
+# the official connectors' pushes (app.connectors): server to server, checked by their own credentials
+EXEMPT_PREFIXES = ("/webhook/coros", "/webhook/garmin")
 OWN_SITE = frozenset({"same-origin", "none"})
 
 
@@ -129,6 +131,8 @@ def cross_site(scope: Scope) -> bool:
     """Whether this unsafe request must be refused: it says it comes from another site."""
     headers = Headers(scope=scope)
     if scope["path"] in EXEMPT_PATHS or headers.get("authorization", "").startswith("Bearer "):
+        return False
+    if scope["path"].startswith(EXEMPT_PREFIXES):
         return False
     origin = headers.get("origin")
     if origin is not None:  # « null » (a sandboxed frame, a redirect from elsewhere) matches nothing: refused

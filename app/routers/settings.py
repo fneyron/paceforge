@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import math
+from functools import partial
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -9,10 +10,13 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
+from app.connectors import base as official
+from app.connectors import ready
 from app.csrf import check_csrf, csrf
 from app.dependencies import get_current_user, get_optional_user, get_db
 from app.features import cycling_enabled
 from app.models.activity import Activity
+from app.models.official_connection import OfficialConnection
 from app.models.user import User
 from app.services import api_tokens
 from app.services import coros as coros_service
@@ -40,6 +44,8 @@ async def connection_page(provider: str, request: Request, user: User | None = D
         return RedirectResponse(f"/auth/login?next={provider}", status_code=303)
     state = (strava_status(user) if provider == "strava" else
              await (coros_status if provider == "coros" else garmin_status)(db, user.id))
+    if provider != "strava" and ready(provider) and await official.connection_for(db, user.id, provider):
+        state = await official.status(db, user.id, provider)  # the official link (app.connectors) wins
     if provider == "garmin" and not state["connected"] and not health_consent.given(user):
         # Garmin brings health data: the consent first (the phone app opens this page), before a password is typed
         return RedirectResponse(health_consent.consent_url("/connections/garmin"), status_code=303)
@@ -68,6 +74,8 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
     flags.setdefault("coros", await coros_status(db, user.id))
     flags.setdefault("garmin", await garmin_status(db, user.id))
     flags.setdefault("strava", strava_status(user))
+    # the official connections (app.connectors): none while every connector is off
+    flags.setdefault("official", await official.statuses(db, user.id, request.session))
     given = health_consent.given(user)
     flags.setdefault("health_consent_on", health_consent.given_on(user) if given else None)
     # without the consent, an account holding health data may refuse and erase it (« Refuser et effacer »)
@@ -307,7 +315,7 @@ async def _revoke_links(db: AsyncSession, user: User, strava: bool = True) -> No
     """Before an account's rows go, best effort and time-bounded: PaceForge's
     access revoked at Strava (deauthorize, and the athlete's own app's webhook
     deleted) and at COROS, the Garmin link forgotten (Garmin has no
-    revocation). A provider that fails or does not answer in time never stops
+    revocation), the official links let go at their provider (app.connectors). A provider that fails or does not answer in time never stops
     the deletion: the session is then rolled back to a clean state (nothing is
     deleted yet), the explicit deletions follow. `strava=False`: the health
     sources only (the consent to health data withdrawn)."""
@@ -321,6 +329,9 @@ async def _revoke_links(db: AsyncSession, user: User, strava: bool = True) -> No
     garmin_conn = await garmin_service.connection_for(db, user_id)
     if garmin_conn is not None:
         steps.append(("Garmin", lambda: garmin_service.disconnect(db, garmin_conn)))
+    # the official links (app.connectors): COROS deauthorized, Garmin's registration deleted (its program requires it)
+    for link in (await db.execute(select(OfficialConnection).where(OfficialConnection.user_id == user_id))).scalars():
+        steps.append((f"{link.provider} (official)", partial(official.disconnect, db, link)))
     clean = True
     for name, step in steps:
         try:
@@ -348,7 +359,7 @@ async def withdraw_health_consent(
     user_id, had_consented = user.id, health_consent.given(user)
     await _revoke_links(db, user, strava=False)
     # a link a provider did not let go of in time (rolled back) is forgotten all the same
-    for model in (CorosConnection, GarminConnection):
+    for model in (CorosConnection, GarminConnection, OfficialConnection):
         await db.execute(delete(model).where(model.user_id == user_id))
     await health_consent.erase_health_data(db, user_id)
     await db.commit()

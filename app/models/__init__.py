@@ -7,7 +7,8 @@ from app.models.lactate import LactateTest
 from app.models.mobile import MobileDaily, MobileDevice
 from app.models.nutrition import NutritionProduct
 from app.models.oauth_attempt import OAuthAttempt
+from app.models.official_connection import OfficialConnection
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
 
-__all__ = ["ApiToken", "LactateTest", "MobileDaily", "MobileDevice", "OAuthAttempt", "User", "Activity", "Route", "RouteCheckpoint", "NutritionProduct", "HealthSample", "HealthMetric", "CorosConnection", "OAuthClient", "GarminConnection"]
+__all__ = ["ApiToken", "LactateTest", "MobileDaily", "MobileDevice", "OAuthAttempt", "User", "Activity", "Route", "RouteCheckpoint", "NutritionProduct", "HealthSample", "HealthMetric", "CorosConnection", "OAuthClient", "GarminConnection", "OfficialConnection"]

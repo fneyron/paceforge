@@ -253,6 +253,7 @@ def create_app() -> FastAPI:
     # Routers
     from app.routers import activity, api_v1, auth, coros, dashboard, garmin, mobile, sante, lactate, simulator, webhook
     from app.routers import settings as settings_router
+    from app.routers import official_connectors
     from app.routers.garmin_consent import consent_before_connect
 
     app.include_router(auth.router)
@@ -269,6 +270,8 @@ def create_app() -> FastAPI:
     app.include_router(webhook.router)
     app.include_router(api_v1.router)     # the personal API: read-only, a key per use (Réglages › Accès API)
     app.include_router(api_v1.pages)      # its documentation, /developpeurs
+    # the official COROS and Garmin connectors: every route 404 while its connector is off (app.connectors)
+    app.include_router(official_connectors.router)
 
     # Browsers ask for /favicon.ico at the root, whatever the page links to
     @app.get("/favicon.ico", include_in_schema=False)
