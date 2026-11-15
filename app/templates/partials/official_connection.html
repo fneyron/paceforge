@@ -19,7 +19,7 @@
     <a href="/connect/{{ oc.provider }}" class="pf-btn pf-btn-primary pf-btn-sm">{{ 'Reconnecter' if oc.needs_reauth else 'Connecter ' ~ oc.name }}</a>
     {% else %}
     <p class="text-xs text-gray-500">{% if oc.last_sync_ago %}Dernières données reçues {{ oc.last_sync_ago }}.{% else %}Les données apparaîtront après la prochaine synchronisation de ta montre.{% endif %}</p>
-    {% if oc.missing %}<p class="text-xs text-gray-600">{{ oc.name }} ne partage pas tes {{ oc.missing|join(' ni tes ') }} : change-le dans les autorisations de Garmin Connect.</p>{% endif %}
+    {% if oc.missing %}<p class="text-xs text-gray-600">{{ oc.name }} ne partage pas tes {{ oc.missing|join(' ni tes ') }} : change-le dans les autorisations de {{ 'Garmin Connect' if oc.provider == 'garmin' else 'ton compte ' ~ oc.name }}.</p>{% endif %}
     {% if oc.last_error %}<p class="text-xs text-gray-600">Dernière synchro échouée : {{ oc.last_error }}</p>{% endif %}
     {% endif %}
     {% if oc.connected %}
