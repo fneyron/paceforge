@@ -31,6 +31,7 @@ from app.models.health import HealthMetric, HealthSample
 from app.models.lactate import LactateTest
 from app.models.mobile import MobileDaily, MobileDevice
 from app.models.nutrition import NutritionProduct
+from app.models.official_connection import OfficialConnection
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
 from app.services.health import FEEL  # the former feel's answers (no longer written since 2026-10-31): their own file
@@ -45,6 +46,9 @@ ACCOUNT_FIELDS = ("id", "email", "email_verified", "firstname", "lastname", "pro
                   "health_source", "preferred_sports", "weekly_volume_target_km", "auto_post_comments", "race_name",
                   "race_date", "race_distance_km", "initial_sync_done", "health_consent_at", "health_consent_version")
 LINK_FIELDS = ("connected_at", "last_sync_at", "last_error", "needs_reauth")
+# an official link (app.connectors): its metadata, never its tokens
+OFFICIAL_FIELDS = ("provider", "provider_user_id", "scopes", "status", "created_at", "updated_at", "last_push_at",
+                   "last_sync_at", "last_error")
 PHONE_FIELDS = ("platform", "created_at", "last_seen_at", "last_sync_at", "expires_at")
 
 README = """Tes données PaceForge, au format JSON (UTF-8). Dates en ISO 8601. Les heures portent leur fuseau, sauf
@@ -94,6 +98,8 @@ async def connections(db: AsyncSession, user: User) -> dict[str, Any]:
     """Which services and phones are linked, since when, their last sync: no token, code, key or app secret."""
     coros = await db.scalar(select(CorosConnection).where(CorosConnection.user_id == user.id))
     garmin = await db.scalar(select(GarminConnection).where(GarminConnection.user_id == user.id))
+    official = (await db.scalars(select(OfficialConnection).where(OfficialConnection.user_id == user.id)
+                                 .order_by(OfficialConnection.provider))).all()
     phones = (await db.scalars(select(MobileDevice).where(MobileDevice.user_id == user.id,
                                                           MobileDevice.token_hash.is_not(None))
                                .order_by(MobileDevice.created_at))).all()
@@ -105,6 +111,10 @@ async def connections(db: AsyncSession, user: User) -> dict[str, Any]:
         "coros": {field: _plain(getattr(coros, field)) for field in LINK_FIELDS} if coros else None,
         "garmin": ({field: _plain(getattr(garmin, field)) for field in LINK_FIELDS + ("display_name",)}
                    if garmin else None),
+        # the links through the providers' official programs (COROS Partner API, Garmin Connect Developer Program),
+        # when there are some
+        **({"connexions_officielles": [{field: _plain(getattr(link, field)) for field in OFFICIAL_FIELDS}
+                                       for link in official]} if official else {}),
         "telephones": [{field: _plain(getattr(p, field)) for field in PHONE_FIELDS} for p in phones],
         "raccourci_apple_sante": {"cree_le": _plain(user.health_key_created_at),
                                   "dernier_envoi": _plain(user.health_last_push_at),

@@ -1,0 +1,9 @@
+{# /privacy › Qui reçoit quoi: the official connectors' recipients, only while the connector is active (app.connectors):
+   the policy never claims a processing that does not happen. Wording kept in docs/official-connectors.md. #}
+{% set active = official_connectors_active() if official_connectors_active is defined else [] %}
+{% if 'coros' in active %}
+<li><strong>COROS</strong> (COROS Wearables Inc.), si tu relies COROS par sa connexion officielle&nbsp;: tu autorises PaceForge sur la page de COROS. COROS envoie ensuite à PaceForge le résumé de chaque séance quelques minutes après la synchronisation de ta montre, et PaceForge y lit le fichier de la séance (tours, fréquence cardiaque, dénivelé)&#8239;; avec ton consentement aux données de santé, il lit aussi tes pas et tes calories du jour. Les serveurs de COROS sont hors UE pour les comptes Monde (États-Unis) et Chine. «&nbsp;Déconnecter&nbsp;» retire l’accès de PaceForge chez COROS.</li>
+{% endif %}
+{% if 'garmin' in active %}
+<li><strong>Garmin</strong> (Garmin Ltd. et ses filiales, États-Unis, hors UE), si tu relies Garmin par sa connexion officielle&nbsp;: tu autorises PaceForge sur la page de Garmin, sans lui donner ton mot de passe, et tu y choisis ce que tu partages. Garmin envoie ensuite à PaceForge tes activités (résumé, tours, fréquence cardiaque) et, avec ton consentement aux données de santé, tes résumés du jour (pas, calories, minutes d’intensité, fréquence cardiaque, stress), ton sommeil et ses phases, ta VFC et ta respiration de nuit, tes pesées (poids, masse grasse). «&nbsp;Déconnecter&nbsp;» ou la suppression de ton compte retirent cet accès chez Garmin&#8239;; tu peux aussi le retirer dans Garmin Connect.</li>
+{% endif %}

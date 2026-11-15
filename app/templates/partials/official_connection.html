@@ -1,0 +1,31 @@
+{# An official connection (app.connectors): shown only while its connector is active (Réglages › Connexions) #}
+<div id="official-{{ oc.provider }}" class="pf-section space-y-4 scroll-mt-20">
+    <div class="flex items-center justify-between gap-3">
+        <h2 class="pf-h2">{{ oc.name }} <span class="text-sm font-normal text-gray-500">· connexion officielle</span></h2>
+        {% if oc.connected and oc.needs_reauth %}
+        <span class="pf-pill pf-pill-bad"><span class="pf-dot"></span>À reconnecter</span>
+        {% elif oc.connected %}
+        <span class="pf-pill pf-pill-ok"><span class="pf-dot"></span>Connecté</span>
+        {% else %}
+        <span class="pf-pill pf-pill-soft"><span class="pf-dot"></span>Non connecté</span>
+        {% endif %}
+    </div>
+    {% if oc.ok %}<div class="pf-note !text-ok" role="status">{{ oc.ok }}</div>{% endif %}
+    {% if oc.error %}<div class="pf-note !text-danger" role="alert">{{ oc.error }}</div>{% endif %}
+    {% if not oc.connected or oc.needs_reauth %}
+    <p class="text-sm text-gray-500">{% if oc.provider == 'garmin' %}Tes activités et tes mesures arrivent automatiquement de Garmin Connect, dès que ta montre se synchronise. Tu autorises PaceForge sur la page de Garmin, sans donner ton mot de passe.{% else %}Tes activités arrivent automatiquement de COROS quelques minutes après chaque synchronisation de ta montre. Tu autorises PaceForge sur la page de COROS.{% endif %}</p>
+    {% if oc.legacy %}<p class="text-xs text-gray-500">Elle remplace la connexion {{ oc.name }} actuelle. Les données déjà reçues restent.</p>{% endif %}
+    {% if oc.needs_reauth and oc.last_error %}<p class="text-xs text-gray-600">{{ oc.last_error }}</p>{% endif %}
+    <a href="/connect/{{ oc.provider }}" class="pf-btn pf-btn-primary pf-btn-sm">{{ 'Reconnecter' if oc.needs_reauth else 'Connecter ' ~ oc.name }}</a>
+    {% else %}
+    <p class="text-xs text-gray-500">{% if oc.last_sync_ago %}Dernières données reçues {{ oc.last_sync_ago }}.{% else %}Les données apparaîtront après la prochaine synchronisation de ta montre.{% endif %}</p>
+    {% if oc.missing %}<p class="text-xs text-gray-600">{{ oc.name }} ne partage pas tes {{ oc.missing|join(' ni tes ') }} : change-le dans les autorisations de Garmin Connect.</p>{% endif %}
+    {% if oc.last_error %}<p class="text-xs text-gray-600">Dernière synchro échouée : {{ oc.last_error }}</p>{% endif %}
+    {% endif %}
+    {% if oc.connected %}
+    <form method="post" action="/connect/{{ oc.provider }}/disconnect"
+          onsubmit="event.preventDefault(); var f = this; var msg = 'Déconnecter {{ oc.name }} ? Les données déjà reçues restent.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Déconnecter'); } else if (confirm(msg)) { f.submit(); }">
+        <button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm hover:!text-danger">Déconnecter</button>
+    </form>
+    {% endif %}
+</div>

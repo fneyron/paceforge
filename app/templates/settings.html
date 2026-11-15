@@ -97,6 +97,8 @@
     {% include "partials/coros_settings.html" %}
 
     {% include "partials/garmin_settings.html" %}
+
+    {% for oc in official or [] %}{% include "partials/official_connection.html" %}{% endfor %}
     </div>
 
     <div class="pf-section space-y-3" id="donnees">

@@ -13,6 +13,7 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from app.config import GOOGLE_SITE_VERIFICATION, settings
+from app.connectors import active_providers
 from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db, get_optional_user, sign_in
 from app.models.mobile import MobileDevice
@@ -50,6 +51,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 templates.env.globals["google_site_verification"] = GOOGLE_SITE_VERIFICATION  # /privacy's head
+# /privacy names the official connectors' recipients only while one is active (partials/official_privacy.html)
+templates.env.globals["official_connectors_active"] = active_providers
 HOME = "/sante"  # Santé is the main dashboard
 # Where a sign-in may lead instead of Santé: a connection page asked for before the login, or the race plans (the
 # method page's « Créer mon plan », carried through sign-up and the email check in the session). Nothing else.

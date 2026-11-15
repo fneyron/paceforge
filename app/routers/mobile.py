@@ -201,11 +201,20 @@ async def _connections(db: AsyncSession, user: User, nonce: str, **extra) -> dic
     from app.services.coros import coros_status
     from app.services.garmin import garmin_status
     from app.services.strava import strava_status
+    from app.connectors import base as official
+    from app.connectors import ready, visible_to
     states = {"coros": await coros_status(db, user.id), "garmin": await garmin_status(db, user.id),
               "strava": strava_status(user)}
+    for key in HEALTH_PROVIDERS:  # an official link (app.connectors) is that brand's link
+        if ready(key) and await official.connection_for(db, user.id, key):
+            states[key] = await official.status(db, user.id, key)
+    # which connections sign in through the official flow, in the sign-in sheet (« link »): said only while one is
+    # active, an extra key older apps ignore (Garmin's screen opens its own page in the app until the app reads it)
+    sheet = {key: True for key in HEALTH_PROVIDERS if visible_to(key, user.id)}
     return {"type": "connections", "nonce": nonce, "user_id": user.id, "name": user.firstname or "Athlète",
             "providers": {key: _state(w) for key, w in states.items()},
-            "details": {key: _detail(key, w) for key, w in states.items()}, **extra}
+            "details": {key: _detail(key, w) for key, w in states.items()},
+            **({"official": sheet} if sheet else {}), **extra}
 
 
 @router.get("/mobile/connections")
@@ -230,7 +239,7 @@ async def connection_action(nonce: str, provider: Provider, action: Literal["syn
         raise HTTPException(400)
     name, extra = PROVIDERS[provider], {}
     if action == "link":
-        if provider == "garmin":  # Garmin signs in on its own page, in the app
+        if provider == "garmin" and not _official_sheet("garmin", user):  # Garmin signs in on its own page, in the app
             raise HTTPException(400)
         extra["link"] = f"{settings.BASE_URL.rstrip('/')}/mobile/oauth/{provider}#{_ticket(user, provider)}"
     elif action == "sync":
@@ -260,8 +269,12 @@ async def _sync(db: AsyncSession, user: User, provider: str) -> str:
             logger.warning("Strava sync from the app failed for user %d", user.id, exc_info=True)
             return "Synchronisation incomplète. Réessaie dans un instant."
         return f"{imported_label(received)}." if received else "Déjà à jour."
+    from app.connectors import base as official
+    from app.connectors import ready
     from app.services import coros as coros_service
     from app.services import garmin as garmin_service
+    if ready(provider) and (link := await official.connection_for(db, user.id, provider)):
+        return await _official_sync(link)
     service = coros_service if provider == "coros" else garmin_service
     conn = await service.connection_for(db, user.id)
     if conn is None:
@@ -277,13 +290,41 @@ async def _sync(db: AsyncSession, user: User, provider: str) -> str:
             "La synchronisation n’a pas pu démarrer. Réessaie dans un instant.")
 
 
+async def _official_sync(link) -> str:
+    """An official link's « Synchroniser »: COROS's pull queued; Garmin sends what is new by itself."""
+    from app.connectors import base as official
+
+    if link.status != official.ACTIVE:
+        return f"Reconnecte {PROVIDERS[link.provider]} pour reprendre les imports."
+    if link.provider == "garmin":
+        return "Garmin envoie tes données dès que ta montre se synchronise."
+    from app.tasks.official_connectors import coros_sync
+    try:
+        await asyncio.to_thread(coros_sync.apply_async, args=[link.id, False], retry=False)
+    except Exception:
+        logger.warning("COROS official pull not queued for user %d", link.user_id, exc_info=True)
+        return "La synchronisation n’a pas pu démarrer. Réessaie dans un instant."
+    return "Synchronisation lancée."
+
+
+def _official_sheet(provider: str, user: User) -> bool:
+    """Whether this connection signs in through its official flow (app.connectors) in the app's sign-in sheet."""
+    from app.connectors import visible_to
+
+    return visible_to(provider, user.id)
+
+
 async def _disconnect(db: AsyncSession, user: User, provider: str) -> None:
-    """As Réglages' « Déconnecter » (/settings/{provider}/disconnect): the data already received stays."""
+    """As Réglages' « Déconnecter » (/settings/{provider}/disconnect): the data already received stays. A watch's
+    official link (app.connectors) goes too."""
     if provider == "strava":
         from app.services.strava import disconnect
         if user.has_strava_linked:
             await disconnect(db, user)
         return
+    from app.connectors import base as official
+    if link := await official.connection_for(db, user.id, provider):
+        await official.disconnect(db, link)
     from app.services import coros as coros_service
     from app.services import garmin as garmin_service
     service = coros_service if provider == "coros" else garmin_service
@@ -321,23 +362,35 @@ async def _redeem(db: AsyncSession, ticket: str, provider: str) -> User | None:
     return user
 
 
+SheetProvider = Literal["coros", "strava", "garmin"]  # Garmin only through its official flow, while it is active
+
+
+def _sheet_open(provider: str) -> None:
+    from app.connectors import ready
+
+    if provider == "garmin" and not ready("garmin"):
+        raise HTTPException(404)
+
+
 @router.get("/mobile/oauth/{provider}")
-async def oauth_page(request: Request, provider: Literal["coros", "strava"]):
+async def oauth_page(request: Request, provider: SheetProvider):
     """The sign-in sheet's first page: posts the ticket of its fragment (a link never logs it)."""
     from app.services.app_return import app_return, with_result
+    _sheet_open(provider)
     return page(request, mode="oauth", name=PROVIDERS[provider],
                 expired=with_result(app_return(provider), "expired"))
 
 
 @router.post("/mobile/oauth/{provider}")
-async def oauth_start(request: Request, provider: Literal["coros", "strava"], ticket: str = Form(max_length=512),
+async def oauth_start(request: Request, provider: SheetProvider, ticket: str = Form(max_length=512),
                       db: AsyncSession = Depends(get_db)):
     """Sign the sheet in as the ticket's account, then start the provider's own connect, back to the app."""
     from app.dependencies import sign_in
     from app.services.app_return import app_return, with_result
 
+    _sheet_open(provider)
     user = await _redeem(db, ticket, provider)
-    if user is None:
+    if user is None or (provider == "garmin" and not _official_sheet("garmin", user)):
         return RedirectResponse(with_result(app_return(provider), "expired"), status_code=303)
     request.session.clear()
     sign_in(request, user)
@@ -345,16 +398,21 @@ async def oauth_start(request: Request, provider: Literal["coros", "strava"], ti
 
 
 @router.get("/mobile/oauth/{provider}/confirm")
-async def oauth_confirm(request: Request, provider: Literal["coros", "strava"], user: User = Depends(get_current_user)):
+async def oauth_confirm(request: Request, provider: SheetProvider, user: User = Depends(get_current_user)):
     """The account is shown before the provider's consent, as on the site's connection pages: a ticket link sent
     to someone else cannot quietly attach their COROS or Strava to the sender's account."""
     from app.services import health_consent
     from app.services.app_return import app_return, with_result
     # COROS and Garmin bring health data: without the consent, this page asks for it (its box, then the connect).
     # Garmin signs in on /connections/garmin in the app, which asks first too (settings.connection_page).
+    _sheet_open(provider)
+    if provider == "garmin" and not _official_sheet("garmin", user):
+        raise HTTPException(404)
     ask = provider in HEALTH_PROVIDERS and not health_consent.given(user)
-    return page(request, mode="oauth-confirm", user=user, name=PROVIDERS[provider],
-                start="/coros/connect?next=app" if provider == "coros" else "/auth/strava?next=app",
+    # COROS and Garmin through their official flow while it is active for this account (app.connectors)
+    start = ("/auth/strava?next=app" if provider == "strava" else
+             f"/connect/{provider}?next=app" if _official_sheet(provider, user) else "/coros/connect?next=app")
+    return page(request, mode="oauth-confirm", user=user, name=PROVIDERS[provider], start=start,
                 cancel=with_result(app_return(provider), "cancelled"), **(health_consent.texts() if ask else {}))
 
 

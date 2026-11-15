@@ -32,11 +32,11 @@
                 {% if not w.connected or w.needs_reauth %}<p class="text-sm text-gray-500">Si COROS ne reconnaît pas ton compte, essaie un autre serveur : <a class="pf-link" href="/coros/connect?next=devices&amp;region=europe">Europe</a> · <a class="pf-link" href="/coros/connect?next=devices&amp;region=monde">Monde</a> · <a class="pf-link" href="/coros/connect?next=devices&amp;region=chine">Chine</a>.</p>{% endif %}
                 {% endif %}
                 {% if provider == 'strava' and w.own_app and (w.needs_reauth or w.bad_keys) %}<a class="pf-link" href="/setup?next=devices">Réparer la configuration Strava</a>{% endif %}
-                {% if w.connected and not w.needs_reauth and provider != 'strava' %}
+                {% if w.connected and not w.needs_reauth and provider != 'strava' and not w.official %}
                     {% set key = provider %}{% include "partials/watch_sync.html" %}
                 {% endif %}
                 {% if w.connected %}
-                <form method="post" action="/settings/{{ provider }}/disconnect" onsubmit="return confirm('Déconnecter {{ name }} ? Tes données déjà importées seront conservées.')">
+                <form method="post" action="{{ '/connect/' ~ provider ~ '/disconnect' if w.official else '/settings/' ~ provider ~ '/disconnect' }}" onsubmit="return confirm('Déconnecter {{ name }} ? Tes données déjà importées seront conservées.')">
                     <input type="hidden" name="next" value="devices"><button class="pf-btn pf-btn-secondary" type="submit">Déconnecter {{ name }}</button>
                 </form>
                 {% endif %}
