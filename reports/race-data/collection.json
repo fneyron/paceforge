@@ -1,62 +1,42 @@
 {
-  "started_at": "2026-11-09T11:50:35.454965+00:00",
+  "started_at": "2026-11-16T11:46:02.063517+00:00",
   "scope": "scheduled queue",
   "updated": [
-    "utmb/grindstone_2026/100K",
-    "utmb/grindstone_2026/100M",
-    "utmb/grindstone_2026/50K",
-    "utmb/jangsutrailrace_2026/jtr100",
-    "utmb/jangsutrailrace_2026/jtr40j",
-    "utmb/jangsutrailrace_2026/jtrmil",
-    "utmb/julianalps_2026/JAT120K",
-    "utmb/julianalps_2026/JAT50K",
-    "utmb/translantau_2025/TL50",
-    "utmb/translantau_2025/TL80"
+    "utmb/julianalps_2026/JAT80K",
+    "utmb/paraty_2026/ptr108",
+    "utmb/paraty_2026/ptr58",
+    "utmb/seoul100k_2026/100k",
+    "utmb/seoul100k_2026/50k",
+    "utmb/puglia_2025/CUT50"
   ],
-  "unchanged": [],
+  "unchanged": [
+    "utmb/translantau_2025/TL120"
+  ],
   "excluded": [
-    "utmb/chiltern50_2026/25KM",
-    "utmb/swisshighlandtrail_2026/high15",
-    "utmb/grindstone_2026/21K",
-    "utmb/jangsutrailrace_2026/jtr20",
-    "utmb/jangsutrailrace_2026/jtr38",
-    "utmb/jangsutrailrace_2026/jtr5",
-    "utmb/julianalps_2026/JAT10K",
-    "utmb/julianalps_2026/JAT15K",
-    "utmb/julianalps_2026/JAT25K"
+    "utmb/julianalps_2026/nextgen",
+    "utmb/olladenuria_2026/alevi",
+    "utmb/olladenuria_2026/benjami",
+    "utmb/olladenuria_2026/cadet",
+    "utmb/olladenuria_2026/inf",
+    "utmb/olladenuria_2026/junior",
+    "utmb/olladenuria_2026/mitja",
+    "utmb/olladenuria_2026/preben",
+    "utmb/olladenuria_2026/valls",
+    "utmb/olladenuria_2026/vertic",
+    "utmb/paraty_2026/ptr17",
+    "utmb/paraty_2026/ptr25",
+    "utmb/paraty_2026/ptr34",
+    "utmb/paraty_2026/ptr7",
+    "utmb/seoul100k_2026/20k",
+    "utmb/matxicots_2026/mitja",
+    "utmb/matxicots_2026/popular"
   ],
-  "errors": [
-    {
-      "item": "utmb/chiltern50_2026/50KM",
-      "error": "IncompleteDownloadError",
-      "detail": "Missing race metadata"
-    },
-    {
-      "item": "utmb/swisshighlandtrail_2026/high25",
-      "error": "IncompleteDownloadError",
-      "detail": "Missing race metadata"
-    },
-    {
-      "item": "utmb/swisshighlandtrail_2026/high42",
-      "error": "IncompleteDownloadError",
-      "detail": "Missing race metadata"
-    },
-    {
-      "item": "utmb/swisshighlandtrail_2026/high60",
-      "error": "IncompleteDownloadError",
-      "detail": "Missing final ranking"
-    },
-    {
-      "item": "utmb/swisshighlandtrail_2026/highfam",
-      "error": "IncompleteDownloadError",
-      "detail": "Missing race metadata"
-    }
-  ],
-  "catalog_deferred": 491,
-  "races_deferred": 2746,
-  "finished_at": "2026-11-09T12:14:33.322604+00:00",
-  "requests": 2149,
-  "corpus_sha256": "e3b6dac9fb82392ee9c5e6e8e507b012c64122bdd97127e75b1d03c85d33ec34",
-  "archives": 1053,
-  "status": "partial"
+  "errors": [],
+  "catalog_deferred": 429,
+  "races_deferred": 2763,
+  "finished_at": "2026-11-16T12:07:11.648085+00:00",
+  "requests": 1916,
+  "corpus_sha256": "a98ecf0ef22f8d5f8bfa2cd149c2f58bc5a4c5eda396f4ebf74450e836f78256",
+  "archives": 1058,
+  "status": "complete"
 }

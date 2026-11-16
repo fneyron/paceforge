@@ -33083,5 +33083,202 @@
       ]
     ],
     "date": null
+  },
+  "hivernaledestempliers_2026": {
+    "event": "Hivernale des Templiers",
+    "races": [
+      [
+        "Astraga",
+        "L’ASTRAGALE TRAIL",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "Orchis",
+        "L’ORCHIS MARATHON",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "Adonis",
+        "L’ADONIS TRAIL",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "Larock",
+        "LA ROCK’SHOT",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "Carline",
+        "CARLINE TRAIL",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "Etoile",
+        "L’ETOILE DU LARZAC",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "Lesill",
+        "LES ILLUMINES DE ROQUEFORT SOCIETE",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "RockAng",
+        "ROCK’ANGEL",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "Rando",
+        "CARLINE RANDO",
+        "NOT_LAUNCHED"
+      ]
+    ],
+    "date": null
+  },
+  "kullamannen_2026": {
+    "event": "Kullamannen by UTMB®",
+    "races": [
+      [
+        "100M",
+        "Ultra 100 Miles",
+        "FINISHED"
+      ],
+      [
+        "100k",
+        "Sprint Ultra 100km",
+        "FINISHED"
+      ],
+      [
+        "50k",
+        "Seventh Seal",
+        "FINISHED"
+      ],
+      [
+        "20K",
+        "North Shore",
+        "FINISHED"
+      ]
+    ],
+    "date": null
+  },
+  "lavenivici_2026": {
+    "event": "La Veni Vici",
+    "races": [
+      [
+        "87km",
+        "87 KM",
+        "FINISHED"
+      ],
+      [
+        "52km",
+        "52 KM",
+        "FINISHED"
+      ],
+      [
+        "33km",
+        "33 KM ",
+        "FINISHED"
+      ],
+      [
+        "33kmMN",
+        "33 KM MARCHE NORDIQUE",
+        "FINISHED"
+      ],
+      [
+        "18km",
+        "18 KM",
+        "FINISHED"
+      ]
+    ],
+    "date": null
+  },
+  "lutbynight_2026": {
+    "event": "Radiance Mutuelle LUT by Night 2026",
+    "races": [
+      [
+        "30K",
+        "30 KM",
+        "FINISHED"
+      ],
+      [
+        "20K",
+        "20 KM",
+        "FINISHED"
+      ],
+      [
+        "10K",
+        "10 KM",
+        "FINISHED"
+      ]
+    ],
+    "date": null
+  },
+  "mallorcabyutmb_2026": {
+    "event": "MALLORCA by UTMB",
+    "races": [
+      [
+        "sdt",
+        "SDT - Serra de Tramuntana",
+        "FINISHED"
+      ],
+      [
+        "cps",
+        "CPS - Camins de Pedra en Sec",
+        "FINISHED"
+      ],
+      [
+        "etm",
+        "ETM - Els Tres Mils",
+        "FINISHED"
+      ],
+      [
+        "cda",
+        "CDA - Camins de s'Arxiduc",
+        "FINISHED"
+      ],
+      [
+        "7k",
+        "7K - Memorial Guiem Sec",
+        "FINISHED"
+      ]
+    ],
+    "date": null
+  },
+  "maratodelsdements_2026": {
+    "event": "MARATÓ DELS DEMENTS 2026",
+    "races": [
+      [
+        "demmar",
+        "MARATÓ DELS DEMENTS SKYMASTERS",
+        "FINISHED"
+      ],
+      [
+        "demmit",
+        "MITJA d'AÍN",
+        "FINISHED"
+      ]
+    ],
+    "date": null
+  },
+  "mdsjordan_2026": {
+    "event": "MDS 120 JORDAN 2026",
+    "races": [
+      [
+        "120",
+        "120KM",
+        "FINISHED"
+      ],
+      [
+        "100",
+        "100KM",
+        "FINISHED"
+      ],
+      [
+        "70",
+        "70KM",
+        "FINISHED"
+      ]
+    ],
+    "date": null
   }
 }
