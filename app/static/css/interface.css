@@ -711,6 +711,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-lg.is-day { background: rgb(var(--pf-accent) / .4); }
 .pf-lg.is-ref { width: 14px; height: 0; border-radius: 0; border-top: 1px dashed rgb(var(--pf-gray-500)); }
 .pf-lg.is-mean { width: 14px; height: 0; border-radius: 0; border-top: 2px solid rgb(var(--pf-ink)); }
+.pf-lg.is-trend { width: 14px; height: 0; border-radius: 0; border-top: 2.5px solid rgb(var(--pf-accent)); }   /* FC en footing's line */
 .pf-lg.is-dot { width: 6px; height: 6px; margin: 0 2px; border-radius: 50%; background: rgb(var(--pf-viz-mark)); }   /* a night's dot */
 .pf-lg.is-band { width: 14px; height: 8px; background: rgb(var(--pf-accent) / .16); box-shadow: inset 0 1px 0 rgb(var(--pf-gray-400)), inset 0 -1px 0 rgb(var(--pf-gray-400)); }   /* the normal */
 .pf-lg.is-band-prov { width: 14px; height: 8px; border-radius: 0; background: rgb(var(--pf-accent) / .08); border-top: 1px dashed rgb(var(--pf-gray-400)); border-bottom: 1px dashed rgb(var(--pf-gray-400)); }   /* the usual values, provisional */
@@ -1037,6 +1038,9 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-viz-dot { fill: rgb(var(--pf-viz-mark)); }
 .pf-viz-dot.is-out, .pf-viz-dot.is-hot { fill: rgb(var(--pf-bg)); stroke: rgb(var(--pf-ink)); stroke-width: 1.5; }
 .pf-viz-dot.is-sel { fill: rgb(var(--pf-ink)); }
+/* a chart led by its trend line (FC en footing): the dots small and faint behind it, the selected one whole */
+.pf-viz-dot.is-faint:not(.is-sel) { opacity: .35; }
+.pf-viz-line.is-trend { stroke-width: 2.5; }
 .pf-viz-line { fill: none; stroke: rgb(var(--pf-ink)); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .pf-viz-line.is-soft { stroke: rgb(var(--pf-viz-mark)); }
 .pf-viz-now { fill: rgb(var(--pf-ink)); stroke: rgb(var(--pf-bg)); stroke-width: 2; }

@@ -56,7 +56,7 @@ from app.services import race_prep as rp
 from app.services import sante_training as st
 from app.services import viz
 from app.services.activity_dedupe import SPORT_GROUPS, find_duplicate_ids, is_false_start
-from app.services.viz import MOIS, NBSP, X1, d_long, hm, hm_long, num
+from app.services.viz import MOIS, MOIS_L, NBSP, X1, d_long, hm, hm_long, num
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +65,15 @@ SPIKE, SPIKE_DAYS = 1.10, 30  # Frandsen 2025
 FORM_DAYS = 120
 EASY_DAYS = 182  # the dots of 6 months
 # « FC en footing » leads with a number and a word (owner, 2026-11-07: « FC à allure comparable, je comprends pas
-# trop »): the normal of the last 4 weeks (the band's centre, today included) and its change over 8 weeks (H), named
-# by Nuuttila 2022's 3–4 bpm edge: lower is « en progrès », higher « en hausse », in between « stable ».
-TREND_DAYS = 56
+# trop »): the normal of the last 4 weeks (today included) and its change since the chart's first normal, the line
+# the chart draws (owner, 2026-11-19: « le graphique de forme n'est pas très clair » — the word said 8 weeks while
+# the chart showed 6 months), named by Nuuttila 2022's 3–4 bpm edge: lower is « en progrès », higher « en hausse ».
+TREND_MIN_DAYS = 28  # (H) a change is said only over 4 weeks at least of the line
 TREND_BPM = st.EASY_BPM
 EASY_HELP = ("Chaque point est un footing sur du plat, sa FC ramenée à {pace} pour comparer tes sorties entre elles. "
-             "En tête : ta FC habituelle de ces 4 dernières semaines et son évolution sur 8 semaines. Si elle baisse, "
-             "ton cœur travaille moins pour la même allure : ta forme progresse. Une hausse sur plusieurs sorties "
+             "La ligne suit ta FC habituelle (médiane de 4 semaines) ; en tête, sa valeur aujourd’hui et son évolution "
+             "depuis le début du graphique. Si elle baisse, ton cœur travaille moins pour la même allure : ta forme "
+             "progresse. Une hausse sur plusieurs sorties "
              "peut venir de la fatigue, de la chaleur ou d’une maladie.")
 FLAG_LINE = "Tes 2 dernières sorties faciles : cœur plus haut que d'habitude, à la même allure."
 AFTER_ULTRA = "après ultra"  # the fold's note instead of « à surveiller », 21 days after an ultra (H)
@@ -267,32 +269,32 @@ def semaines(weeks: list[dict], first: date | None, measure: str | None, sport: 
 
 # ── A2 FC en footing ────────────────────────────────────────────────────────
 
-def easy_trend(model: dict, today: date) -> dict | None:
-    """The chart's headline: {value: « 142 bpm », word: « en progrès » | « stable » | « en hausse » | None,
-    line: « −4 bpm en 8 semaines · en progrès » (« ces 4 dernières semaines » without a normal 8 weeks earlier),
-    status: the same, short (« −4 bpm en 8 sem. · en progrès »; None without a change to say), aria}. None without
-    a normal now (under 3 cool runs in the last 4 weeks)."""
-    after = today + timedelta(days=1)  # the normal of the 4 weeks up to today, today's runs included
-    now = model["centre"](after)
-    if now is None:
+def easy_trend(line: list[tuple[date, float | None]]) -> dict | None:
+    """The chart's headline, read off its own line [(day, normal | None)]: {value: « 142 bpm » (today's normal),
+    word: « en progrès » | « stable » | « en hausse » | None, line: « −6 bpm depuis mai · en progrès » (« ces 4
+    dernières semaines » when the line is younger than TREND_MIN_DAYS), status: the same (None without a change to
+    say), aria}. None without a normal today (under 3 cool runs in the last 4 weeks)."""
+    drawn = [(d, v) for d, v in line if v is not None]
+    if not drawn or drawn[-1][0] != line[-1][0]:
         return None
-    then = model["centre"](after - timedelta(days=TREND_DAYS))
+    (first_day, first), (last_day, now) = drawn[0], drawn[-1]
     value = num(now, 0, "bpm")
-    if then is None:
+    if (last_day - first_day).days < TREND_MIN_DAYS:
         return {"value": value, "word": None, "line": "ces 4 dernières semaines", "status": None,
                 "aria": f"ta FC habituelle de ces 4 dernières semaines : {num(now)} battements par minute"}
-    delta = round(now - then)
+    delta = round(now - first)
     word = "en progrès" if delta <= -TREND_BPM else "en hausse" if delta >= TREND_BPM else "stable"
-    change = (f"{'+' if delta > 0 else ''}{num(delta, 0, 'bpm')} en 8 semaines" if delta else "")
-    line = f"{change} · {word}" if change else "stable sur 8 semaines"
-    return {"value": value, "word": word, "line": line, "status": line.replace(" semaines", NBSP + "sem."),
+    since = f"depuis {MOIS_L[first_day.month - 1]}"
+    line_text = f"{'+' if delta > 0 else ''}{num(delta, 0, 'bpm')} {since} · {word}" if delta else f"stable {since}"
+    return {"value": value, "word": word, "line": line_text, "status": line_text,
             "aria": (f"ta FC habituelle de ces 4 dernières semaines : {num(now)} battements par minute, "
-                     f"{line.replace(' · ', ', ')}")}
+                     f"{line_text.replace(' · ', ', ')}")}
 
 
 def footing(sessions: list[st.Session], today: date, peak: float | None) -> dict | None:
-    """The dots of 6 months against the rolling normal (sante_training.easy_model,
-    the model Santé's « FC en footing » tile reads too); « à surveiller »
+    """The dots of 6 months, small and faint, under the line of the rolling normal (the 4 weeks up to each day:
+    sante_training.easy_model, the model Santé's « FC en footing » tile reads too; owner, 2026-11-19: the line is what
+    the eye follows, the band it replaced blurred it); « à surveiller »
     is sante_training.easy_watch. Its number (the bpm over the normal) is
     printed once, on Santé's tile: the line here says it in words."""
     model = st.easy_model(sessions, today, peak)
@@ -304,17 +306,20 @@ def footing(sessions: list[st.Session], today: date, peak: float | None) -> dict
     value, centre = model["value"], model["centre"]
     lo = today - timedelta(days=EASY_DAYS - 1)
     days = [lo + timedelta(days=i) for i in range(EASY_DAYS)]
-    band = []
-    for d in days:
-        m = centre(d)
-        band.append((m - st.EASY_BPM, m + st.EASY_BPM) if m is not None else None)
+    normal = [centre(d + timedelta(days=1)) for d in days]  # each day's normal, that day's runs included
     points = []
     for s in shown:
         m = centre(s.day)
         points.append({"day": s.day, "value": value[s.id], "hot": st.is_hot(s),
                        "label": f"d'habitude {num(m - st.EASY_BPM)}–{num(m + st.EASY_BPM)}" if m is not None else "",
                        "href": {"href": f"/activity/{s.id}", "label": "Ouvrir la sortie ›"}})
-    c = viz.dots(days, points, band=band, min_span=10)
+    # drawn smoothed over 7 days (a median of whole bpm moves in steps the eye reads as noise); the headline keeps
+    # the normal itself
+    drawn = []
+    for i in range(len(normal)):
+        near = [v for v in normal[max(0, i - 3):i + 4] if v is not None]
+        drawn.append(sum(near) / len(near) if normal[i] is not None and near else None)
+    c = viz.dots(days, points, line=drawn, min_span=10)
     watch = st.easy_watch(model, today)
     flagged = bool(watch and watch["flag"])
     # for 21 days after an ultra a raised easy-pace HR is « après ultra », never flagged (Chambers 1998, H)
@@ -323,7 +328,7 @@ def footing(sessions: list[st.Session], today: date, peak: float | None) -> dict
     mins, secs = divmod(model["pace"], 60)
     line = FLAG_LINE if flagged else f"{FLAG_LINE[:-1]}, {AFTER_ULTRA}." if ultra else None
     pace = f"{mins}:{secs:02d}/km"
-    trend = easy_trend(model, today) if model else None
+    trend = easy_trend(list(zip(days, normal)))
     c.update(flagged=flagged, after_ultra=ultra, pace=pace, line=line, trend=trend, help=EASY_HELP.format(pace=pace),
              summary=(f"FC en footing sur 6 mois, ramenée à {mins}:{secs:02d} par kilomètre : {len(points)} sortie"
                       f"{'s' if len(points) > 1 else ''} facile{'s' if len(points) > 1 else ''}"))

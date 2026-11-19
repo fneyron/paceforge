@@ -135,7 +135,7 @@
             read it in its (i) -#}
         <div class="pf-measurement-head"><h3 class="pf-card-h">FC en footing</h3><span class="pf-head-end">{% if e.trend and e.trend.status %}<span class="pf-health-status">{{ e.trend.status }}</span>{% endif %}{{ viz.help('forme', e.help, 'de la FC en footing') }}</span></div>
         {{ viz.viz_dots(e, "FC en footing", "forme-footing", quiet=True) }}
-        {{ viz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "tes valeurs habituelles")] if e.band else [])) }}
+        {{ viz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-trend", "ta FC habituelle (4 semaines)")] if e.trend_line else [])) }}
     </div>
 </section>
 {% endif %}
