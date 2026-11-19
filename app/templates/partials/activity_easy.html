@@ -8,6 +8,6 @@
     <div class="pf-fold-help">{{ vz.help('footing', e.help, 'de la FC en footing') }}</div>
     {% if e.line %}<p class="pf-train-note">{{ e.line }}</p>{% endif %}
     {{ vz.viz_dots(e, "FC en footing", "footing") }}
-    {{ vz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "tes valeurs habituelles")] if e.band else [])) }}
+    {{ vz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-trend", "ta FC habituelle (4 semaines)")] if e.trend_line else [])) }}
 </details>
 {% endif %}

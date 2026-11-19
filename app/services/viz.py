@@ -536,16 +536,17 @@ def lines(days: list[date], series: list[dict], *, races=(), sel=None, title: st
 # ── K8 dots: one per run (FC en footing) ────────────────────────────────────
 
 def dots(days: list[date], points: list[dict], *, band: list | None = None, min_span: float = 10, sel=None,
-         unit: str = "bpm", unit_long: str = "battements par minute") -> dict:
+         unit: str = "bpm", unit_long: str = "battements par minute", line: list | None = None) -> dict:
     """One dot per run on a day axis: {day, value, hot (hollow, with the word),
-    href, label}; `band`: [(lo, hi) | None per day] (rolling median ± 3 bpm, H).
-    The readout steps run by run."""
+    href, label}; `band`: [(lo, hi) | None per day] (rolling median ± 3 bpm, H);
+    `line`: a value or None per day, drawn as the chart's main mark over small faint dots (the trend the eye
+    reads first; the dots stay to touch). The readout steps run by run."""
     pts = sorted(points, key=lambda p: p["day"])
     idx = {d: i for i, d in enumerate(days)}
     xs_all = slot_x(len(days))
     lo_b = [b[0] if b else None for b in (band or [None] * len(days))]
     hi_b = [b[1] if b else None for b in (band or [None] * len(days))]
-    lo, hi = span_of([p["value"] for p in pts] + lo_b + hi_b, min_span)
+    lo, hi = span_of([p["value"] for p in pts] + lo_b + hi_b + [v for v in (line or []) if v is not None], min_span)
     y = scale(lo, hi, 16, 120)
     out, xs, ys, ds, r, a, h = [], [], [], [], [], [], []
     for k, p in enumerate(pts):
@@ -562,6 +563,7 @@ def dots(days: list[date], points: list[dict], *, band: list | None = None, min_
         h.append(p.get("href"))
     return {"n": len(xs), "W": W, "H": 140, "X1": X1, "dots": out,
             "band": band_polys(xs_all, [y(v) for v in lo_b], [y(v) for v in hi_b]),
+            "trend_line": paths(xs_all, [y(v) if v is not None else None for v in line], lone=False) if line else "",
             "ticks": [{"y": y(t), "label": num(t)} for t in nice_ticks(lo, hi, 3)],
             "xt": x_labels(days, xs_all), **_data(xs, [ys], ds, r, a, h=h, sel=sel)}
 

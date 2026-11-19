@@ -118,7 +118,8 @@
 {% call figure(c, title, key, group, "sortie", "Sortie précédente", "Sortie suivante", card=quiet, quiet=quiet) %}
 {% for t in c.ticks %}<line x1="0" x2="{{ c.X1 }}" y1="{{ t.y }}" y2="{{ t.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
 {% for poly in c.band %}<polygon points="{{ poly }}" class="pf-viz-band"/>{% endfor %}
-{% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="3.5" class="pf-viz-dot{% if d.hot %} is-hot{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
+{% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ 2.5 if c.trend_line else 3.5 }}" class="pf-viz-dot{% if d.hot %} is-hot{% endif %}{% if c.trend_line %} is-faint{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
+{% if c.trend_line %}<path d="{{ c.trend_line }}" class="pf-viz-line is-accent is-trend" pathLength="1"/>{% endif %}
 {{ _xlabels(c) }}
 <g class="pf-viz-cross"><line x1="0" x2="0" y1="10" y2="120"/><circle cx="0" cy="0" r="5" class="pf-viz-ring"/></g>
 {% endcall %}

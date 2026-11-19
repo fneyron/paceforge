@@ -9,6 +9,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+from app.services.viz import MOIS_L
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -87,7 +89,7 @@ def test_easy_pace_hr_dots_hollow_hot_runs_and_a_band_from_the_28_days_before():
     i = next(k for k, r in enumerate(d["r"]) if "journée chaude" in r[2])
     assert d["r"][i][1] == "150 bpm" and "d'habitude 137–143" in d["r"][i][2]
     assert d["h"][i] == {"href": f"/activity/{50_000 + 6 * 10 + 1}", "label": "Ouvrir la sortie ›"}
-    assert c["band"]  # the rolling band is drawn
+    assert c["trend_line"] and not c["band"]  # the rolling normal is a line now (owner, 2026-11-19), the band gone
 
 
 def test_easy_pace_hr_is_flagged_after_two_runs_3_bpm_above():
@@ -104,23 +106,24 @@ def test_easy_pace_hr_is_flagged_after_two_runs_3_bpm_above():
     assert tv.footing([easy(k, 140) for k in (3, 60, 100, 150, 200, 250, 300, 350)], T, 185) is None
 
 
-def test_easy_pace_hr_leads_with_the_4_week_normal_and_its_change_over_8_weeks():
-    """« FC à allure comparable, je comprends pas trop » (owner, 2026-11-07): the chart leads with a number (the normal
-    of the last 4 weeks) and a word for its change over 8 weeks, named by the 3 bpm edge (H)."""
+def test_easy_pace_hr_leads_with_the_normal_and_its_change_since_the_chart_began():
+    """« FC à allure comparable, je comprends pas trop » (2026-11-07), « le graphique de forme n'est pas très clair »
+    (2026-11-19): the chart leads with today's normal and the change its own line shows since its first normal (the
+    word once said 8 weeks under a 6-month chart), named by the 3 bpm edge (H)."""
+    since = "depuis " + MOIS_L[(T - timedelta(days=tv.EASY_DAYS - 1)).month - 1]
     older = [easy(k, 146) for k in range(31, 200, 3)]
     t = tv.footing(older + [easy(k, 141) for k in range(1, 30, 3)], T, 185)["trend"]
     assert (t["value"], t["word"]) == ("141\u202fbpm", "en progrès")
-    assert t["line"] == "\u22125\u202fbpm en 8 semaines · en progrès"
-    assert t["status"] == "\u22125\u202fbpm en 8\u00a0sem. · en progrès"
+    assert t["line"] == t["status"] == f"\u22125\u202fbpm {since} · en progrès"
     t = tv.footing([easy(k, 140) for k in range(1, 200, 3)], T, 185)["trend"]
-    assert (t["word"], t["line"]) == ("stable", "stable sur 8 semaines")
+    assert (t["word"], t["line"]) == ("stable", f"stable {since}")
     t = tv.footing([easy(k, 141) for k in range(31, 200, 3)] + [easy(k, 143) for k in range(1, 30, 3)], T, 185)
-    assert t["trend"]["line"] == "+2\u202fbpm en 8 semaines · stable"  # under 3 bpm: stable, the change said
+    assert t["trend"]["line"] == f"+2\u202fbpm {since} · stable"  # under 3 bpm: stable, the change said
     t = tv.footing([easy(k, 140) for k in range(31, 200, 3)] + [easy(k, 145) for k in range(1, 30, 3)], T, 185)["trend"]
-    assert t["line"] == "+5\u202fbpm en 8 semaines · en hausse" and t["word"] == "en hausse"
-    young = tv.footing([easy(k, 140) for k in range(1, 40, 3)], T, 185)  # no normal 8 weeks ago
+    assert t["line"] == f"+5\u202fbpm {since} · en hausse" and t["word"] == "en hausse"
+    young = tv.footing([easy(k, 140) for k in range(1, 21, 3)], T, 185)  # a line of under 4 weeks: no change said
     assert young["trend"]["status"] is None and young["trend"]["line"] == "ces 4 dernières semaines"
-    assert "Si elle baisse, ton cœur travaille moins pour la même allure" in young["help"] and young["pace"] in young["help"]
+    assert "La ligne suit ta FC habituelle" in young["help"] and young["pace"] in young["help"]
 
 
 # ── the page ────────────────────────────────────────────────────────────────
