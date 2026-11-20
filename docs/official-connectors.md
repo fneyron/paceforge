@@ -3,7 +3,10 @@
 Statut au 20 novembre 2026 : **code prêt, désactivé**. Les demandes d’accès sont envoyées : COROS Partner API
 (courriel à api@coros.com, 15 nov.) ; Garmin Connect Developer Program, accès Business « Starter » (formulaire
 envoyé au nom de Hello Stay le 20 nov., réponse de Garmin : « Thank you for your interest, we'll be reaching out
-to you soon »). Tant que les identifiants ne sont pas arrivés et
+to you soon »). Autres demandes du 20 nov., sans code de connecteur à ce jour : Suunto Partner Program avec accès
+Cloud API (contrat signé au nom de Hello Stay, réponse sous deux semaines) ; Wahoo Cloud API, app de production
+« PaceForge » en lecture seule (`user_read`, `workouts_read`, `offline_data`, webhook `/webhook/wahoo`), revue sous
+5 à 7 jours. Tant que les identifiants ne sont pas arrivés et
 posés dans Coolify, rien ne change pour personne : aucune route (404), aucune page, aucune tâche planifiée, aucun
 appel sortant, aucune ligne dans la politique de confidentialité.
 
