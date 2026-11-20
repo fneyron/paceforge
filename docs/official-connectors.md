@@ -5,8 +5,11 @@ Statut au 20 novembre 2026 : **code prêt, désactivé**. Les demandes d’accè
 envoyé au nom de Hello Stay le 20 nov., réponse de Garmin : « Thank you for your interest, we'll be reaching out
 to you soon »). Autres demandes du 20 nov., sans code de connecteur à ce jour : Suunto Partner Program avec accès
 Cloud API (contrat signé au nom de Hello Stay, réponse sous deux semaines) ; Wahoo Cloud API, app de production
-« PaceForge » en lecture seule (`user_read`, `workouts_read`, `offline_data`, webhook `/webhook/wahoo`), revue sous
-5 à 7 jours. Tant que les identifiants ne sont pas arrivés et
+« PaceForge » en lecture seule (`user_read`, `workouts_read`, `offline_data`, webhook `/webhook/wahoo`), **approuvée
+le 20 nov.** ; Polar AccessLink (libre-service), client « PaceForge » créé le 20 nov. (exercices, activité du jour,
+informations physiques ; redirect `/connect/polar/callback`). Comptes au nom de contact@paceforge.fr ; secrets hors
+dépôt, sur le Mac du propriétaire. Strava : compte « PaceForge App » créé, mais l’API Strava exige un abonnement payant
+pour créer l’app. Tant que les identifiants ne sont pas arrivés et
 posés dans Coolify, rien ne change pour personne : aucune route (404), aucune page, aucune tâche planifiée, aucun
 appel sortant, aucune ligne dans la politique de confidentialité.
 
