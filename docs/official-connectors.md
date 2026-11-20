@@ -1,7 +1,9 @@
 # Connecteurs officiels COROS et Garmin
 
-Statut au 15 novembre 2026 : **code prêt, désactivé**. Les demandes d’accès sont envoyées (COROS Partner API ;
-Garmin Connect Developer Program, accès Business « Starter »). Tant que les identifiants ne sont pas arrivés et
+Statut au 20 novembre 2026 : **code prêt, désactivé**. Les demandes d’accès sont envoyées : COROS Partner API
+(courriel à api@coros.com, 15 nov.) ; Garmin Connect Developer Program, accès Business « Starter » (formulaire
+envoyé au nom de Hello Stay le 20 nov., réponse de Garmin : « Thank you for your interest, we'll be reaching out
+to you soon »). Tant que les identifiants ne sont pas arrivés et
 posés dans Coolify, rien ne change pour personne : aucune route (404), aucune page, aucune tâche planifiée, aucun
 appel sortant, aucune ligne dans la politique de confidentialité.
 
