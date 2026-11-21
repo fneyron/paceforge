@@ -109,7 +109,7 @@ class SecurityHeadersMiddleware:
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 EXEMPT_PATHS = frozenset({"/webhook/strava", "/api/mobile/exchange"})
 # the official connectors' pushes (app.connectors): server to server, checked by their own credentials
-EXEMPT_PREFIXES = ("/webhook/coros", "/webhook/garmin")
+EXEMPT_PREFIXES = ("/webhook/coros", "/webhook/garmin", "/webhook/wahoo", "/webhook/polar")
 OWN_SITE = frozenset({"same-origin", "none"})
 
 

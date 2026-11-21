@@ -90,7 +90,7 @@ celery_app.conf.task_default_queue = "celery"
 celery_app.conf.task_routes = {name: {"queue": "long"} for name in (
     "paceforge.initial_sync", "paceforge.sync_coros", "paceforge.sync_garmin",
     "paceforge.sync_coros_user", "paceforge.sync_garmin_user", "paceforge.official_coros_sync",
-    "paceforge.official_round")}
+    "paceforge.official_wahoo_sync", "paceforge.official_polar_sync", "paceforge.official_round")}
 
 # Expired Strava link attempts are purged every hour (app.tasks.oauth_cleanup)
 celery_app.conf.include = [*celery_app.conf.include, "app.tasks.oauth_cleanup"]
@@ -99,5 +99,5 @@ celery_app.conf.beat_schedule["purge-oauth-attempts"] = {
     "schedule": crontab(minute=37),
 }
 
-# The official COROS and Garmin connectors' round (app.connectors): scheduled only while one of them is active
+# The official connectors' round (COROS, Garmin, Wahoo, Polar: app.connectors): scheduled only while one is active
 celery_app.conf.beat_schedule.update(official_beat_schedule())

@@ -189,7 +189,7 @@ async def _deleted(db, user: User, strava, row: Activity | None, activity_id: in
     except StravaAPIError as exc:
         if exc.status_code != 404:
             raise
-    if row.garmin_activity_id or row.coros_activity_id:
+    if row.garmin_activity_id or row.coros_activity_id or row.wahoo_activity_id or row.polar_activity_id:
         row.strava_activity_id = None
         return {"status": "unlinked"}
     await db.execute(delete(Activity).where(Activity.id == row.id))

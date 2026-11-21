@@ -10,10 +10,12 @@
   account already linked to another PaceForge account is refused (its data would reach two accounts).
 - Making the official link replaces that brand's former link (COROS's MCP link, the Garmin Connect login): one link
   per brand, nothing received is lost (same source label, same activity ids).
+  Wahoo and Polar had no former link: nothing to replace.
 - Disconnecting tells the provider (COROS deauthorize, Garmin's user registration deleted, which Garmin's program
-  requires for a « Déconnecter » or a deleted account) best effort, then forgets the tokens. Data received stays.
+  requires for a « Déconnecter » or a deleted account, Wahoo's permissions deleted, the Polar user deleted) best
+  effort, then forgets the tokens. Data received stays.
 - Activities: one row per outing (activity_sources): found by the provider's id, else the twin another service
-  brought gets that id, else a new row.
+  brought gets that id, else a new row. A FIT file (fit) refines a session where the provider offers one.
 """
 import asyncio
 import base64
@@ -24,6 +26,7 @@ import secrets
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from types import ModuleType
+from urllib.parse import urlsplit
 
 import httpx
 from cryptography.fernet import InvalidToken
@@ -31,7 +34,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.connectors import NAMES, ready
+from app.connectors import NAMES, fit, ready
 from app.crypto import decrypt_secret, encrypt_secret
 from app.models.activity import Activity
 from app.models.official_connection import OfficialConnection
@@ -86,6 +89,12 @@ def module(provider: str) -> ModuleType:
     if provider == "garmin":
         from app.connectors import garmin_connect
         return garmin_connect
+    if provider == "wahoo":
+        from app.connectors import wahoo_cloud
+        return wahoo_cloud
+    if provider == "polar":
+        from app.connectors import polar_accesslink
+        return polar_accesslink
     raise KeyError(provider)
 
 
@@ -141,10 +150,16 @@ def state_matches(given: str | None, expected: str | None) -> bool:
     return bool(given and expected) and secrets.compare_digest(str(given).encode(), str(expected).encode())
 
 
-async def token_request(client: httpx.AsyncClient, url: str, data: dict) -> dict:
-    """POST a token request (form-encoded); the JSON answer when it holds an access token, else TokenError with the
-    OAuth error code (or http_<status>)."""
-    r = await client.post(url, data=data, headers={"Accept": "application/json"})
+async def token_request(client: httpx.AsyncClient, url: str, data: dict,
+                        auth: tuple[str, str] | None = None) -> dict:
+    """POST a token request (form-encoded; the client's credentials in HTTP Basic when `auth` is given, as Polar
+    wants them); the JSON answer when it holds an access token, else TokenError with the OAuth error code (or
+    http_<status>)."""
+    headers = {"Accept": "application/json"}
+    if auth:
+        r = await client.post(url, data=data, headers=headers, auth=httpx.BasicAuth(*auth))
+    else:
+        r = await client.post(url, data=data, headers=headers)
     try:
         body = r.json()
     except ValueError:
@@ -218,8 +233,13 @@ async def store_connection(db: AsyncSession, user_id: int, provider: str, provid
     return conn
 
 
+LEGACY = ("coros", "garmin")  # the brands with a former link (Wahoo and Polar had none)
+
+
 async def legacy_connected(db: AsyncSession, user_id: int, provider: str) -> bool:
     """Whether the brand's former link exists (COROS's MCP link, the Garmin Connect login)."""
+    if provider not in LEGACY:
+        return False
     if provider == "coros":
         from app.services import coros
         return await coros.connection_for(db, user_id) is not None
@@ -235,6 +255,8 @@ async def replace_legacy(db: AsyncSession, user_id: int, provider: str) -> bool:
     Best effort and time-bounded: a failure leaves it in place, logged, the official link stands."""
     from app.services import coros, garmin
 
+    if provider not in LEGACY:
+        return False
     service = coros if provider == "coros" else garmin
     old = await service.connection_for(db, user_id)
     if old is None:
@@ -419,15 +441,16 @@ async def statuses(db: AsyncSession, user_id: int, session: dict | None = None) 
 
 # ── activities ──────────────────────────────────────────────────────────────
 
-ID_COLUMNS = {"coros": "coros_activity_id", "garmin": "garmin_activity_id"}
+ID_COLUMNS = {"coros": "coros_activity_id", "garmin": "garmin_activity_id", "wahoo": "wahoo_activity_id",
+              "polar": "polar_activity_id"}
 _CORE = ("sport_type", "start_date", "distance", "moving_time", "elapsed_time", "total_elevation_gain",
          "average_heartrate", "max_heartrate", "average_speed")
 
 
 def _own_row(act: Activity, provider: str) -> bool:
     """A row only this provider brought (Strava's and the other watch's fields are never overwritten)."""
-    other = "coros_activity_id" if provider == "garmin" else "garmin_activity_id"
-    return act.strava_activity_id is None and getattr(act, other) is None
+    return act.strava_activity_id is None and all(
+        getattr(act, column) is None for p, column in ID_COLUMNS.items() if p != provider)
 
 
 def _changed(act: Activity, fields: dict) -> bool:
@@ -493,3 +516,101 @@ async def import_activities(db: AsyncSession, user_id: int, provider: str, rows:
         counts["merged"] = await merge_twins(db, user_id, min(starts))
         await activity_env.enrich(db, user_id)
     return dict(counts)
+
+
+async def fit_wanted(db: AsyncSession, user_id: int, provider: str, fields: dict) -> bool | None:
+    """Whether this session's FIT file is worth reading: yes for a new session or this connector's own row not read
+    yet; no for a row whose file was read (None: not even its summary is written again, it is rougher) or a row
+    another service owns (Strava's, another watch's: their own details stand)."""
+    column = ID_COLUMNS[provider]
+    act = (await db.execute(select(Activity).where(
+        getattr(Activity, column) == fields[column], Activity.user_id == user_id))).scalar_one_or_none()
+    if act is not None:
+        if (act.raw_data or {}).get("laps_read"):
+            return None
+        return _own_row(act, provider)
+    twin = await find_twin(db, user_id, fields["sport_type"], fields["start_date"], fields["distance"],
+                           fields["moving_time"])
+    return twin is None
+
+
+# ── FIT files ───────────────────────────────────────────────────────────────
+
+HR_PLAUSIBLE = (40, 250)
+
+
+def with_fit(fields: dict, decoded: dict) -> dict:
+    """A summary's columns with what its FIT file says (public format, its units known): sport, start, times,
+    distance, D+, heart rate, start position, laps."""
+    s = decoded.get("session") or {}
+    out = {**fields, "raw_data": {**fields["raw_data"], "laps_read": True}}
+    if fit.sport_type(s):
+        out["sport_type"] = fit.sport_type(s)
+        if fit.indoor(s):
+            out["raw_data"]["trainer"] = True
+    start = s.get("start_time")
+    if isinstance(start, datetime) and abs((start - fields["start_date"]).total_seconds()) < 3600:
+        out["start_date"] = start
+    if s.get("timer") and s["timer"] > 0:
+        out["moving_time"] = round(s["timer"])
+    if s.get("elapsed") and s["elapsed"] > 0:
+        out["elapsed_time"] = round(max(s["elapsed"], out["moving_time"]))
+    if s.get("distance") is not None and s["distance"] >= 0:
+        out["distance"] = round(float(s["distance"]), 1)
+    if s.get("ascent") is not None and 0 <= s["ascent"] <= 20_000:
+        out["total_elevation_gain"] = float(s["ascent"])
+    for key, name in (("average_heartrate", "avg_hr"), ("max_heartrate", "max_hr")):
+        if s.get(name) and HR_PLAUSIBLE[0] <= s[name] <= HR_PLAUSIBLE[1]:
+            out[key] = float(s[name])
+    if s.get("start_latlng") and s["start_latlng"] != [0, 0]:
+        out["raw_data"]["start_latlng"] = s["start_latlng"]
+    if out["distance"] and out["moving_time"]:
+        out["average_speed"] = out["distance"] / out["moving_time"]
+    laps = fit.strava_laps(decoded.get("laps") or [])
+    if laps:
+        out["laps"] = laps
+    return out
+
+
+def host_allowed(url: str | None, hosts: str) -> bool:
+    """An https URL on one of `hosts` (comma-separated; a host or any of its subdomains): never fetch a host a
+    payload chose."""
+    if not url:
+        return False
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    host = (parts.hostname or "").lower()
+    allowed = [h.strip().lower() for h in hosts.split(",") if h.strip()]
+    return parts.scheme == "https" and any(host == h or host.endswith("." + h) for h in allowed)
+
+
+async def download_fit(client: httpx.AsyncClient, url: str, headers: dict | None = None) -> bytes | None:
+    """A FIT file, streamed and capped (fit.MAX_BYTES); None when unreadable. The caller checks the host first."""
+    async with client.stream("GET", url, headers=headers) as r:
+        if r.status_code != 200:
+            return None
+        chunks, size = [], 0
+        async for chunk in r.aiter_bytes():
+            size += len(chunk)
+            if size > fit.MAX_BYTES:
+                return None
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
+# ── pulls ───────────────────────────────────────────────────────────────────
+
+async def claim(db: AsyncSession, conn: OfficialConnection, ttl: timedelta) -> bool:
+    """Take this link's pull for this worker; False when another one holds it (a claim older than `ttl` is
+    stale)."""
+    from sqlalchemy import or_, update
+
+    now = datetime.now(timezone.utc)
+    res = await db.execute(update(OfficialConnection).where(
+        OfficialConnection.id == conn.id,
+        or_(OfficialConnection.sync_claimed_at.is_(None), OfficialConnection.sync_claimed_at < now - ttl),
+    ).values(sync_claimed_at=now).execution_options(synchronize_session=False))
+    await db.commit()
+    return getattr(res, "rowcount", 0) == 1
