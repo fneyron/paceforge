@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{#- Coaching (beta): the one screen that makes a plan — the goal, the available days, the long run's day, the starting
+    volume (computed from the last 4 complete weeks of running, editable; 5 coarse choices without a history). The
+    same screen makes it again (« Refaire le plan »). -#}
+{% from "partials/_icons.html" import icon %}
+
+{% block title %}Coaching — PaceForge{% endblock title %}
+
+{% block content %}
+<div class="pf-coach pf-coach-onb">
+    {% if redo %}<a href="/coaching" class="pf-back">{{ icon("chev-l", "w-4 h-4") }}Coaching</a>
+    {% else %}<a href="/activities" class="pf-back pf-native-only">{{ icon("chev-l", "w-4 h-4") }}Activités</a>{% endif %}
+    <div class="pf-head pf-coach-head">
+        <div>
+            <h1 class="pf-h1">Coaching <span class="pf-tag">bêta</span></h1>
+            <p class="pf-lead">{{ "Refais ton plan : tes séances faites restent." if redo else "Trois réponses, et ton plan est prêt." }}</p>
+        </div>
+    </div>
+    <form method="post" action="/coaching/plan" class="pf-coach-onb-form" id="coach-onb">
+        {% if error %}<p class="pf-coach-error" role="alert">{{ error }}</p>{% endif %}
+
+        <fieldset class="pf-coach-card pf-coach-q-card">
+            <legend class="pf-coach-h">Ton objectif</legend>
+            <div class="pf-coach-options">
+                {% for r in races %}
+                <label class="pf-coach-option"><input type="radio" name="goal" value="{{ r.id }}"{% if chosen.goal == r.id|string %} checked{% endif %}><span><b>{{ r.name }}</b><small>{{ r.when }} · {{ r.j }}</small></span></label>
+                {% endfor %}
+                <label class="pf-coach-option"><input type="radio" name="goal" value="none"{% if chosen.goal == "none" %} checked{% endif %}><span><b>Progresser, sans course</b><small>12 semaines, renouvelées au fil de l’eau</small></span></label>
+            </div>
+        </fieldset>
+
+        <fieldset class="pf-coach-card pf-coach-q-card">
+            <legend class="pf-coach-h">Tes jours disponibles</legend>
+            <div class="pf-coach-chips" data-days>
+                {% for i, word in weekdays %}<label class="pf-coach-chip"><input type="checkbox" name="days" value="{{ i }}"{% if i in chosen.days %} checked{% endif %}><span>{{ word }}</span></label>{% endfor %}
+            </div>
+            <p class="pf-label" id="coach-days-hint">De 2 à 6 jours.</p>
+        </fieldset>
+
+        <fieldset class="pf-coach-card pf-coach-q-card">
+            <legend class="pf-coach-h">Le jour de ta sortie longue</legend>
+            <div class="pf-coach-chips" data-long>
+                {% for i, word in weekdays %}<label class="pf-coach-chip"><input type="radio" name="long_day" value="{{ i }}"{% if chosen.long_day == i %} checked{% endif %}><span>{{ word }}</span></label>{% endfor %}
+            </div>
+        </fieldset>
+
+        <fieldset class="pf-coach-card pf-coach-q-card">
+            <legend class="pf-coach-h">Ton volume de départ</legend>
+            {% if computed or redo %}
+            <div class="pf-coach-volume">
+                <label class="sr-only" for="coach-base">Volume de départ par semaine</label>
+                <select id="coach-base" name="base" class="pf-coach-select pf-coach-select-lg">{% for m, word in volumes %}<option value="{{ m }}"{% if m == chosen.base %} selected{% endif %}>{{ word }}</option>{% endfor %}</select>
+                <span>par semaine</span>
+            </div>
+            {% if computed %}<p class="pf-label">Calculé sur tes 4 dernières semaines de course. Tu peux l’ajuster.</p>{% endif %}
+            {% else %}
+            <div class="pf-coach-chips">
+                {% for m, word in choices %}<label class="pf-coach-chip is-wide"><input type="radio" name="base" value="{{ m }}"{% if chosen.base == m or (not chosen.base and loop.index == 2) %} checked{% endif %}><span>{{ word }}</span></label>{% endfor %}
+            </div>
+            <p class="pf-label">Ce que tu cours par semaine en ce moment.</p>
+            {% endif %}
+        </fieldset>
+
+        <button type="submit" class="pf-btn pf-btn-primary pf-btn-block">{{ "Refaire mon plan" if redo else "Créer mon plan" }}</button>
+    </form>
+    {% if not redo %}<a class="pf-sum-link pf-coach-other" href="/coaching/athletes">Tu es coach&nbsp;? Suivre un athlète ›</a>{% endif %}
+</div>
+{% endblock content %}
+
+{% block scripts %}
+<script>
+// The long run's day follows the available days: only those can be chosen; Sunday by default, else the last one.
+(function () {
+    var form = document.getElementById("coach-onb");
+    if (!form) return;
+    var days = form.querySelectorAll("[data-days] input"), longs = form.querySelectorAll("[data-long] input");
+    // until the athlete picks the day herself, it follows the default (a plan made again keeps its own day)
+    var own = [].some.call(longs, function (l) { return l.checked; });
+    function sync() {
+        var on = [].filter.call(days, function (d) { return d.checked; }).map(function (d) { return d.value; });
+        var picked = null;
+        longs.forEach(function (l) {
+            l.disabled = on.indexOf(l.value) < 0;
+            if (l.disabled) l.checked = false;
+            if (l.checked) picked = l;
+        });
+        if (!picked) own = false;
+        if (!own && on.length) {
+            var want = on.indexOf("6") >= 0 ? "6" : on[on.length - 1];
+            longs.forEach(function (l) { l.checked = l.value === want; });
+        }
+    }
+    days.forEach(function (d) { d.addEventListener("change", sync); });
+    longs.forEach(function (l) { l.addEventListener("change", function () { own = true; }); });
+    sync();
+})();
+</script>
+{% endblock scripts %}

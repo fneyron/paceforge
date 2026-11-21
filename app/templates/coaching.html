@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{#- Coaching (beta): the athlete's plan, or the same calendar seen by a coach (scope.coach), titled with the athlete's
+    first name. The calendar part is partials/coaching_main.html (swapped in place on every tap); the rules are in
+    one fold, the rest (calendar feed, sharing, redo, stop) in a list of tools. -#}
+{% from "partials/_icons.html" import icon %}
+
+{% block title %}{{ athlete_name ~ " · " if scope.coach }}Coaching — PaceForge{% endblock title %}
+
+{% block content %}
+<div class="pf-coach">
+    {% if scope.coach %}<a href="/coaching/athletes" class="pf-back">{{ icon("chev-l", "w-4 h-4") }}Mes athlètes</a>
+    {% else %}<a href="/activities" class="pf-back pf-native-only">{{ icon("chev-l", "w-4 h-4") }}Activités</a>{% endif %}
+    <div class="pf-head pf-coach-head">
+        <div>
+            <h1 class="pf-h1">{{ athlete_name if scope.coach else "Coaching" }} <span class="pf-tag">bêta</span></h1>
+            <p class="pf-coach-goal"><b>{{ head.goal }}</b>{% if head.phase %}<span class="pf-pill pf-pill-accent">{{ head.phase }}</span>{% endif %}</p>
+        </div>
+    </div>
+
+    {% include "partials/coaching_main.html" %}
+
+    {% if not scope.coach %}
+    <details class="pf-fold pf-method pf-coach-how">
+        <summary>Comment ça marche</summary>
+        <ul>{% for line in method %}<li>{{ line }}</li>{% endfor %}</ul>
+    </details>
+    {% include "partials/coaching_tools.html" %}
+    {% else %}
+    <form method="post" action="{{ scope.base }}/leave" class="pf-coach-leave" onsubmit="event.preventDefault(); var f = this; var msg = 'Ne plus suivre {{ athlete_name|e }} ? Tu ne verras plus son plan.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Ne plus suivre'); } else if (confirm(msg)) { f.submit(); }">
+        <button type="submit" class="pf-btn pf-btn-ghost pf-btn-sm text-danger">Ne plus suivre {{ athlete_name }}</button>
+    </form>
+    {% endif %}
+</div>
+{% endblock content %}
+
+{% block scripts %}
+<script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id }}"></script>
+<script>
+// Instant feedback before the server answers: the ressenti tapped is shown as chosen at once; « Copier » copies the
+// calendar address. The server's answer then replaces the calendar part (htmx).
+document.addEventListener("click", function (event) {
+    var feel = event.target.closest && event.target.closest("[data-feel]");
+    if (feel) feel.parentNode.querySelectorAll("[data-feel]").forEach(function (b) { b.setAttribute("aria-pressed", String(b === feel)); });
+    var copy = event.target.closest && event.target.closest("[data-copy]");
+    if (copy) {
+        var field = document.getElementById(copy.getAttribute("data-copy"));
+        if (!field) return;
+        var done = function () { if (window.pfToast) pfToast("Adresse copiée"); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(field.value).then(done, function () { field.select(); });
+        else { field.select(); try { document.execCommand("copy"); done(); } catch (_) {} }
+    }
+});
+</script>
+{% endblock scripts %}

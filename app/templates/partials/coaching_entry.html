@@ -1,0 +1,10 @@
+{#- Activités: the way into Coaching (beta) for the accounts that have it — the only one inside the phone app, whose
+    native tabs are fixed. Nothing for anyone else. -#}
+{% if request is defined and request and request.app.state.coaching_for(user) %}
+{% from "partials/_icons.html" import icon %}
+<a href="/coaching" class="pf-coach-entry">
+    <span class="pf-coach-entry-ic">{{ icon("calendar") }}</span>
+    <span class="pf-coach-entry-txt"><b>Coaching <span class="pf-tag">bêta</span></b><small>Ton plan, séance après séance</small></span>
+    {{ icon("chev-r", "pf-chev") }}
+</a>
+{% endif %}

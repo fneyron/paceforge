@@ -69,6 +69,7 @@ _STORED = (
     ("Strava app keys", "users", "strava_client_secret_encrypted", False),
     ("Strava", "users", "strava_access_token", True),
     ("Strava", "users", "strava_refresh_token", True),
+    ("Coaching calendar", "coaching_plans", "feed_token", False),
 )
 
 

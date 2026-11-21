@@ -6,6 +6,7 @@ from kombu import Exchange, Queue
 
 from app.config import settings
 from app.connectors import beat_schedule as official_beat_schedule
+from app.features import coaching_beat_schedule
 from app.sentry import init_sentry
 
 logging.getLogger("httpx").setLevel(logging.WARNING)  # request URLs can carry tokens
@@ -101,3 +102,7 @@ celery_app.conf.beat_schedule["purge-oauth-attempts"] = {
 
 # The official connectors' round (COROS, Garmin, Wahoo, Polar: app.connectors): scheduled only while one is active
 celery_app.conf.beat_schedule.update(official_beat_schedule())
+
+# Coaching (beta, docs/coaching.md): its daily round, scheduled only while COACHING_BETA_USERS names an account
+celery_app.conf.include = [*celery_app.conf.include, "app.tasks.coaching"]
+celery_app.conf.beat_schedule.update(coaching_beat_schedule())

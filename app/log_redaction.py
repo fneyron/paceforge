@@ -2,7 +2,8 @@
 
 uvicorn's access log writes every request's path with its query string, and some links carry a secret there: an
 email's token (/auth/verify-email?token=…, /auth/reset-password?token=…), the phone's sign-in ticket, an OAuth
-callback's code and state, the Strava webhook's hub.verify_token. A filter on the « uvicorn.access » logger
+callback's code and state, the Strava webhook's hub.verify_token; and one path does, the Coaching calendar feed's
+(/coaching/cal/<token>.ics). A filter on the « uvicorn.access » logger
 (installed by app.main.create_app, in every worker, after uvicorn has configured its logging) masks their values in
 each line, the request line kept: method, path, status. The same masking serves Sentry's breadcrumbs (app.sentry).
 """
@@ -15,11 +16,15 @@ SECRET_QUERY = re.compile(r"(?i)([?&;][\w.\-]*?(?:token|ticket|code|state|secret
 # a personal API key (api_tokens.SHAPE) wherever it is written: the API takes it in its Authorization header only,
 # but one pasted in a URL or an error message is masked all the same
 API_KEY = re.compile(r"\bpf_[A-Za-z0-9_-]{20,}")
+# the Coaching calendar feed's token, the one secret carried in a path (/coaching/cal/<token>.ics: a calendar app
+# cannot send a header)
+FEED_TOKEN = re.compile(r"(/coaching/cal/)[^/\s\"'?#]+?(\.ics)")
 MASK = "***"
 
 
 def redact(text: str) -> str:
     """`text` with the values of the secret-bearing query parameters, and any API key, masked."""
+    text = FEED_TOKEN.sub(lambda m: m.group(1) + MASK + m.group(2), text)
     return API_KEY.sub("pf_" + MASK, SECRET_QUERY.sub(lambda m: m.group(1) + MASK, text))
 
 

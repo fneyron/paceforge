@@ -1,0 +1,348 @@
+"""Coaching: the plan's rules (app/services/coaching_plan.py, docs/coaching.md), as properties over many inputs —
+every set of available days, bases from 1 h to 10 h, races on every weekday from 1 to 30 weeks away, road and
+trail, and no race at all. Each heuristic (H) is pinned here: changing one is a decision."""
+import itertools
+import re
+from datetime import date, timedelta
+from pathlib import Path
+
+import pytest
+
+from app.services import coaching_plan as cp
+from app.services import race_prep as rp
+
+ROOT = Path(__file__).resolve().parent.parent
+TODAY = date(2026, 11, 21)  # a Saturday
+M0 = cp.monday_of(TODAY)
+
+DAY_SETS = [days for n in range(2, 7) for days in itertools.combinations(range(7), n)]
+BASES = (60, 95, 150, 180, 240, 300, 420, 600)
+
+
+def _inputs(days, base, race=None, minutes=300, trail=True, long_day=None, adaptations=None, start=M0):
+    goal = cp.Goal(race, minutes, trail, 1, "Trail des Crêtes") if race else cp.Goal()
+    return cp.Inputs(tuple(days), cp.default_long_day(days) if long_day is None else long_day, base, start, goal,
+                     adaptations or {})
+
+
+def _cases():
+    """A wide sample: every day set with a few bases and goals (≈ 1 500 plans)."""
+    races = [None] + [TODAY + timedelta(days=d) for d in (9, 20, 33, 54, 75, 100, 124, 150, 210)]
+    for i, days in enumerate(DAY_SETS):
+        for j in range(3):
+            base = BASES[(i + 3 * j) % len(BASES)]
+            race = races[(i + j) % len(races)]
+            minutes = (55, 240, 600, 1500)[(i + j) % 4]
+            for long_day in {cp.default_long_day(days), days[0]}:
+                yield _inputs(days, base, race, minutes, trail=(i + j) % 2 == 0, long_day=long_day)
+
+
+CASES = list(_cases())
+
+
+def _training(week):
+    return [s for s in week.sessions if s.kind != cp.RACE]
+
+
+# ── the heuristics, pinned and marked ───────────────────────────────────────
+
+HEURISTICS = {
+    "MIN_SESSION": 30, "GROWTH": 0.10, "LIGHT_EVERY": 4, "LIGHT_FACTOR": 0.75, "WEEK_FLOOR": 60, "HORIZON_WEEKS": 24,
+    "BLOCK_WEEKS": 12, "SPECIFIC_WEEKS": (6, 8), "SPECIFIC_LONG_FROM": 16, "CEILING": (150, 0.7),
+    "CEILING_RANGE": (180, 720), "FREE_CEILING": (1.5, 180, 480), "LONG_SHARE": 0.35, "LONG_RACE_SHARE": 0.55,
+    "LONG_CAP_RANGE": (120, 210), "FREE_LONG_CAP": 150, "NO_LONG_BEFORE_RACE": 3, "QUALITY_FROM_DAYS": 3,
+    "TWO_QUALITY": (5, 240), "REP_EVERY": 2, "ADAPT_FACTOR": 0.8, "SIGNAL_FROM": 4, "SIGNAL_DAYS": 7,
+    "MISSED_FROM": 2, "START_CHOICES": (60, 120, 180, 240, 300), "BASE_RANGE": (60, 900),
+}
+
+
+@pytest.mark.parametrize("name,value", HEURISTICS.items())
+def test_each_heuristic_is_pinned_and_marked_h(name, value):
+    assert getattr(cp, name) == value
+    source = (ROOT / "app/services/coaching_plan.py").read_text(encoding="utf-8")
+    line = next(ln for ln in source.splitlines() if re.match(rf"{name}\s*=", ln))
+    assert "(H)" in line, f"{name} is a heuristic: its line says (H)"
+
+
+def test_the_cited_rules_are_the_race_pages():
+    """The taper is race_prep's (Bosquet 2007; Mujika 2003), not a copy; the hard share is Seiler's 20 %."""
+    assert (rp.TAPER_SHARE_EARLY, rp.TAPER_SHARE_LATE, rp.TAPER_DAYS) == ((0.55, 0.70), (0.35, 0.50), 14)
+    assert cp.HARD_SHARE == 0.20
+    doc = (ROOT / "docs/coaching.md").read_text(encoding="utf-8")
+    for source in ("Bosquet", "Mujika", "Seiler", "(H)"):
+        assert source in doc
+
+
+# ── properties over many inputs ─────────────────────────────────────────────
+
+def test_the_sample_is_wide():
+    assert len(CASES) > 250 and {len(c.days) for c in CASES} == {2, 3, 4, 5, 6}
+
+
+@pytest.mark.parametrize("inp", CASES[::1])
+def test_every_plan_keeps_the_rules(inp):
+    weeks = cp.build(inp, TODAY)
+    rd = inp.goal.race_day
+    assert weeks, "a plan always has weeks while the race is ahead"
+    assert weeks[0].monday == M0 and all(b.monday - a.monday == timedelta(weeks=1) for a, b in zip(weeks, weeks[1:]))
+    assert len(weeks) == (cp.BLOCK_WEEKS if rd is None else min(cp.HORIZON_WEEKS, (cp.monday_of(rd) - M0).days // 7 + 1))
+    sessions = [s for w in weeks for s in w.sessions]
+    # one session a day at most, every duration a multiple of 5
+    assert len({s.day for s in sessions}) == len(sessions)
+    for w in weeks:
+        for s in _training(w):
+            assert s.day.weekday() in inp.days, "only on the available days"
+            assert s.minutes >= cp.MIN_SESSION and s.minutes % cp.STEP == 0, "never under 30 min, to 5 min"
+            assert cp.monday_of(s.day) == w.monday
+            assert sum(step.get("min", 0) or step["reps"] * step["effort"] + (step["reps"] - 1) * step["recup"]
+                       for step in s.structure["steps"]) == s.minutes, "the structure adds up to the duration"
+        # the week's sessions add up to its target (nothing lost in the rounding), or the target holds no session
+        assert w.minutes == (w.target if w.target >= cp.MIN_SESSION and _training(w) else w.minutes)
+        if _training(w):
+            assert w.minutes == w.target
+        # at most 20 % of the week in hard efforts
+        hard = sum(cp.hard_minutes(s.structure) for s in _training(w))
+        assert hard <= cp.HARD_SHARE * w.target + 1e-9
+        # the long run on its day, never longer than its cap
+        longs = [s for s in _training(w) if s.kind == cp.LONG]
+        assert len(longs) <= 1
+        for s in longs:
+            assert s.day.weekday() == inp.long_day and s.minutes <= cp.long_cap(inp.goal)
+            assert s.minutes >= max((x.minutes for x in _training(w) if x.kind in (cp.FOOTING, cp.RECUP)), default=0) or (
+                s.minutes == cp.long_cap(inp.goal)), "the long run is the longest easy session, unless capped"
+        # quality: none under 3 available days, one from 3, two only from 5 days and a 4-h base
+        quality = [s for s in _training(w) if s.kind in (cp.QUALITY, cp.HILLS)]
+        most = 0 if len(inp.days) < 3 else 2 if len(inp.days) >= 5 and inp.base >= 240 else 1
+        assert len(quality) <= most
+    # never two hard days in a row (quality, long run, race), across the weeks too
+    hard_days = sorted(s.day for s in sessions if s.kind in cp.HARD)
+    assert all((b - a).days >= 2 for a, b in zip(hard_days, hard_days[1:])), hard_days
+    # the race day is a « Course » session, the last one
+    if rd is not None and cp.monday_of(rd) <= weeks[-1].monday:
+        race = [s for s in sessions if s.kind == cp.RACE]
+        assert [s.day for s in race] == [rd] and race[0].minutes == round(inp.goal.race_minutes)
+        assert max(s.day for s in sessions) == rd, "nothing after the race"
+        assert not [s for s in sessions if s.kind == cp.LONG and 0 < (rd - s.day).days <= cp.NO_LONG_BEFORE_RACE]
+    else:
+        assert not [s for s in sessions if s.kind == cp.RACE]
+
+
+@pytest.mark.parametrize("inp", CASES[::2])
+def test_weekly_volume_grows_within_the_cap_with_a_lighter_fourth_week(inp):
+    rd = inp.goal.race_day
+    until = (cp.taper_start(rd) - timedelta(weeks=1)) if rd else M0 + timedelta(weeks=30)
+    targets = cp.week_targets(inp, M0 + timedelta(weeks=30))
+    weeks = [(m, t) for m, t in sorted(targets.items()) if m <= until]
+    top = cp.ceiling(inp.goal, inp.base)
+    assert top >= inp.base
+    best = None  # the highest loading week so far
+    for k, (m, info) in enumerate(weeks):
+        target = info["target"]
+        assert target >= cp.WEEK_FLOOR and target % 5 == 0 and target <= top + 2.5
+        assert info["light"] == (k % 4 == 3)
+        if k == 0:
+            assert target == cp.round5(max(inp.base, cp.WEEK_FLOOR)), "the plan starts at the athlete's base"
+        if info["light"]:
+            assert target <= max(cp.round5(best * cp.LIGHT_FACTOR) + 5, cp.WEEK_FLOOR), "the 4th week is lighter"
+            assert target < best or best <= cp.WEEK_FLOOR
+        else:
+            if best is not None:
+                assert target <= best * (1 + cp.GROWTH) + 5, "never more than +10 % over the last loading week"
+                assert target >= best - 5, "a loading week never goes down"
+            best = target
+
+
+@pytest.mark.parametrize("weekday", range(7))
+@pytest.mark.parametrize("base", (120, 200, 330))
+def test_the_taper_follows_the_race_pages_bands(weekday, base):
+    race = M0 + timedelta(weeks=10, days=weekday)
+    inp = _inputs((1, 3, 5, 6), base, race)
+    targets = cp.week_targets(inp, cp.monday_of(race))
+    first = cp.taper_start(race)
+    before = [targets[m]["target"] for m in sorted(targets) if m < first][-4:]
+    reference = sorted(before)[1:3]
+    reference = sum(reference) / 2  # the median of the 4 weeks before the taper
+    for m in sorted(targets):
+        band = rp.week_target(reference, m, race)
+        if m < first:
+            assert band is None
+            continue
+        if band is None:  # a race on a Monday: its week has no day before it
+            assert m == cp.monday_of(race) and targets[m]["target"] == 0
+            continue
+        lo, hi = band
+        assert lo - 2.5 <= targets[m]["target"] <= hi + 2.5, (m, targets[m], band)
+        assert not targets[m]["light"]
+    weeks = {w.monday: w for w in cp.build(inp, TODAY)}
+    for m in sorted(weeks):
+        if m >= first:
+            assert weeks[m].phase == "affutage"
+            quality = [s for s in weeks[m].sessions if s.kind in (cp.QUALITY, cp.HILLS)]
+            assert all(s.structure["key"] == "rappels" for s in quality), "intensity kept: short reminders"
+    # with enough volume, each taper week keeps its reminder
+    if base >= 200:
+        assert any(s.kind == cp.QUALITY for s in weeks[first + timedelta(weeks=1)].sessions)
+
+
+def test_the_phases_run_base_specific_taper_then_the_race():
+    race = M0 + timedelta(weeks=20, days=6)
+    inp = _inputs((1, 3, 5, 6), 200, race)
+    phases = [w.phase for w in cp.build(inp, TODAY)]
+    assert phases == ["base"] * 10 + ["specifique"] * 8 + ["affutage"] * 3
+    short = [w.phase for w in cp.build(_inputs((1, 3, 5, 6), 200, M0 + timedelta(weeks=9, days=6)), TODAY)]
+    assert short == ["base"] + ["specifique"] * 6 + ["affutage"] * 3
+    # a race further than 24 weeks away: 24 weeks generated, base first
+    far = cp.build(_inputs((1, 3, 5, 6), 200, M0 + timedelta(weeks=40, days=6)), TODAY)
+    assert len(far) == 24 and {w.phase for w in far[:10]} == {"base"}
+    # no race: 12 weeks of « Progression », extended as the weeks pass
+    free = cp.build(_inputs((1, 3, 5, 6), 200), TODAY)
+    assert [w.phase for w in free] == ["progression"] * 12
+    later = cp.build(_inputs((1, 3, 5, 6), 200), TODAY + timedelta(weeks=5))
+    assert later[0].monday == M0 + timedelta(weeks=5) and later[-1].monday == M0 + timedelta(weeks=16)
+    assert later[0].index == 5, "the progression still counts from week 0"
+    # once the race is behind: nothing
+    assert cp.build(_inputs((1, 3, 5, 6), 200, TODAY - timedelta(days=1), start=M0 - timedelta(weeks=8)), TODAY) == []
+
+
+def test_the_quality_session_follows_its_phase_and_says_its_structure():
+    trail = cp.build(_inputs((1, 3, 5, 6), 240, M0 + timedelta(weeks=14, days=6)), TODAY)
+    by_phase = {}
+    for w in trail:
+        for s in w.sessions:
+            if s.kind in (cp.QUALITY, cp.HILLS):
+                by_phase.setdefault(w.phase, set()).add(s.structure["key"])
+    assert by_phase == {"base": {"cotes_courtes", "fartlek"}, "specifique": {"seuil", "cotes_longues"},
+                        "affutage": {"rappels"}}
+    road = cp.build(_inputs((1, 3, 5, 6), 240, M0 + timedelta(weeks=14, days=6), trail=False), TODAY)
+    assert {s.structure["key"] for w in road if w.phase == "specifique" for s in w.sessions
+            if s.kind in (cp.QUALITY, cp.HILLS)} == {"seuil", "intervalles"}
+    kind, minutes, structure = cp.quality_session("intervalles", 6)
+    assert (kind, minutes, structure["text"]) == (cp.QUALITY, 55, "6 × 3 min soutenu, récup 2 min")
+    assert [s["t"] for s in structure["steps"]] == ["echauffement", "bloc", "retour"]
+    assert cp.hard_minutes(structure) == 18 and cp.main_level(kind, structure) == 3
+    # the repetitions grow through a phase, from the fewest
+    seuil = [s.structure["steps"][1]["reps"] for w in trail if w.phase == "specifique" for s in w.sessions
+             if s.structure.get("key") == "seuil" and not w.light]
+    assert seuil[0] == 2 and seuil == sorted(seuil) and seuil[-1] > seuil[0]
+
+
+def test_two_quality_sessions_need_five_days_and_a_four_hour_base():
+    def count(days, base):
+        return max(len([s for s in w.sessions if s.kind in (cp.QUALITY, cp.HILLS)])
+                   for w in cp.build(_inputs(days, base), TODAY))
+    assert count((1, 2, 3, 4, 6), 240) == 2
+    assert count((1, 2, 3, 4, 6), 235) == 1
+    assert count((0, 2, 3, 5, 6), 240) == 1, "Wednesday and Thursday are neighbours: no room for two"
+    assert count((1, 3, 5, 6), 400) == 1
+    assert count((2, 6), 400) == 0 and count((1, 3, 6), 150) == 1
+
+
+def test_the_same_inputs_give_the_same_plan_whatever_the_day_it_is_asked():
+    inp = _inputs((1, 3, 5, 6), 180, M0 + timedelta(weeks=12, days=6))
+    first = {s.day: (s.kind, s.minutes, s.structure) for w in cp.build(inp, TODAY) for s in w.sessions}
+    for later in (3, 10, 31):
+        again = {s.day: (s.kind, s.minutes, s.structure) for w in cp.build(inp, TODAY + timedelta(days=later))
+                 for s in w.sessions}
+        assert again and all(first[d] == v for d, v in again.items())
+
+
+def test_the_starting_volume_is_the_median_of_the_complete_weeks():
+    assert cp.starting_minutes([120, 200, 0, 180]) == 150  # the median, to 5 min
+    assert cp.starting_minutes([122, 148, 151, 175]) == 150
+    assert cp.starting_minutes([0, 0, 0, 0]) is None and cp.starting_minutes([]) is None
+    assert cp.starting_minutes([10, 0, 0, 20]) == 60  # held to the floor
+    assert cp.default_long_day((0, 2, 6)) == 6 and cp.default_long_day((0, 2, 4)) == 4
+
+
+def test_the_ceiling_and_the_long_run_scale_with_the_race():
+    ten_k, marathon, ultra = (cp.Goal(TODAY, m) for m in (60, 240, 1800))
+    assert [cp.ceiling(g, 100) for g in (ten_k, marathon, ultra)] == [190, 320, 720]
+    assert cp.ceiling(ten_k, 400) == 400, "never under the athlete's base"
+    assert cp.ceiling(cp.Goal(), 200) == 300 and cp.ceiling(cp.Goal(), 100) == 180 and cp.ceiling(cp.Goal(), 400) == 480
+    assert [cp.long_cap(g) for g in (ten_k, marathon, ultra)] == [120, 130, 210] and cp.long_cap(cp.Goal()) == 150
+
+
+# ── the ressenti's adaptation ───────────────────────────────────────────────
+
+W1 = M0 - timedelta(weeks=1)  # the week before « this week »
+
+
+def _facts(*rows):
+    return [cp.Fact(W1 + timedelta(days=d), kind, status, feel) for d, kind, status, feel in rows]
+
+
+def test_one_very_hard_easy_session_or_two_hard_ones_lighten_the_next_week():
+    done = {W1: 150.0}
+    one = _facts((1, cp.FOOTING, "done", 5), (3, cp.QUALITY, "done", 3), (6, cp.LONG, "done", 3))
+    assert cp.adaptation(one, M0, done, 150) == {"reason": "ressenti", "factor": 0.8}
+    two = _facts((1, cp.FOOTING, "done", 4), (6, cp.LONG, "done", 4))
+    assert cp.adaptation(two, M0, done, 150) == {"reason": "ressenti", "factor": 0.8}
+    # a single « Dur », or a hard quality session: the progression goes on
+    assert cp.adaptation(_facts((1, cp.FOOTING, "done", 4), (6, cp.LONG, "done", 3)), M0, done, 150) is None
+    assert cp.adaptation(_facts((3, cp.QUALITY, "done", 5), (4, cp.HILLS, "done", 5)), M0, done, 150) is None
+    # two signals more than 7 days apart: nothing; within 7 days across two weeks: the later one's week counts
+    apart = [cp.Fact(W1 - timedelta(days=6), cp.FOOTING, "done", 4), cp.Fact(W1 + timedelta(days=5), cp.RECUP, "done", 4)]
+    assert cp.adaptation(apart, M0, done, 150) is None
+    near = [cp.Fact(W1 - timedelta(days=1), cp.LONG, "done", 4), cp.Fact(W1 + timedelta(days=1), cp.FOOTING, "done", 4)]
+    assert cp.adaptation(near, M0, done, 150) == {"reason": "ressenti", "factor": 0.8}
+    assert cp.adaptation(near, W1, done, 150) is None, "the week of the first signal alone is not lightened"
+
+
+def test_missed_sessions_lighten_repeat_or_restart():
+    some = _facts((1, cp.FOOTING, "missed", None), (3, cp.QUALITY, "missed", None), (6, cp.LONG, "done", 3))
+    assert cp.adaptation(some, M0, {W1: 70.0}, 150) == {"reason": "manquees", "factor": 0.8}
+    assert cp.adaptation(_facts((1, cp.FOOTING, "missed", None), (6, cp.LONG, "done", 3)), M0, {W1: 70.0}, 150) is None
+    whole = _facts((1, cp.FOOTING, "missed", None), (3, cp.QUALITY, "missed", None), (6, cp.LONG, "missed", None))
+    assert cp.adaptation(whole, M0, {}, 150) == {"reason": "semaine_manquee"}
+    # she ran outside the plan that week: not a week missed, « several sessions missed »
+    assert cp.adaptation(whole, M0, {W1: 45.0}, 150) == {"reason": "manquees", "factor": 0.8}
+    # a week still running can only lighten the next one
+    assert cp.adaptation(whole, M0, {}, 150, closed=False) == {"reason": "manquees", "factor": 0.8}
+    two = whole + [cp.Fact(W1 - timedelta(days=5), cp.FOOTING, "missed", None)]
+    assert cp.adaptation(two, M0, {}, 95) == {"reason": "reprise", "base": 95}
+    assert cp.adaptation(two, M0, {}, None) == {"reason": "reprise", "base": 60}, "no run at all: the floor"
+
+
+def test_an_adaptation_changes_the_weeks_volume_and_its_quality_session():
+    days, base = (1, 3, 5, 6), 200
+    plain = cp.week_targets(_inputs(days, base), M0 + timedelta(weeks=8))
+    key = (M0 + timedelta(weeks=2)).isoformat()
+    for reason in ("ressenti", "manquees"):
+        inp = _inputs(days, base, adaptations={key: {"reason": reason, "factor": 0.8}})
+        light = cp.week_targets(inp, M0 + timedelta(weeks=8))
+        m = M0 + timedelta(weeks=2)
+        assert abs(light[m]["target"] - plain[m]["target"] * 0.8) <= 5 and light[m]["reason"] == reason
+        assert {x: light[x]["target"] for x in light if x != m} == {x: plain[x]["target"] for x in plain if x != m}, \
+            "the planned progression goes on after it"
+        week = next(w for w in cp.build(inp, TODAY) if w.monday == m)
+        assert not [s for s in week.sessions if s.kind in (cp.QUALITY, cp.HILLS)], "its quality session is a footing"
+        assert week.reason == reason and cp.REASONS[reason].startswith("Semaine allégée")
+    repeat = cp.week_targets(_inputs(days, base, adaptations={key: {"reason": "semaine_manquee"}}),
+                             M0 + timedelta(weeks=8))
+    assert repeat[M0 + timedelta(weeks=2)]["target"] == plain[M0 + timedelta(weeks=1)]["target"], "the same volume"
+    assert repeat[M0 + timedelta(weeks=4)]["target"] == plain[M0 + timedelta(weeks=2)]["target"], "shifted by a week"
+    restart = cp.week_targets(_inputs(days, base, adaptations={key: {"reason": "reprise", "base": 120}}),
+                              M0 + timedelta(weeks=8))
+    assert [restart[M0 + timedelta(weeks=i)]["target"] for i in (2, 3, 4, 5)] == [120, 130, 145, 110]
+
+
+def test_the_ressenti_never_cuts_a_taper_further():
+    race = M0 + timedelta(weeks=6, days=6)
+    key = (cp.monday_of(race) - timedelta(weeks=1)).isoformat()
+    plain = cp.build(_inputs((1, 3, 5, 6), 240, race), TODAY)
+    light = cp.build(_inputs((1, 3, 5, 6), 240, race, adaptations={key: {"reason": "ressenti", "factor": 0.8}}), TODAY)
+    a, b = plain[-2], light[-2]
+    assert a.target == b.target and b.reason == "ressenti"
+    assert [s for s in a.sessions if s.kind == cp.QUALITY] and not [s for s in b.sessions if s.kind == cp.QUALITY]
+
+
+def test_a_person_s_session_gets_a_structure_that_fits_its_duration():
+    for kind in cp.EDITABLE:
+        for minutes in (20, 30, 45, 60, 90, 180):
+            structure = cp.default_structure(kind, minutes)
+            total = sum(s.get("min", 0) or s["reps"] * s["effort"] + (s["reps"] - 1) * s["recup"]
+                        for s in structure["steps"])
+            assert total == minutes, (kind, minutes, structure)
+    assert cp.default_structure(cp.QUALITY, 55)["text"] == "3 × 8 min soutenu, récup 2 min"
+    assert cp.describe(cp.FOOTING, cp.default_structure(cp.FOOTING, 45)) == ""
+    assert cp.main_level(cp.RECUP, cp.default_structure(cp.RECUP, 30)) == 1

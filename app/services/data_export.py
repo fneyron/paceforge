@@ -5,7 +5,9 @@ What it holds: the account (never its password hash, email or reset tokens, Stra
 Health key; with the consent to health data's date and version), every activity with its laps, splits, streams and
 the provider's payload, the health measurements and samples, the phone's daily values, the former feel's answers, the
 race plans with their checkpoints (waypoints, cut-offs, pinned times), the lactate tests, the nutrition products,
-which services and phones are linked, with their dates (never a token, a pairing code or a phone's key), the API
+which services and phones are linked, with their dates (never a token, a pairing code or a phone's key), the
+Coaching plan with its sessions, ressenti and notes, who it is shared with and whom the account follows (first names
+and dates: never the calendar feed's token nor a coach's code), the API
 keys' names, first characters, scopes and dates (never a key nor its hash), and the account's rows in the tables of the features switched off, while the database still has them (legacy_tables).
 
 Streamed: the ZIP is written as it is sent (zipfile on an output that cannot seek: each entry ends with a data
@@ -21,11 +23,12 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import case, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
 from app.models.api_token import ApiToken
+from app.models.coaching import CoachingInvite, CoachingLink, CoachingPlan, CoachingSession
 from app.models.coros import CorosConnection
 from app.models.garmin import GarminConnection
 from app.models.health import HealthMetric, HealthSample
@@ -67,6 +70,9 @@ telephone_jours.json    les valeurs du jour envoyées par ton téléphone (pas, 
 parcours.json           tes parcours et plans de course, avec leurs points de passage
 lactate.json            tes tests de lactate
 nutrition.json          tes produits de nutrition
+coaching.json           ton plan de coaching : objectif, jours, volume, ce que le ressenti a changé, tes coachs et
+                        les athlètes que tu suis (prénoms et dates)
+coaching_seances.json   tes séances de coaching : jour, type, durée, statut, ressenti, note, commentaire du coach
 anciennes_fonctions/    s’il y en a, ce qu’avaient enregistré les fonctions retirées (analyses, messages,
                         bilans de la semaine, plans générés, simulations)
 """
@@ -161,6 +167,35 @@ async def _legacy_batches(db: AsyncSession, table: str, user_id: int,
         yield [_row(r) for r in rows]
 
 
+# the plan's own fields: never the calendar feed's token (nor its hash)
+COACHING_PLAN_FIELDS = ("route_id", "days", "long_day", "base_minutes", "start_monday", "generated_at", "adaptations",
+                        "created_at", "updated_at")
+
+
+async def coaching(db: AsyncSession, user: User) -> dict[str, Any]:
+    """The Coaching plan and its sharing: the plan's answers and what the ressenti changed; the coaches the athlete
+    shared it with and the athletes the account follows (first names and dates); the codes made, by their dates
+    (never a code, its hash, nor the calendar feed's token). The sessions are their own file."""
+    plan = await db.scalar(select(CoachingPlan).where(CoachingPlan.user_id == user.id))
+    links = (await db.execute(
+        select(CoachingLink, User.firstname).join(
+            User, User.id == case((CoachingLink.athlete_id == user.id, CoachingLink.coach_id),
+                                  else_=CoachingLink.athlete_id))
+        .where(or_(CoachingLink.athlete_id == user.id, CoachingLink.coach_id == user.id))
+        .order_by(CoachingLink.id))).all()
+    invites = (await db.scalars(select(CoachingInvite).where(CoachingInvite.athlete_id == user.id)
+                                .order_by(CoachingInvite.id))).all()
+    return {
+        "plan": {field: _plain(getattr(plan, field)) for field in COACHING_PLAN_FIELDS} if plan else None,
+        "coachs": [{"prenom": name, "depuis": _plain(link.created_at)} for link, name in links
+                   if link.athlete_id == user.id],
+        "athletes_suivis": [{"prenom": name, "depuis": _plain(link.created_at)} for link, name in links
+                            if link.coach_id == user.id],
+        "codes": [{"cree_le": _plain(i.created_at), "expire_le": _plain(i.expires_at), "utilise_le": _plain(i.used_at)}
+                  for i in invites],
+    }
+
+
 async def _routes(db: AsyncSession, user_id: int) -> AsyncIterator[list[dict[str, Any]]]:
     """Each plan with its checkpoints (waypoints, aid stations, cut-offs, pinned passage times)."""
     checkpoints = RouteCheckpoint.__table__
@@ -217,7 +252,8 @@ async def export_zip(db: AsyncSession, user: User) -> AsyncIterator[bytes]:
 
     await db.refresh(user)  # every column loaded now (one written earlier in the request may be expired)
     uid = user.id
-    head = {"compte.json": account(user), "connexions.json": await connections(db, user)}
+    head = {"compte.json": account(user), "connexions.json": await connections(db, user),
+            "coaching.json": await coaching(db, user)}
     # only the legacy tables the account has rows in: a database migrated by alembic still has all of them
     legacy = [table for table in await legacy_tables.present(db) if await legacy_tables.holds(db, table, uid)]
     await db.commit()
@@ -236,6 +272,7 @@ async def export_zip(db: AsyncSession, user: User) -> AsyncIterator[bytes]:
         ("parcours.json", _routes(db, uid)),
         ("lactate.json", _batches(db, LactateTest, uid)),
         ("nutrition.json", _batches(db, NutritionProduct, uid)),
+        ("coaching_seances.json", _batches(db, CoachingSession, uid)),
         *((f"{LEGACY_DIR}{table}.json", _legacy_batches(db, table, uid)) for table in legacy),
     )
     for name, batches in sections:

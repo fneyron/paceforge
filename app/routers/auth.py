@@ -42,6 +42,7 @@ from app.services.auth import (
     verification_token,
     verify_password_async,
 )
+from app.features import coaching_enabled
 from app.services.email import send_login_alert_email, send_password_reset_email, send_verification_email
 from app.services.oauth_attempts import begin_strava, consume_strava
 from app.services.strava import StravaService
@@ -53,6 +54,8 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 templates.env.globals["google_site_verification"] = GOOGLE_SITE_VERIFICATION  # /privacy's head
 # /privacy names the official connectors' recipients only while one is active (partials/official_privacy.html)
 templates.env.globals["official_connectors_active"] = active_providers
+# and the Coaching (beta) row only while the beta has an account (partials/coaching_privacy.html)
+templates.env.globals["coaching_active"] = coaching_enabled
 HOME = "/sante"  # Santé is the main dashboard
 # Where a sign-in may lead instead of Santé: a connection page asked for before the login, or the race plans (the
 # method page's « Créer mon plan », carried through sign-up and the email check in the session). Nothing else.

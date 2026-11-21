@@ -1,0 +1,10 @@
+{#- /privacy › the Coaching (beta) row, only while the beta has an account (features.coaching_enabled): the policy
+    never claims a processing that does not happen. Wording kept in docs/coaching.md. -#}
+{% if coaching_active is defined and coaching_active() %}
+<tr>
+    <th scope="row">Coaching (bêta)</th>
+    <td data-label="Données">Ton plan (objectif, jours disponibles, volume de départ), tes séances et leur statut, ton ressenti après une séance (l’effort perçu, de 1 à 5), tes notes, les commentaires de ton coach</td>
+    <td data-label="Base légale">Contrat. Partagé avec le coach que tu choisis, et lui seul, jusqu’à ce que tu lui retires l’accès.</td>
+    <td data-label="Durée">Jusqu’à l’arrêt du coaching (le plan est supprimé) ou la suppression du compte</td>
+</tr>
+{% endif %}
