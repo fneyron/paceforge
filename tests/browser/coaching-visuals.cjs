@@ -117,6 +117,10 @@ async function theme(page, dark) {
       await page.goto(athlete + '/coaching', { waitUntil: 'networkidle' });
       assert.match(await page.locator('h1').innerText(), /^Coaching\s+bêta$/i, key);
       assert.match(await page.locator('.pf-coach-goal').innerText(), /J‑54 · Trail des Crêtes/);
+      // the time the plan runs on, said once, with the way to the race page
+      assert.match(await page.locator('a.pf-coach-goal-time').innerText(), /^Objectif\s5h00$/, key);
+      assert.match(await page.locator('a.pf-coach-goal-time').getAttribute('href'), /^\/simulator\/routes\/\d+$/, key);
+      assert.ok((await page.locator('a.pf-coach-goal-time').boundingBox()).height >= 40, key + ': a 40 px target');
       assert.equal(await page.locator('.pf-coach-day').count(), 7, key + ': seven days');
       assert.equal(await page.locator('.pf-coach-day.is-today').count(), 1, key + ': today is highlighted');
       assert.equal(await page.locator(`#coach-day-${fixture.day}.is-selected`).count(), 1, key + ': today by default');
@@ -144,6 +148,31 @@ async function theme(page, dark) {
       await noOverflow(page, key + ' calendar');
       if (width === 393 && !dark && app) await shot(page, `athlete-393-calendar${suffix(app)}`);
       assert.deepEqual(page.errors, [], key + ': browser errors');
+      await page.close();
+    }
+
+    // ── the race and its plan: a long run's climb target, the race page's line ──
+    for (const dark of [false, true]) {
+      const page = await open(browser, { width: 393, dark });
+      const sunday = new Date(fixture.day + 'T00:00:00Z');
+      sunday.setUTCDate(sunday.getUTCDate() + (7 - sunday.getUTCDay()) % 7 + 7);  // next week's long run
+      await page.goto(`${athlete}/coaching?d=${sunday.toISOString().slice(0, 10)}`, { waitUntil: 'networkidle' });
+      assert.match(await page.locator('.pf-coach-s-title').innerText(), /^Sortie longue/);
+      assert.match(await page.locator('.pf-coach-s-text').innerText(), /^Vise \+\d[\d\s]*m$/, 'a trail race: the climb to aim at');
+      await noOverflow(page, 'climb target');
+      await shot(page, `athlete-393-climb${dark ? '-dark' : ''}`);
+      if (!dark) {
+        await page.locator('a.pf-coach-goal-time').click();
+        await page.waitForURL('**/simulator/routes/*');
+        const line = page.locator('a.pf-rp-coaching');
+        assert.match(await line.innerText(), /^Plan de coaching · semaine \d+ sur \d+ ›$/);
+        assert.ok((await line.boundingBox()).height >= 44);
+        await line.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `${out}/race-393-coaching-line.png` });
+        await line.click();
+        await page.waitForURL('**/coaching');
+      }
+      assert.deepEqual(page.errors.filter(e => !/maplibre|WebGL/i.test(e)), [], 'race and plan: browser errors');
       await page.close();
     }
 
@@ -311,10 +340,16 @@ async function theme(page, dark) {
       assert.ok(submit.height >= 44 && submit.width > width * 0.8, key + ': the button');
       await noOverflow(page, key);
       if (width === 393) await shot(page, `new-393-onboarding${dark ? '-dark' : ''}${suffix(app)}`);
-      // creating without a day says what is missing, in place, and keeps the answers
+      // the button waits for 2 to 6 days; a form posted without them all the same (no JavaScript) says what is
+      // missing, in place (answered 200: the app's shell replaces a 4xx document), and keeps the answers
+      assert.equal(await page.getByRole('button', { name: 'Créer mon plan' }).isDisabled(), true, key + ': no day yet');
       if (width === 393 && !dark && !app) {
         await page.locator('.pf-coach-chip.is-wide input[value="180"]').check({ force: true });
-        await page.getByRole('button', { name: 'Créer mon plan' }).click();
+        await page.locator('[data-days] input[value="2"]').check({ force: true });
+        assert.equal(await page.getByRole('button', { name: 'Créer mon plan' }).isDisabled(), true, 'one day is not enough');
+        const posted = page.waitForResponse(r => r.url().endsWith('/coaching/plan'));
+        await page.evaluate(() => document.getElementById('coach-onb').submit());
+        assert.equal((await posted).status(), 200);
         await page.locator('.pf-coach-error').waitFor();
         assert.match(await page.locator('.pf-coach-error').innerText(), /jour/i);
         assert.equal(await page.locator('input[name="base"]:checked').getAttribute('value'), '180', 'the answer is kept');

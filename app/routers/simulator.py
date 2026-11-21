@@ -919,8 +919,9 @@ def debrief_mode(race_date: str | None, has_result: bool, today=None) -> str | N
     return None
 
 
-async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> dict:
-    """Shared context for the route detail page and its partial."""
+async def _page_times(route: Route, db: AsyncSession, user_id: int):
+    """The race page's two times, read ONE way: (the predicted course, the athlete's profile, the checkpoints as
+    stored, the same normalised, the estimate, the objective)."""
     from app.schemas.simulator import CourseProfile
     from app.services.checkpoints import normalize_checkpoint
     from app.services.race_simulator import build_athlete_gradient_profile
@@ -943,8 +944,29 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         course.total_distance_km, bool(route.weather_json), float(w.get("heat_factor") or 1.0), w.get("hourly"),
         _aid_kms_from_checkpoints(ncps),
     )
-    estimate_s = _to_minute(est)
-    objective_s = await _route_objective(db, route, profile)
+    return course, profile, cps, ncps, _to_minute(est), await _route_objective(db, route, profile)
+
+
+async def race_times(db: AsyncSession, user_id: int, route_id: int) -> tuple[int | None, int | None] | None:
+    """(objective, estimate) of a saved foot race, in seconds, exactly as its page prints them (« Objectif »,
+    « Estimation »: _page_times, the page's own reading). What Coaching plans on (services/coaching.race_times): one
+    source, never a second estimator. None for a race without a course, a bike or triathlon one, or one that is not
+    the account's."""
+    route = _visible((await db.execute(select(Route).where(Route.id == route_id, Route.user_id == user_id)
+                                       .execution_options(populate_existing=True))).scalar_one_or_none())
+    if route is None or not route.course_json or (route.sport_type or "trail") in ("bike", "triathlon"):
+        return None
+    *_, estimate_s, objective_s = await _page_times(route, db, user_id)
+    return objective_s, (estimate_s if estimate_s and estimate_s > 0 else None)
+
+
+async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> dict:
+    """Shared context for the route detail page and its partial."""
+    from app.schemas.simulator import CourseProfile
+
+    course, profile, cps, ncps, estimate_s, objective_s = await _page_times(route, db, user_id)
+    w = route.weather_json if isinstance(route.weather_json, dict) else {}
+    sh, sm = (route.start_hour if route.start_hour is not None else 6), (route.start_minute or 0)
 
     coords = course.route_coords or []
     geojson = {
@@ -1068,6 +1090,9 @@ async def route_detail_page(
     from app.services.race_prep import prep_context
 
     ctx["prep"] = await prep_context(db, user, route)  # « Préparation » (#prep): taper, nights, race week
+    from app.services import coaching
+
+    ctx["coaching"] = await coaching.race_entry(db, user, route)  # its plan in Coaching, or the way to make one
     if compare:  # arrived from an activity: the debrief is the main action
         ctx["debrief_mode"] = "primary"
         ctx["show_debrief"] = True

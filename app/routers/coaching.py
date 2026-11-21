@@ -178,9 +178,13 @@ async def calendar_feed(token: str, request: Request, db: AsyncSession = Depends
 # ── the athlete's page, the onboarding ──────────────────────────────────────
 
 async def _onboarding(request: Request, db: AsyncSession, user: User, *, plan: CoachingPlan | None,
-                      error: str | None = None, form: dict | None = None, status_code: int = 200) -> Response:
+                      error: str | None = None, form: dict | None = None, status_code: int = 200,
+                      course: int | None = None) -> Response:
+    """`course`: a race chosen before the screen opens (the race page's « Préparer cette course avec Coaching »)."""
     c = await co.clock(db, user)
     races = await co.goal_options(db, user.id, c.today)
+    if course is not None and not form and course in {r.id for r in races}:
+        form = {"goal": str(course)}
     computed = await co.starting_volume(db, user, c)
     days = plan.weekdays if plan else ()
     chosen = {"goal": str(plan.route_id) if plan and plan.route_id else ("none" if plan or not races else None),
@@ -214,20 +218,20 @@ async def _page(request: Request, db: AsyncSession, scope: Scope, d: str | None,
     p = cv.page(state, d=_day(d), w=_day(w), month=v == "mois", coach=scope.coach,
                 hr_reference=await _hr_reference(db, scope.athlete, state.clock))
     return templates.TemplateResponse(request, "coaching.html", context={
-        "user": scope.viewer, "scope": scope, "head": cv.header(state), "p": p, "method": cv.METHOD,
+        "user": scope.viewer, "scope": scope, "head": cv.header(state, scope.coach), "p": p, "method": cv.METHOD,
         "athlete_name": scope.athlete.firstname or "Athlète", "error": None,
         "tools": None if scope.coach else await _tools(db, scope, state.plan)})
 
 
 @router.get("/coaching", response_class=HTMLResponse)
 async def coaching_page(request: Request, d: str | None = None, w: str | None = None, v: str | None = None,
-                        refaire: str | None = None, scope: Scope = Depends(own_scope),
+                        refaire: str | None = None, course: str | None = None, scope: Scope = Depends(own_scope),
                         db: AsyncSession = Depends(get_db)):
     plan = await co.get_plan(db, scope.athlete.id)
     if plan is None and refaire != "1" and await co.athletes_of(db, scope.viewer.id):
         return RedirectResponse("/coaching/athletes", status_code=303)  # a coach without a plan of their own
     if plan is None or refaire == "1":
-        return await _onboarding(request, db, scope.viewer, plan=plan)
+        return await _onboarding(request, db, scope.viewer, plan=plan, course=_int(course))
     return await _page(request, db, scope, d, w, v)
 
 

@@ -68,8 +68,57 @@ Un écran, trois questions et une valeur calculée :
    `sante_training.load_family` : route, trail, tapis ; semaines du lundi au dimanche à l’horloge de l’athlète),
    arrondie à 5 min, modifiable. Sans historique : cinq choix, 1 h, 2 h, 3 h, 4 h, 5 h et plus (H).
 
+Ouvert depuis la page d’une course (« Préparer cette course avec Coaching »), l’écran arrive avec cette course
+choisie.
+
 « Refaire le plan » repose ces questions : la semaine en cours redevient la semaine 0, ce que le ressenti avait
 changé est oublié ; les séances faites, passées ou modifiées par une personne restent.
+
+## L’objectif et le temps de course
+
+Demande du propriétaire, 21 novembre 2026 : « Tu fais bien le lien entre les objectifs, les estimations de temps et
+le coaching ? »
+
+Le plan se règle sur le **temps de course attendu**, lu à **une seule source** : la page de la course
+(`routers/simulator.race_times`, la lecture même de la page, `_page_times`). Dans l’ordre :
+
+| Ce que la page de la course a | Ce que le plan prend | Ce que l’en-tête de Coaching dit |
+|---|---|---|
+| Un objectif posé par l’athlète | Cet objectif | « Objectif 6h30 » |
+| Pas d’objectif | L’**estimation du simulateur** pour cet athlète : le temps d’arrivée à son niveau, avec la chaleur et les arrêts prévus, à la minute — le chiffre « Estimation » de la page | « Estimation 7h10 » |
+| Aucune prédiction (une course sans tracé, ou une lecture qui échoue) | Le temps enregistré sur la course, sinon l’approximation de `race_prep.expected_s` (distance et D+) | « Objectif … », sinon « Environ 7h00 » |
+
+- Le temps est dit **une fois**, dans l’en-tête, à côté du nom de la course, avec le lien vers sa page (pour un
+  coach : les mêmes mots, sans lien). La carte du jour de la course ne le répète pas.
+- Coaching n’a **aucun second estimateur**. Une prédiction lit tout le tracé : elle est gardée sur le plan pour la
+  journée (`coaching_plans.goal_state`) et relue quand la page de la course a enregistré quelque chose (date,
+  objectif, distance, D+, départ, dernière modification de la course) ou que le jour a changé (le niveau de
+  l’athlète fait bouger l’estimation).
+- **Le plan suit la course** : un objectif, une date ou une distance changés sur la page de la course déplacent les
+  séances à venir que personne n’a modifiées, à la lecture suivante du plan (la page, celle du coach, la tâche
+  quotidienne). Les séances modifiées, faites ou passées restent.
+- Les règles lisent ce temps **au quart d’heure** (H, `RACE_TIME_STEP`) : une estimation qui bouge d’une minute d’un
+  jour à l’autre ne réécrit pas les semaines. La séance « Course » garde le temps exact.
+
+**Sur la page de la course**, une ligne discrète : « Plan de coaching · semaine 5 sur 12 » quand cette course est
+l’objectif du plan (vers `/coaching`) ; sinon, pour une course à pied à venir, « Préparer cette course avec
+Coaching » (vers l’écran de départ, cette course choisie). Rien pour une course passée, un autre sport, ou un
+compte sans Coaching.
+
+**Le dénivelé d’un trail** (H, `climb_target`). Pour une course de trail, la sortie longue et la séance de côtes
+longues portent un dénivelé à viser : le D+ par heure de la course (D+ ÷ temps attendu, tenu à 500 m/h au plus,
+`CLIMB_RATE_CAP`) × la durée de la séance × la part de la semaine. Cette part part de 60 % (`CLIMB_START`) la
+première semaine et monte par pas égaux jusqu’à 100 % la dernière semaine avant l’affûtage ; elle reste entière
+ensuite. Arrondi à 50 m ; rien sous 100 m (`CLIMB_MIN`). Affiché « Vise +600 m » sur la carte de la séance, « Vise
++600 m de dénivelé. » dans la description du flux calendrier, et, une fois la sortie enregistrée, contre son propre
+dénivelé (« +470 m sur +600 m visés »). Une course sur route, ou un plan sans course : aucun.
+
+**La course supprimée, ou passée.** Quand la course du plan est supprimée (ou perd sa date), ou que son jour est
+derrière, le plan devient « Progresser, sans course » **à partir de la semaine suivante** : le lundi après la
+course, ou après la semaine où la suppression est vue. Ce lundi devient la semaine 0 (le volume de départ, puis la
+progression) ; les séances de la semaine en cours restent telles quelles, la séance « Course » d’une course
+supprimée est retirée. Une ligne le dit jusqu’à la fin de cette première semaine : « Trail des Crêtes est derrière
+toi : dès lundi, le plan continue sans course. » ou « … n’est plus dans tes courses : … ».
 
 ## Les règles du plan
 
@@ -82,7 +131,7 @@ Le plan est en **minutes** (arrondies à 5), jamais en kilomètres.
 | Affûtage | Les semaines qui contiennent J-14 → J-1. Volume : les bandes de la page de course (`race_prep.week_target`), J-14 → J-8 à 55–70 % de la base, J-7 → J-1 à 35–50 %, au milieu de la bande ; la base est la médiane des 4 semaines qui précèdent. L’intensité reste : un rappel court par semaine. | Bosquet 2007 ; Mujika 2003 (comme `race_prep`) |
 | Progression | Volume de départ, puis +10 % par semaine de charge. | (H) `GROWTH` |
 | Semaine légère | Une semaine sur quatre à 75 % de la dernière semaine de charge ; la suivante reprend la progression. | (H) `LIGHT_EVERY`, `LIGHT_FACTOR` |
-| Plafond | 150 min + 70 % du temps de course attendu (l’objectif du parcours, sinon l’estimation de `race_prep.expected_s` à partir de la distance et du D+), entre 3 h et 12 h. Sans course : 1,5 × la base, entre 3 h et 8 h. Jamais sous la base. | (H) `CEILING`, `CEILING_RANGE`, `FREE_CEILING` |
+| Plafond | 150 min + 70 % du temps de course attendu (l’objectif de la course, sinon l’estimation du simulateur : voir « L’objectif et le temps de course »), entre 3 h et 12 h. Sans course : 1,5 × la base, entre 3 h et 8 h. Jamais sous la base. | (H) `CEILING`, `CEILING_RANGE`, `FREE_CEILING` |
 | Plancher | Une semaine d’entraînement ne descend pas sous 1 h (hors affûtage). | (H) `WEEK_FLOOR` |
 | Facile / dur | Au plus 20 % du temps de la semaine en efforts durs (les répétitions des séances) ; le reste en aisance. | Seiler 2010 pour la répartition ; la compter en minutes est (H) `HARD_SHARE` |
 | Sortie longue | Environ 35 % de la semaine (au moins autant que les autres séances), plafonnée à 55 % du temps de course attendu, ce plafond tenu entre 2 h et 3 h 30 ; sans course : 2 h 30. Aucune à partir de J-3. | (H) `LONG_SHARE`, `LONG_RACE_SHARE`, `LONG_CAP_RANGE`, `FREE_LONG_CAP`, `NO_LONG_BEFORE_RACE` |
@@ -174,7 +223,8 @@ coach, elle reste en base comme annulée pour la même raison.
 
 ## Les écrans
 
-- `/coaching` : l’objectif et le compte à rebours, la phase ; la semaine en sept jours (une pastille par séance,
+- `/coaching` : l’objectif et le compte à rebours, le temps visé (« Objectif 6h30 » ou « Estimation 7h10 », une
+  fois, lié à la page de la course), la phase ; la semaine en sept jours (une pastille par séance,
   pleine avec une coche quand elle est faite, en pointillés quand elle est manquée), les flèches, la vue « Mois » ;
   une barre « fait / prévu » ; la carte du jour (le profil d’intensité dessiné, la consigne, « Fait », « Pas
   faite », « Déplacer », « Modifier ») ; une fois faite : l’activité, le ressenti, la note, le commentaire du coach ;
@@ -196,7 +246,7 @@ coach, elle reste en base comme annulée pour la même raison.
 `GET /coaching/cal/<jeton>.ics` : un flux iCalendar, sans session.
 
 - Un événement d’une journée entière par séance (`VALUE=DATE`), des 30 derniers jours à la fin du plan ;
-  `SUMMARY` « Footing 45 min » ; `DESCRIPTION` la structure et la consigne.
+  `SUMMARY` « Footing 45 min » ; `DESCRIPTION` la structure, le dénivelé à viser s’il y en a un, et la consigne.
 - `UID` stable (l’identifiant de la séance : une régénération réécrit la ligne en place), `SEQUENCE` son nombre de
   changements, `DTSTAMP` et `LAST-MODIFIED` son dernier changement : une modification arrive dans le calendrier
   abonné à son prochain rafraîchissement. Une séance supprimée ou annulée n’est plus dans le flux.
@@ -227,7 +277,7 @@ Training API, écriture COROS côté partenaire) que PaceForge n’a pas. Aucun 
 ## Les données
 
 Migration `m4b5c6d7e8f9` (après `l3a4b5c6d7e8`) : `coaching_plans`, `coaching_sessions`, `coaching_links`,
-`coaching_invites`. Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
+`coaching_invites`. Migration `n5c6d7e8f9a0` : `coaching_plans.goal_state` (ce que le plan a lu de sa course). Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
 (`coaching.json`, `coaching_seances.json` : jamais le jeton du flux ni un code).
 
 Politique de confidentialité, ligne affichée tant que la fonction n’est pas éteinte : « Coaching (bêta) » —
@@ -263,4 +313,5 @@ du compte.
   *Journal of Cardiopulmonary Rehabilitation and Prevention*, 28(1), 24–30.
 
 Aucune étude n’est citée pour la progression de 10 % par semaine, la semaine légère sur quatre, les plafonds, la
-part de la sortie longue ni l’adaptation au ressenti : ce sont des usages d’entraînement, marqués (H).
+part de la sortie longue, l’adaptation au ressenti, le dénivelé à viser ni la lecture du temps de course au quart
+d’heure : ce sont des usages d’entraînement, marqués (H).

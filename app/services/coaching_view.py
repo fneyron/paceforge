@@ -19,6 +19,11 @@ KIND_CLASS = {cp.FOOTING: "easy", cp.RECUP: "recup", cp.LONG: "long", cp.QUALITY
 STATUS_WORD = {co.PLANNED: "prévue", co.DONE: "faite", co.MISSED: "pas faite"}
 LEGEND = (("easy", "Footing"), ("long", "Longue"), ("hard", "Séance"), ("race", "Course"))
 CHART_WEEKS = 26  # the plan's chart: 26 weeks at most
+# which time the plan runs on, said once in the header: the race page's objective, the simulator's estimate, or —
+# no prediction — a rough guess
+TIME_WORD = {co.OBJECTIVE: "Objectif", co.ESTIMATE: "Estimation", co.ROUGH: "Environ"}
+ENDED = {co.PASSED: "{name} est derrière toi : {when}le plan continue sans course.",
+         co.GONE: "{name} n’est plus dans tes courses : {when}le plan continue sans course."}
 METHOD = (
     "Ton plan est en temps, pas en kilomètres. Il part de ton volume habituel et monte d’environ 10 % par semaine ; "
     "une semaine sur quatre est plus légère.",
@@ -26,6 +31,8 @@ METHOD = (
     "plus soutenue quand tu as trois jours ou plus.",
     "Jamais deux jours durs de suite, pas de séance de moins de 30 minutes, et seulement tes jours disponibles.",
     "Avant une course : deux semaines d’affûtage, le volume baisse et quelques efforts courts restent.",
+    "Le plan vise le temps de ta course : ton objectif, sinon l’estimation de sa page. Pour un trail, tes sorties "
+    "longues visent aussi un dénivelé, qui monte au fil des semaines.",
     "Après chaque séance, dis comment c’était. Si le facile te paraît dur, ou si des séances sautent, la semaine "
     "suivante s’allège toute seule.",
     "Tes sorties enregistrées cochent les séances du jour. Sans montre, coche « Fait ».",
@@ -75,12 +82,47 @@ def countdown(goal: cp.Goal, today: date) -> str:
     return f"{rp.j_label(-k)} · {goal.name}"
 
 
-def _activity(run, link: bool) -> dict:
+def goal_time(goal: cp.Goal, coach: bool = False) -> dict | None:
+    """« Objectif 6h30 » or « Estimation 7h10 »: the time the plan runs on and where it comes from, said once, with
+    the way to the race page (the athlete's own: a coach reads the words only)."""
+    if goal.race_day is None or not goal.race_minutes or goal.time_kind not in TIME_WORD:
+        return None
+    return {"label": f"{TIME_WORD[goal.time_kind]}{NBSP}{hm(goal.race_minutes)}",
+            "href": f"/simulator/routes/{goal.route_id}" if goal.route_id and not coach else None}
+
+
+def ended_line(state: co.State) -> str | None:
+    """The one line of a plan that lost its race (deleted, or behind): it goes on without one from next Monday."""
+    ended = co.goal_ended(state.plan)
+    if ended is None or ended["ended"] not in ENDED:
+        return None
+    when = "dès lundi, " if ended["from"] > state.clock.today else ""
+    return rp.fr(ENDED[ended["ended"]].format(name=ended["name"] or "Ta course", when=when))
+
+
+def climb_of(row) -> int | None:
+    """The climb a session aims at (a trail race's long run or long-hill session), in metres."""
+    try:
+        value = int((row.structure or {}).get("climb") or 0)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def climb_line(row) -> str | None:
+    target = climb_of(row)
+    return f"vise {viz.dplus(target)}" if target else None
+
+
+def _activity(run, link: bool, climb: int | None = None) -> dict:
+    """An activity's own figures on one line; `climb`: the session's climb target, said against the run's."""
     parts = []
     if run.km > 0:
         parts.append(f"{viz.fr_num(run.km, 1)}{NNBSP}km")
     parts.append(hm(run.minutes))
-    if run.dplus >= 1:
+    if climb:
+        parts.append(f"{viz.dplus(run.dplus)} sur {viz.dplus(climb)} visés")
+    elif run.dplus >= 1:
         parts.append(viz.dplus(run.dplus))
     return {"id": run.id, "name": run.name or "Sortie", "line": " · ".join(parts),
             "href": f"/activity/{run.id}" if link else None}
@@ -90,14 +132,20 @@ def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool) -> di
     today = state.clock.today
     run = runs_by_id.get(row.activity_id) if row.activity_id else None
     planned = row.status == co.PLANNED
+    # the structure in words, then the climb to aim at while the session is still to do (once done, the activity's
+    # line says it against the run's own climb)
+    said = [cp.describe(row.kind, row.structure), climb_line(row) if planned else None]
+    text = " · ".join(x for x in said if x)
     return {
-        "id": row.id, "kind": row.kind, "title": cp.KINDS.get(row.kind, row.kind), "duration": hm(row.minutes),
+        "id": row.id, "kind": row.kind, "title": cp.KINDS.get(row.kind, row.kind),
+        # the race's time is the header's (« Objectif 6h30 »): printed once
+        "duration": "" if row.kind == cp.RACE and goal_time(state.goal) else hm(row.minutes),
         "minutes": row.minutes, "cls": KIND_CLASS.get(row.kind, "easy"), "status": row.status,
-        "text": cp.describe(row.kind, row.structure), "profile": viz.intensity_profile(row.structure),
+        "text": text[:1].upper() + text[1:], "profile": viz.intensity_profile(row.structure),
         "guidance": feel_and_range(row.kind, row.structure, rows_hr),
         "edited": {"coach": "Modifiée par ton coach", "athlete": "Modifiée par toi"}.get(row.origin) if not coach
         else {"coach": "Modifiée par toi", "athlete": "Modifiée par l’athlète"}.get(row.origin),
-        "activity": _activity(run, link=not coach) if run else None,
+        "activity": _activity(run, link=not coach, climb=climb_of(row)) if run else None,
         "done_manual": hm(row.done_minutes) if row.status == co.DONE and run is None and row.done_minutes else None,
         "done_min": row.done_minutes, "ressenti": row.ressenti, "note": row.note, "coach_comment": row.coach_comment,
         "can_tick": not coach and row.day <= today and run is None and row.status != co.CANCELLED,
@@ -281,11 +329,14 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
     return out
 
 
-def header(state: co.State) -> dict:
+def header(state: co.State, coach: bool = False) -> dict:
+    """The goal and its countdown, the time the plan runs on (once), the phase, and the line of a lost race."""
     today = state.clock.today
-    phase = cp.phase_of(cp.monday_of(today), state.inputs)
-    return {"goal": countdown(state.goal, today), "phase": cp.PHASES.get(phase) if phase != "apres" else None,
-            "finished": state.goal.race_day is not None and state.goal.race_day < today}
+    monday = cp.monday_of(today)
+    # a plan that lost its race starts again next Monday: this week keeps no phase
+    phase = cp.phase_of(monday, state.inputs) if monday >= state.plan.start_monday else "apres"
+    return {"goal": countdown(state.goal, today), "time": goal_time(state.goal, coach),
+            "phase": cp.PHASES.get(phase) if phase != "apres" else None, "ended": ended_line(state)}
 
 
 def athlete_card(state: co.State, user) -> dict:
@@ -293,7 +344,7 @@ def athlete_card(state: co.State, user) -> dict:
     today = state.clock.today
     done = co.done_by_week(state.runs, state.rows)
     recent = [r for r in state.rows if r.status in (co.DONE, co.MISSED) and r.day <= today][-5:]
-    return {"id": user.id, "name": user.firstname or "Athlète", **header(state),
+    return {"id": user.id, "name": user.firstname or "Athlète", **header(state, coach=True),
             "summary": week_summary(state, cp.monday_of(today), done),
             "recent": [{"day": viz.d_short(r.day), "kind": KIND_SHORT.get(r.kind, r.kind),
                         "cls": KIND_CLASS.get(r.kind, "easy"), "status": r.status,

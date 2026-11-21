@@ -39,6 +39,8 @@ summary::-webkit-details-marker { display: none; }
 
     <div id="rpanel-plan" class="pf-col">
         {% include "partials/gpx_result.html" %}
+        {#- Coaching: one line — the plan that prepares this race, or the way to make one for it -#}
+        {% if coaching %}<a class="pf-sum-link pf-rp-coaching" href="{{ coaching.href }}">{{ coaching.label }} ›</a>{% endif %}
         {% include "partials/race_prep.html" %}
     </div>
 

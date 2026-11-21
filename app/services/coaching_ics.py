@@ -9,7 +9,7 @@ Lines are CRLF, folded at 75 octets (never inside a UTF-8 character); TEXT value
 from datetime import date, datetime, timedelta, timezone
 
 from app.services import coaching_plan as cp
-from app.services.viz import hm
+from app.services.viz import dplus, hm
 
 PAST_DAYS = 30
 PRODID = "-//PaceForge//Coaching//FR"
@@ -52,8 +52,17 @@ def summary(row) -> str:
     return f"{cp.KINDS.get(row.kind, row.kind)} {hm(row.minutes)}"
 
 
+def climb(row) -> str:
+    """« Vise +600 m de dénivelé. » for a session that carries a climb target (a trail race's long run), else ''."""
+    try:
+        target = int((row.structure or {}).get("climb") or 0)
+    except (TypeError, ValueError):
+        target = 0
+    return f"Vise {dplus(target)} de dénivelé." if target > 0 else ""
+
+
 def description(row, guidance: str) -> str:
-    parts = [p for p in (cp.describe(row.kind, row.structure), guidance) if p]
+    parts = [p for p in (cp.describe(row.kind, row.structure), climb(row), guidance) if p]
     return "\n".join(parts)
 
 

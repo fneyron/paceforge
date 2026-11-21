@@ -12,6 +12,8 @@ The plan is in TIME (minutes, to 5), week by week, Monday to Sunday on the athle
   the long run about 35 % of the week (H), capped; one quality session from 3 available days, two from 5 days and
   4 h a week (H); never two hard days (quality, long run, race) in a row; no session under 30 min (H); sessions on
   the available days only;
+- a trail race: the long run and the long-hill session carry a climb to aim at, the race's D+ per hour scaled to
+  the session, growing across the plan and capped (H, `climb_target`); a road race, or no race: none;
 - the ressenti (H, `adaptation`): a lighter week, a repeated week or a restart, each kept with its reason.
 (H): a PaceForge heuristic, not a published threshold (tests/test_coaching_plan.py pins each value).
 """
@@ -62,6 +64,12 @@ RESSENTI = ("Très facile", "Facile", "Bien", "Dur", "Très dur")  # 1 … 5
 START_CHOICES = (60, 120, 180, 240, 300)  # (H) the 5 coarse starting volumes offered without a history
 BASE_RANGE = (60, 900)  # (H) what a typed starting volume is held to
 BASE_WEEKS = 4  # the starting volume: the median of the last 4 complete weeks of running
+RACE_TIME_STEP = 15  # (H) the expected race time is read to 15 min by the rules: a minute more leaves the plan as is
+CLIMB_START = 0.6  # (H) the climb aimed at starts at 60 % of the race's D+ per hour, 100 % the week before the taper
+CLIMB_RATE_CAP = 500  # (H) never more than 500 m of climb per hour of session
+CLIMB_MIN = 100  # (H) no climb target under 100 m
+CLIMB_STEP = 50  # metres: a climb target is rounded to it
+CLIMB_KEYS = ("cotes_longues",)  # the quality sessions that carry one, with the long run
 
 PHASES = {"base": "Base", "specifique": "Spécifique", "affutage": "Affûtage", "progression": "Progression",
           "apres": "Après la course"}
@@ -99,10 +107,12 @@ BY_PHASE = {"base": ("cotes_courtes", "fartlek"), "specifique_trail": ("seuil", 
 class Goal:
     """The race aimed at; `race_day` None: « Progresser, sans course »."""
     race_day: date | None = None
-    race_minutes: float | None = None  # the objective, else an estimate (race_prep.expected_s)
+    race_minutes: float | None = None  # the race page's objective, else its estimate, else race_prep.expected_s
     trail: bool = True
     route_id: int | None = None
     name: str = ""
+    time_kind: str = ""  # which one `race_minutes` is: objectif | estimation | approx
+    climb_rate: float | None = None  # a trail race's D+ per hour of race (metres); None: no climb target
 
 
 @dataclass(frozen=True)
@@ -176,10 +186,16 @@ def starting_minutes(weekly: list[float]) -> int | None:
     return int(clamp(round5(statistics.median(weekly)), BASE_RANGE[0], BASE_RANGE[1]))
 
 
+def rule_minutes(goal: Goal) -> float:
+    """The expected race time as the rules read it: to RACE_TIME_STEP, so that an estimate moving by a minute from
+    one day to the next does not rewrite the weeks (the race's own session keeps the exact time)."""
+    return max(RACE_TIME_STEP, math.floor((goal.race_minutes or 0) / RACE_TIME_STEP + 0.5) * RACE_TIME_STEP)
+
+
 def ceiling(goal: Goal, base: int) -> int:
     """The weekly ceiling: scaled to the race, never under the base (the plan never asks for less than the habit)."""
     if goal.race_day is not None and goal.race_minutes:
-        top = clamp(CEILING[0] + CEILING[1] * goal.race_minutes, *CEILING_RANGE)
+        top = clamp(CEILING[0] + CEILING[1] * rule_minutes(goal), *CEILING_RANGE)
     else:
         top = clamp(FREE_CEILING[0] * base, FREE_CEILING[1], FREE_CEILING[2])
     return int(max(round5(top), base))
@@ -187,8 +203,44 @@ def ceiling(goal: Goal, base: int) -> int:
 
 def long_cap(goal: Goal) -> int:
     if goal.race_day is not None and goal.race_minutes:
-        return int(round5(clamp(LONG_RACE_SHARE * goal.race_minutes, *LONG_CAP_RANGE)))
+        return int(round5(clamp(LONG_RACE_SHARE * rule_minutes(goal), *LONG_CAP_RANGE)))
     return FREE_LONG_CAP
+
+
+# ── a trail race's climb ────────────────────────────────────────────────────
+
+def climb_share(monday: date, inp: Inputs) -> float:
+    """How much of the race's D+ per hour a week aims at: CLIMB_START on week 0, growing by equal steps to the whole
+    on the last week before the taper, and the whole from then on."""
+    rd = inp.goal.race_day
+    if rd is None:
+        return 1.0
+    last = taper_start(rd) - timedelta(weeks=1)
+    span = (last - inp.start_monday).days // 7
+    if span <= 0 or monday >= last:
+        return 1.0
+    k = max(0, (monday - inp.start_monday).days // 7)
+    return CLIMB_START + (1 - CLIMB_START) * k / span
+
+
+def climb_target(goal: Goal, minutes: int, share: float = 1.0) -> int | None:
+    """The climb a session of `minutes` aims at for a trail race (metres, to CLIMB_STEP): the race's D+ per hour
+    (held to CLIMB_RATE_CAP) × the week's share × the session's hours; None for a road race, without a race, or
+    under CLIMB_MIN."""
+    if goal.race_day is None or not goal.trail or not goal.climb_rate or goal.climb_rate <= 0:
+        return None
+    metres = min(goal.climb_rate, CLIMB_RATE_CAP) * share * minutes / 60
+    target = int(math.floor(metres / CLIMB_STEP + 0.5)) * CLIMB_STEP
+    return target if target >= CLIMB_MIN else None
+
+
+def with_climb(session: "Planned", goal: Goal, share: float) -> "Planned":
+    """The long run and the long-hill session with their climb target (in the structure: {"climb": metres})."""
+    if session.kind == LONG or (session.structure or {}).get("key") in CLIMB_KEYS:
+        target = climb_target(goal, session.minutes, share)
+        if target:
+            session.structure = {**session.structure, "climb": target}
+    return session
 
 
 # ── phases ──────────────────────────────────────────────────────────────────
@@ -453,7 +505,8 @@ def week_sessions(monday: date, inp: Inputs, info: dict, phase: str, index: int,
             minutes = (each + (1 if i < extra else 0)) * STEP
             kind = RECUP if wd in recov else FOOTING
             out.append(Planned(monday + timedelta(days=wd), kind, minutes, steady(minutes, 1 if kind == RECUP else 2)))
-    return sorted(out, key=lambda s: s.day)
+    share = climb_share(monday, inp)
+    return sorted((with_climb(s, goal, share) for s in out), key=lambda s: s.day)
 
 
 # ── the plan ────────────────────────────────────────────────────────────────
