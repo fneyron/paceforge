@@ -1,9 +1,9 @@
 """Synthetic Coaching preview (beta): an athlete mid-plan with done, missed and ressenti data, and her coach;
-temporary database, localhost only.
+temporary database, localhost only. Coaching is left at its default: every account has it.
 
 uvicorn tests.browser.coaching_preview:app --host 127.0.0.1 --port 8961
     PF_COACHING_AS=athlete (default) | coach | new   who is signed in: the athlete (Stella), her coach (Florent),
-                                                     or an account of the beta without a plan (the onboarding)
+                                                     or a new account: no plan, no activity, no race (the onboarding)
 """
 import os
 from contextlib import asynccontextmanager
@@ -24,7 +24,8 @@ AS = os.environ.get("PF_COACHING_AS", "athlete")
 if AS not in {"athlete", "coach", "new"}:
     raise ValueError("PF_COACHING_AS is athlete, coach or new")
 EMAILS = {"athlete": "camille@example.org", "coach": "coach@example.org", "new": "nouvelle@example.org"}
-settings.COACHING_BETA_USERS = ", ".join(EMAILS.values())
+if settings.COACHING_BETA_USERS != "*":
+    raise ValueError("This preview shows Coaching as every account has it: leave COACHING_BETA_USERS unset")
 settings.BASE_URL = "https://paceforge.example"
 
 

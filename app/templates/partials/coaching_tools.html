@@ -8,7 +8,9 @@
         <summary class="pf-tool"><span>{{ icon("calendar") }}<span>Ajouter à mon calendrier</span></span>{{ icon("chev-r", "pf-chev") }}</summary>
         <div class="pf-coach-tool-body">
             {% if tools.feed %}
-            <a class="pf-btn pf-btn-primary pf-btn-sm pf-browser-only" href="{{ tools.feed.webcal }}">S’abonner au calendrier</a>
+            {#- a browser follows webcal:// by itself; the app hands it to the system since it has the native Coaching
+                tab (.pf-native-coaching). An older installed app drops the link: the address to copy is all it shows -#}
+            <a class="pf-btn pf-btn-primary pf-btn-sm pf-webcal" href="{{ tools.feed.webcal }}">S’abonner au calendrier</a>
             <div class="pf-coach-copy">
                 <label class="sr-only" for="coach-feed-url">Adresse du calendrier</label>
                 <input id="coach-feed-url" class="pf-input" readonly value="{{ tools.feed.https }}" onfocus="this.select()">

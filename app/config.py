@@ -106,10 +106,10 @@ class Settings(BaseSettings):
     # connections: a first try in production on the owner's own account. Empty: every account.
     OFFICIAL_CONNECTORS_PILOT_USERS: str = ""
 
-    # Coaching (beta, docs/coaching.md): the accounts that have it, by email (comma-separated, case-insensitive).
-    # Empty: the feature does not exist (every route answers 404, no menu entry, no card, no line in the privacy
-    # policy, no scheduled task).
-    COACHING_BETA_USERS: str = ""
+    # Coaching (beta, docs/coaching.md), open to every account by default: « * » every signed-in account; emails
+    # (comma-separated, case-insensitive) only those accounts; empty or « off » the feature does not exist (every
+    # route answers 404, no menu entry, no card, no line in the privacy policy, no scheduled task).
+    COACHING_BETA_USERS: str = "*"
 
     @property
     def strava_shared_ready(self) -> bool:

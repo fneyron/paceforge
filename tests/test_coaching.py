@@ -1,4 +1,4 @@
-"""Coaching (beta, docs/coaching.md): access (off → nothing exists), the onboarding, the matching with the recorded
+"""Coaching (beta, docs/coaching.md): access (every account by default; off → nothing exists), the onboarding, the matching with the recorded
 activities, what a regeneration may rewrite, the ressenti's adaptation, the coach's link and its limits, the calendar
 feed (parsed back), the daily round, the privacy row. The plan's rules themselves: tests/test_coaching_plan.py."""
 import re
@@ -29,13 +29,14 @@ BS = chr(92)  # a backslash
 
 @pytest.fixture
 def beta(monkeypatch):
+    """Coaching restricted to two listed accounts (the switch's list form; its default is every account)."""
     monkeypatch.setattr(settings, "COACHING_BETA_USERS", f" {ATHLETE.upper()}, {COACH} ")
     monkeypatch.setattr(settings, "BASE_URL", "https://paceforge.example")
 
 
 @pytest.fixture
 async def people(db_session, monkeypatch):
-    """The athlete and her coach (both in the beta list once `beta` is on), and an account outside it."""
+    """The athlete and her coach (both in the list once `beta` restricts Coaching), and an account outside it."""
     monkeypatch.setattr(db_session, "commit", db_session.flush)
     users = [User(email=email, email_verified=True, firstname=name, timezone="UTC")
              for email, name in ((ATHLETE, "Stella"), (COACH, "Florent"), (OUTSIDER, "Autre"))]
@@ -77,7 +78,7 @@ async def _past_session(db, plan, day, kind=cp.FOOTING, minutes=45, **more) -> C
     return row
 
 
-# ── access: off, the feature does not exist ─────────────────────────────────
+# ── access: every account by default; off, the feature does not exist ───────
 
 PATHS = ("/coaching", "/coaching?refaire=1", "/coaching/calendar", "/coaching/athletes", "/coaching/athletes/1",
          "/coaching/athletes/1/calendar")
@@ -88,10 +89,70 @@ POSTS = ("/coaching/plan", "/coaching/stop", "/coaching/share", "/coaching/feed/
          "/coaching/athletes/1/sessions/1/note", "/coaching/athletes/1/sessions")
 
 
-async def test_with_an_empty_list_nothing_exists(client: AsyncClient, people, db_session, same_today):
-    """The default: every route 404 (the feed too, even for a token that exists), no menu entry, no card, no privacy
-    row, nothing scheduled."""
-    assert settings.COACHING_BETA_USERS == "" and not features.coaching_enabled()
+async def test_by_default_every_account_has_coaching(client: AsyncClient, people, db_session, same_today):
+    """Nothing set (production today): the switch reads « * », every signed-in account has the 4th entry and the
+    onboarding, the privacy row shows, the daily round is scheduled, the pages stay out of the crawl."""
+    from app.celery_app import celery_app
+    from app.config import Settings
+    from app.tasks import coaching as task
+
+    assert Settings.model_fields["COACHING_BETA_USERS"].default == "*" and settings.COACHING_BETA_USERS == "*"
+    assert features.coaching_enabled() and features.coaching_for_everyone() and not features.coaching_beta_emails()
+    for user in (people.athlete, people.coach, people.outsider, User(email=None)):
+        assert features.coaching_for(user)
+    assert not features.coaching_for(None), "never a visitor"
+    assert features.coaching_beat_schedule()["coaching-daily"]["task"] == "paceforge.coaching_daily"
+    assert celery_app.conf.beat_schedule["coaching-daily"]["task"] == "paceforge.coaching_daily"
+    _as(client, people.outsider)  # any account: no list names it
+    page = (await client.get("/activities")).text
+    top = page.split('class="pf-nav"')[1].split("</nav>")[0]
+    bar = page.split('class="pf-tabbar is-four"')[1].split("</nav>")[0]
+    for nav in (top, bar):
+        assert re.findall(r"<span>([^<]+)</span>", nav) == ["Courses", "Activités", "Santé", "Coaching"]
+    onboarding = await client.get("/coaching")
+    assert onboarding.status_code == 200 and "Créer mon plan" in onboarding.text
+    assert 'href="/coaching" aria-current="page"' in onboarding.text
+    assert (await client.get("/coaching/athletes")).status_code == 200
+    assert "Coaching (bêta)" in (await client.get("/privacy")).text
+    assert "Disallow: /coaching\n" in (await client.get("/robots.txt")).text
+    # an account that never makes a plan costs nothing: no row from looking, no work in the daily round
+    assert (await db_session.execute(select(func.count()).select_from(CoachingPlan))).scalar() == 0
+    assert (await db_session.execute(select(func.count()).select_from(CoachingSession))).scalar() == 0
+    assert await task.run(db_session) == 0
+    plan = await _plan(client, db_session, people.outsider)
+    assert plan.user_id == people.outsider.id and await task.run(db_session) == 1
+
+
+@pytest.mark.parametrize("value", ["", "  ", "off", "OFF", "non, 0"])
+def test_the_switch_reads_everyone_a_list_or_nobody(value, monkeypatch):
+    """« * »: every account, also beside emails; emails: those accounts; anything else (empty, « off »): nobody."""
+    stella, other = User(email=ATHLETE), User(email=OUTSIDER)
+    monkeypatch.setattr(settings, "COACHING_BETA_USERS", value)
+    assert not features.coaching_enabled() and not features.coaching_for(stella)
+    assert features.coaching_beat_schedule() == {}
+    monkeypatch.setattr(settings, "COACHING_BETA_USERS", f"{value},{ATHLETE.title()}")
+    assert features.coaching_enabled() and not features.coaching_for_everyone()
+    assert features.coaching_for(stella) and not features.coaching_for(other)
+    monkeypatch.setattr(settings, "COACHING_BETA_USERS", f"{value}, * ,{ATHLETE}")
+    assert features.coaching_for_everyone() and features.coaching_for(other) and features.coaching_for(User(email=None))
+
+
+def test_production_defaults_to_everyone_even_with_an_empty_variable():
+    """docker-compose.prod.yml: unset or left empty in Coolify, the variable reaches the app as « * » (« :- »: an
+    empty value falls back too, so only « off » or a list changes anything there); .env.example says the same."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    assert "  COACHING_BETA_USERS: ${COACHING_BETA_USERS:-*}\n" in (root / "docker-compose.prod.yml").read_text()
+    assert "\nCOACHING_BETA_USERS=*\n" in (root / ".env.example").read_text()
+
+
+@pytest.mark.parametrize("off", ["", "off"])
+async def test_switched_off_nothing_exists(off, client: AsyncClient, people, db_session, same_today, monkeypatch):
+    """Switched off (an empty value, or « off »): every route 404 (the feed too, even for a token that exists), no
+    menu entry, no card, no privacy row, nothing scheduled."""
+    monkeypatch.setattr(settings, "COACHING_BETA_USERS", off)
+    assert not features.coaching_enabled()
     assert not features.coaching_for(people.athlete) and features.coaching_beat_schedule() == {}
     plan = CoachingPlan(user_id=people.athlete.id, days="1,3,6", long_day=6, base_minutes=180,
                         start_monday=cp.monday_of(same_today), generated_at=datetime.now(timezone.utc))
@@ -107,9 +168,11 @@ async def test_with_an_empty_list_nothing_exists(client: AsyncClient, people, db
     page = (await client.get("/activities")).text
     assert "Coaching" not in page and "/coaching" not in page and "is-four" not in page
     assert "Coaching" not in (await client.get("/privacy")).text
+    assert "/coaching" not in (await client.get("/robots.txt")).text
     from app.celery_app import celery_app
-    assert "coaching-daily" not in celery_app.conf.beat_schedule
     assert "paceforge.coaching_daily" in celery_app.tasks or "app.tasks.coaching" in celery_app.conf.include
+    from app.tasks import coaching as task
+    assert await task._run() == 0, "nothing while it is off (no database opened)"
 
 
 async def test_only_the_accounts_of_the_list_have_it(client: AsyncClient, people, beta, same_today):
@@ -125,16 +188,51 @@ async def test_only_the_accounts_of_the_list_have_it(client: AsyncClient, people
     assert "/coaching" not in page
     _as(client, people.athlete)
     page = (await client.get("/activities")).text
-    assert 'href="/coaching" class="pf-coach-entry"' in page, "the entry card at the top of Activités"
+    assert 'href="/coaching" class="pf-coach-entry pf-old-shell-only"' in page, "the entry card at the top of Activités"
     assert page.count('<a href="/coaching"') == 3 and "pf-tabbar is-four" in page, "the 4th entry, header and bar"
     assert page.index("pf-coach-entry") < page.index('id="sync-msg"') + 2000
     onboarding = await client.get("/coaching")
     assert onboarding.status_code == 200 and "Créer mon plan" in onboarding.text
 
 
-async def test_the_privacy_row_shows_only_while_the_beta_has_an_account(client: AsyncClient, monkeypatch):
+async def test_the_card_and_the_way_back_are_for_an_app_older_than_its_coaching_tab(client, people, db_session,
+                                                                                     same_today):
+    """Rendered for every account, shown by the stylesheet only inside an app shell that does not announce the
+    native Coaching tab (.pf-native without .pf-native-coaching, which mobile/src/navigation.ts adds): never on the
+    site, never in an updated app. The calendar's webcal:// button is the reverse: hidden in that older shell only
+    (it drops the link). What a browser then shows: tests/browser/coaching-visuals.cjs."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    css = (root / "app/static/css/interface.css").read_text()
+    assert ".pf-old-shell-only { display: none !important; }" in css
+    assert ".pf-native:not(.pf-native-coaching) .pf-old-shell-only { display: flex !important; }" in css
+    assert ".pf-native:not(.pf-native-coaching) .pf-webcal { display: none !important; }" in css
+    assert "classList.add('pf-native-coaching')" in (root / "mobile/src/navigation.ts").read_text()
+    back = '<a href="/activities" class="pf-back pf-old-shell-only">'
+    _as(client, people.athlete)
+    activities = (await client.get("/activities")).text
+    assert activities.count('<a href="/coaching" class="pf-coach-entry pf-old-shell-only">') == 1
+    onboarding = (await client.get("/coaching")).text
+    athletes = (await client.get("/coaching/athletes")).text
+    assert back in onboarding and back in athletes
+    await _plan(client, db_session, people.athlete)
+    page = (await client.get("/coaching")).text
+    assert back in page
+    assert re.search(r'<a class="pf-btn pf-btn-primary pf-btn-sm pf-webcal" href="webcal://[^"/]+/coaching/cal/[\w-]{43}\.ics">',
+                     page), "the subscription button, for a browser and an app that hands it to the system"
+    assert 'id="coach-feed-url"' in page, "the address to copy stays, whatever the shell"
+    athletes = (await client.get("/coaching/athletes")).text
+    assert '<a href="/coaching" class="pf-back">' in athletes and back not in athletes, "with a plan: back to it"
+    for html in (onboarding, page, athletes):
+        assert "pf-native-only" not in html and "pf-browser-only" not in html
+
+
+@pytest.mark.parametrize("on", ["*", ATHLETE])
+async def test_the_privacy_row_shows_only_while_coaching_is_on(on, client: AsyncClient, monkeypatch):
+    monkeypatch.setattr(settings, "COACHING_BETA_USERS", "")
     assert "Coaching" not in (await client.get("/privacy")).text
-    monkeypatch.setattr(settings, "COACHING_BETA_USERS", ATHLETE)
+    monkeypatch.setattr(settings, "COACHING_BETA_USERS", on)
     page = (await client.get("/privacy")).text
     row = page[page.index("Coaching (bêta)"):page.index("Sécurité</th>")]
     assert "ressenti" in row and "l’effort perçu, de 1 à 5" in row and "Contrat" in row and "coach que tu choisis" in row
@@ -693,7 +791,7 @@ async def test_the_feed_is_stable_follows_edits_and_dies_with_its_token(client, 
     client._transport.app.dependency_overrides.pop(get_current_user)
     assert (await client.get(f"/coaching/cal/{token}.ics")).status_code == 404
     assert (await client.get(f"/coaching/cal/{plan.feed_token}.ics")).status_code == 200
-    # its owner left the list; then the beta is off
+    # its owner is no longer in the list; then Coaching is off
     monkeypatch.setattr(settings, "COACHING_BETA_USERS", COACH)
     assert (await client.get(f"/coaching/cal/{plan.feed_token}.ics")).status_code == 404
     monkeypatch.setattr(settings, "COACHING_BETA_USERS", "")
@@ -721,13 +819,13 @@ async def test_the_daily_round_brings_every_beta_plan_up_to_date(client, people,
     done = await _past_session(db_session, plan, same_today - timedelta(days=2))
     db_session.add(_run(athlete, same_today - timedelta(days=2), 44, 1))
     await db_session.flush()
-    monkeypatch.setattr(settings, "COACHING_BETA_USERS", ATHLETE)  # the coach's own plan is no longer the beta's
+    monkeypatch.setattr(settings, "COACHING_BETA_USERS", ATHLETE)  # the list no longer names the coach
     assert await task.run(db_session) == 1
     await db_session.refresh(missed)
     await db_session.refresh(done)
     assert missed.status == "missed" and (done.status, done.done_minutes) == ("done", 44)
     monkeypatch.setattr(settings, "COACHING_BETA_USERS", "")
-    assert await task._run() == 0, "nothing while the list is empty (no database opened)"
+    assert await task._run() == 0, "nothing while it is off (no database opened)"
 
 
 # ── what the page draws ─────────────────────────────────────────────────────

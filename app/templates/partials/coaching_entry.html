@@ -1,8 +1,9 @@
-{#- Activités: the way into Coaching (beta) for the accounts that have it — the only one inside the phone app, whose
-    native tabs are fixed. Nothing for anyone else. -#}
+{#- Activités: the way into Coaching (beta) for an installed app older than its native Coaching tab, whose three
+    tabs are fixed. Hidden on the site (its menu has the entry) and in an app that has the tab (.pf-old-shell-only,
+    interface.css); nothing in the page once Coaching is switched off. -#}
 {% if request is defined and request and request.app.state.coaching_for(user) %}
 {% from "partials/_icons.html" import icon %}
-<a href="/coaching" class="pf-coach-entry">
+<a href="/coaching" class="pf-coach-entry pf-old-shell-only">
     <span class="pf-coach-entry-ic">{{ icon("calendar") }}</span>
     <span class="pf-coach-entry-txt"><b>Coaching <span class="pf-tag">bêta</span></b><small>Ton plan, séance après séance</small></span>
     {{ icon("chev-r", "pf-chev") }}

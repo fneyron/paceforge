@@ -64,8 +64,9 @@ x-env: &env
   POLAR_ACCESSLINK_API_BASE_URL: ${POLAR_ACCESSLINK_API_BASE_URL:-https://www.polaraccesslink.com}
   POLAR_ACCESSLINK_URLS: ${POLAR_ACCESSLINK_URLS:-}
   OFFICIAL_CONNECTORS_PILOT_USERS: ${OFFICIAL_CONNECTORS_PILOT_USERS:-}
-  # Coaching (beta, docs/coaching.md): the accounts that have it, by email; empty: the feature does not exist
-  COACHING_BETA_USERS: ${COACHING_BETA_USERS:-}
+  # Coaching (beta, docs/coaching.md): every account by default (« * », also when the variable is left empty
+  # here); emails, only those accounts; « off », the feature does not exist
+  COACHING_BETA_USERS: ${COACHING_BETA_USERS:-*}
   DEBUG: "false"
   # glibc opens one malloc arena per thread by default: two cap what a worker keeps after a burst of pages
   MALLOC_ARENA_MAX: "2"

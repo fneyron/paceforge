@@ -28,27 +28,47 @@ def require_cycling() -> None:
 
 
 # ── Coaching (beta, docs/coaching.md) ───────────────────────────────────────
+# Open to every account since 21 November 2026 (owner: « Non rajoute à tout le monde »). One switch remains,
+# COACHING_BETA_USERS: « * » (the default) every account; emails, only those; anything else (empty, « off ») nobody.
+
+COACHING_EVERYONE = "*"
+
+
+def _coaching_words() -> list[str]:
+    return [x.strip().lower() for x in (settings.COACHING_BETA_USERS or "").split(",")]
+
+
+def coaching_for_everyone() -> bool:
+    """Whether every account has Coaching (COACHING_BETA_USERS holds « * », its default)."""
+    return COACHING_EVERYONE in _coaching_words()
+
 
 def coaching_beta_emails() -> frozenset[str]:
-    """The accounts that have the Coaching beta (COACHING_BETA_USERS: emails, comma-separated, case-insensitive)."""
-    return frozenset(e for e in (x.strip().lower() for x in settings.COACHING_BETA_USERS.split(",")) if e)
+    """The accounts Coaching is restricted to when the switch lists emails (comma-separated, case-insensitive). A
+    word that is not an email (« off ») names nobody."""
+    return frozenset(w for w in _coaching_words() if "@" in w)
 
 
 def coaching_enabled() -> bool:
-    """Whether the feature exists at all: with an empty list, no route, menu entry, card, privacy line nor task."""
-    return bool(coaching_beta_emails())
+    """Whether the feature exists at all: switched off, no route, menu entry, card, privacy line nor task."""
+    return coaching_for_everyone() or bool(coaching_beta_emails())
 
 
 def coaching_for(user) -> bool:
-    """Whether this account has the beta (its email is in the list)."""
+    """Whether this account has Coaching: any signed-in account by default, the listed emails when restricted."""
+    if user is None:
+        return False
+    if coaching_for_everyone():
+        return True
     email = (getattr(user, "email", None) or "").strip().lower()
     return bool(email) and email in coaching_beta_emails()
 
 
 def coaching_beat_schedule() -> dict:
-    """What celery beat runs for Coaching: nothing while the list is empty (read once, when the worker starts, as
+    """What celery beat runs for Coaching: nothing while it is switched off (read once, when the worker starts, as
     any setting). Daily at 03:27 UTC, off the other rounds' minutes: yesterday's sessions matched or marked missed,
-    the adaptation re-read, the plan extended (app.tasks.coaching)."""
+    the adaptation re-read, the plan extended (app.tasks.coaching). It walks the plans that exist: an account that
+    never made one costs nothing."""
     if not coaching_enabled():
         return {}
     from celery.schedules import crontab

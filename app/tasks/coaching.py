@@ -1,7 +1,7 @@
-"""Coaching's daily round (beat: paceforge.coaching_daily, scheduled only while COACHING_BETA_USERS names an account:
-app.features.coaching_beat_schedule).
+"""Coaching's daily round (beat: paceforge.coaching_daily, scheduled unless COACHING_BETA_USERS switches Coaching
+off: app.features.coaching_beat_schedule).
 
-Every plan whose owner has the beta is brought up to date as its page would (services/coaching.sync): yesterday's
+Every plan whose owner has Coaching (every account by default) is brought up to date as its page would (services/coaching.sync): yesterday's
 sessions matched with the runs or marked missed, the adaptation read again, the weeks to come regenerated and the
 rolling block extended. So the calendar feed and a coach's page are right even when the athlete has not opened hers.
 """

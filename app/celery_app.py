@@ -103,6 +103,6 @@ celery_app.conf.beat_schedule["purge-oauth-attempts"] = {
 # The official connectors' round (COROS, Garmin, Wahoo, Polar: app.connectors): scheduled only while one is active
 celery_app.conf.beat_schedule.update(official_beat_schedule())
 
-# Coaching (beta, docs/coaching.md): its daily round, scheduled only while COACHING_BETA_USERS names an account
+# Coaching (beta, docs/coaching.md): its daily round, scheduled unless COACHING_BETA_USERS switches Coaching off
 celery_app.conf.include = [*celery_app.conf.include, "app.tasks.coaching"]
 celery_app.conf.beat_schedule.update(coaching_beat_schedule())

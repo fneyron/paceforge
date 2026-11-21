@@ -61,10 +61,11 @@ def test_brand_tokens_live_in_one_file_and_drive_tailwind():
 async def test_app_shell_top_bar_and_tab_bar(as_user: AsyncClient):
     page = (await as_user.get("/simulator")).text
     assert '/static/css/theme.css' in page and "pf-sidebar" not in page
-    assert 'class="pf-top"' in page and 'class="pf-tabbar"' in page
-    tabbar = page.split('class="pf-tabbar"')[1].split("</nav>")[0]
+    assert 'class="pf-top"' in page and 'class="pf-tabbar is-four"' in page
+    tabbar = page.split('class="pf-tabbar is-four"')[1].split("</nav>")[0]
     labels = re.findall(r"<span>([^<]+)</span>", tabbar)
-    assert labels == ["Courses", "Activités", "Santé"]  # requested navigation order
+    # the requested navigation order, then Coaching, every account's 4th entry since 21 November 2026
+    assert labels == ["Courses", "Activités", "Santé", "Coaching"]
     assert "Vélo" not in tabbar and "Triathlon" not in tabbar
 
 

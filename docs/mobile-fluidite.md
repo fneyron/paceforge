@@ -74,6 +74,21 @@ Les commandes navigateur demandent Playwright installé et accessible par Node.
 Le profil accepte `PF_PREVIEW_OUTPUT` pour enregistrer mesures et captures ; les
 comparaisons doivent se faire sur la même fixture, sans tâches CPU concurrentes.
 
+## Onglet Coaching — 21 novembre 2026
+
+L’application a un quatrième onglet natif, « Coaching », dans l’ordre du site
+(Courses, Activités, Santé, Coaching). Il se charge comme Courses, par un
+document complet : la réutilisation en mémoire décrite ci-dessus reste propre à
+Santé et Activités. Tirer vers le bas y recharge la page, sans synchronisation.
+Le composant natif simulé (`tests/browser/native/check.cjs`) vérifie l’ordre et
+la largeur des quatre libellés à 320 et 393 px, le chargement complet, le geste,
+le retour au dernier écran de chaque onglet et la remise au système du seul lien
+`webcal://` du calendrier ; son faux WebView applique désormais `originWhitelist`
+comme la bibliothèque, et répond depuis le document réellement chargé (une
+réponse envoyée entre un chargement et le rendu suivant était lue contre
+l’ancien document : l’échec intermittent de ce scénario). Rien de cela n’a été
+essayé sur un iPhone.
+
 ## Reprise et synchronisation — corrections du 15 octobre 2026
 
 Un import Santé effectué en arrière-plan actualise désormais le document déjà

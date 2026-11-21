@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 const fs = require('node:fs');
+const { coachingTab } = require('./app-shell.cjs');
 const base = process.env.PF_PREVIEW_URL || 'http://127.0.0.1:8891';
 const output = process.env.PF_PREVIEW_OUTPUT || '/tmp';
 assert.ok(['127.0.0.1', 'localhost'].includes(new URL(base).hostname), 'Use a local synthetic fixture');
@@ -14,6 +15,7 @@ assert.ok(['127.0.0.1', 'localhost'].includes(new URL(base).hostname), 'Use a lo
     for (const width of [320, 393]) for (const scale of [1, 2]) {
       const page = await browser.newPage({ viewport: { width, height: 700 }, isMobile: true, hasTouch: true });
       await page.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; });
+      await page.addInitScript(coachingTab);
       for (const path of ['/sante?r=90', '/activities']) {
         await page.goto(base + path, { waitUntil: 'networkidle' });
         await page.evaluate(scale => {

@@ -55,7 +55,7 @@
 <body class="min-h-full bg-canvas text-ink antialiased{% if user is defined and user %} pf-app{% endif %}">
     {% if user is defined and user %}
     <a href="#main-content" class="pf-skip-link">Aller au contenu</a>
-    {#- Coaching (beta): a 4th entry for the accounts that have it (app.features.coaching_for), nothing for the others -#}
+    {#- Coaching (beta): a 4th entry for every account (app.features.coaching_for; nothing once it is switched off) -#}
     {% set _coaching = request is defined and request and request.app.state.coaching_for(user) %}
     <header class="pf-top">
         <div class="pf-wrap pf-top-in">

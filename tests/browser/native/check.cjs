@@ -406,6 +406,65 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   await consent.waitForTimeout(100);
   assert.equal(await consent.getByRole('button',{name:/Accepte le suivi/}).count(),0,'cleared once a push is accepted');
   await consent.close();
+  // The native Coaching tab: fourth like on the site, a full load like Courses (never the two reading tabs' soft
+  // navigation), a pull that reloads the page itself, its last screen kept, its calendar link handed to the system.
+  // react-native-web renders no aria-selected from accessibilityState: the selected tab is the one in bold
+  const selectedTab=async p=>(await p.getByRole('tab').evaluateAll(all=>all.filter(t=>getComputedStyle(t.firstElementChild).fontWeight==='700').map(t=>t.innerText))).join('+');
+  const coaching=await page();await coaching.waitForFunction(()=>window.nonce);
+  await coaching.evaluate(()=>reply());await coaching.waitForFunction(()=>collects===1&&refreshes.length===1);
+  assert.deepEqual(await coaching.getByRole('tab').allInnerTexts(),['Courses','Activités','Santé','Coaching'],'four tabs, in the site order');
+  for(const width of [320,393]){
+   await coaching.setViewportSize({width,height:852});
+   const labels=await coaching.getByRole('tab').evaluateAll(all=>all.map(tab=>{const text=tab.firstElementChild,box=tab.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(text);const r=range.getBoundingClientRect();return{label:tab.innerText,inside:r.left>=box.left-0.5&&r.right<=box.right+0.5,lines:Math.round(r.height/parseFloat(getComputedStyle(text).lineHeight||'16'))||1,target:box.height>=44};}));
+   assert.deepEqual(labels.filter(l=>!l.inside||l.lines>1||!l.target),[],`tab labels on one line inside 44 pt targets at ${width}`);
+  }
+  await coaching.screenshot({path:(process.env.PF_PREVIEW_OUTPUT||'/tmp')+'/native-tabs-393.png'});
+  await coaching.getByRole('tab',{name:'Coaching',exact:true}).click();
+  await coaching.waitForFunction(()=>new URL(actual).pathname==='/coaching');
+  assert.equal(await selectedTab(coaching),'Coaching');
+  assert.equal(await coaching.evaluate(()=>navigations.filter(u=>new URL(u).pathname==='/coaching').length),1,'Coaching must load as a document');
+  assert.equal(await coaching.evaluate(()=>(window.softTasks||[]).length),0,'Coaching must not use the reading tabs soft navigation');
+  await coaching.waitForFunction(()=>pullEnabled===true);
+  assert.equal(await coaching.evaluate(()=>pull()),true,'a pull on Coaching reloads its page');
+  await coaching.waitForTimeout(100);
+  assert.deepEqual(await coaching.evaluate(()=>[collects,refreshes.length]),[1,1],'a pull on Coaching starts no phone or provider sync');
+  const coachingLoads=await coaching.evaluate(()=>navigations.length);
+  await coaching.getByRole('tab',{name:'Coaching',exact:true}).click();await coaching.waitForTimeout(50);
+  assert.equal(await coaching.evaluate(()=>navigations.length),coachingLoads,'the current tab tapped again must not reload');
+  // the calendar feed, and nothing else, goes to the system
+  const feed='webcal://paceforge.fr/coaching/cal/Kikqo8SpCo7sO8Rb_X1p5RlGL5HtHVQXf-lMJmevX_A.ics';
+  assert.equal(await coaching.evaluate(url=>followLink(url),feed),false,'webcal never loads in the WebView');
+  assert.deepEqual(await coaching.evaluate(()=>[opened,window.unlisted||[]]),[[feed],[]],'the calendar feed is handed to the system by the app');
+  for(const url of ['webcal://paceforge.fr.evil.test/coaching/cal/Kikqo8SpCo7sO8Rb_X1p5RlGL5HtHVQXf-lMJmevX_A.ics','webcal://paceforge.fr/settings','webcal://evil.test/coaching/cal/Kikqo8SpCo7sO8Rb_X1p5RlGL5HtHVQXf-lMJmevX_A.ics','tel:+33123456789','webcal://paceforge.fr/coaching/cal/Kikqo8SpCo7sO8Rb_X1p5RlGL5HtHVQXf-lMJmevX_A.ics?next=1'])
+   assert.equal(await coaching.evaluate(u=>followLink(u),url),false,url);
+  assert.deepEqual(await coaching.evaluate(()=>opened),[feed],'no other scheme, host or path is opened by the app');
+  assert.equal(await coaching.evaluate(()=>new URL(actual).pathname),'/coaching');
+  // a coach's page, an activity opened from a session, then back: each tab returns to its last screen
+  await coaching.evaluate(()=>loadDocument('https://paceforge.fr/coaching/athletes/12'));
+  assert.equal(await selectedTab(coaching),'Coaching');
+  await coaching.waitForFunction(()=>pullEnabled===true);
+  await coaching.evaluate(()=>loadDocument('https://paceforge.fr/coaching?refaire=1'));
+  await coaching.waitForFunction(()=>pullEnabled===false);  // « Refaire le plan » is a form: no pull there
+  assert.equal(await selectedTab(coaching),'Coaching');
+  await coaching.evaluate(()=>loadDocument('https://paceforge.fr/coaching/athletes/12'));
+  await coaching.evaluate(()=>fullNavigate('https://paceforge.fr/activity/42'));
+  assert.equal(await selectedTab(coaching),'Activités');
+  await coaching.getByRole('tab',{name:'Coaching',exact:true}).click();
+  await coaching.waitForFunction(()=>new URL(actual).pathname==='/coaching/athletes/12');
+  assert.equal(await selectedTab(coaching),'Coaching');
+  await coaching.getByRole('tab',{name:'Santé',exact:true}).click();await coaching.waitForFunction(()=>new URL(actual).pathname==='/sante');
+  await coaching.getByRole('tab',{name:'Courses',exact:true}).click();await coaching.waitForFunction(()=>new URL(actual).pathname==='/simulator');
+  await coaching.getByRole('tab',{name:'Coaching',exact:true}).click();
+  await coaching.waitForFunction(()=>new URL(actual).pathname==='/coaching/athletes/12');
+  await coaching.close();
+  const noCalendar=await browser.newPage({viewport:{width:393,height:852}});
+  await noCalendar.route('http://native.test/**',r=>r.fulfill({contentType:'text/html',body:'<html><body style="margin:0"><div id="app" style="height:100dvh;display:flex"></div><script src="/bundle.js"></script></body></html>'}));
+  await noCalendar.route('**/bundle.js',r=>r.fulfill({contentType:'text/javascript',body:bundle}));
+  await noCalendar.goto('http://native.test/?unpaired=1&nocalendar=1');await noCalendar.waitForFunction(()=>window.actual);
+  await noCalendar.getByRole('tab',{name:'Coaching',exact:true}).click();await noCalendar.waitForFunction(()=>new URL(actual).pathname==='/coaching');
+  assert.equal(await noCalendar.evaluate(url=>followLink(url),feed),false);
+  await noCalendar.getByRole('button',{name:/Aucune app de calendrier/}).waitFor();
+  await noCalendar.close();
   const unavailable=await page(true);
   await unavailable.evaluate(()=>pageFail());
   await unavailable.getByRole('heading',{name:'Écran indisponible'}).waitFor();
@@ -413,6 +472,6 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   assert.equal(await unavailable.evaluate(()=>reloads),1);
   assert.equal(await unavailable.evaluate(()=>pull()),true,'offline retry must reload the document, not refresh an unavailable page');
   await unavailable.close();
-  console.log('Actual App: cold start, pull-only UI, error details, account safety, inline Settings/reentry/cancellation/login/account change, offline, process recovery, late bridge recovery, delayed dashboard loading, connection screens and the consent refusal passed (native APIs mocked).');
+  console.log('Actual App: cold start, pull-only UI, error details, account safety, inline Settings/reentry/cancellation/login/account change, offline, process recovery, late bridge recovery, delayed dashboard loading, connection screens, the consent refusal and the Coaching tab (order, full load, pull, saved screen, calendar link) passed (native APIs mocked).');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -102,12 +102,20 @@ export const WebView=forwardRef((props:any,ref:any)=>{
  },[props.source.uri]);
  w.actual=actual;w.source=props.source.uri;w.pullEnabled=props.pullToRefreshEnabled;
  w.webMessage=(data:any)=>current.current.onMessage({nativeEvent:{url:w.staleFrame?w.frameURL:w.actual,data:JSON.stringify({page_url:w.actual,...data})}});
- w.reply=(overrides:any={})=>{const url=new URL(actual),inline=!url.pathname.startsWith('/mobile/');return current.current.onMessage({nativeEvent:{url:w.staleFrame?w.frameURL:actual,data:JSON.stringify({type:'session',page_url:actual,nonce:inline?w.nonce:url.searchParams.get('nonce'),transport:inline?'inline':undefined,user_id:1,...overrides})}})};
+ // The document that answers is the one committed (w.actual, set with the navigation events), not this render's
+ // state: a reply sent between a commit and the next render was read against the previous document and ignored.
+ w.reply=(overrides:any={})=>{const actual=w.actual,url=new URL(actual),inline=!url.pathname.startsWith('/mobile/');return current.current.onMessage({nativeEvent:{url:w.staleFrame?w.frameURL:actual,data:JSON.stringify({type:'session',page_url:actual,nonce:inline?w.nonce:url.searchParams.get('nonce'),transport:inline?'inline':undefined,user_id:1,...overrides})}})};
  w.navigate=(url:string)=>commit(url);
  w.softWebNavigate=(url:string)=>{w.actual=url;setActual(url);w.oldHistory=()=>{current.current.onLoadEnd({nativeEvent:{url}});current.current.onNavigationStateChange({url,loading:false});};};
  w.fullNavigate=(url:string)=>{if(current.current.onShouldStartLoadWithRequest({url,navigationType:'other',isTopFrame:true})===false)return;current.current.onLoadStart?.({nativeEvent:{url}});commit(url);};
- w.followLink=(url:string)=>current.current.onShouldStartLoadWithRequest({url,navigationType:'click',isTopFrame:true});
- w.pull=()=>current.current.onShouldStartLoadWithRequest({url:actual,navigationType:'reload',isTopFrame:true});
+ // As react-native-webview 13.16.1 (WebViewShared.tsx): a URL whose origin is outside originWhitelist never reaches
+ // the app's handler and is not loaded (the library asks the system about it itself; recorded in `unlisted`).
+ const listed=(url:string)=>{const origin=(/^[A-Za-z][A-Za-z0-9+\-.]+:(\/\/)?[^/]*/.exec(url)||[''])[0];
+  return ['about:blank',...(current.current.originWhitelist||[])].some((x:string)=>new RegExp('^'+x.replace(/[|\\{}()[\]^$+*?.]/g,'\\$&').replace(/-/g,'\\x2d').replace(/\\\*/g,'.*')).test(origin));};
+ // A document load as the WebView reports it: its start and its end are two events, each followed by a render.
+ w.loadDocument=(url:string)=>new Promise<void>(resolve=>{if(current.current.onShouldStartLoadWithRequest({url,navigationType:'click',isTopFrame:true})===false)return resolve();current.current.onLoadStart?.({nativeEvent:{url}});setTimeout(()=>{commit(url);resolve();},30);});
+ w.followLink=(url:string)=>{if(!listed(url)){w.unlisted=[...(w.unlisted||[]),url];return false;}return current.current.onShouldStartLoadWithRequest({url,navigationType:'click',isTopFrame:true});};
+ w.pull=()=>current.current.onShouldStartLoadWithRequest({url:w.actual,navigationType:'reload',isTopFrame:true});
  w.terminate=()=>current.current.onContentProcessDidTerminate();
  w.pageFail=()=>{current.current.onError();current.current.onLoadEnd({nativeEvent:{url:actual}});};
  return <View testID="mock-webview" style={[props.style,{backgroundColor:'#fff'}]}><span id="document-text">{actual.includes('/mobile/session')?'Compte vérifié':actual.includes('/auth')?'Connexion au compte':'Tableau de bord Santé'}</span></View>;

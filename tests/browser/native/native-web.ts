@@ -7,4 +7,6 @@ export const AppState = { currentState:params.get('state')||'active',
  addEventListener:(_:string,cb:any)=>{if(params.has('missed'))AppState.currentState='active';appListeners.add(cb);return{remove(){appListeners.delete(cb)}}} };
 const change=(state:string)=>{AppState.currentState=state;appListeners.forEach(cb=>cb(state));};
 (window as any).foreground=()=>change('active');(window as any).background=()=>change('background');
-export const Linking = {getInitialURL:async()=>null,addEventListener:()=>({remove(){}}),openURL:async()=>{}};
+// Links handed to the system are recorded; ?nocalendar=1: no app takes them (openURL rejects).
+(window as any).opened=[];
+export const Linking = {getInitialURL:async()=>null,addEventListener:()=>({remove(){}}),openURL:async(url:string)=>{(window as any).opened.push(url);if(params.has('nocalendar'))throw Error('no handler');}};

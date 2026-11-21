@@ -220,7 +220,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.state.build_id = BUILD_ID
-    # Coaching (beta): base.html's 4th menu entry and Activités' card ask it per request (an empty list: nobody)
+    # Coaching (beta, every account by default): base.html's 4th menu entry and Activités' card ask it per request
     from app import features
 
     app.state.coaching_for = features.coaching_for
@@ -276,7 +276,8 @@ def create_app() -> FastAPI:
     app.include_router(api_v1.pages)      # its documentation, /developpeurs
     # the official COROS, Garmin, Wahoo and Polar connectors: every route 404 while it is off (app.connectors)
     app.include_router(official_connectors.router)
-    # Coaching (beta, docs/coaching.md): every route 404 for an account outside COACHING_BETA_USERS (empty: all)
+    # Coaching (beta, docs/coaching.md): open to every account; every route 404 once COACHING_BETA_USERS switches
+    # it off, or for an account outside the emails it lists
     from app.routers import coaching
 
     app.include_router(coaching.router)

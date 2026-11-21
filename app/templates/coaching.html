@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {#- Coaching (beta): the athlete's plan, or the same calendar seen by a coach (scope.coach), titled with the athlete's
-    first name. The calendar part is partials/coaching_main.html (swapped in place on every tap); the rules are in
+    first name. « ‹ Activités » is the way back of an installed app older than the native Coaching tab only. The calendar part is partials/coaching_main.html (swapped in place on every tap); the rules are in
     one fold, the rest (calendar feed, sharing, redo, stop) in a list of tools. -#}
 {% from "partials/_icons.html" import icon %}
 
@@ -9,7 +9,7 @@
 {% block content %}
 <div class="pf-coach">
     {% if scope.coach %}<a href="/coaching/athletes" class="pf-back">{{ icon("chev-l", "w-4 h-4") }}Mes athlètes</a>
-    {% else %}<a href="/activities" class="pf-back pf-native-only">{{ icon("chev-l", "w-4 h-4") }}Activités</a>{% endif %}
+    {% else %}<a href="/activities" class="pf-back pf-old-shell-only">{{ icon("chev-l", "w-4 h-4") }}Activités</a>{% endif %}
     <div class="pf-head pf-coach-head">
         <div>
             <h1 class="pf-h1">{{ athlete_name if scope.coach else "Coaching" }} <span class="pf-tag">bêta</span></h1>

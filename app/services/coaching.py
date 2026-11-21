@@ -386,7 +386,7 @@ async def new_invite(db: AsyncSession, athlete_id: int, now: datetime) -> str:
 
 async def accept_invite(db: AsyncSession, coach: User, code: str, now: datetime) -> User | None:
     """The coach types the code: the link is made, the code is spent. None for a code unknown, used, expired, the
-    coach's own, or of an athlete who no longer has the beta or a plan (one answer for all: nothing is told apart)."""
+    coach's own, or of an athlete who no longer has Coaching or a plan (one answer for all: nothing is told apart)."""
     if len(normal_code(code)) != CODE_LENGTH:
         return None
     invite = (await db.execute(select(CoachingInvite).where(CoachingInvite.code_hash == code_hash(code))
@@ -425,7 +425,7 @@ async def coaches_of(db: AsyncSession, athlete_id: int) -> list[User]:
 
 
 async def athletes_of(db: AsyncSession, coach_id: int) -> list[User]:
-    """The athletes this coach follows who still have the beta."""
+    """The athletes this coach follows who still have Coaching."""
     users = (await db.execute(select(User).join(CoachingLink, CoachingLink.athlete_id == User.id)
                               .where(CoachingLink.coach_id == coach_id)
                               .order_by(CoachingLink.created_at, CoachingLink.id))).scalars().all()

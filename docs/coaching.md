@@ -11,21 +11,50 @@ publié. Les sources citées sont en bas de page.
 
 ## Qui y a accès
 
-`COACHING_BETA_USERS` : les e-mails des comptes qui ont la bêta, séparés par des virgules (la casse ne compte pas).
+**Tous les comptes**, sur le site et dans l’app, depuis le 21 novembre 2026 (propriétaire : « Non rajoute à tout le
+monde »). La fonction garde sa pastille « bêta ». Elle avait d’abord été livrée le même jour en bêta fermée, pour
+des comptes listés.
 
-- **Vide (par défaut) : la fonction n’existe pas.** Toutes les routes `/coaching…` répondent 404 (le flux calendrier
-  aussi), aucun onglet, aucune carte, aucune ligne dans la politique de confidentialité, aucune tâche planifiée.
-- Un compte de la liste voit un quatrième onglet « Coaching » sur le site (en-tête et barre du bas) et une carte
-  d’entrée en haut d’Activités.
-- Un coach doit lui aussi être dans la liste. Chaque requête d’un coach revérifie le lien athlète → coach et la
-  présence de l’athlète dans la liste : sinon 404.
+Un seul interrupteur reste, `COACHING_BETA_USERS` :
+
+| Valeur | Effet |
+|---|---|
+| `*` (**par défaut**, aussi quand rien n’est réglé) | Chaque compte connecté a Coaching. |
+| Des e-mails séparés par des virgules (la casse ne compte pas) | Seuls ces comptes l’ont ; pour les autres, la fonction n’existe pas. Un coach doit lui aussi être dans la liste. |
+| Vide, ou `off` (tout mot qui n’est ni `*` ni un e-mail) | **La fonction n’existe pas** : toutes les routes `/coaching…` répondent 404 (le flux calendrier aussi), aucun onglet, aucune carte, aucune ligne dans la politique de confidentialité, aucune tâche planifiée. |
+
+- En production (`docker-compose.prod.yml`, `${COACHING_BETA_USERS:-*}`), une variable absente **ou laissée vide**
+  dans Coolify vaut `*` : pour éteindre, écrire `off`. Hors Docker, une valeur vide éteint.
+- Chaque requête d’un coach revérifie le lien athlète → coach et que l’athlète a toujours Coaching : sinon 404.
 - La variable se lit au démarrage du worker pour la tâche quotidienne (comme tout réglage : un redéploiement), et à
   chaque requête pour le reste.
+- **Un compte qui n’ouvre jamais Coaching ne coûte rien** : aucune ligne n’est créée avant « Créer mon plan », et la
+  tâche quotidienne ne parcourt que les plans qui existent.
 
-Dans l’app iOS (une WebView avec trois onglets natifs fixes), on entre par la carte d’Activités. `/coaching` n’est
-associé à aucun onglet natif (`tabForUrl` renvoie `null`) : la page s’ouvre dans la WebView, l’onglet « Activités »
-reste sélectionné, et le toucher à nouveau ne fait rien (c’est déjà l’onglet courant). La page porte donc son propre
-retour « ‹ Activités », visible seulement dans l’app. Aucun changement natif dans cette livraison.
+**Sur le site** : un quatrième onglet « Coaching », après Courses, Activités et Santé (en-tête et barre du bas).
+
+**Dans l’app** (à partir de la version 1.1.0) : un quatrième onglet natif « Coaching », dans le même ordre que le
+site, qui ouvre `/coaching`. `tabForUrl` lui associe `/coaching` et `/coaching/…` ; il garde son dernier écran (la
+page d’un athlète suivi, par exemple) comme les autres onglets. Il se charge comme Courses, par un chargement complet
+du document : la navigation « douce » de l’app n’existe qu’entre Santé et Activités, dont les pages se remplacent
+sur place. Tirer vers le bas recharge la page, qui relit le plan (le jour, les nouvelles activités) ; ce geste ne
+lance aucune synchronisation du téléphone ni des montres, et n’existe pas sur « Refaire le plan » (un formulaire).
+
+**Ce que l’app annonce.** L’app injecte dans chaque page `window.paceforgeNativeCoaching = 1` et la classe
+`pf-native-coaching` sur `<html>` (`mobile/src/navigation.ts`, `appShellScript`, à côté de `pf-native-refresh`). Les
+pages en déduisent, en CSS seulement (`interface.css`) :
+
+| Où la page s’affiche | Carte « Coaching » en haut d’Activités | Retour « ‹ Activités » | « S’abonner au calendrier » |
+|---|---|---|---|
+| Le site (un navigateur) | non : l’onglet du menu y mène | non | oui |
+| L’app avec l’onglet (`pf-native` et `pf-native-coaching`) | non | non | oui : l’app passe le lien au système |
+| Une app installée avant l’onglet (`pf-native` seul) | **oui** : ses trois onglets sont fixes, c’est son entrée | **oui** | non : elle ignore ce lien ; l’adresse se copie |
+
+Une app plus ancienne continue donc de fonctionner comme à la première livraison : `/coaching` s’y ouvre dans la
+WebView, l’onglet « Activités » reste sélectionné.
+
+Éteindre la fonction, ou la restreindre à une liste, ne retire pas l’onglet natif d’une app déjà installée : il
+ouvre alors « Écran indisponible » (404) pour un compte qui ne l’a pas.
 
 ## Les réponses de départ
 
@@ -134,8 +163,9 @@ le calendrier dit pourquoi une semaine est allégée, même après coup.
 **Où cela se déclenche.** Rien n’est branché dans les synchronisations Strava, COROS, Garmin ou des connecteurs
 officiels. `services/coaching.sync` relit le plan à l’affichage de la page (celle de l’athlète, celle du coach),
 après chaque changement (ressenti, statut, modification), et une fois par jour pour chaque plan (tâche Celery
-`paceforge.coaching_daily`, 03:27 UTC, inscrite seulement quand la liste bêta n’est pas vide). Une nouvelle activité
-est donc prise en compte à la prochaine ouverture de la page, au plus tard le lendemain matin.
+`paceforge.coaching_daily`, 03:27 UTC, inscrite sauf quand la fonction est éteinte). Une nouvelle activité est donc
+prise en compte à la prochaine ouverture de la page (dans l’app : en revenant sur l’onglet ou en tirant vers le bas),
+au plus tard le lendemain matin.
 
 **Régénération.** Elle ne réécrit que les séances **à venir** (à partir d’aujourd’hui), générées, que personne n’a
 modifiées, faites ni manquées. Une séance modifiée ou déplacée par l’athlète ou le coach est épinglée ; déplacée,
@@ -173,7 +203,8 @@ coach, elle reste en base comme annulée pour la même raison.
 - Lignes CRLF, pliées à 75 octets, texte échappé (RFC 5545).
 - La page propose le lien `webcal://` (« S’abonner au calendrier ») et l’adresse à copier ; « Régénérer le lien » en
   crée un nouveau, l’ancien ne répond plus.
-- 404 quand la bêta est vide, quand le jeton est inconnu ou régénéré, ou quand son propriétaire a quitté la liste.
+- 404 quand la fonction est éteinte, quand le jeton est inconnu ou régénéré, ou quand une liste restreint la fonction
+  et que son propriétaire n’y est pas.
 
 **Le jeton dans l’adresse est l’exception documentée.** L’API (`/api/v1`) refuse toute clé dans une URL
 (`token_in_url`) ; une application de calendrier, elle, ne peut pas envoyer d’en-tête. Ce jeton ne donne que ce
@@ -181,8 +212,14 @@ flux, en lecture : 32 octets aléatoires, stocké chiffré (`EncryptedString`, p
 et par son empreinte SHA-256 (c’est par elle qu’une requête le retrouve, comme les clés d’API) ; il est masqué dans
 les journaux d’accès (`log_redaction.FEED_TOKEN`) et limité à 120 requêtes par 10 minutes et par adresse.
 
-Dans l’app iOS, un lien `webcal://` n’est pas suivi par la WebView : le bouton d’abonnement n’y est pas affiché,
-l’adresse se copie (Réglages iOS › Calendrier › Comptes › Ajouter un calendrier avec abonnement).
+**Dans l’app.** La WebView ne suit que `https://` : elle ignorait le lien `webcal://`. Depuis la version 1.1.0,
+l’app le remet au système (`Linking.openURL`), et Calendrier sur iPhone propose l’abonnement. Une seule forme est
+acceptée, vérifiée caractère par caractère (`calendarFeedUrl`, `mobile/src/navigation.ts`) :
+`webcal://paceforge.fr/coaching/cal/<jeton>.ics` — cet hôte exact, sans port ni identifiants, ce chemin exact, sans
+paramètre ni fragment. Tout autre lien `webcal://` et tout autre schéma restent ignorés. Si aucune application ne
+prend le lien (Android sans application de calendrier qui s’y abonne), l’app le dit et l’adresse reste à copier. Une
+app plus ancienne n’affiche pas le bouton : l’adresse se copie (Réglages iOS › Calendrier › Comptes › Ajouter un
+calendrier avec abonnement).
 
 **L’envoi des séances à la montre n’est pas construit.** Il demande un accès en écriture chez les marques (Garmin
 Training API, écriture COROS côté partenaire) que PaceForge n’a pas. Aucun écran ne le propose.
@@ -193,19 +230,23 @@ Migration `m4b5c6d7e8f9` (après `l3a4b5c6d7e8`) : `coaching_plans`, `coaching_s
 `coaching_invites`. Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
 (`coaching.json`, `coaching_seances.json` : jamais le jeton du flux ni un code).
 
-Politique de confidentialité, ligne affichée seulement quand la liste bêta n’est pas vide : « Coaching (bêta) » —
+Politique de confidentialité, ligne affichée tant que la fonction n’est pas éteinte : « Coaching (bêta) » —
 le plan, les séances et leur statut, le ressenti (l’effort perçu, de 1 à 5), les notes, les commentaires du coach ;
 base « Contrat » ; partagé avec le coach que l’athlète choisit ; gardé jusqu’à l’arrêt du coaching ou la suppression
 du compte.
 
 ## Mise en service
 
-1. Coolify : `COACHING_BETA_USERS=<e-mail de l’athlète>,<e-mail du coach>`, redéployer (web et workers lisent la même
-   variable).
-2. L’athlète ouvre Activités › Coaching, répond aux questions.
+1. Rien à régler : sans `COACHING_BETA_USERS`, chaque compte a Coaching dès le déploiement (web et workers lisent la
+   même variable).
+2. L’athlète ouvre l’onglet Coaching, répond aux questions.
 3. Elle touche « Partager avec un coach », donne le code ; le coach le saisit dans Coaching › Suivre un athlète.
-4. Pour tout éteindre : vider la variable, redéployer. Les données restent en base, invisibles ; elles partent avec
-   « Arrêter le coaching » (une fois la variable remise) ou avec le compte.
+4. L’onglet natif arrive avec la version 1.1.0 de l’app, publiée sur TestFlight par un commit sur `main` dont le
+   message contient `[testflight]` (docs/testflight-without-expo-build-quota.md). En attendant, l’app installée
+   garde la carte en haut d’Activités.
+5. Pour restreindre : `COACHING_BETA_USERS=<e-mails>`. Pour tout éteindre : `COACHING_BETA_USERS=off`. Redéployer.
+   Les données restent en base, invisibles ; elles partent avec « Arrêter le coaching » (une fois la fonction
+   rallumée) ou avec le compte.
 
 ## Sources
 

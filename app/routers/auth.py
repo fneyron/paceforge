@@ -54,7 +54,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 templates.env.globals["google_site_verification"] = GOOGLE_SITE_VERIFICATION  # /privacy's head
 # /privacy names the official connectors' recipients only while one is active (partials/official_privacy.html)
 templates.env.globals["official_connectors_active"] = active_providers
-# and the Coaching (beta) row only while the beta has an account (partials/coaching_privacy.html)
+# and the Coaching (beta) row only while Coaching is on (partials/coaching_privacy.html)
 templates.env.globals["coaching_active"] = coaching_enabled
 HOME = "/sante"  # Santé is the main dashboard
 # Where a sign-in may lead instead of Santé: a connection page asked for before the login, or the race plans (the
