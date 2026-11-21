@@ -241,8 +241,9 @@ async def coaching_save_plan(request: Request, scope: Scope = Depends(own_scope)
     try:
         plan = await co.save_plan(db, user, c, route_id=int(goal) if goal.isdigit() else None, days=days,
                                   long_day=form.get("long_day"), base=form.get("base"))
-    except co.Invalid as e:  # nothing was written: the answers are checked first
-        return await _onboarding(request, db, user, plan=await co.get_plan(db, user.id), error=str(e), status_code=400,
+    except co.Invalid as e:  # nothing was written: the answers are checked first. Answered 200: the app's shell
+        # replaces any document answered 4xx by « Écran indisponible », hiding the message the form shows
+        return await _onboarding(request, db, user, plan=await co.get_plan(db, user.id), error=str(e), status_code=200,
                                  form={"goal": goal, "days": list(co.clean_days(days)),
                                        "long_day": _int(form.get("long_day")), "base": _int(form.get("base"))})
     await co.sync(db, plan, user)
@@ -327,11 +328,11 @@ async def coaching_join(request: Request, code: str = Form(default=""), user: Us
     from app.services.auth import over_quota
 
     if await over_quota("coaching_code", user=user.id):
-        return await _athletes(request, db, user, error="Trop d’essais. Réessaie dans une heure.", status_code=429)
+        return await _athletes(request, db, user, error="Trop d’essais. Réessaie dans une heure.", status_code=200)
     c = await co.clock(db, user)
     athlete = await co.accept_invite(db, user, code, c.now)
     if athlete is None:
-        return await _athletes(request, db, user, error=CODE_ERROR, status_code=400)
+        return await _athletes(request, db, user, error=CODE_ERROR, status_code=200)  # 200: as the onboarding
     await db.commit()
     logger.info("Coaching: user %d now follows user %d", user.id, athlete.id)
     return RedirectResponse(f"/coaching/athletes/{athlete.id}", status_code=303)

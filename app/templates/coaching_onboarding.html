@@ -89,6 +89,9 @@
             var want = on.indexOf("6") >= 0 ? "6" : on[on.length - 1];
             longs.forEach(function (l) { l.checked = l.value === want; });
         }
+        // the plan needs 2 to 6 days: the button waits for them (the server checks again)
+        var go = form.querySelector("button[type=submit]");
+        if (go) go.disabled = on.length < 2 || on.length > 6;
     }
     days.forEach(function (d) { d.addEventListener("change", sync); });
     longs.forEach(function (l) { l.addEventListener("change", function () { own = true; }); });
