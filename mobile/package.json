@@ -4,7 +4,7 @@
   "main": "index.ts",
   "dependencies": {
     "@kingstinct/react-native-healthkit": "^16.2.0",
-    "expo": "~57.0.27",
+    "expo": "~58.0.9",
     "expo-background-task": "~57.0.21",
     "expo-build-properties": "~57.0.22",
     "expo-crypto": "~57.0.3",
