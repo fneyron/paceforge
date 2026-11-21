@@ -65,6 +65,15 @@
             {% if s.profile %}{{ vz.viz_profile(s.profile) }}{% endif %}
             {% if s.text %}<p class="pf-coach-s-text">{{ s.text }}</p>{% endif %}
             {% if s.status == "planned" %}<p class="pf-coach-s-guide">{{ s.guidance[0] }}{% if s.guidance[1] %} <span class="pf-coach-hr">{{ s.guidance[1] }}</span>{% endif %}</p>{% endif %}
+            {#- the form: why to the athlete (the way to Santé, never the number); to a coach only « adaptée » -#}
+            {% if s.form %}<p class="pf-coach-formline">{% if s.form.href %}<a href="{{ s.form.href }}">{{ s.form.text }}</a>{% else %}{{ s.form.text }}{% endif %}{% if s.form.moved %} <span>{{ s.form.moved }}</span>{% endif %}</p>{% endif %}
+            {% if s.suggest %}
+            <form class="pf-coach-suggest" method="post" action="{{ base }}/sessions/{{ s.id }}/lighten" hx-post="{{ base }}/sessions/{{ s.id }}/lighten" {{ swap|safe }}>
+                <input type="hidden" name="v" value="{{ p.view }}">
+                <p><a href="/sante">{{ s.suggest }}</a></p>
+                <button type="submit" id="coach-lighten-{{ s.id }}" class="pf-btn pf-btn-secondary pf-btn-sm">Alléger aujourd’hui</button>
+            </form>
+            {% endif %}
             {% if s.race_href %}<a class="pf-sum-link" href="{{ s.race_href }}">Voir le plan de course ›</a>{% endif %}
 
             {% if s.activity %}

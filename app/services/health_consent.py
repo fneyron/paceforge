@@ -145,8 +145,9 @@ async def holds_health_data(db: AsyncSession, user_id: int) -> bool:
 
 async def erase_health_data(db: AsyncSession, user_id: int) -> None:
     """The health data of the account, its phones' access and its API keys' health scope: measurements (watches,
-    phones, the former feel's answers), raw samples, phone days, lactate tests. Activities, plans, the profile and
-    the keys themselves (their reading of plans and activities) stay."""
+    phones, the former feel's answers), raw samples, phone days, lactate tests, and what Coaching kept of the form
+    (its option, the low mornings). Activities, plans, the profile and the keys themselves (their reading of plans
+    and activities) stay."""
     from app.models.health import HealthMetric, HealthSample
     from app.models.lactate import LactateTest
     from app.models.mobile import MobileDaily, MobileDevice
@@ -155,6 +156,10 @@ async def erase_health_data(db: AsyncSession, user_id: int) -> None:
     for model in (HealthMetric, HealthSample, MobileDaily, LactateTest, MobileDevice):
         await db.execute(delete(model).where(model.user_id == user_id))
     await api_tokens.drop_health_scope(db, user_id)
+    # Coaching's « Adapter mes séances à ma forme »: the option and what it kept (the low mornings' dates) go too
+    from app.services import coaching
+
+    await coaching.clear_form(db, user_id)
     await db.execute(update(User).where(User.id == user_id).values(
         health_consent_at=None, health_consent_version=None, health_key_hash=None, health_key_prefix=None,
         health_key_created_at=None, health_last_push_at=None, health_last_push_count=None))

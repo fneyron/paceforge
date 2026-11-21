@@ -14,7 +14,11 @@ The plan is in TIME (minutes, to 5), week by week, Monday to Sunday on the athle
   the available days only;
 - a trail race: the long run and the long-hill session carry a climb to aim at, the race's D+ per hour scaled to
   the session, growing across the plan and capped (H, `climb_target`); a road race, or no race: none;
-- the ressenti (H, `adaptation`): a lighter week, a repeated week or a restart, each kept with its reason.
+- the ressenti (H, `adaptation`): a lighter week, a repeated week or a restart, each kept with its reason;
+- the form, for an athlete who turned the option on (docs/coaching.md › « La forme »): on a morning Santé's index
+  reads low, the day's hard session becomes a short footing and moves to the next available day of the week that
+  keeps « never two hard days in a row », else is dropped (hard sessions only when recovered: Kiviniemi 2007;
+  Vesterinen 2016; Javaloyes 2019 — the durations, the move and the 3-mornings rule are ours, H).
 (H): a PaceForge heuristic, not a published threshold (tests/test_coaching_plan.py pins each value).
 """
 import math
@@ -70,6 +74,14 @@ CLIMB_RATE_CAP = 500  # (H) never more than 500 m of climb per hour of session
 CLIMB_MIN = 100  # (H) no climb target under 100 m
 CLIMB_STEP = 50  # metres: a climb target is rounded to it
 CLIMB_KEYS = ("cotes_longues",)  # the quality sessions that carry one, with the long run
+FORM_FOOTING_SHARE = 0.6  # (H) the footing that replaces a hard session on a low morning: 60 % of its duration…
+FORM_FOOTING_CAP = 45  # (H) …and 45 min at most (never under MIN_SESSION)
+FORM_LOW_COUNT = 3  # (H) three low mornings…
+FORM_LOW_DAYS = 5  # (H) …within five days: the next week is lighter (ADAPT_FACTOR, as the ressenti's)
+FORM_KEEP_DAYS = 14  # the low mornings kept on the plan (their dates): what the 3-in-5 rule reads, no more
+FORM_RETRY_MIN = 10  # minutes between two readings of Santé while this morning's night has not arrived
+FORM = "forme"  # the adaptation's reason
+LIGHTENED, MOVED = "allegee", "reportee"  # a session's `form`: lightened on a low morning; moved from one
 
 PHASES = {"base": "Base", "specifique": "Spécifique", "affutage": "Affûtage", "progression": "Progression",
           "apres": "Après la course"}
@@ -78,6 +90,7 @@ REASONS = {
     "manquees": "Semaine allégée : plusieurs séances manquées la semaine dernière.",
     "semaine_manquee": "Même volume que la semaine dernière, restée sans séance.",
     "reprise": "Reprise en douceur après deux semaines sans séance.",
+    FORM: "Semaine allégée : ta récupération est restée basse plusieurs matins.",
 }
 # the levels of intensity: by feel first (the talk test: Persinger 2004; Foster 2008), a heart-rate range when a
 # maximum is known (the app's own five zones, heart_rate_zones: level 1 = zones 1–2, level 2 = zones 2–3, level 3 =
@@ -305,7 +318,7 @@ def week_targets(inp: Inputs, until: date) -> dict[date, dict]:
         # loading weeks behind it (a lighter week: 75 % of the last loading week, which the next one builds on)
         steps = max(0, rel - rel // LIGHT_EVERY - shift - (1 if light else 0))
         volume = min(top, base * (1 + GROWTH) ** steps) * (LIGHT_FACTOR if light else 1)
-        easy = reason in ("ressenti", "manquees")
+        easy = reason in ("ressenti", "manquees", FORM)
         if rd and first_taper and m >= first_taper:
             # Affûtage: race_prep's bands on the base = the median of the 4 weeks before it (its own rule); the
             # ressenti never cuts a taper further, it only turns its reminder into a footing
@@ -591,3 +604,63 @@ def adaptation(facts: list[Fact], week: date, done: dict[date, float], fresh_bas
         return {"reason": "semaine_manquee"}
     reason = lighter_reason(facts, before)
     return {"reason": reason, "factor": ADAPT_FACTOR} if reason else None
+
+
+# ── the form: a low morning (docs/coaching.md › « La forme ») ───────────────
+
+@dataclass(frozen=True)
+class Slot:
+    """What the form's move reads of a stored session: its day, its kind, and whether the plan may rewrite it (a
+    generated session still planned that nobody edited)."""
+    day: date
+    kind: str
+    free: bool = True
+
+
+def form_footing(minutes: int, taper: bool = False) -> int:
+    """The footing a hard session becomes on a low morning: FORM_FOOTING_SHARE of its duration, between MIN_SESSION
+    and FORM_FOOTING_CAP; in a taper week the same duration (its volume is never cut: only the intensity goes)."""
+    if taper:
+        return int(minutes)
+    return int(clamp(round5(FORM_FOOTING_SHARE * minutes), MIN_SESSION, FORM_FOOTING_CAP))
+
+
+def move_day(today: date, days: tuple[int, ...], slots: list[Slot], kind: str,
+             race_day: date | None = None) -> date | None:
+    """Where the hard session of a low morning goes: the next available day of the same week (to Sunday) that holds
+    nothing, or one easy session the plan may rewrite (it takes its place), and keeps « never two hard days in a
+    row » — today no longer counts, it is a footing now; next Monday's session does. A long run never from J-3.
+    None: no such day, the session is dropped. `slots`: the live sessions from today to next Monday."""
+    hard = {s.day for s in slots if s.kind in HARD and s.day != today}
+    by: dict[date, list[Slot]] = {}
+    for s in slots:
+        by.setdefault(s.day, []).append(s)
+    d, sunday = today + timedelta(days=1), monday_of(today) + timedelta(days=6)
+    while d <= sunday:
+        there = by.get(d, [])
+        near_race = kind == LONG and race_day is not None and 0 < (race_day - d).days <= NO_LONG_BEFORE_RACE
+        if (d.weekday() in days and not near_race and not {d - timedelta(days=1), d, d + timedelta(days=1)} & hard
+                and (not there or (len(there) == 1 and there[0].free and there[0].kind in (FOOTING, RECUP)))):
+            return d
+        d += timedelta(days=1)
+    return None
+
+
+def form_week(low: list[date], week: date) -> bool:
+    """Whether the form lightens the week of Monday `week`: FORM_LOW_COUNT low mornings within FORM_LOW_DAYS days,
+    the last of them in the week before."""
+    span = timedelta(days=FORM_LOW_DAYS)
+    return any(sum(1 for o in low if timedelta(0) <= d - o < span) >= FORM_LOW_COUNT
+               for d in low if week - timedelta(weeks=1) <= d < week)
+
+
+def with_form(adaptation: dict | None) -> dict:
+    """The week's adaptation once the form asks for a lighter week: one reduction, never two stacked — the larger
+    of the form's and the ressenti's (the ressenti's on a tie: its reason is the one a coach may read); a repeated
+    week or a restart stands as it is."""
+    mine = {"reason": FORM, "factor": ADAPT_FACTOR}
+    if adaptation is None:
+        return mine
+    if adaptation.get("reason") in ("ressenti", "manquees"):
+        return mine if ADAPT_FACTOR < float(adaptation.get("factor") or ADAPT_FACTOR) else adaptation
+    return adaptation

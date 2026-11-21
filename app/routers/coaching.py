@@ -11,7 +11,7 @@ to the page.
 """
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timezone
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -29,7 +29,7 @@ from app.services import coaching_ics as ics
 from app.services import coaching_plan as cp
 from app.services import coaching_view as cv
 from app.services import race_prep as rp
-from app.services.viz import d_short, fr_int, fr_num, hm
+from app.services.viz import d_long, d_short, fr_int, fr_num, hm
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -208,8 +208,15 @@ async def _onboarding(request: Request, db: AsyncSession, user: User, *, plan: C
 
 
 async def _tools(db: AsyncSession, scope: Scope, plan: CoachingPlan, code: str | None = None) -> dict:
+    # the form option: offered only with the health consent and an index in Santé; said « activé le … » once on
+    c = await co.clock(db, scope.athlete)
+    offer = await co.form_offer(db, plan, scope.athlete, c)
+    if offer is not None and offer["since"] is not None:
+        since = offer["since"] if offer["since"].tzinfo else offer["since"].replace(tzinfo=timezone.utc)
+        offer = {**offer, "since": d_long(since.astimezone(c.zone).date())}
     return {"feed": feed_urls(plan), "coaches": [{"id": u.id, "name": u.firstname or "Coach"}
-                                                 for u in await co.coaches_of(db, scope.athlete.id)], "code": code}
+                                                 for u in await co.coaches_of(db, scope.athlete.id)], "code": code,
+            "form": offer}
 
 
 async def _page(request: Request, db: AsyncSession, scope: Scope, d: str | None, w: str | None, v: str | None):
@@ -263,6 +270,25 @@ async def coaching_stop(scope: Scope = Depends(own_scope), db: AsyncSession = De
     await db.commit()
     logger.info("Coaching: plan deleted for user %d", scope.athlete.id)
     return RedirectResponse("/coaching", status_code=303)
+
+
+@router.post("/coaching/form")
+async def coaching_form(value: str = Form(default=""), scope: Scope = Depends(own_scope),
+                        db: AsyncSession = Depends(get_db)):
+    """« Adapter mes séances à ma forme »: the athlete's explicit switch, off by default. On: recorded with its
+    moment; off: what the form had kept is cleared and the plan is its own again. The page is read again (today's
+    session may change at once)."""
+    plan = await co.get_plan(db, scope.athlete.id)
+    if plan is None:
+        raise HTTPException(status_code=404)
+    try:
+        await co.set_form(db, plan, scope.athlete, value == "on", await co.clock(db, scope.athlete))
+    except co.Invalid:
+        pass  # no longer offered (the consent withdrawn meanwhile): the page says so by not showing it
+    await co.sync(db, plan, scope.athlete)
+    await db.commit()
+    logger.info("Coaching: form option %s for user %d", "on" if plan.form_on_at else "off", scope.athlete.id)
+    return RedirectResponse("/coaching#coach-form", status_code=303)
 
 
 @router.post("/coaching/share", response_class=HTMLResponse)
@@ -446,6 +472,22 @@ def _session_routes(prefix: str, scope_of) -> APIRouter:
             if row.status != co.PLANNED:
                 raise co.Invalid("Cette séance ne se modifie plus.")
             co.edit(row, c.now, kind=kind, minutes=minutes, origin=scope.origin)
+        except co.Invalid as e:
+            error = str(e)
+        return await _after(request, db, scope, d=row.day, v=v, error=error)
+
+    @r.post(prefix + "/sessions/{session_id}/lighten", response_class=HTMLResponse)
+    async def session_lighten(session_id: int, request: Request, v: str = Form(default=""),
+                              scope: Scope = Depends(scope_of), db: AsyncSession = Depends(get_db)):
+        """« Alléger aujourd'hui »: the athlete's own tap, on a low morning, for a session the plan leaves alone (one
+        they pinned, or their coach's). Never a coach's route: nothing of the form exists on their side."""
+        if scope.coach:
+            raise HTTPException(status_code=404)
+        _plan, row = await _row(db, scope, session_id)
+        state = await _state(db, scope)
+        error = None
+        try:
+            co.lighten_by_hand(state.plan, scope.athlete, row, state.inputs, state.clock)
         except co.Invalid as e:
             error = str(e)
         return await _after(request, db, scope, d=row.day, v=v, error=error)

@@ -22,6 +22,13 @@ CHART_WEEKS = 26  # the plan's chart: 26 weeks at most
 # which time the plan runs on, said once in the header: the race page's objective, the simulator's estimate, or —
 # no prediction — a rough guess
 TIME_WORD = {co.OBJECTIVE: "Objectif", co.ESTIMATE: "Estimation", co.ROUGH: "Environ"}
+# the form (docs/coaching.md › « La forme »): the athlete reads why, with the way to Santé, never the number; a
+# coach reads that the session was adapted, never why (no health word reaches a coach's page)
+FORM_ATHLETE = "Séance allégée : récupération basse ce matin"
+FORM_COACH = "Séance adaptée ce matin"
+FORM_MOVED = "Séance reportée de {day}"
+FORM_SUGGEST = "Récupération basse ce matin."
+COACH_WEEK = "Semaine allégée."  # a week the form lightened, as a coach reads it
 ENDED = {co.PASSED: "{name} est derrière toi : {when}le plan continue sans course.",
          co.GONE: "{name} n’est plus dans tes courses : {when}le plan continue sans course."}
 METHOD = (
@@ -35,6 +42,8 @@ METHOD = (
     "longues visent aussi un dénivelé, qui monte au fil des semaines.",
     "Après chaque séance, dis comment c’était. Si le facile te paraît dur, ou si des séances sautent, la semaine "
     "suivante s’allège toute seule.",
+    "Si tu l’actives, le plan lit ta récupération de Santé chaque matin : basse, ta séance dure devient un footing "
+    "et se décale. Une bonne récupération n’ajoute jamais rien.",
     "Tes sorties enregistrées cochent les séances du jour. Sans montre, coche « Fait ».",
     "Ce que tu modifies ou déplaces reste tel quel ; le reste du plan se recalcule autour.",
 )
@@ -128,6 +137,27 @@ def _activity(run, link: bool, climb: int | None = None) -> dict:
             "href": f"/activity/{run.id}" if link else None}
 
 
+def _form(row, state: co.State, coach: bool) -> dict | None:
+    """What a session the form touched says: lightened on a low morning — to the athlete why, with the way to Santé
+    and where the session went; to a coach only that it was adapted — or moved here from that morning."""
+    if not row.form:
+        return None
+    today, monday = state.clock.today, cp.monday_of(row.day)
+    week = [r for r in state.rows if r.form and r.status != co.CANCELLED and cp.monday_of(r.day) == monday]
+    then = "" if row.day == today else "-là"
+    if row.form == cp.LIGHTENED:
+        if coach:
+            return {"text": FORM_COACH + then, "href": None, "moved": None}
+        to = next((r for r in week if r.form == cp.MOVED and r.day > row.day), None)
+        return {"text": rp.fr(FORM_ATHLETE + then), "href": "/sante",
+                "moved": f"La séance prévue passe à {JOURS_L[to.day.weekday()]}." if to else None}
+    if row.form == cp.MOVED:
+        origin = next((r for r in reversed(week) if r.form == cp.LIGHTENED and r.day < row.day), None)
+        if origin is not None:
+            return {"text": FORM_MOVED.format(day=JOURS_L[origin.day.weekday()]), "href": None, "moved": None}
+    return None
+
+
 def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool) -> dict:
     today = state.clock.today
     run = runs_by_id.get(row.activity_id) if row.activity_id else None
@@ -148,6 +178,11 @@ def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool) -> di
         "activity": _activity(run, link=not coach, climb=climb_of(row)) if run else None,
         "done_manual": hm(row.done_minutes) if row.status == co.DONE and run is None and row.done_minutes else None,
         "done_min": row.done_minutes, "ressenti": row.ressenti, "note": row.note, "coach_comment": row.coach_comment,
+        "form": _form(row, state, coach),
+        # a low morning and a hard session the plan does not change by itself (pinned, or a coach's): the athlete
+        # is offered to lighten it — never shown to a coach
+        "suggest": FORM_SUGGEST if (not coach and planned and row.day == today and today in state.low
+                                    and row.kind in co.HARD_KINDS and not row.form) else None,
         "can_tick": not coach and row.day <= today and run is None and row.status != co.CANCELLED,
         "can_move": planned and row.day >= today and row.kind != cp.RACE,
         "can_edit": planned and row.kind != cp.RACE and (coach or row.day >= today),
@@ -220,14 +255,16 @@ def week_summary(state: co.State, monday: date, done: dict[date, float]) -> dict
             (f"{hm_long(did)} faites, rien de prévu" if did else "Rien de prévu")}
 
 
-def week_note(state: co.State, monday: date) -> dict:
-    """The week's phase, whether it is the lighter 4th one, and the one line an adaptation gives it."""
+def week_note(state: co.State, monday: date, coach: bool = False) -> dict:
+    """The week's phase, whether it is the lighter 4th one, and the one line an adaptation gives it (a week the form
+    lightened says why to the athlete only)."""
     entry = (state.plan.adaptations or {}).get(monday.isoformat()) or {}
     phase = cp.phase_of(monday, state.inputs) if monday >= state.plan.start_monday else None
     week = next((x for x in state.weeks if x.monday == monday), None)
+    reason = entry.get("reason") or ""
     return {"phase": cp.PHASES.get(phase) if phase and phase != "apres" else None,
-            "light": bool(week and week.light and not entry.get("reason")),
-            "reason": cp.REASONS.get(entry.get("reason") or "")}
+            "light": bool(week and week.light and not reason),
+            "reason": COACH_WEEK if coach and reason == cp.FORM else cp.REASONS.get(reason)}
 
 
 def chart(state: co.State, done: dict[date, float]) -> dict | None:
@@ -301,7 +338,7 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
         "week": {"monday": monday.isoformat(), "label": week_label(monday), "strip": strip,
                  "prev": (monday - timedelta(weeks=1)).isoformat() if monday > first else None,
                  "next": (monday + timedelta(weeks=1)).isoformat() if monday < last else None,
-                 "summary": week_summary(state, monday, done), **week_note(state, monday)},
+                 "summary": week_summary(state, monday, done), **week_note(state, monday, coach)},
         "sessions": [_session(r, state, rows_hr, runs_by_id, coach) for r in by_day.get(selected, [])],
         "extras": [_activity(s, link=not coach) for s in extras if s.day == selected],
         "moving": {"id": moving.id, "title": cp.KINDS.get(moving.kind, moving.kind)} if moving else None,
