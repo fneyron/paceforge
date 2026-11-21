@@ -883,3 +883,74 @@ def timeline(start: datetime, end: datetime, *, stages=None, naps=()) -> dict:
     return {"W": W, "H": H, "X0": TL_X0, "X1": TL_X1, "lanes": lanes, "main": main, "segs": segs, "steps": steps,
             "naps": nap_bars, "out": out, "ticks": ticks, "base": y - TL_GAP + 2, "stages": bool(stages),
             "lane_h": TL_LANE}
+
+
+# ── C1 intensity profile: one training session's structure as blocks (Coaching) ─
+
+PROFILE = (320, 60)  # viewBox
+PROFILE_LEVEL = {1: 0.3, 2: 0.5, 3: 0.8, 4: 1.0}  # a block's height by its level of intensity
+PROFILE_GAP = 2
+
+
+def intensity_profile(structure: dict | None) -> dict | None:
+    """A session drawn across its time: one block per step (warm-up, each effort, each recovery, cool-down), its
+    width its minutes, its height its level (1 very easy … 4 fast). {W, H, blocks: [{x, y, w, h, level, part}],
+    aria}; None without steps. The words stay the caller's: no number is printed in the drawing."""
+    segs: list[tuple[float, int, str]] = []
+    said: list[str] = []
+    for step in (structure or {}).get("steps") or []:
+        kind, level = step.get("t"), int(step.get("level") or 2)
+        if kind == "bloc":
+            reps = int(step.get("reps") or 0)
+            effort, recov = float(step.get("effort") or 0), float(step.get("recup") or 0)
+            for i in range(reps):
+                segs.append((effort, level, "effort"))
+                if i < reps - 1 and recov > 0:
+                    segs.append((recov, 1, "recup"))
+            said.append(f"{reps} fois {num(effort)} minute{'s' if effort > 1 else ''} d’effort, "
+                        f"{num(recov)} minute{'s' if recov > 1 else ''} de récupération")
+        elif step.get("min"):
+            segs.append((float(step["min"]), level, kind or "continu"))
+            word = {"echauffement": "échauffement", "retour": "retour au calme",
+                    "course": "course"}.get(kind, "effort continu")
+            said.append(f"{word} {hm_long(step['min'])}")
+    total = sum(m for m, _, _ in segs)
+    if total <= 0:
+        return None
+    width, height = PROFILE
+    room = width - PROFILE_GAP * (len(segs) - 1)
+    x, blocks = 0.0, []
+    for minutes, level, part in segs:
+        w = room * minutes / total
+        h = round(height * PROFILE_LEVEL.get(level, 0.5), 1)
+        blocks.append({"x": round(x, 1), "y": round(height - h, 1), "w": round(max(w, 1), 1), "h": h, "level": level,
+                       "part": part})
+        x += w + PROFILE_GAP
+    return {"W": width, "H": height, "blocks": blocks, "aria": "Profil de la séance : " + ", ".join(said) + "."}
+
+
+# ── C2 plan weeks: planned (outline) against done (solid), the phases under the axis (Coaching) ─
+
+def plan_weeks(mondays: list[date], planned: list, done: list, *, phases: list[tuple[str, str]], current: int | None,
+               readouts: list[list[str]], arias: list[str], races=()) -> dict:
+    """`bars` with the plan's phases: `phases` [(key, label) per week] drawn as runs under the axis, each named once;
+    `current`: the slot of the week in progress, behind a soft column. The x labels: about five dates."""
+    c = bars(mondays, done, readouts=readouts, arias=arias, planned=planned, races=races, min_top=60, sel=current)
+    n = len(mondays)
+    xs, slot = slot_x(n), X1 / max(n, 1)
+    every = max(1, round(n / 5))
+    c["xt"] = [{"x": xs[i], "label": f"{d.day} {MOIS[d.month - 1]}"} for i, d in enumerate(mondays)
+               if (n - 1 - i) % every == 0]
+    runs: list[dict] = []
+    for i, (key, label) in enumerate(phases):
+        if runs and runs[-1]["key"] == key:
+            runs[-1]["x1"] = round(xs[i] + slot / 2 - 1, 1)
+        elif key:
+            runs.append({"key": key, "label": label, "x0": round(xs[i] - slot / 2 + 1, 1),
+                         "x1": round(xs[i] + slot / 2 - 1, 1)})
+    for r in runs:
+        r["w"], r["cx"] = round(r["x1"] - r["x0"], 1), round((r["x0"] + r["x1"]) / 2, 1)
+        r["named"] = r["w"] >= len(r["label"]) * 5.6  # the name only where it fits
+    c.update(phases=runs, cur=current, slot=round(slot, 1), cur_x=xs[current] if current is not None and n else None,
+             H=178)
+    return c

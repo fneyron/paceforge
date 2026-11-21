@@ -703,7 +703,8 @@ def test_migration_round_trips():
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "alembic"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == [mig.revision] and mig.down_revision == "k2f3a4b5c6d7"
+    assert len(script.get_heads()) == 1 and mig.down_revision == "k2f3a4b5c6d7"
+    assert mig.revision in {r.revision for r in script.walk_revisions()}
     eng = sa.create_engine("sqlite://")
     with eng.begin() as c:
         c.execute(sa.text("CREATE TABLE activities (id INTEGER PRIMARY KEY, strava_activity_id BIGINT, "

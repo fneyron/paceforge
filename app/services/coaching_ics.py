@@ -1,0 +1,85 @@
+"""Coaching: the plan as a calendar feed (RFC 5545), read by Apple Calendar, Google Calendar, Outlook…
+
+One all-day event per session (DTSTART;VALUE=DATE, DTEND the day after), from 30 days back to the end of the plan.
+UID is the session's id (stable: a regeneration rewrites a row in place), SEQUENCE its count of changes, DTSTAMP and
+LAST-MODIFIED its last change: an edit, a move or a new duration reaches the subscribed calendar at its next refresh.
+A session removed (deleted, or cancelled by a coach) is simply no longer in the feed: a subscription drops it.
+Lines are CRLF, folded at 75 octets (never inside a UTF-8 character); TEXT values escape « \\ ; , » and newlines.
+"""
+from datetime import date, datetime, timedelta, timezone
+
+from app.services import coaching_plan as cp
+from app.services.viz import hm
+
+PAST_DAYS = 30
+PRODID = "-//PaceForge//Coaching//FR"
+NAME = "PaceForge · Coaching"
+REFRESH = "PT6H"
+
+
+def escape(text: str) -> str:
+    """A TEXT value (RFC 5545 §3.3.11)."""
+    return (text.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+            .replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n"))
+
+
+def fold(line: str) -> str:
+    """One content line folded at 75 octets: CRLF then a space, never inside a multi-byte character."""
+    raw = line.encode("utf-8")
+    if len(raw) <= 75:
+        return line
+    out, chunk, size, limit = [], "", 0, 75
+    for ch in line:
+        n = len(ch.encode("utf-8"))
+        if size + n > limit:
+            out.append(chunk)
+            chunk, size, limit = "", 0, 74  # the continuation's leading space counts
+        chunk += ch
+        size += n
+    out.append(chunk)
+    return "\r\n ".join(out)
+
+
+def stamp(moment: datetime | None) -> str:
+    moment = moment or datetime(2026, 1, 1, tzinfo=timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def summary(row) -> str:
+    """« Footing 45 min », « Sortie longue 1h50 »."""
+    return f"{cp.KINDS.get(row.kind, row.kind)} {hm(row.minutes)}"
+
+
+def description(row, guidance: str) -> str:
+    parts = [p for p in (cp.describe(row.kind, row.structure), guidance) if p]
+    return "\n".join(parts)
+
+
+def render(rows: list, today: date, *, host: str, guidance=lambda row: "") -> str:
+    """The feed's text. `rows`: the plan's sessions; `guidance(row)`: its line of advice."""
+    since = today - timedelta(days=PAST_DAYS)
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", f"PRODID:{PRODID}", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+             f"X-WR-CALNAME:{escape(NAME)}", f"NAME:{escape(NAME)}",
+             f"REFRESH-INTERVAL;VALUE=DURATION:{REFRESH}", f"X-PUBLISHED-TTL:{REFRESH}"]
+    for row in sorted(rows, key=lambda r: (r.day, r.id or 0)):
+        if row.status == "cancelled" or row.day < since:
+            continue
+        changed = stamp(row.updated_at)
+        lines += [
+            "BEGIN:VEVENT",
+            f"UID:coaching-{row.id}@{host}",
+            f"DTSTAMP:{changed}",
+            f"LAST-MODIFIED:{changed}",
+            f"SEQUENCE:{int(row.seq or 0)}",
+            f"DTSTART;VALUE=DATE:{row.day.strftime('%Y%m%d')}",
+            f"DTEND;VALUE=DATE:{(row.day + timedelta(days=1)).strftime('%Y%m%d')}",
+            f"SUMMARY:{escape(summary(row))}",
+        ]
+        text = description(row, guidance(row))
+        if text:
+            lines.append(f"DESCRIPTION:{escape(text)}")
+        lines += ["TRANSP:TRANSPARENT", "END:VEVENT"]
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(fold(line) for line in lines) + "\r\n"

@@ -220,6 +220,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.state.build_id = BUILD_ID
+    # Coaching (beta): base.html's 4th menu entry and Activités' card ask it per request (an empty list: nobody)
+    from app import features
+
+    app.state.coaching_for = features.coaching_for
     # the access log's lines without the tokens some links carry (?token=, ?code=…): in each worker, after uvicorn
     # has set its logging up (it does so before it imports the app)
     mask_secrets_in_access_logs()
@@ -272,6 +276,10 @@ def create_app() -> FastAPI:
     app.include_router(api_v1.pages)      # its documentation, /developpeurs
     # the official COROS, Garmin, Wahoo and Polar connectors: every route 404 while it is off (app.connectors)
     app.include_router(official_connectors.router)
+    # Coaching (beta, docs/coaching.md): every route 404 for an account outside COACHING_BETA_USERS (empty: all)
+    from app.routers import coaching
+
+    app.include_router(coaching.router)
 
     # Browsers ask for /favicon.ico at the root, whatever the page links to
     @app.get("/favicon.ico", include_in_schema=False)
@@ -288,6 +296,8 @@ def create_app() -> FastAPI:
         private = ("/api/", "/mobile/", "/partials/", "/webhook", "/setup", "/landing", "/accueil",
                    "/dashboard", "/sante", "/activities", "/activity/", "/settings", "/simulator", "/connections",
                    "/coros", "/garmin")
+        if features.coaching_enabled():  # Coaching (beta): its pages too, while it exists
+            private += ("/coaching",)
         body = "User-agent: *\n" + "".join(f"Disallow: {p}\n" for p in private)
         body += f"\nSitemap: {settings.BASE_URL.rstrip('/')}/sitemap.xml\n"
         return PlainTextResponse(body, headers={"Cache-Control": "public, max-age=86400"})

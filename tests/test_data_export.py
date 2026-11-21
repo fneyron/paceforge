@@ -34,7 +34,7 @@ from tests.test_security import as_user  # noqa: F401  (a fixture)
 NOW = datetime.now(timezone.utc)
 FILES = {"LISEZMOI.txt", "compte.json", "connexions.json", "activites.json", "sante_mesures.json",
          "sante_echantillons.json", "ressenti.json", "telephone_jours.json", "parcours.json", "lactate.json",
-         "nutrition.json"}
+         "nutrition.json", "coaching.json", "coaching_seances.json"}
 
 
 async def _seed(db, user: User, tag: str, activities: int = 1) -> None:
@@ -71,6 +71,22 @@ async def _seed(db, user: User, tag: str, activities: int = 1) -> None:
         GarminConnection(user_id=uid, di_client_id="GARMIN", access_token_encrypted=encrypt_secret(f"garmin-{tag}")),
         ApiToken(user_id=uid, name=f"Clé {tag}", prefix=f"pf_{tag[:5]}", token_hash=digest(f"api-key-{tag}"),
                  scopes="read health"),
+    ])
+    await db.flush()
+    # Coaching (beta): the plan, a session with its ressenti and notes, a code made for a coach
+    from app.models.coaching import CoachingInvite, CoachingPlan, CoachingSession
+
+    plan = CoachingPlan(user_id=uid, route_id=route.id, days="1,3,6", long_day=6, base_minutes=180,
+                        start_monday=date(2026, 11, 16), generated_at=NOW, adaptations={"2026-11-23": {
+                            "reason": "ressenti", "factor": 0.8}},
+                        feed_token=f"feed-token-{tag}", feed_token_hash=digest(f"feed-token-{tag}"))
+    db.add(plan)
+    await db.flush()
+    db.add_all([
+        CoachingSession(plan_id=plan.id, user_id=uid, day=date(2026, 11, 17), auto_day=date(2026, 11, 17),
+                        kind="footing", minutes=45, structure={"steps": [{"t": "continu", "min": 45, "level": 2}]},
+                        status="done", ressenti=4, note=f"Note {tag}", coach_comment=f"Bravo {tag}"),
+        CoachingInvite(athlete_id=uid, code_hash=digest(f"coach-code-{tag}"), expires_at=NOW + timedelta(days=7)),
     ])
     await db.flush()
 
@@ -122,6 +138,14 @@ async def test_the_export_holds_the_athletes_data_theirs_only_and_no_secret(as_u
         "target_s": 4500}
     assert data["lactate.json"][0]["stages"] == [{"pace": 300, "lactate": 1.8}]
     assert data["nutrition.json"][0]["name"] == "Gel MINE"
+    # Coaching: the plan's answers and what the ressenti changed, the session with its ressenti and notes
+    coaching = data["coaching.json"]
+    assert coaching["plan"]["days"] == "1,3,6" and coaching["plan"]["base_minutes"] == 180
+    assert coaching["plan"]["adaptations"] == {"2026-11-23": {"reason": "ressenti", "factor": 0.8}}
+    assert coaching["coachs"] == [] and coaching["athletes_suivis"] == [] and len(coaching["codes"]) == 1
+    (session,) = data["coaching_seances.json"]
+    assert (session["kind"], session["minutes"], session["status"], session["ressenti"]) == ("footing", 45, "done", 4)
+    assert session["note"] == "Note MINE" and session["coach_comment"] == "Bravo MINE"
     links = data["connexions.json"]
     assert links["strava"]["lie"] is True and links["strava"]["application"] == "la tienne"
     assert links["coros"]["last_sync_at"] and links["garmin"] is not None
@@ -133,7 +157,8 @@ async def test_the_export_holds_the_athletes_data_theirs_only_and_no_secret(as_u
     for secret in (test_user.password_hash, hash_token("reset-me"), "test_access_token", "test_refresh_token",
                    "strava-secret", digest("apple-key"), "pfk_abcd", digest("phone-token-MINE"),
                    digest("old-token-MINE"), digest("api-key-MINE"), "token_hash", "coros-access-MINE", "coros-refresh-MINE", "coros-client-MINE",
-                   "garmin-MINE"):
+                   "garmin-MINE", "feed-token-MINE", digest("feed-token-MINE"), digest("coach-code-MINE"),
+                   "feed_token", "code_hash"):
         assert secret not in everything, secret
     for field in ("password_hash", "password_reset_token", "email_verify_token", "strava_access_token",
                   "strava_refresh_token", "strava_client_secret_encrypted", "health_key_hash", "session_version"):

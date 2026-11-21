@@ -1,0 +1,46 @@
+{#- Coaching: the athlete's tools under the calendar — the calendar feed, the sharing with a coach, « Refaire le
+    plan », « Arrêter le coaching ». Swapped in place after a new code, a revoked coach or a regenerated link (`open`
+    then says which fold stays open). Expects `tools` = {feed: {https, webcal} | None, coaches: [{id, name}], code}. -#}
+{% from "partials/_icons.html" import icon %}
+{% set swap = 'hx-target="#coach-tools" hx-swap="outerHTML"' %}
+<div id="coach-tools" class="pf-coach-tools">
+    <details class="pf-coach-tool" id="coach-tool-feed"{% if open == "feed" %} open{% endif %}>
+        <summary class="pf-tool"><span>{{ icon("calendar") }}<span>Ajouter à mon calendrier</span></span>{{ icon("chev-r", "pf-chev") }}</summary>
+        <div class="pf-coach-tool-body">
+            {% if tools.feed %}
+            <a class="pf-btn pf-btn-primary pf-btn-sm pf-browser-only" href="{{ tools.feed.webcal }}">S’abonner au calendrier</a>
+            <div class="pf-coach-copy">
+                <label class="sr-only" for="coach-feed-url">Adresse du calendrier</label>
+                <input id="coach-feed-url" class="pf-input" readonly value="{{ tools.feed.https }}" onfocus="this.select()">
+                <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" data-copy="coach-feed-url">Copier</button>
+            </div>
+            {% endif %}
+            <form method="post" action="/coaching/feed/regenerate" hx-post="/coaching/feed/regenerate" {{ swap|safe }} hx-confirm="Régénérer le lien ? L’ancien ne fonctionnera plus.">
+                <button type="submit" id="coach-feed-new" class="pf-coach-textbtn">Régénérer le lien</button>
+            </form>
+        </div>
+    </details>
+    <details class="pf-coach-tool" id="coach-tool-share"{% if open == "share" or tools.code %} open{% endif %}>
+        <summary class="pf-tool"><span>{{ icon("share") }}<span>Partager avec un coach</span></span>{{ icon("chev-r", "pf-chev") }}</summary>
+        <div class="pf-coach-tool-body">
+            {% for c in tools.coaches %}
+            <form class="pf-coach-coachrow" method="post" action="/coaching/coaches/{{ c.id }}/revoke" hx-post="/coaching/coaches/{{ c.id }}/revoke" {{ swap|safe }} hx-confirm="Retirer l’accès de {{ c.name }} ?">
+                <span><b>{{ c.name }}</b> suit ton plan</span>
+                <button type="submit" id="coach-revoke-{{ c.id }}" class="pf-coach-textbtn text-danger">Retirer l’accès</button>
+            </form>
+            {% endfor %}
+            {% if tools.code %}
+            <p class="pf-coach-code" aria-label="Ton code">{{ tools.code }}</p>
+            <p class="pf-label">À donner à ton coach. Valable 7 jours, une seule fois.</p>
+            {% endif %}
+            <form method="post" action="/coaching/share" hx-post="/coaching/share" {{ swap|safe }}>
+                <button type="submit" id="coach-share-new" class="pf-btn pf-btn-secondary pf-btn-sm">{{ "Nouveau code" if tools.code else "Créer un code" }}</button>
+            </form>
+        </div>
+    </details>
+    <a class="pf-tool" href="/coaching/athletes"><span>{{ icon("heart") }}<span>Suivre un athlète</span></span>{{ icon("chev-r", "pf-chev") }}</a>
+    <a class="pf-tool" href="/coaching?refaire=1"><span>{{ icon("sliders") }}<span>Refaire le plan</span></span>{{ icon("chev-r", "pf-chev") }}</a>
+    <form method="post" action="/coaching/stop" onsubmit="event.preventDefault(); var f = this; var msg = 'Arrêter le coaching ? Ton plan et tes séances seront supprimés, et tes coachs n’y auront plus accès.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Arrêter'); } else if (confirm(msg)) { f.submit(); }">
+        <button type="submit" class="pf-tool pf-coach-stop"><span>{{ icon("close") }}<span>Arrêter le coaching</span></span></button>
+    </form>
+</div>

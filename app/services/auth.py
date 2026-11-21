@@ -113,6 +113,10 @@ QUOTAS = {  # action: (window in seconds, {scope: allowed in the window})
     "api_auth": (10 * 60, {"ip": 60}),
     "api_plan": (60 * 60, {"user": 120}),
     "api_token": (60 * 60, {"user": 20}),
+    # Coaching (beta): a coach's code attempts per account (each a guess at an 8-character code), the calendar
+    # feed's requests per address (each a guess at its token, or a calendar app's refresh)
+    "coaching_code": (60 * 60, {"user": 10}),
+    "coaching_feed": (10 * 60, {"ip": 120}),
 }
 RETRY_AFTER = "3600"
 

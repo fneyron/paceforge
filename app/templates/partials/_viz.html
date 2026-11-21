@@ -236,3 +236,35 @@
     <ul class="pf-phases-legend" aria-label="{{ ph.aria }}">{% for p in ph.parts %}<li><button type="button" class="pf-phase-label" data-phase="{{ p.key }}" aria-label="{{ p.name }} : {{ p.hm }}"><i class="pf-ph is-{{ p.key }}" aria-hidden="true"></i><span>{{ p.name }}</span> <b>{{ p.hm }}</b></button></li>{% endfor %}</ul>
 </div>
 {% endmacro %}
+
+{#- Coaching -#}
+
+{# C1 intensity profile: one session's structure as blocks across its time (warm-up, efforts, recoveries, cool-down),
+   taller and darker with the intensity; an image named by its sentence, no number in it #}
+{% macro viz_profile(p) %}
+<svg class="pf-effort" width="{{ p.W }}" height="{{ p.H }}" viewBox="0 0 {{ p.W }} {{ p.H }}" role="img" aria-label="{{ p.aria }}" preserveAspectRatio="none">
+    {% for b in p.blocks %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-effort-b is-l{{ b.level }}"/>{% endfor %}
+</svg>
+{% endmacro %}
+
+{# C2 plan weeks: planned outlined, done solid, the current week on a soft column, the phases as runs under the axis
+   (each named once), the race's flag #}
+{% macro viz_plan(c, title, key) %}
+{% call figure(c, title, key, None, "semaine", "Semaine précédente", "Semaine suivante") %}
+{% if c.cur_x is not none %}<rect x="{{ (c.cur_x - c.slot / 2)|round(1) }}" y="6" width="{{ c.slot }}" height="{{ c.base - 6 }}" rx="4" class="pf-plan-now"/>{% endif %}
+<line x1="0" x2="{{ c.X1 }}" y1="{{ c.base }}" y2="{{ c.base }}" class="pf-viz-grid"/>
+{% for b in c.bars %}
+<g class="pf-viz-col" data-i="{{ b.i }}">
+    {#- done past the plan: the planned time is a hairline across the bar, never an outline inside it -#}
+    {% set met = b.plan and b.h is defined and b.h >= b.plan.h %}
+    {% if b.plan and not met %}<rect x="{{ b.x }}" y="{{ b.plan.y }}" width="{{ b.w }}" height="{{ b.plan.h }}" rx="3" class="pf-viz-plan"/>{% endif %}
+    {% if b.h is defined and b.h > 0 %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-bar"/>{% endif %}
+    {% if met and b.h > b.plan.h + 2 %}<line x1="{{ b.x }}" x2="{{ b.x + b.w }}" y1="{{ b.plan.y }}" y2="{{ b.plan.y }}" class="pf-plan-met"/>{% endif %}
+</g>
+{% endfor %}
+{% for p in c.phases %}<rect x="{{ p.x0 }}" y="{{ c.base + 5 }}" width="{{ p.w }}" height="5" rx="2.5" class="pf-plan-phase is-{{ p.key }}"/>{% if p.named %}<text x="{{ p.cx }}" y="{{ c.base + 23 }}" text-anchor="middle" class="pf-viz-strong">{{ p.label }}</text>{% endif %}{% endfor %}
+{{ _events(c, 12, c.base) }}
+{{ _xlabels(c) }}
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="6" y2="{{ c.base }}"/></g>
+{% endcall %}
+{% endmacro %}

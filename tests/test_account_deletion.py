@@ -20,6 +20,10 @@ from app.dependencies import get_current_user
 from app.models import (
     Activity,
     ApiToken,
+    CoachingInvite,
+    CoachingLink,
+    CoachingPlan,
+    CoachingSession,
     CorosConnection,
     GarminConnection,
     HealthMetric,
@@ -41,6 +45,9 @@ from tests.test_coros import D30, FakeCoros
 
 NOW = datetime.now(timezone.utc)
 SHARED = {"oauth_clients"}  # the app's own client registrations, nobody's data
+# rows that hang on two accounts (athlete → coach): gone with either one, so never « half » of what was there;
+# their own test below
+PAIRS = {"coaching_links"}
 
 
 def _rows(user: User) -> list:
@@ -84,8 +91,18 @@ async def _seed(db, user: User) -> None:
     db.add_all(rows)
     await db.flush()
     route = rows[1]
+    # Coaching (beta): a plan aimed at the race, a session matched to the activity, a code made for a coach
+    plan = CoachingPlan(user_id=user.id, route_id=route.id, days="1,3,6", long_day=6, base_minutes=180,
+                        start_monday=NOW.date(), generated_at=NOW, feed_token="feed", feed_token_hash=f"{user.id:064d}")
     db.add_all([
         RouteCheckpoint(route_id=route.id, name="Ravito", distance_km=10),
+        plan,
+    ])
+    await db.flush()
+    db.add_all([
+        CoachingSession(plan_id=plan.id, user_id=user.id, day=NOW.date(), auto_day=NOW.date(), kind="footing",
+                        minutes=45, status="done", activity_id=rows[0].id, ressenti=3),
+        CoachingInvite(athlete_id=user.id, code_hash=f"{user.id:064d}", expires_at=NOW + timedelta(days=7)),
     ])
     await db.flush()
 
@@ -93,7 +110,7 @@ async def _seed(db, user: User) -> None:
 async def _counts(db) -> dict[str, int]:
     out = {}
     for table in Base.metadata.sorted_tables:
-        if table.name not in SHARED:
+        if table.name not in SHARED | PAIRS:
             out[table.name] = (await db.execute(select(func.count()).select_from(table))).scalar()
     return out
 
@@ -161,6 +178,26 @@ async def test_deletion_revokes_every_provider_then_empties_every_table(committi
     assert after == {table: n // 2 for table, n in before.items()}, after  # the other athlete's half stays
     assert (await db.get(User, other.id)) is not None and (await db.get(User, user.id)) is None
     assert "leaving@x.fr" not in caplog.text and str(user.id) in caplog.text
+
+
+async def test_a_coaching_link_goes_with_either_of_its_two_accounts(committing_session, committing_client,
+                                                                    fake_coros, fake_official, strava):
+    """athlete → coach: deleting the athlete's account, or the coach's, takes the link (both keys cascade); a link
+    between two other accounts stays."""
+    db = committing_session
+    athlete, coach, other = [await _athlete(db, f"{name}@x.fr") for name in ("athlete", "coach", "other")]
+    db.add_all([CoachingLink(athlete_id=athlete.id, coach_id=coach.id),
+                CoachingLink(athlete_id=other.id, coach_id=coach.id),
+                CoachingLink(athlete_id=athlete.id, coach_id=other.id)])
+    await db.commit()
+    assert (await _delete(committing_client, athlete)).status_code == 302
+    await db.rollback()
+    left = (await db.execute(select(CoachingLink.athlete_id, CoachingLink.coach_id))).all()
+    assert left == [(other.id, coach.id)]
+    assert (await _delete(committing_client, coach)).status_code == 302
+    await db.rollback()
+    assert (await db.execute(select(func.count()).select_from(CoachingLink))).scalar() == 0
+    assert (await db.get(User, other.id)) is not None
 
 
 def test_every_table_goes_with_the_athlete_by_cascade():
