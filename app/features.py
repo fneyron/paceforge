@@ -29,24 +29,30 @@ def require_cycling() -> None:
 
 # ── Coaching (beta, docs/coaching.md) ───────────────────────────────────────
 # Open to every account since 21 November 2026 (owner: « Non rajoute à tout le monde »). One switch remains,
-# COACHING_BETA_USERS: « * » (the default) every account; emails, only those; anything else (empty, « off ») nobody.
+# COACHING_BETA_USERS: emails, only those accounts; an « off » word (COACHING_OFF) and no email, nobody; anything
+# else every account — « * » (the default), and an empty value too: a deployment tool that keeps the variable empty
+# (Coolify stored the empty default of the closed beta) must not switch the feature off in silence.
 
 COACHING_EVERYONE = "*"
+COACHING_OFF = frozenset({"off", "0", "false", "non", "no", "none"})
 
 
 def _coaching_words() -> list[str]:
-    return [x.strip().lower() for x in (settings.COACHING_BETA_USERS or "").split(",")]
-
-
-def coaching_for_everyone() -> bool:
-    """Whether every account has Coaching (COACHING_BETA_USERS holds « * », its default)."""
-    return COACHING_EVERYONE in _coaching_words()
+    words = (x.strip().strip("'\"").lower() for x in (settings.COACHING_BETA_USERS or "").split(","))
+    return [w for w in words if w]
 
 
 def coaching_beta_emails() -> frozenset[str]:
     """The accounts Coaching is restricted to when the switch lists emails (comma-separated, case-insensitive). A
     word that is not an email (« off ») names nobody."""
     return frozenset(w for w in _coaching_words() if "@" in w)
+
+
+def coaching_for_everyone() -> bool:
+    """Whether every account has Coaching: « * » anywhere in the switch, or no email and no « off » word in it (the
+    default, an empty value, anything unreadable)."""
+    words = _coaching_words()
+    return COACHING_EVERYONE in words or not (coaching_beta_emails() or COACHING_OFF.intersection(words))
 
 
 def coaching_enabled() -> bool:
