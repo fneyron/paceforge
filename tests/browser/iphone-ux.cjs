@@ -3,6 +3,7 @@
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const { coachingTab } = require('./app-shell.cjs');
 const base = process.env.PF_PREVIEW_URL || 'http://127.0.0.1:8853';
 const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
 (async () => {
@@ -12,6 +13,7 @@ const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
     const page = await browser.newPage({ viewport: { width: 393, height: 680 }, isMobile: true, hasTouch: true });
     const errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; window.paceforgeNativeRefresh = 2; document.addEventListener('DOMContentLoaded', () => document.documentElement.classList.add('pf-offline'));  });
+    await page.addInitScript(coachingTab);
     await page.goto(base + '/simulator/routes/1', { waitUntil: 'networkidle' });
     await page.waitForFunction(() => window._sim?.setTarget);
     // Leaving immediately must wait for persistence, including a second edit during an in-flight save.

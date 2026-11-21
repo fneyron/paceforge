@@ -1,5 +1,6 @@
-// Coaching (beta): the athlete's calendar, the coach's pages and the onboarding, in a browser — at 320 and 393 px
-// (the web site, and inside the phone app's shell), at 1280 px, light and dark. Local synthetic preview only.
+// Coaching (beta, every account): the athlete's calendar, the coach's pages and the onboarding, in a browser — at 320
+// and 393 px (the web site; inside the phone app that has the native Coaching tab; inside an installed app older than
+// that tab), at 1280 px, light and dark. Local synthetic preview only.
 // Start three fixtures (tests/browser/coaching_preview.py), each its own temporary database:
 //   PF_COACHING_AS=athlete uvicorn tests.browser.coaching_preview:app --host 127.0.0.1 --port 8861
 //   PF_COACHING_AS=coach   uvicorn tests.browser.coaching_preview:app --host 127.0.0.1 --port 8862
@@ -9,6 +10,7 @@
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const athlete = process.env.PF_COACHING_ATHLETE || 'http://127.0.0.1:8861';
 const coach = process.env.PF_COACHING_COACH || 'http://127.0.0.1:8862';
 const fresh = process.env.PF_COACHING_NEW || 'http://127.0.0.1:8863';
@@ -21,22 +23,40 @@ async function synthetic(url, as) {
   return fixture;
 }
 
-// A page as a phone or a desktop sees it; `app`: inside the phone app's WebView (its shell hides the web header and
-// tab bar: mobile/src/navigation.ts appShellScript; base.html adds .pf-native when ReactNativeWebView exists).
+// What the phone app injects into every page (mobile/src/navigation.ts, appShellScript), read from the source and
+// bound to the fixture's origin instead of paceforge.fr. `old`: the same script without the two statements that
+// announce the native Coaching tab, as the versions installed before it run it.
+const SHELL = (() => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../mobile/src/navigation.ts'), 'utf8');
+  const script = /export const appShellScript = `([^`]+)`;/.exec(source)[1];
+  const marker = /^\s*window\.paceforgeNativeCoaching = 1;\n\s*document\.documentElement\.classList\.add\('pf-native-coaching'\);\n/m;
+  assert.ok(marker.test(script), 'the shell announces its Coaching tab');
+  const bind = (text, origin) => text.split('${JSON.stringify(ORIGIN)}').join(JSON.stringify(origin));
+  return { new: origin => bind(script, origin), old: origin => bind(script.replace(marker, ''), origin) };
+})();
+
+// A page as a phone or a desktop sees it. `app`: inside the phone app's WebView — 'new', the app with the native
+// Coaching tab; 'old', an installed version from before it. Its shell hides the web header and tab bar and says what
+// it can do on <html>; base.html adds .pf-native when ReactNativeWebView exists.
 async function open(browser, { width, dark = false, app = false, height = 852 }) {
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 2, isMobile: width < 700,
     hasTouch: width < 700, colorScheme: dark ? 'dark' : 'light', reducedMotion: 'reduce' });
   page.errors = [];
   page.on('pageerror', error => page.errors.push(error.message));
-  if (app) await page.addInitScript(() => {
-    window.ReactNativeWebView = { postMessage() {} }; window.paceforgeNativeRefresh = 2;
-    document.addEventListener('DOMContentLoaded', () => {
-      const style = document.createElement('style'); style.id = 'paceforge-native-shell';
-      style.textContent = '.pf-tabbar,.pf-top{display:none!important}'; document.head.appendChild(style);
-    });
-  });
+  if (app) await page.addInitScript(([shell, origins]) => {
+    window.ReactNativeWebView = { postMessage() {} };
+    // as the WebView does: once at the document's start (its root element exists), once when it has loaded
+    const run = () => { if (shell[location.origin]) new Function(shell[location.origin])(); };
+    if (document.documentElement) run();
+    else new MutationObserver((_, o) => { if (document.documentElement) { o.disconnect(); run(); } }).observe(document, { childList: true });
+    addEventListener('load', run);
+  }, [Object.fromEntries([athlete, coach, fresh].map(url => [new URL(url).origin, SHELL[app](new URL(url).origin)]))]);
   return page;
 }
+
+// The three ways a page is seen at phone width, and what each one shows of the ways in and out.
+const SHELLS = [false, 'new', 'old'];
+const suffix = app => (app ? `-app${app === 'old' ? '-old' : ''}` : '');
 
 // One htmx tap: the request it sends has answered and the calendar part is swapped.
 async function swap(page, action) {
@@ -91,8 +111,8 @@ async function theme(page, dark) {
   const browser = await chromium.launch({ headless: true });
   try {
     // ── the athlete's page: 320 and 393 px, light and dark, on the site and inside the app ──
-    for (const width of [320, 393]) for (const dark of [false, true]) for (const app of [false, true]) {
-      const key = `${width}-${dark ? 'dark' : 'light'}${app ? '-app' : ''}`;
+    for (const width of [320, 393]) for (const dark of [false, true]) for (const app of SHELLS) {
+      const key = `${width}-${dark ? 'dark' : 'light'}${suffix(app)}`;
       const page = await open(browser, { width, dark, app });
       await page.goto(athlete + '/coaching', { waitUntil: 'networkidle' });
       assert.match(await page.locator('h1').innerText(), /^Coaching\s+bêta$/i, key);
@@ -105,14 +125,24 @@ async function theme(page, dark) {
       assert.ok(await page.locator('#coach-main svg.pf-viz-svg').isVisible(), key + ': the plan chart');
       assert.ok(await page.locator('svg.pf-effort').first().isVisible(), key + ': the intensity profile is drawn');
       assert.equal(await page.locator('.pf-coach-plan .pf-plan-phase').count(), 3, key + ': the phases are marked');
-      // inside the app the shell owns the header and the tabs: the page brings its own way back to Activités
+      // inside the app the shell owns the header and the tabs; only an app older than its Coaching tab needs the
+      // page's own way back to Activités
       assert.equal(await page.locator('.pf-top').isVisible(), !app, key);
       assert.equal(await page.locator('.pf-tabbar').isVisible(), !app, key);
-      assert.equal(await page.locator('a.pf-back[href="/activities"]').isVisible(), app, key + ': « ‹ Activités » in the app only');
-      if (!app) assert.equal(await page.locator('.pf-tabbar a').count(), 4, key + ': a 4th tab');
+      assert.equal(await page.evaluate(() => document.documentElement.classList.contains('pf-native-coaching')), app === 'new', key);
+      assert.equal(await page.locator('a.pf-back[href="/activities"]').isVisible(), app === 'old', key + ': « ‹ Activités » in an older app only');
+      if (!app) assert.deepEqual(await page.locator('.pf-tabbar a').allInnerTexts(), ['Courses', 'Activités', 'Santé', 'Coaching'], key + ': a 4th tab');
+      if (!app) assert.equal(await page.locator('.pf-tabbar a[aria-current="page"]').innerText(), 'Coaching', key);
       await noOverflow(page, key);
       await targets(page, key);
-      if (width === 393) await shot(page, `athlete-393-week${dark ? '-dark' : ''}${app ? '-app' : ''}`);
+      if (width === 393) await shot(page, `athlete-393-week${dark ? '-dark' : ''}${suffix(app)}`);
+      // the calendar: a browser and the updated app get the subscription button (the app hands webcal:// to the
+      // system); an older app drops that link, so it only shows the address to copy
+      await page.locator('#coach-tool-feed > summary').click();
+      assert.equal(await page.locator('#coach-tool-feed a[href^="webcal://"]').isVisible(), app !== 'old', key + ': « S’abonner au calendrier »');
+      assert.ok(await page.locator('#coach-feed-url').isVisible() && await page.locator('[data-copy="coach-feed-url"]').isVisible(), key + ': the address to copy');
+      await noOverflow(page, key + ' calendar');
+      if (width === 393 && !dark && app) await shot(page, `athlete-393-calendar${suffix(app)}`);
       assert.deepEqual(page.errors, [], key + ': browser errors');
       await page.close();
     }
@@ -239,15 +269,68 @@ async function theme(page, dark) {
       await shot(page, `athlete-393-onboarding${dark ? '-dark' : ''}`);
       await page.close();
     }
+    // ── any account, with no plan, no activity and no race: Activités, then the questions ──
+    for (const app of SHELLS) {
+      const page = await open(browser, { width: 393, app });
+      await page.goto(fresh + '/activities', { waitUntil: 'networkidle' });
+      // the entry card: only where nothing else leads to Coaching, an app from before its native tab
+      assert.equal(await page.locator('a.pf-coach-entry').count(), 1);
+      assert.equal(await page.locator('a.pf-coach-entry').isVisible(), app === 'old', `activities${suffix(app)}: the entry card`);
+      if (!app) assert.deepEqual(await page.locator('.pf-tabbar a').allInnerTexts(), ['Courses', 'Activités', 'Santé', 'Coaching']);
+      await noOverflow(page, 'activities' + suffix(app));
+      await shot(page, `activities-393${suffix(app) || '-site'}`);
+      assert.deepEqual(page.errors, [], 'activities: browser errors');
+      await page.close();
+    }
+    for (const width of [320, 393]) for (const dark of [false, true]) for (const app of SHELLS) {
+      const key = `new account ${width}${dark ? ' dark' : ''}${suffix(app)}`;
+      const page = await open(browser, { width, dark, app });
+      await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
+      assert.match(await page.locator('h1').innerText(), /^Coaching\s+bêta$/i, key);
+      assert.equal(await page.locator('a.pf-back[href="/activities"]').isVisible(), app === 'old', key + ': « ‹ Activités »');
+      // no race: one goal, chosen; no history: five coarse volumes, 2 h chosen; no day yet
+      assert.deepEqual(await page.locator('.pf-coach-option b').allInnerTexts(), ['Progresser, sans course'], key);
+      assert.equal(await page.locator('input[name="goal"]:checked').getAttribute('value'), 'none', key);
+      assert.deepEqual((await page.locator('.pf-coach-chip.is-wide').allInnerTexts()).map(t => t.replace(/\s+/g, ' ').trim()),
+        ['1 h', '2 h', '3 h', '4 h', '5 h et +'], key);
+      assert.equal(await page.locator('input[name="base"]:checked').getAttribute('value'), '120', key);
+      assert.equal(await page.locator('#coach-base').count(), 0, key + ': no computed volume without a history');
+      assert.equal(await page.locator('[data-days] input:checked').count(), 0, key);
+      assert.equal(await page.locator('.pf-coach-error').count(), 0, key);
+      const chips = await page.locator('.pf-coach-chip, .pf-coach-option').evaluateAll(all => all.map(el => {
+        const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), Math.round(r.top)]; }));
+      // 44 px tall; seven days side by side leave 33 px each at 320 px, 43 px at 393 px
+      assert.deepEqual(chips.filter(([w, h]) => w < (width < 393 ? 32 : 40) || h < 44), [], key + ': 44 px choices');
+      // each row of choices on one line: seven days, seven days, five volumes
+      for (const [group, count] of [['[data-days]', 7], ['[data-long]', 7], ['.pf-coach-q-card:last-of-type .pf-coach-chips', 5]]) {
+        const tops = await page.locator(`${group} .pf-coach-chip`).evaluateAll(all => all.map(el => Math.round(el.getBoundingClientRect().top)));
+        assert.equal(tops.length, count, key + ' ' + group);
+        if (width >= 393) assert.equal(new Set(tops).size, 1, key + ': ' + group + ' on one line');
+      }
+      const submit = await page.getByRole('button', { name: 'Créer mon plan' }).boundingBox();
+      assert.ok(submit.height >= 44 && submit.width > width * 0.8, key + ': the button');
+      await noOverflow(page, key);
+      if (width === 393) await shot(page, `new-393-onboarding${dark ? '-dark' : ''}${suffix(app)}`);
+      // creating without a day says what is missing, in place, and keeps the answers
+      if (width === 393 && !dark && !app) {
+        await page.locator('.pf-coach-chip.is-wide input[value="180"]').check({ force: true });
+        await page.getByRole('button', { name: 'Créer mon plan' }).click();
+        await page.locator('.pf-coach-error').waitFor();
+        assert.match(await page.locator('.pf-coach-error').innerText(), /jour/i);
+        assert.equal(await page.locator('input[name="base"]:checked').getAttribute('value'), '180', 'the answer is kept');
+        await noOverflow(page, key + ' error');
+        await shot(page, 'new-393-onboarding-error');
+      }
+      assert.deepEqual(page.errors, [], key + ': browser errors');
+      await page.close();
+    }
     {
-      const page = await open(browser, { width: 393, app: true });
+      // an app from before the tab: by the card; then the plan is made
+      const page = await open(browser, { width: 393, app: 'old' });
       await page.goto(fresh + '/activities', { waitUntil: 'networkidle' });
       const entry = page.locator('a.pf-coach-entry');
-      assert.ok(await entry.isVisible(), 'the entry card on Activités');
       const first = await page.locator('.pf-activities > *').nth(1).getAttribute('class');
       assert.match(first, /pf-coach-entry/, 'at the top');
-      await noOverflow(page, 'activities entry');
-      await shot(page, 'activities-entry-393-app');
       await entry.click();
       await page.waitForURL('**/coaching');
       assert.ok(await page.getByRole('button', { name: 'Créer mon plan' }).isVisible());

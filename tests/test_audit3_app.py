@@ -190,10 +190,10 @@ async def test_a_signed_in_404_keeps_the_app_layout_in_french(client, db_session
             r = await c.get(path)
             assert r.status_code == 404, path
             text = unescape(r.text)
-            assert words in text and 'class="pf-tabbar"' in r.text and "Se connecter" not in text, path
+            assert words in text and 'class="pf-tabbar is-four"' in r.text and "Se connecter" not in text, path
             assert "not found" not in text.lower()
     r = await client.get("/nulle-part")  # a visitor: the public layout
-    assert r.status_code == 404 and 'class="pf-tabbar"' not in r.text
+    assert r.status_code == 404 and 'class="pf-tabbar' not in r.text
 
 
 # ── Réglages ────────────────────────────────────────────────────────────────

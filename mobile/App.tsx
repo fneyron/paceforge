@@ -13,7 +13,7 @@ import { KEYS, KeychainLocked, secure } from './src/secure';
 import { backgroundBlock, backgroundPending, blockBackgroundSync, cancelBackgroundSync, disableBackgroundSync, enableBackgroundSync,
   onBackgroundReport, resetBackgroundState, skipSent, syncExclusively } from './src/background';
 import type { Block } from './src/background-engine';
-import { appShellScript, destinations, isBridgeUrl, messagePageUrl, prepareNavigationScript, presentationScript, refreshable, sameScreen, screenUrl, Tab, tabForUrl, tabNavigationScript, tabs } from './src/navigation';
+import { appShellScript, calendarFeedUrl, calendarOrigin, destinations, isBridgeUrl, messagePageUrl, prepareNavigationScript, presentationScript, refreshable, reloadable, sameScreen, screenUrl, Tab, tabForUrl, tabNavigationScript, tabs } from './src/navigation';
 import { ConnectionAction, Connections, Provider, providerNames, signInResult } from './src/connections';
 import { acknowledge, inlineConnectionsScript, inlineSessionScript, Pending, retryBridgeScript, takeReply } from './src/bridge';
 import { DeviceDetail, DevicesScreen } from './src/DevicesScreen';
@@ -345,6 +345,11 @@ function Companion() {
       if (pair && needsReconnect) setHealthIssue('Reconnecte le téléphone dans Réglages.');
       refreshPage(true);
     }
+  }
+  /** Coaching's refresh: its page reloads and reads the plan again (no phone or provider sync starts from there). */
+  function reloadPage() {
+    if (lock.current || cloudRefresh.current || !documentReady.current || !reloadable(documentUrl.current)) return;
+    web.current?.reload();
   }
   async function upload(account: Pair, consent = false, ask = false) {
     const epoch = accountEpoch.current;
@@ -733,8 +738,8 @@ function Companion() {
   return <DeviceTheme.Provider value={dark}><SafeAreaView style={[styles.root, night && styles.darkSurface]}>
     <StatusBar style={night ? 'light' : 'dark'} />
     <View style={[styles.header, night && styles.darkSurface]}><View style={styles.heading}><Text style={[styles.brand, night && styles.darkInk]}
-      accessibilityActions={webVisible && refreshable(webLocation.current) ? [{ name: 'refresh', label: 'Actualiser les données' }] : []}
-      onAccessibilityAction={event => { if (event.nativeEvent.actionName === 'refresh') refresh(); }}>PaceForge</Text></View>
+      accessibilityActions={webVisible && (refreshable(webLocation.current) || reloadable(webLocation.current)) ? [{ name: 'refresh', label: 'Actualiser les données' }] : []}
+      onAccessibilityAction={event => { if (event.nativeEvent.actionName !== 'refresh') return; if (reloadable(webLocation.current)) reloadPage(); else refresh(); }}>PaceForge</Text></View>
       <Pressable accessibilityRole="button" accessibilityLabel="Réglages et connexions" accessibilityState={{ disabled: busy || leaving || offline.busy }} disabled={busy || leaving || offline.busy} onPress={() => openTab('devices')} style={styles.settings}><Text style={[styles.settingsText, night && styles.darkAccent]}>Réglages</Text></Pressable></View>
     {webVisible && refreshable(webLocation.current) && userRefreshing && (busy || pageRefreshing) ? <View style={[styles.syncStatus, night && styles.darkSurface]} accessibilityLiveRegion="polite">
       <ActivityIndicator size="small" color={night ? '#a6a6ad' : '#62736d'} /><Text style={[styles.syncText, night && styles.darkMuted]}>Actualisation…</Text>
@@ -761,10 +766,10 @@ function Companion() {
     <View style={[styles.web, (!webVisible || concealBridge || concealLoading || !!loadError) && styles.hidden]} pointerEvents={webVisible && !concealBridge && !concealLoading && !loadError ? 'auto' : 'none'} accessibilityElementsHidden={!webVisible || concealBridge || concealLoading || !!loadError} importantForAccessibility={webVisible && !concealBridge && !concealLoading && !loadError ? 'auto' : 'no-hide-descendants'}>
       {showWeb && <Button text="Retour aux connexions" disabled={busy && !pending.current} onPress={() => { if (pending.current) { web.current?.stopLoading(); restoreSync(); finish(); setShowWeb(false); setTab('devices'); setDetail(null); setStatus(''); } else openTab('devices'); }} secondary />}
       {webStarted && <WebView ref={web} source={{ uri: url }} style={styles.web} sharedCookiesEnabled thirdPartyCookiesEnabled={false}
-        pullToRefreshEnabled={Platform.OS === 'ios' && webVisible && !concealBridge && refreshable(documentUrl.current) && !busy && !pageRefreshing}
+        pullToRefreshEnabled={Platform.OS === 'ios' && webVisible && !concealBridge && (refreshable(documentUrl.current) || reloadable(documentUrl.current)) && !busy && !pageRefreshing}
         bounces decelerationRate="normal" automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never"
         injectedJavaScriptBeforeContentLoaded={appShellScript + textScaleScript} injectedJavaScript={appShellScript + textScaleScript}
-        originWhitelist={['https://*', 'paceforge://*']} mixedContentMode="never" allowFileAccess={false} setSupportMultipleWindows
+        originWhitelist={['https://*', 'paceforge://*', calendarOrigin]} mixedContentMode="never" allowFileAccess={false} setSupportMultipleWindows
         onMessage={message} onError={() => pageFailed('Cet écran nécessite une connexion. Tes données déjà enregistrées restent conservées. Réessaie lorsque le réseau revient.')}
         onLoadStart={() => {
           frameLoading.current = true; cancelledReadingContext.current = null; softNavigation.current = null; setPageLoading(true); documentReady.current = false; pageLoadFailed.current = false; setLoadError('');
@@ -822,6 +827,9 @@ function Companion() {
           if (request.url === 'paceforge://offline') { afterSave(() => { setTab('courses'); offline.setView('list'); }); return false; }
           if (request.url === 'paceforge://devices') { openTab('devices'); return false; }
           if (request.url === 'paceforge://health') { openHealth(); return false; }
+          // Coaching › « S’abonner au calendrier »: the system's calendar app takes the feed and offers the subscription.
+          const feed = calendarFeedUrl(request.url);
+          if (feed) { Linking.openURL(feed).catch(() => setError('Aucune app de calendrier n’a pris ce lien. Copie l’adresse du calendrier pour t’abonner.')); return false; }
           if (request.url.startsWith('https://')) Linking.openURL(request.url).catch(() => setError('Impossible d’ouvrir ce lien.'));
           return false;
         }}
@@ -868,7 +876,7 @@ function Companion() {
     </View>
     </View>
     <View style={[styles.tabs, night && styles.darkSurface]}>
-      {tabs.map(([key, label]) => <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: tab === key, disabled: navigationLocked }} disabled={navigationLocked} onPress={() => openTab(key)} style={[styles.tab, tab === key && styles.active, night && tab === key && styles.darkActive]}><Text style={[styles.tabText, night && styles.darkMuted, tab === key && styles.activeText, night && tab === key && styles.darkAccent]}>{label}</Text></Pressable>)}
+      {tabs.map(([key, label]) => <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: tab === key, disabled: navigationLocked }} disabled={navigationLocked} onPress={() => openTab(key)} style={[styles.tab, tab === key && styles.active, night && tab === key && styles.darkActive]}><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.tabText, night && styles.darkMuted, tab === key && styles.activeText, night && tab === key && styles.darkAccent]}>{label}</Text></Pressable>)}
     </View>
   </SafeAreaView></DeviceTheme.Provider>;
 }
@@ -883,7 +891,7 @@ const styles = StyleSheet.create({
   noticeLink: { color: '#0b5f6e', fontSize: 12, fontWeight: '600' },
   content: { flex: 1 }, web: { flex: 1 }, returning: { flex: 1, alignItems: 'center', justifyContent: 'center' }, hidden: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0 },
   unavailable: { flex: 1, padding: 24, justifyContent: 'center', gap: 16 },
-  tabs: { flexDirection: 'row', paddingHorizontal: 16, gap: 12, backgroundColor: '#fff', borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#e4ebed' },
+  tabs: { flexDirection: 'row', paddingHorizontal: 8, gap: 4, backgroundColor: '#fff', borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#e4ebed' },
   tab: { flex: 1, paddingVertical: 18, borderTopWidth: 2, borderTopColor: 'transparent' }, active: { borderTopColor: '#0b5f6e' },
   tabText: { fontSize: 12, textAlign: 'center', color: '#63636a', fontWeight: '500' }, activeText: { color: '#0b5f6e', fontWeight: '700' },
   darkSurface: { backgroundColor: '#18181b', borderColor: '#2c2c31' }, darkInk: { color: '#f4f4f6' },

@@ -9,6 +9,12 @@ html { -webkit-text-size-adjust: 100%; }
 .pf-native-only { display: none !important; }
 .pf-native .pf-native-only { display: flex !important; }
 .pf-native .pf-browser-only { display: none !important; }
+/* What an app shell can do is said on <html> (mobile/src/navigation.ts, appShellScript). .pf-native-coaching: it has
+   the native Coaching tab and hands the calendar's webcal:// link to the system. An installed app older than that
+   keeps its way in (the card on Activités), its way back (« ‹ Activités ») and only the calendar address to copy. */
+.pf-old-shell-only { display: none !important; }
+.pf-native:not(.pf-native-coaching) .pf-old-shell-only { display: flex !important; }
+.pf-native:not(.pf-native-coaching) .pf-webcal { display: none !important; }
 /* Older companions still navigate to provider anchors instead of native settings. */
 .pf-native .pf-settings-connections:has(:target) { display: block !important; }
 .pf-native { --pf-font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --pf-font-text: var(--pf-font-display); }

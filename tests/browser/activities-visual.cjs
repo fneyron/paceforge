@@ -3,6 +3,7 @@
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const { coachingTab } = require('./app-shell.cjs');
 const base = process.env.PF_ACTIVITIES_PREVIEW || 'http://127.0.0.1:8881';
 const empty = process.env.PF_ACTIVITIES_EMPTY || 'http://127.0.0.1:8882';
 const before = process.env.PF_ACTIVITIES_BEFORE;
@@ -57,6 +58,7 @@ async function noOverflow(page, label) {
       await page.addInitScript(() => {
         window.ReactNativeWebView = { postMessage() {} }; window.paceforgeNativeRefresh = 2;
       });
+      await page.addInitScript(coachingTab);
       const key = `${width}-${scale}-${dark ? 'dark' : 'light'}`;
       if (before && scale === 1) {
         await prepare(page, before, scale, dark);
@@ -122,6 +124,7 @@ async function noOverflow(page, label) {
     }
     const page = await browser.newPage({ viewport: { width: 393, height: 700 }, isMobile: true, hasTouch: true });
     await page.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; });
+    await page.addInitScript(coachingTab);
     await prepare(page, base);
     // Filters affect both the histogram and actual records, retaining the selected measure.
     await page.locator('#semaines button[data-range="distance"]').click();

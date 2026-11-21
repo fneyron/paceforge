@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { isBridgeUrl, messagePageUrl, prepareNavigationScript, sameScreen, screenUrl, tabForUrl, tabNavigationScript } from './navigation';
+import { appShellScript, calendarFeedUrl, calendarOrigin, destinations, isBridgeUrl, messagePageUrl, prepareNavigationScript, refreshable, reloadable, sameScreen, screenUrl, tabForUrl, tabNavigationScript, tabs } from './navigation';
 
 test('internal detail pages keep the right native tab; external URLs cannot change it', () => {
   assert.equal(tabForUrl('https://paceforge.fr/accueil'), 'health');
@@ -11,6 +11,76 @@ test('internal detail pages keep the right native tab; external URLs cannot chan
   assert.equal(tabForUrl('https://paceforge.fr/settings#coros'), 'devices');
   assert.equal(tabForUrl('https://paceforge.fr.evil.test/sante'), null);
   assert.equal(tabForUrl('https://paceforge.fr/auth/login'), null);
+});
+
+test('four native tabs in the site\'s order, each with its destination; Coaching keeps its own pages', () => {
+  assert.deepEqual(tabs.map(([key, label]) => [key, label, destinations[key]]), [
+    ['courses', 'Courses', '/simulator'], ['activities', 'Activités', '/activities'], ['health', 'Santé', '/sante'],
+    ['coaching', 'Coaching', '/coaching']]);
+  for (const path of ['/coaching', '/coaching?d=2026-11-21&v=mois', '/coaching?refaire=1', '/coaching/athletes', '/coaching/athletes/12']) {
+    assert.equal(tabForUrl('https://paceforge.fr' + path), 'coaching', path);
+  }
+  assert.equal(tabForUrl('https://paceforge.fr/coachings'), null);
+  assert.equal(tabForUrl('https://paceforge.fr.evil.test/coaching'), null);
+  // an activity opened from a session belongs to Activités; the saved Coaching screen is where its tab returns
+  assert.equal(tabForUrl('https://paceforge.fr/activity/42'), 'activities');
+  assert.equal(screenUrl('https://paceforge.fr/coaching/athletes/12'), 'https://paceforge.fr/coaching/athletes/12');
+});
+
+test('Coaching reloads on a pull and never joins the two reading tabs\' soft navigation or sync refresh', () => {
+  for (const path of ['/coaching', '/coaching?d=2026-11-21', '/coaching/athletes', '/coaching/athletes/12']) {
+    assert.equal(reloadable('https://paceforge.fr' + path), true, path);
+    assert.equal(refreshable('https://paceforge.fr' + path), false, path);
+  }
+  for (const url of ['https://paceforge.fr/coaching?refaire=1', 'https://paceforge.fr/coaching/cal/' + 'a'.repeat(43) + '.ics',
+    'https://paceforge.fr/coaching/athletes/12/sessions', 'https://paceforge.fr/sante', 'https://paceforge.fr/activities',
+    'https://paceforge.fr/simulator', 'https://paceforge.fr/settings', 'https://paceforge.fr.evil.test/coaching', 'not a url']) {
+    assert.equal(reloadable(url), false, url);
+  }
+  assert.equal(refreshable('https://paceforge.fr/sante'), true);
+  assert.equal(refreshable('https://paceforge.fr/activities?m=distance'), true);
+});
+
+test('only the Coaching calendar feed of this site is handed to the system as webcal://', () => {
+  const token = 'Kikqo8SpCo7sO8Rb_X1p5RlGL5HtHVQXf-lMJmevX_A';
+  const feed = `webcal://paceforge.fr/coaching/cal/${token}.ics`;
+  assert.equal(calendarOrigin, 'webcal://paceforge.fr');
+  assert.equal(calendarFeedUrl(feed), feed);
+  for (const url of [
+    `webcal://paceforge.fr.evil.test/coaching/cal/${token}.ics`, `webcal://evil.test/coaching/cal/${token}.ics`,
+    `webcal://paceforge.fr@evil.test/coaching/cal/${token}.ics`, `webcal://user:pw@paceforge.fr/coaching/cal/${token}.ics`,
+    `webcal://paceforge.fr:8443/coaching/cal/${token}.ics`, `webcal://PACEFORGE.FR/coaching/cal/${token}.ics`,
+    `WEBCAL://paceforge.fr/coaching/cal/${token}.ics`, `webcal:paceforge.fr/coaching/cal/${token}.ics`,
+    `webcal://paceforge.fr/coaching/cal/${token}.ics?x=1`, `webcal://paceforge.fr/coaching/cal/${token}.ics#x`,
+    `webcal://paceforge.fr/coaching/cal/${token}.ics/`, `webcal://paceforge.fr/coaching/cal/${token}.ics\n`,
+    `webcal://paceforge.fr/coaching/cal/${token}`, `webcal://paceforge.fr/coaching/cal/../../settings.ics`,
+    `webcal://paceforge.fr/coaching/cal/a/${token}.ics`, `webcal://paceforge.fr/coaching/cal/short.ics`,
+    `webcal://paceforge.fr/coaching/cal/${'a'.repeat(129)}.ics`, `webcal://paceforge.fr/coaching/cal/${token}%2e.ics`,
+    `webcal://paceforge.fr/settings`, `webcal://paceforge.fr/`, 'webcal://paceforge.fr',
+    `webcals://paceforge.fr/coaching/cal/${token}.ics`, `https://paceforge.fr/coaching/cal/${token}.ics`,
+    `http://paceforge.fr/coaching/cal/${token}.ics`, `tel:+33123456789`, `mailto:a@b.fr`, 'sms:1', 'itms-apps://x',
+    `paceforge://coaching/cal/${token}.ics`, `javascript:location='${feed}'`, '',
+  ]) assert.equal(calendarFeedUrl(url), null, url);
+  assert.equal(calendarFeedUrl(undefined as unknown as string), null);
+});
+
+test('the shell announces the native Coaching tab to this site only', () => {
+  const page = (origin: string) => {
+    const classes = new Set<string>(), styles: { id: string }[] = [];
+    const window: Record<string, unknown> = { ReactNativeWebView: { postMessage() {} } };
+    const document = { documentElement: { classList: { add: (c: string) => classes.add(c), contains: () => false } },
+      getElementById: (id: string) => styles.find(s => s.id === id) || null, createElement: () => ({ id: '' }),
+      head: { appendChild: (s: { id: string }) => styles.push(s) } };
+    class MutationObserver { observe() {} }
+    vm.runInNewContext(appShellScript, { window, document, location: { origin }, MutationObserver, JSON });
+    return { classes, window };
+  };
+  const site = page('https://paceforge.fr');
+  assert.equal(site.window.paceforgeNativeCoaching, 1);
+  assert.ok(site.classes.has('pf-native-coaching') && site.classes.has('pf-native-refresh'));
+  const other = page('https://example.org');
+  assert.equal(other.window.paceforgeNativeCoaching, undefined);
+  assert.equal(other.classes.size, 0);
 });
 
 test('a sync always returns to a real screen, even if its saved location was a bridge page', () => {

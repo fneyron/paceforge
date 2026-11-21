@@ -1,8 +1,8 @@
 """Coaching (beta, docs/coaching.md): the athlete's plan and calendar, the coach's view, the calendar feed.
 
-Every route answers 404 unless the signed-in account is in COACHING_BETA_USERS (an empty list: the feature does not
-exist). A coach's routes (/coaching/athletes/<id>/…) also check, at every request, that the link athlete → coach
-exists and that the athlete still has the beta: 404 otherwise. The calendar feed takes no session: its token is the
+Open to every signed-in account by default. COACHING_BETA_USERS can restrict it to listed emails or switch it off:
+every route then answers 404 for an account that does not have it. A coach's routes (/coaching/athletes/<id>/…) also
+check, at every request, that the link athlete → coach exists and that the athlete still has Coaching: 404 otherwise. The calendar feed takes no session: its token is the
 key (the one documented exception to « never a token in a URL »: a calendar app cannot send a header).
 
 The same handlers serve the athlete (/coaching/…) and the coach (/coaching/athletes/<id>/…): `Scope` says who looks
@@ -41,8 +41,9 @@ router = APIRouter(tags=["coaching"])
 CODE_ERROR = "Code invalide ou expiré."
 
 
-async def beta_user(user: User = Depends(get_current_user)) -> User:
-    """The signed-in account, when it has the beta; 404 otherwise (the feature does not exist for it)."""
+async def coaching_user(user: User = Depends(get_current_user)) -> User:
+    """The signed-in account, when it has Coaching (every account by default); 404 otherwise (the feature does not
+    exist for it)."""
     if not features.coaching_for(user):
         raise HTTPException(status_code=404)
     return user
@@ -63,12 +64,12 @@ class Scope:
         return "coach" if self.coach else "athlete"
 
 
-async def own_scope(user: User = Depends(beta_user)) -> Scope:
+async def own_scope(user: User = Depends(coaching_user)) -> Scope:
     return Scope(user, user, False)
 
 
-async def coach_scope(athlete_id: int, user: User = Depends(beta_user), db: AsyncSession = Depends(get_db)) -> Scope:
-    """Checked at every request: the link exists, the athlete still has the beta."""
+async def coach_scope(athlete_id: int, user: User = Depends(coaching_user), db: AsyncSession = Depends(get_db)) -> Scope:
+    """Checked at every request: the link exists, the athlete still has Coaching."""
     athlete = await db.get(User, athlete_id) if await co.link_of(db, athlete_id, user.id) else None
     if athlete is None or not features.coaching_for(athlete):
         raise HTTPException(status_code=404)
@@ -152,8 +153,8 @@ def feed_urls(plan: CoachingPlan) -> dict | None:
 
 @router.get("/coaching/cal/{token}.ics", include_in_schema=False)
 async def calendar_feed(token: str, request: Request, db: AsyncSession = Depends(get_db)):
-    """The plan's sessions as an iCalendar feed (services/coaching_ics). 404 while the beta is off, for an unknown
-    or regenerated token, or once its owner left the list. Read-only: nothing is matched or regenerated here."""
+    """The plan's sessions as an iCalendar feed (services/coaching_ics). 404 while Coaching is off, for an unknown
+    or regenerated token, or for an owner the switch leaves out. Read-only: nothing is matched or regenerated here."""
     from app.services.auth import client_ip, over_quota
 
     if not features.coaching_enabled():
@@ -315,12 +316,12 @@ async def _athletes(request: Request, db: AsyncSession, user: User, error: str |
 
 
 @router.get("/coaching/athletes", response_class=HTMLResponse)
-async def coaching_athletes(request: Request, user: User = Depends(beta_user), db: AsyncSession = Depends(get_db)):
+async def coaching_athletes(request: Request, user: User = Depends(coaching_user), db: AsyncSession = Depends(get_db)):
     return await _athletes(request, db, user)
 
 
 @router.post("/coaching/athletes/join")
-async def coaching_join(request: Request, code: str = Form(default=""), user: User = Depends(beta_user),
+async def coaching_join(request: Request, code: str = Form(default=""), user: User = Depends(coaching_user),
                         db: AsyncSession = Depends(get_db)):
     """The coach types the athlete's code: the link is made, the code is spent."""
     from app.services.auth import over_quota

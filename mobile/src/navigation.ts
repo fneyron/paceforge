@@ -1,8 +1,9 @@
 import { ORIGIN, trusted } from './api';
 
-export type Tab = 'health' | 'activities' | 'courses' | 'devices';
-export const tabs = [['courses', 'Courses'], ['activities', 'Activités'], ['health', 'Santé']] as const;
-export const destinations: Record<Exclude<Tab, 'devices'>, string> = { health: '/sante', activities: '/activities', courses: '/simulator' };
+export type Tab = 'health' | 'activities' | 'courses' | 'coaching' | 'devices';
+// The site's order (its header and its phone bar): Coaching is the 4th entry there too.
+export const tabs = [['courses', 'Courses'], ['activities', 'Activités'], ['health', 'Santé'], ['coaching', 'Coaching']] as const;
+export const destinations: Record<Exclude<Tab, 'devices'>, string> = { health: '/sante', activities: '/activities', courses: '/simulator', coaching: '/coaching' };
 export function prepareNavigationScript(nonce: string): string {
   return `Promise.resolve().then(() => window.paceforgeBeforeLeave?.()).then(() => window.paceforgeTabs?.beforeLeave?.()).then(() => {
     window.paceforgeRememberPage?.();
@@ -50,8 +51,26 @@ export function sameScreen(left: string, right: string): boolean {
 export function refreshable(url: string): boolean {
   if (!trusted(url)) return false;
   const path = new URL(url).pathname;
-  // No refresh gesture on account forms or unsaved course planning.
+  // No refresh gesture on account forms or unsaved course planning. Coaching has its own rule (reloadable).
   return path === '/sante' || path === '/activities';
+}
+// Coaching reads its plan again each time its page loads (the day, the new activities): there the pull gesture
+// reloads the page itself, with no phone or provider sync and no soft replacement. Not on « Refaire le plan »,
+// a form with answers to keep.
+export function reloadable(url: string): boolean {
+  if (!trusted(url)) return false;
+  const u = new URL(url);
+  return (u.pathname === '/coaching' && u.searchParams.get('refaire') !== '1') || u.pathname === '/coaching/athletes' ||
+    /^\/coaching\/athletes\/\d+$/.test(u.pathname);
+}
+// The one link handed to the system that is not https: the Coaching calendar feed, so that Calendar offers the
+// subscription. Exactly webcal://<the site's host>/coaching/cal/<token>.ics — no port, credentials, query or
+// fragment, no other path — and nothing else gains a scheme exception. The WebView only asks about this origin
+// (calendarOrigin in its originWhitelist); this check decides.
+export const calendarOrigin = 'webcal://' + new URL(ORIGIN).host;
+export function calendarFeedUrl(url: string): string | null {
+  return typeof url === 'string' && url.startsWith(calendarOrigin + '/') &&
+    /^\/coaching\/cal\/[A-Za-z0-9_-]{32,128}\.ics$/.test(url.slice(calendarOrigin.length)) ? url : null;
 }
 export function tabForUrl(url: string): Tab | null {
   if (!trusted(url)) return null;
@@ -60,6 +79,7 @@ export function tabForUrl(url: string): Tab | null {
   if (path === '/sante' || path.startsWith('/sante/')) return 'health';
   if (path === '/activities' || path.startsWith('/activity/')) return 'activities';
   if (path === '/simulator' || path.startsWith('/simulator/')) return 'courses';
+  if (path === '/coaching' || path.startsWith('/coaching/')) return 'coaching';
   if (path === '/settings' || path.startsWith('/connections/') || path.startsWith('/mobile/')) return 'devices';
   return null;
 }
@@ -70,6 +90,10 @@ export const appShellScript = `
   if (location.origin === ${JSON.stringify(ORIGIN)}) {
     window.paceforgeNativeRefresh = 2;
     document.documentElement.classList.add('pf-native-refresh');
+    // This shell has the native Coaching tab and hands the calendar's webcal:// link to the system: the pages hide
+    // the entry card and « ‹ Activités » an older shell needs, and show « S’abonner au calendrier » (interface.css).
+    window.paceforgeNativeCoaching = 1;
+    document.documentElement.classList.add('pf-native-coaching');
     if (!window.paceforgeAppearanceObserver) {
       const reportAppearance = () => window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'appearance', dark: document.documentElement.classList.contains('dark') }));
       window.paceforgeAppearanceObserver = new MutationObserver(reportAppearance);

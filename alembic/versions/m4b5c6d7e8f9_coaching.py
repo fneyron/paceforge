@@ -1,5 +1,5 @@
 """Coaching (beta, docs/coaching.md): an athlete's plan, its sessions, the athlete → coach links and their single-use
-codes. Empty until COACHING_BETA_USERS names an account.
+codes. Empty until an account makes a plan.
 
 Revision ID: m4b5c6d7e8f9
 Revises: l3a4b5c6d7e8 (the official Wahoo and Polar activities)

@@ -7,7 +7,7 @@
 
 {% block content %}
 <div class="pf-coach">
-    <a href="{{ '/coaching' if has_plan else '/activities' }}" class="pf-back{% if not has_plan %} pf-native-only{% endif %}">{{ icon("chev-l", "w-4 h-4") }}{{ "Coaching" if has_plan else "Activités" }}</a>
+    <a href="{{ '/coaching' if has_plan else '/activities' }}" class="pf-back{% if not has_plan %} pf-old-shell-only{% endif %}">{{ icon("chev-l", "w-4 h-4") }}{{ "Coaching" if has_plan else "Activités" }}</a>
     <div class="pf-head pf-coach-head">
         <div><h1 class="pf-h1">Mes athlètes <span class="pf-tag">bêta</span></h1></div>
     </div>

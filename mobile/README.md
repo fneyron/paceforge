@@ -1,6 +1,7 @@
 # PaceForge mobile
 
-Application iOS / Android avec **Santé comme tableau de bord**, puis Activités et Courses.
+Application iOS / Android avec **Santé comme tableau de bord**, puis Activités, Courses et Coaching
+(quatre onglets natifs, dans l’ordre du site : Courses, Activités, Santé, Coaching).
 Les connexions restent accessibles par le bouton « Réglages », avec Apple Santé / Health Connect en premier. Les écrans du compte partagent une seule WebView HTTPS ; sa barre
 de navigation web et son bandeau sont masqués dans l’application. Le compte
 PaceForge fonctionne sans Strava. Garmin, COROS et Strava restent des connexions
@@ -29,6 +30,15 @@ Les premiers accès, les détails et Courses gardent leur chargement réseau ;
 les sauvegardes du plan restent attendues avant le départ. Les anciennes versions
 du serveur déclenchent le chargement complet habituel. Voir les mesures et
 limites dans [l’audit de fluidité](../docs/mobile-fluidite.md).
+
+**Coaching** (version 1.1.0, [règles](../docs/coaching.md)) est le quatrième onglet : il ouvre `/coaching`,
+garde son dernier écran comme les autres, et se charge comme Courses (un document complet, pas la navigation
+douce de Santé et Activités). L’app annonce cet onglet aux pages (`pf-native-coaching` sur `<html>`,
+`appShellScript`) : elles masquent alors la carte d’entrée d’Activités et le retour « ‹ Activités », que seules
+les versions installées avant l’onglet affichent encore. « S’abonner au calendrier » est le seul lien hors
+`https://` que l’app remet au système (`Linking.openURL`), sous une seule forme vérifiée,
+`webcal://paceforge.fr/coaching/cal/<jeton>.ics` (`calendarFeedUrl`) : Calendrier propose l’abonnement. Ce
+comportement n’a pas été essayé sur un appareil.
 
 ## Connexions par service
 
@@ -125,6 +135,11 @@ données » du titre PaceForge propose le même parcours à VoiceOver/TalkBack.
 Les opérations explicites restent disponibles dans les connexions, notamment
 sur Android où ce geste WebView n’est pas proposé. Ni les formulaires ni une
 course en préparation ne sont rechargés par ce geste.
+
+Sur **Coaching**, le même geste recharge simplement la page (`reloadable`), qui
+relit le plan : le jour, les nouvelles activités. Il ne lance aucune lecture du
+téléphone ni synchronisation des montres, et n’existe pas sur « Refaire le
+plan », un formulaire.
 
 L’action vérifie le compte, relit les mesures autorisées du téléphone associé,
 relance COROS/Garmin et Strava connectés, puis remplace le contenu sans navigation.
