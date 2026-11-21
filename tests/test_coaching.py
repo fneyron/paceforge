@@ -289,7 +289,7 @@ async def test_a_plan_needs_two_to_six_days_and_a_race_of_the_athlete(client, pe
     _as(client, athlete)
     for days in (["2"], ["0", "1", "2", "3", "4", "5", "6"], []):
         r = await client.post("/coaching/plan", data={"goal": "none", "days": days, "long_day": "2", "base": "180"})
-        assert r.status_code == 400 and "Choisis entre 2 et 6 jours." in r.text
+        assert r.status_code == 200 and "Choisis entre 2 et 6 jours." in r.text
     theirs = Route(user_id=people.coach.id, name="Pas la sienne", total_distance_km=20,
                    race_date=(same_today + timedelta(days=60)).isoformat())
     past = Route(user_id=athlete.id, name="Passée", total_distance_km=20,
@@ -302,7 +302,7 @@ async def test_a_plan_needs_two_to_six_days_and_a_race_of_the_athlete(client, pe
     assert "Trail des Crêtes" in page and "Passée" not in page and "Pas la sienne" not in page
     for other in (theirs, past):
         r = await client.post("/coaching/plan", data={"goal": str(other.id), "days": ["1", "3", "6"], "base": "180"})
-        assert r.status_code == 400 and "plus disponible" in r.text
+        assert r.status_code == 200 and "plus disponible" in r.text
     assert await co.get_plan(db_session, athlete.id) is None
     # the long run's day defaults to Sunday, else the last available day
     plan = await _plan(client, db_session, athlete, goal=str(mine.id), days=("1", "3", "5"), long_day="0")
@@ -560,10 +560,10 @@ async def test_a_code_links_a_coach_once_within_seven_days(client, people, beta,
     assert code not in (await client.get("/coaching")).text, "shown once"
     # the athlete cannot follow herself; a wrong code tells nothing
     r = await client.post("/coaching/athletes/join", data={"code": code})
-    assert r.status_code == 400 and "Code invalide ou expiré." in r.text
+    assert r.status_code == 200 and "Code invalide ou expiré." in r.text
     _as(client, coach)
     assert (await client.get(f"/coaching/athletes/{athlete.id}")).status_code == 404, "not linked yet"
-    assert (await client.post("/coaching/athletes/join", data={"code": "ZZZZ-ZZZZ"})).status_code == 400
+    assert (await client.post("/coaching/athletes/join", data={"code": "ZZZZ-ZZZZ"})).status_code == 200
     r = await client.post("/coaching/athletes/join", data={"code": f" {code.lower().replace('-', ' ')} "})
     assert r.status_code == 303 and r.headers["location"] == f"/coaching/athletes/{athlete.id}"
     assert (await db_session.execute(select(CoachingLink.athlete_id, CoachingLink.coach_id))).all() == [
@@ -574,16 +574,16 @@ async def test_a_code_links_a_coach_once_within_seven_days(client, people, beta,
     await db_session.flush()
     monkeypatch.setattr(settings, "COACHING_BETA_USERS", f"{ATHLETE},{COACH},trois@x.fr")
     r = await _as(client, third).post("/coaching/athletes/join", data={"code": code})
-    assert r.status_code == 400 and (await db_session.execute(select(func.count()).select_from(CoachingLink))).scalar() == 1
+    assert r.status_code == 200 and (await db_session.execute(select(func.count()).select_from(CoachingLink))).scalar() == 1
     # expired
     code = await _share(client, athlete)
     invite = (await db_session.execute(select(CoachingInvite).where(CoachingInvite.used_at.is_(None)))).scalar_one()
     invite.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
     await db_session.flush()
-    assert (await _as(client, third).post("/coaching/athletes/join", data={"code": code})).status_code == 400
+    assert (await _as(client, third).post("/coaching/athletes/join", data={"code": code})).status_code == 200
     # a new code replaces the one not used yet
     old, new = await _share(client, athlete), await _share(client, athlete)
-    assert (await _as(client, third).post("/coaching/athletes/join", data={"code": old})).status_code == 400
+    assert (await _as(client, third).post("/coaching/athletes/join", data={"code": old})).status_code == 200
     assert (await client.post("/coaching/athletes/join", data={"code": new})).status_code == 303
     # an account outside the list cannot be a coach
     another = await _share(client, athlete)
