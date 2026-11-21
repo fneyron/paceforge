@@ -10,9 +10,9 @@ import hashlib
 import logging
 import secrets
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, tzinfo
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
@@ -21,6 +21,7 @@ from app.models.coaching import CoachingInvite, CoachingLink, CoachingPlan, Coac
 from app.models.route import Route
 from app.models.user import User
 from app.services import coaching_plan as cp
+from app.services import health_consent
 from app.services import race_prep as rp
 from app.services import sante_training as st
 
@@ -43,7 +44,7 @@ def is_run(s: st.Session) -> bool:
 @dataclass
 class Clock:
     now: datetime
-    zone: object
+    zone: tzinfo
     today: date
 
 
@@ -356,10 +357,12 @@ def hors_plan(runs: list, rows: list) -> list:
 # ── the adaptation, kept on the plan ────────────────────────────────────────
 
 def read_adaptations(plan: CoachingPlan, rows: list, done: dict[date, float], today: date,
-                     fresh_base: int | None) -> bool:
+                     fresh_base: int | None, low: list[date] | None = None) -> bool:
     """This week's and next week's adaptation read again from the sessions (coaching_plan.adaptation) and kept on
     the plan with their reason; the weeks behind keep what they were given. Week 0 (the week the plan was made, or
-    made again) is always as chosen. A restart keeps the base it was first given. True when something changed."""
+    made again) is always as chosen. A restart keeps the base it was first given. `low`: the low mornings of an
+    athlete who turned the form option on (three within five days lighten the next week: one reduction, the larger
+    of it and the ressenti's). True when something changed."""
     facts = [cp.Fact(r.day, r.kind, r.status, r.ressenti) for r in rows if r.status != CANCELLED]
     kept = dict(plan.adaptations or {})
     m0 = cp.monday_of(today)
@@ -368,6 +371,8 @@ def read_adaptations(plan: CoachingPlan, rows: list, done: dict[date, float], to
             continue  # a week before week 0 (the plan lost its race: this week stays as it was)
         key = week.isoformat()
         new = cp.adaptation(facts, week, done, fresh_base, closed) if week > plan.start_monday else None
+        if low and week > plan.start_monday and cp.form_week(low, week):
+            new = cp.with_form(new)
         old = kept.get(key)
         if new and old and new["reason"] == old.get("reason") == "reprise":
             new = old
@@ -385,7 +390,8 @@ def read_adaptations(plan: CoachingPlan, rows: list, done: dict[date, float], to
 
 def replaceable(row: CoachingSession, today: date) -> bool:
     """What a regeneration may rewrite: a generated session still to come that nobody edited, did or missed."""
-    return row.origin == "auto" and not row.pinned and row.status == PLANNED and row.day >= today
+    return (row.origin == "auto" and not row.pinned and row.status == PLANNED and row.day >= today
+            and not row.form)  # what a low morning lightened or moved stays (services/coaching.lighten)
 
 
 async def apply(db: AsyncSession, plan: CoachingPlan, rows: list[CoachingSession], weeks: list[cp.Week], today: date,
@@ -425,6 +431,7 @@ class State:
     runs: list
     weeks: list[cp.Week]
     inputs: cp.Inputs
+    low: tuple[date, ...] = ()  # the low mornings, only for an athlete who turned the form option on
 
 
 async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime | None = None) -> State:
@@ -441,15 +448,182 @@ async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime |
     route, rows = await follow_goal(db, plan, await plan_route(db, plan), rows, c.today)
     goal = goal_of(route, *(await race_times(db, plan, route, c.today) if route is not None else ()))
     fresh = cp.starting_minutes(weekly_minutes(runs, c.today))
-    read_adaptations(plan, rows, done_by_week(runs, rows), c.today, fresh)
+    had_form = plan.form_on_at is not None
+    low = await read_form(db, plan, user, c)  # nothing is read of Santé unless the athlete turned the option on
+    if had_form and plan.form_on_at is None:  # the consent is no longer given: the form's marks were just cleared
+        rows = await sessions_of(db, plan)
+    read_adaptations(plan, rows, done_by_week(runs, rows), c.today, fresh, low)
     inp = inputs(plan, goal)
     # a plan that just lost its race starts again next Monday: until then nothing of this week is rewritten
     since = max(c.today, plan.start_monday)
     weeks = cp.build(inp, since)
     rows = await apply(db, plan, rows, weeks, since, c.now)
+    if c.today in low:
+        rows = lighten_today(db, plan, rows, inp, c)
     match(rows, runs, c.today)  # a session made just now for today takes today's run at once
     await db.flush()
-    return State(plan, c, goal, rows, runs, weeks, inp)
+    return State(plan, c, goal, rows, runs, weeks, inp, tuple(low))
+
+
+# ── the form: Santé's index, for an athlete who turned the option on ────────
+# docs/coaching.md › « La forme ». Health data (GDPR art. 9): read only with the option on AND the health consent
+# given; what is kept is the dates of the low mornings (never the index, a measurement or a reason), cleared when
+# the option is turned off, the consent withdrawn or the plan deleted. A coach is never shown any of it.
+
+HARD_KINDS = (cp.LONG, cp.QUALITY, cp.HILLS)  # what a low morning lightens (never the race)
+
+
+def form_on(plan: CoachingPlan, user: User) -> bool:
+    return plan.form_on_at is not None and health_consent.given(user)
+
+
+def low_mornings(plan: CoachingPlan) -> list[date]:
+    out = []
+    for value in (plan.form_state or {}).get("low") or []:
+        try:
+            out.append(date.fromisoformat(value))
+        except (TypeError, ValueError):
+            continue
+    return sorted(out)
+
+
+async def form_offer(db: AsyncSession, plan: CoachingPlan, user: User, c: Clock) -> dict | None:
+    """What the page shows of the option: None, not offered (no health consent, or Santé has no index: one yes/no
+    asked of Santé, no value read); else {"on", "since"}."""
+    if not health_consent.given(user):
+        return None
+    if plan.form_on_at is not None:
+        return {"on": True, "since": plan.form_on_at}
+    try:
+        from app.services import sante
+
+        return {"on": False, "since": None} if await sante.has_index(db, user.id, c.today, c.zone) else None
+    except Exception:
+        logger.exception("Coaching: Santé's index could not be asked for user %d", user.id)
+        return None
+
+
+async def set_form(db: AsyncSession, plan: CoachingPlan, user: User, on: bool, c: Clock) -> None:
+    """The switch: on records when (only with the health consent and an index to read); off clears everything."""
+    if not on:
+        await clear_form(db, plan.user_id)
+        return
+    offer = await form_offer(db, plan, user, c)
+    if offer is None:
+        raise Invalid("Cette option demande tes données de santé et un indice de récupération dans Santé.")
+    if not offer["on"]:
+        plan.form_on_at, plan.form_state = c.now, None
+
+
+async def clear_form(db: AsyncSession, user_id: int) -> None:
+    """The form's stored state gone (the option turned off, the health consent withdrawn): when it was turned on,
+    the low mornings, the weeks it lightened, the marks on its sessions — which the next regeneration then rewrites
+    as the plan's own again; a session it had moved to an empty day goes."""
+    plan = await get_plan(db, user_id)
+    if plan is None:
+        return
+    plan.form_on_at, plan.form_state = None, None
+    kept = {k: v for k, v in (plan.adaptations or {}).items() if (v or {}).get("reason") != cp.FORM}
+    if kept != (plan.adaptations or {}):
+        plan.adaptations = kept or None
+    await db.execute(delete(CoachingSession).where(
+        CoachingSession.user_id == user_id, CoachingSession.form == cp.MOVED, CoachingSession.auto_day.is_(None),
+        CoachingSession.status == PLANNED))
+    await db.execute(update(CoachingSession).where(CoachingSession.user_id == user_id,
+                                                   CoachingSession.form.is_not(None)).values(form=None))
+    await db.flush()
+
+
+async def read_form(db: AsyncSession, plan: CoachingPlan, user: User, c: Clock) -> list[date]:
+    """The low mornings (their dates), this morning's read from Santé when it has an index: once it is read the day
+    is settled (idempotent, no flapping); while the night has not arrived it is asked again, at most every
+    FORM_RETRY_MIN minutes. Without the option, nothing is read and [] comes back; a consent no longer given clears
+    what was kept. Only today is ever read: the past mornings stay as they were seen."""
+    if plan.form_on_at is None:
+        return []
+    if not health_consent.given(user):
+        await clear_form(db, plan.user_id)
+        return []
+    today, kept = c.today.isoformat(), dict(plan.form_state or {})
+    floor = (c.today - timedelta(days=cp.FORM_KEEP_DAYS)).isoformat()
+    low = sorted({d for d in kept.get("low") or [] if isinstance(d, str) and floor <= d <= today})
+    state: dict = kept if kept.get("day") == today else {"day": today, "seen": False, "checked": None}
+    if not state.get("seen") and _due(state.get("checked"), c.now):
+        reading = None
+        try:
+            from app.services import sante
+
+            reading = await sante.morning_index(db, user.id, c.today, c.zone)
+        except Exception:
+            logger.exception("Coaching: this morning's index could not be read for user %d", user.id)
+        state = {**state, "checked": c.now.isoformat()}
+        if reading is not None:
+            state["seen"] = True
+            if reading["low"] and today not in low:
+                low.append(today)
+    state = {**state, "low": low}
+    if state != (plan.form_state or {}):
+        plan.form_state = state
+    return [date.fromisoformat(d) for d in low]
+
+
+def _due(checked: str | None, now: datetime) -> bool:
+    try:
+        return checked is None or now - datetime.fromisoformat(checked) >= timedelta(minutes=cp.FORM_RETRY_MIN)
+    except (TypeError, ValueError):
+        return True
+
+
+def _taper(inp: cp.Inputs, day: date) -> bool:
+    return cp.phase_of(cp.monday_of(day), inp) == "affutage"
+
+
+def lighten_today(db: AsyncSession, plan: CoachingPlan, rows: list[CoachingSession], inp: cp.Inputs,
+                  c: Clock) -> list[CoachingSession]:
+    """A low morning: today's hard session (a quality session, a long run), generated and untouched, becomes an
+    easy footing (coaching_plan.form_footing) and moves to the next available day of the week that keeps « never
+    two hard days in a row » (coaching_plan.move_day), else is dropped. A session a person pinned or a coach wrote
+    is left alone (the page offers « Alléger aujourd'hui »); in a taper week only the swap to a footing, its
+    duration kept. Both rows are marked (`form`): a regeneration leaves them, a second reading changes nothing."""
+    today, out = c.today, list(rows)
+    for row in [r for r in rows if r.day == today and r.kind in HARD_KINDS and replaceable(r, today)]:
+        taper = _taper(inp, today)
+        was = (row.kind, row.minutes, row.structure)
+        target = None
+        if not taper:
+            horizon = cp.monday_of(today) + timedelta(days=7)
+            slots = [cp.Slot(r.day, r.kind, replaceable(r, today)) for r in out
+                     if r.status != CANCELLED and today <= r.day <= horizon]
+            target = cp.move_day(today, plan.weekdays, slots, row.kind, inp.goal.race_day)
+        there = next((r for r in out if r.day == target and r.status != CANCELLED), None) if target else None
+        minutes = cp.form_footing(row.minutes, taper)
+        if there is not None:  # it takes that easy session's place: the day's footing is no longer than it was
+            minutes = min(minutes, there.minutes)
+        row.kind, row.minutes, row.structure, row.form = cp.FOOTING, minutes, cp.steady(minutes, 2), cp.LIGHTENED
+        touch(row, c.now)
+        if there is not None:
+            there.kind, there.minutes, there.structure, there.form = *was, cp.MOVED
+            touch(there, c.now)
+        elif target is not None:
+            moved = CoachingSession(plan_id=plan.id, user_id=plan.user_id, day=target, auto_day=None, kind=was[0],
+                                    minutes=was[1], structure=was[2], status=PLANNED, origin="auto", manual=False,
+                                    pinned=False, seq=0, updated_at=c.now, form=cp.MOVED)
+            db.add(moved)
+            out.append(moved)
+    return sorted(out, key=lambda r: (r.day, r.id or 0))
+
+
+def lighten_by_hand(plan: CoachingPlan, user: User, row: CoachingSession, inp: cp.Inputs, c: Clock) -> None:
+    """« Alléger aujourd'hui »: the athlete's own tap on a session the plan would not change by itself (pinned, or a
+    coach's) on a low morning. It becomes the same footing; nothing is moved (the session stays theirs to place)."""
+    if not form_on(plan, user) or c.today not in low_mornings(plan):
+        raise Invalid("Rien à alléger ce matin.")
+    if row.day != c.today or row.status != PLANNED or row.kind not in HARD_KINDS:
+        raise Invalid("Cette séance ne s’allège pas.")
+    minutes = cp.form_footing(row.minutes, _taper(inp, c.today))
+    row.kind, row.minutes, row.structure = cp.FOOTING, minutes, cp.steady(minutes, 2)
+    row.form, row.pinned, row.origin = cp.LIGHTENED, True, "athlete"
+    touch(row, c.now)
 
 
 async def starting_volume(db: AsyncSession, user: User, c: Clock) -> int | None:

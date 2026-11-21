@@ -84,6 +84,9 @@ async function noOverflow(page, label) {
 async function targets(page, label) {
   const small = await page.evaluate(() => [...document.querySelectorAll('#coach-main a, #coach-main button, #coach-main select, #coach-main summary')].flatMap(el => {
     if (!el.getClientRects().length) return [];
+    // the fields of a closed fold are not shown (the browser keeps their boxes: content-visibility)
+    const fold = el.closest('details:not([open])');
+    if (fold && !(el.matches('summary') && el.parentElement === fold)) return [];
     const r = el.getBoundingClientRect();
     return r.height < 40 || r.width < 36 ? [(el.id || el.className) + ' ' + Math.round(r.width) + '×' + Math.round(r.height)] : [];
   }));
@@ -121,6 +124,16 @@ async function theme(page, dark) {
       assert.match(await page.locator('a.pf-coach-goal-time').innerText(), /^Objectif\s5h00$/, key);
       assert.match(await page.locator('a.pf-coach-goal-time').getAttribute('href'), /^\/simulator\/routes\/\d+$/, key);
       assert.ok((await page.locator('a.pf-coach-goal-time').boundingBox()).height >= 40, key + ': a 40 px target');
+      // the form: this morning's index is low — today's quality session is a footing, one short reason, the way to
+      // Santé, never the number; the option itself is a switch, on
+      assert.match(await page.locator('.pf-coach-s-title').innerText(), /^Footing\s+\d+ min$/, key);
+      assert.equal(await page.locator('.pf-coach-formline a[href="/sante"]').innerText(), 'Séance allégée\u00a0: récupération basse ce matin', key);
+      assert.equal(await page.locator('.pf-coach-formline span').innerText(), 'La séance prévue passe à vendredi.', key);
+      assert.doesNotMatch(await page.locator('.pf-coach-daycard').innerText(), /\d\s?%/, key + ': the index is Santé’s to print');
+      const toggle = page.locator('#coach-form-switch');
+      assert.equal(await toggle.getAttribute('aria-checked'), 'true', key);
+      assert.ok((await toggle.boundingBox()).height >= 44, key + ': the switch is a 44 px target');
+      assert.match(await page.locator('#coach-form-note').innerText(), /^Activé le \S+ \d+ \S+\. Un matin/, key);
       assert.equal(await page.locator('.pf-coach-day').count(), 7, key + ': seven days');
       assert.equal(await page.locator('.pf-coach-day.is-today').count(), 1, key + ': today is highlighted');
       assert.equal(await page.locator(`#coach-day-${fixture.day}.is-selected`).count(), 1, key + ': today by default');
@@ -411,6 +424,10 @@ async function theme(page, dark) {
       assert.match(await page.locator('h1').innerText(), /^Stella/);
       assert.equal(await page.locator('#main-content a[href^="/activity/"]').count(), 0, 'never the activity itself');
       assert.equal(await page.locator('#main-content a[href^="/sante"]').count(), 0, 'never Santé');
+      // the same day as the athlete's: the session was adapted, never why
+      assert.equal(await page.locator('.pf-coach-formline').innerText(), 'Séance adaptée ce matin');
+      assert.doesNotMatch(await page.locator('#main-content').innerText(), /récupération basse|VFC|sommeil|forme|Santé/i, 'no health word on a coach’s page');
+      assert.equal(await page.locator('#coach-form-switch').count(), 0);
       assert.equal(await page.locator('[data-feel]').count(), 0, 'the ressenti is the athlete’s to say');
       assert.equal(await page.locator('#coach-tools').count(), 0);
       // a comment on today's session, then a session added two days on

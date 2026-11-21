@@ -11,6 +11,10 @@
   person added): a moved session keeps it, so a regeneration never fills the day it left. `pinned`: a person edited
   it, a regeneration never rewrites it. `seq` counts its changes (the calendar feed's SEQUENCE).
 - coaching_links: athlete → coach, made by a single-use code (coaching_invites, stored hashed, 7 days).
+- the form (docs/coaching.md › « La forme »), only for an athlete who turned the option on (`form_on_at`: when):
+  `form_state` keeps the mornings Santé's index read low (their dates, 14 days; never the index, a measurement or a
+  reason) and the day last read; a session lightened on such a morning carries `form`. All of it is cleared when
+  the option is turned off, the health consent withdrawn or the plan deleted.
 No pain, injury or illness field anywhere: the ressenti is how hard the session felt (1–5), nothing else.
 """
 from datetime import date, datetime
@@ -40,6 +44,10 @@ class CoachingPlan(Base):
     # the race's times as its page reads them, kept for the day: {"route", "sig", "day", "objective_s", "estimate_s"};
     # or, the race deleted or behind: {"ended": "passee" | "supprimee", "name", "from": Monday ISO}
     goal_state: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+    # « Adapter mes séances à ma forme »: when the athlete turned it on (None: off, nothing reads health data)
+    form_on_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # {"low": [day ISO, …], "day": the day last read, "seen": an index was read that day, "checked": when}
+    form_state: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     feed_token: Mapped[str | None] = mapped_column(EncryptedString(255), nullable=True)
     feed_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -78,6 +86,9 @@ class CoachingSession(Base):
     pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     origin: Mapped[str] = mapped_column(String(8), nullable=False, default="auto", server_default="auto")
     seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # the form's doing: « allegee » (a hard session turned into a footing on a low morning), « reportee » (the hard
+    # session moved here from that morning); a regeneration leaves both as they are
+    form: Mapped[str | None] = mapped_column(String(12), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     # the last change a calendar must see (its day, kind, duration or structure: services/coaching.touch), never a
     # status or a ressenti: the feed's LAST-MODIFIED, written by hand with `seq`

@@ -169,7 +169,7 @@ async def _legacy_batches(db: AsyncSession, table: str, user_id: int,
 
 # the plan's own fields: never the calendar feed's token (nor its hash)
 COACHING_PLAN_FIELDS = ("route_id", "days", "long_day", "base_minutes", "start_monday", "generated_at", "adaptations",
-                        "goal_state", "created_at", "updated_at")
+                        "goal_state", "form_on_at", "form_state", "created_at", "updated_at")
 
 
 async def coaching(db: AsyncSession, user: User) -> dict[str, Any]:

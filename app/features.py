@@ -79,4 +79,7 @@ def coaching_beat_schedule() -> dict:
         return {}
     from celery.schedules import crontab
 
-    return {"coaching-daily": {"task": "paceforge.coaching_daily", "schedule": crontab(hour=3, minute=27)}}
+    # and, every hour at :12, the form's round: the plans whose athlete turned « Adapter mes séances à ma forme » on,
+    # in their own morning, until this morning's index is read (none has the option: one small query, nothing more)
+    return {"coaching-daily": {"task": "paceforge.coaching_daily", "schedule": crontab(hour=3, minute=27)},
+            "coaching-morning": {"task": "paceforge.coaching_morning", "schedule": crontab(minute=12)}}

@@ -198,6 +198,65 @@ L’adaptation de la semaine en cours et de la suivante est relue à chaque sync
 passées est figée. Elle est gardée dans le plan (`coaching_plans.adaptations` : facteur et raison par semaine) :
 le calendrier dit pourquoi une semaine est allégée, même après coup.
 
+## La forme (VFC, sommeil, FC de repos)
+
+Demande du propriétaire, 21 novembre 2026 : « Prendre en compte aussi la VFC, le repos, ajuster en fonction de la
+forme ».
+
+**Une option, explicite et séparée.** Dans Coaching, un interrupteur « Adapter mes séances à ma forme (VFC, sommeil,
+FC de repos) », **éteint par défaut**. Il n’est proposé que si l’accord sur les données de santé est donné
+(`health_consent.given`) et que Santé a un indice (un sur les 7 derniers jours : `sante.has_index`, une réponse oui
+ou non, aucune valeur lue). L’allumer enregistre quand (`coaching_plans.form_on_at`). **Éteint, rien dans Coaching
+ne lit de donnée de santé** : ni la page, ni un toucher, ni la page du coach, ni les tâches planifiées.
+
+**Un seul indice : celui de Santé.** Coaching lit l’indice quotidien de Santé (« Signaux nocturnes », VFC et FC de
+nuit comparées aux valeurs habituelles, sommeil court, respiration : [sante-estimates.md](sante-estimates.md), C8)
+par le calcul même de la page (`sante.morning_index` : les lectures et `_assess` de `/sante`), et **ses propres
+bandes** (`sante_score.HOLD`) : « bas » veut dire que l’état de Santé n’est pas « habituel » — l’indice sous 70,
+« à surveiller » ou « inhabituel ». Jamais un second score, jamais un score de marque (Body Battery, Readiness…).
+L’indice lu est celui **de la nuit qui s’est terminée ce matin** : avant que la montre l’ait envoyée, il n’y en a
+pas (jamais celui de la veille).
+
+**La règle du matin.** Les séances dures seulement quand la récupération est là : c’est le principe des études
+d’entraînement guidé par la VFC (Kiviniemi 2007 ; Vesterinen 2016 ; Javaloyes 2019), où un matin de VFC basse
+remplace la séance intense par du facile ou du repos. Tout le reste — durées, déplacement, règle des trois matins —
+est (H).
+
+| Ce matin | Ce que fait le plan | Source |
+|---|---|---|
+| Indice bas, séance dure du jour (séance de qualité, côtes, sortie longue) générée et jamais modifiée | Elle devient un **footing** facile : 60 % de sa durée, entre 30 et 45 min, et pas plus long que le footing dont elle prend la place. La séance dure **se décale** au prochain jour disponible de la même semaine (jusqu’au dimanche) qui est libre ou porte un footing que le plan peut réécrire, et qui garde « jamais deux jours durs de suite » (une sortie longue jamais à partir de J-3). Aucun jour : elle est **abandonnée**. | Principe : Kiviniemi 2007 ; Vesterinen 2016 ; Javaloyes 2019. Valeurs : (H) `FORM_FOOTING_SHARE`, `FORM_FOOTING_CAP`, `move_day` |
+| Indice bas, séance dure **épinglée** (modifiée ou déplacée par une personne) ou **écrite par le coach** | Rien n’est changé. L’athlète lit « Récupération basse ce matin. » et un bouton « Alléger aujourd’hui » : son toucher en fait le même footing (rien n’est déplacé). | (H) `lighten_by_hand` |
+| Indice bas, semaine d’affûtage | Seulement le passage en footing, à la même durée : ni déplacement, ni baisse de volume. | Comme le ressenti |
+| Trois matins bas en cinq jours | La semaine suivante est allégée comme par le ressenti (−20 %, la séance de qualité devient un footing), par le même mécanisme (`adaptations`, raison `forme`). **Jamais deux baisses cumulées** : avec le ressenti, une seule s’applique, la plus forte (à égalité, celle du ressenti) ; une semaine répétée ou une reprise reste telle quelle. | (H) `FORM_LOW_COUNT`, `FORM_LOW_DAYS`, `with_form` |
+| Pas d’indice ce matin (pas de nuit reçue, repères en construction) | Rien ne change. | — |
+| Indice habituel | Rien ne change. **Un bon indice n’ajoute jamais de charge.** | — |
+| Jour de course | Jamais touché. | — |
+
+**Quand.** À l’ouverture de la page, après chaque toucher, à la tâche quotidienne, et toutes les heures à :12
+(`paceforge.coaching_morning`) pour les plans dont l’option est allumée, pendant la matinée de l’athlète (de 5 h à
+midi à son horloge, H) et tant que l’indice du matin n’a pas été lu : la nuit arrive quand la montre se
+synchronise. Tant qu’elle manque, Santé n’est relue qu’une fois toutes les 10 minutes au plus. Une fois l’indice du
+matin lu, la journée est fixée : relire ne change plus rien (idempotent, pas d’aller-retour). **Seul aujourd’hui est
+lu** : un jour passé n’est jamais réécrit.
+
+**Ce qui est gardé** (`coaching_plans.form_state`) : les dates des matins bas des 14 derniers jours, le jour lu en
+dernier et s’il avait un indice. **Jamais l’indice, une mesure ni une raison.** Une séance allégée ou reportée
+porte une marque (`coaching_sessions.form` : `allegee`, `reportee`), que la régénération laisse en place.
+
+**Ce qui est effacé.** Éteindre l’option, retirer l’accord sur les données de santé (ou ne plus avoir l’accord en
+cours : une nouvelle version du texte) et « Arrêter le coaching » effacent la date d’activation, les matins bas,
+la semaine allégée par la forme et les marques des séances ; le plan redevient le sien à la lecture suivante.
+
+**Ce que voit l’athlète.** Sur la carte du jour, une raison courte : « Séance allégée : récupération basse ce
+matin », liée à Santé, et où est passée la séance (« La séance prévue passe à vendredi. »). **Le chiffre n’est pas
+répété** : il est dans Santé. Sur le jour d’arrivée : « Séance reportée de mercredi ». Sur une semaine allégée :
+« Semaine allégée : ta récupération est restée basse plusieurs matins. »
+
+**Ce que voit le coach : jamais une donnée de santé.** Ni valeur, ni bande, ni raison. Il lit « Séance adaptée ce
+matin » sur la séance allégée, « Séance reportée de mercredi » sur celle qui a bougé, « Semaine allégée. » sur la
+semaine, et rien de l’option. Le flux calendrier dit seulement la séance telle qu’elle est devenue (« Footing
+35 min »). L’export d’un coach ne contient rien de l’athlète.
+
 ## Les séances et les activités
 
 - Une sortie de la famille « course » le jour local de la séance la marque **faite** et lui est liée ; plusieurs le
@@ -212,7 +271,9 @@ le calendrier dit pourquoi une semaine est allégée, même après coup.
 **Où cela se déclenche.** Rien n’est branché dans les synchronisations Strava, COROS, Garmin ou des connecteurs
 officiels. `services/coaching.sync` relit le plan à l’affichage de la page (celle de l’athlète, celle du coach),
 après chaque changement (ressenti, statut, modification), et une fois par jour pour chaque plan (tâche Celery
-`paceforge.coaching_daily`, 03:27 UTC, inscrite sauf quand la fonction est éteinte). Une nouvelle activité est donc
+`paceforge.coaching_daily`, 03:27 UTC, inscrite sauf quand la fonction est éteinte). Une seconde tâche,
+`paceforge.coaching_morning` (toutes les heures à :12), ne relit que les plans dont l’option « forme » est allumée,
+le matin de l’athlète (voir « La forme »). Une nouvelle activité est donc
 prise en compte à la prochaine ouverture de la page (dans l’app : en revenant sur l’onglet ou en tirant vers le bas),
 au plus tard le lendemain matin.
 
@@ -229,14 +290,15 @@ coach, elle reste en base comme annulée pour la même raison.
   une barre « fait / prévu » ; la carte du jour (le profil d’intensité dessiné, la consigne, « Fait », « Pas
   faite », « Déplacer », « Modifier ») ; une fois faite : l’activité, le ressenti, la note, le commentaire du coach ;
   un graphique des semaines (prévu en contour, fait en plein, phases, semaine en cours) ; un pli « Comment ça
-  marche » ; « Ajouter à mon calendrier », « Partager avec un coach », « Refaire le plan », « Arrêter le coaching ».
+  marche » ; « Adapter mes séances à ma forme » (si l’option est proposée), « Ajouter à mon calendrier »,
+  « Partager avec un coach », « Refaire le plan », « Arrêter le coaching ».
 - « Déplacer » : on touche le bouton puis un jour (à partir d’aujourd’hui) ; un jour qui porte déjà une séance
   prévue l’échange. Tout se fait au clavier (ce sont des boutons). Pas de glisser-déposer.
 - `/coaching/athletes` : la liste du coach (la barre de la semaine, les dernières séances avec statut et ressenti) et
   le champ du code. `/coaching/athletes/<id>` : le même calendrier, au prénom de l’athlète ; le coach ajoute,
   déplace, modifie, supprime des séances (épinglées, origine « coach ») et écrit un commentaire. Il voit le plan, les
   statuts, le ressenti, les notes et le résumé de l’activité liée ; **jamais les données de Santé**, ni le détail
-  d’une activité.
+  d’une activité. Une séance allégée par la forme lui dit « Séance adaptée ce matin », sans la cause.
 - Le lien : l’athlète touche « Partager avec un coach » → un code de 8 caractères affiché une fois, valable 7 jours et
   une seule fois, stocké par son empreinte → le coach le saisit. L’athlète retire l’accès, le coach arrête de
   suivre : immédiat dans les deux sens. « Arrêter le coaching » supprime le plan, ses séances, les liens et les codes.
@@ -277,13 +339,19 @@ Training API, écriture COROS côté partenaire) que PaceForge n’a pas. Aucun 
 ## Les données
 
 Migration `m4b5c6d7e8f9` (après `l3a4b5c6d7e8`) : `coaching_plans`, `coaching_sessions`, `coaching_links`,
-`coaching_invites`. Migration `n5c6d7e8f9a0` : `coaching_plans.goal_state` (ce que le plan a lu de sa course). Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
+`coaching_invites`. Migration `n5c6d7e8f9a0` : `coaching_plans.goal_state` (ce que le plan a lu de sa course).
+Migration `o6d7e8f9a0b1` : `coaching_plans.form_on_at`, `form_state`, `coaching_sessions.form` (la forme) ; ces
+champs sortent dans l’export de leur propriétaire et partent avec l’option, l’accord santé, le plan ou le compte. Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
 (`coaching.json`, `coaching_seances.json` : jamais le jeton du flux ni un code).
 
 Politique de confidentialité, ligne affichée tant que la fonction n’est pas éteinte : « Coaching (bêta) » —
 le plan, les séances et leur statut, le ressenti (l’effort perçu, de 1 à 5), les notes, les commentaires du coach ;
 base « Contrat » ; partagé avec le coach que l’athlète choisit ; gardé jusqu’à l’arrêt du coaching ou la suppression
-du compte.
+du compte. Une seconde ligne, « Coaching (bêta) · ta forme » : seulement si l’option est activée — la date
+d’activation, les matins où l’indice de récupération de Santé est bas (leur date, jamais l’indice ni une mesure),
+les séances allégées ces matins-là ; base « Consentement explicite, donné à part dans Coaching » ; jamais partagé
+(le coach voit qu’une séance a été adaptée, jamais pourquoi) ; gardé jusqu’à la désactivation de l’option, le
+retrait de l’accord sur les données de santé, l’arrêt du coaching ou la suppression du compte.
 
 ## Mise en service
 
@@ -311,6 +379,21 @@ du compte.
   prescription. *Medicine & Science in Sports & Exercise*, 36(9), 1632–1636.
 - Foster C., Porcari J. P., Anderson J. et al. (2008). The talk test as a marker of exercise training intensity.
   *Journal of Cardiopulmonary Rehabilitation and Prevention*, 28(1), 24–30.
+- Kiviniemi A. M., Hautala A. J., Kinnunen H., Tulppo M. P. (2007). Endurance training guided individually by daily
+  heart rate variability measurements. *European Journal of Applied Physiology*, 101(6), 743–751.
+  [10.1007/s00421-007-0552-2](https://doi.org/10.1007/s00421-007-0552-2).
+- Vesterinen V., Nummela A., Heikura I. et al. (2016). Individual endurance training prescription with heart rate
+  variability. *Medicine & Science in Sports & Exercise*, 48(7), 1347–1354.
+  [10.1249/MSS.0000000000000910](https://doi.org/10.1249/MSS.0000000000000910).
+- Javaloyes A., Sarabia J. M., Lamberts R. P., Moya-Ramon M. (2019). Training prescription guided by heart-rate
+  variability in cycling. *International Journal of Sports Physiology and Performance*, 14(1), 23–32.
+  [10.1123/ijspp.2018-0122](https://doi.org/10.1123/ijspp.2018-0122).
+
+Ces trois études guident l’entraînement par la VFC du matin : les séances intenses les jours où elle est dans ses
+valeurs habituelles, du facile ou du repos sinon. PaceForge en reprend le principe sur l’indice de Santé (VFC, FC de
+nuit, sommeil), qui n’est pas le critère de ces études : le seuil reste celui de Santé, et la durée du footing, le
+déplacement de la séance et la règle des trois matins sont des heuristiques (H). L’indice de Santé reste une lecture
+descriptive, pas une autorisation de s’entraîner : la règle ne fait qu’enlever de l’intensité, jamais en ajouter.
 
 Aucune étude n’est citée pour la progression de 10 % par semaine, la semaine légère sur quatre, les plafonds, la
 part de la sortie longue, l’adaptation au ressenti, le dénivelé à viser ni la lecture du temps de course au quart

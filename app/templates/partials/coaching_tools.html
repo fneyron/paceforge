@@ -4,6 +4,18 @@
 {% from "partials/_icons.html" import icon %}
 {% set swap = 'hx-target="#coach-tools" hx-swap="outerHTML"' %}
 <div id="coach-tools" class="pf-coach-tools">
+    {#- « Adapter mes séances à ma forme »: an explicit, separate choice (health data), off by default; offered only
+        with the health consent and an index in Santé. The form posts and the page comes back: today's session may
+        change at once. -#}
+    {% if tools.form %}
+    <form id="coach-form" class="pf-coach-formopt" method="post" action="/coaching/form">
+        <button type="submit" name="value" value="{{ 'off' if tools.form.on else 'on' }}" id="coach-form-switch" class="pf-tool pf-coach-switch" role="switch" aria-checked="{{ 'true' if tools.form.on else 'false' }}" aria-describedby="coach-form-note">
+            <span>{{ icon("chart") }}<span>Adapter mes séances à ma forme <small>VFC, sommeil, FC de repos</small></span></span>
+            <span class="pf-coach-switch-track" aria-hidden="true"><i></i></span>
+        </button>
+        <p id="coach-form-note" class="pf-label">{% if tools.form.on %}Activé le {{ tools.form.since }}. {% endif %}Un matin où ta récupération de Santé est basse, ta séance dure devient un footing. Ton coach ne voit jamais pourquoi.</p>
+    </form>
+    {% endif %}
     <details class="pf-coach-tool" id="coach-tool-feed"{% if open == "feed" %} open{% endif %}>
         <summary class="pf-tool"><span>{{ icon("calendar") }}<span>Ajouter à mon calendrier</span></span>{{ icon("chev-r", "pf-chev") }}</summary>
         <div class="pf-coach-tool-body">

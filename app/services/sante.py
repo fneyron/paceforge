@@ -71,15 +71,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         today = await athlete_today(db, user_id, now, latest, zone=zone)
         clock = await local_clock(db, user_id, now, zone=zone)
     sex = getattr(user, "sex", None)  # no such field yet: Banister's men's constants (sante_training.LOAD_WOMEN)
-    sessions = await st.load_sessions(db, user_id, today, zone=zone)
-    # the laps (else km splits) of the sessions with HR: their loads and their steady splits (Forme)
-    await st.load_hr_segments(db, user_id, sessions, today - timedelta(days=st.HISTORY_DAYS))
-    peak = st.hr_max(sessions, today, getattr(user, "max_heart_rate", None))
-    # Garmin's day altitudes: where the athlete slept, first (R2)
-    day_alt = await nt.day_altitudes(db, user_id, today - timedelta(days=HISTORY_DAYS), today)
-    # the nights' tags read the efforts' classes only
-    nights = await nt.load_nights(db, user_id, today, days=HISTORY_DAYS, sessions=sessions,
-                                  efforts=st.efforts(sessions), peak=peak, day_alt=day_alt)
+    sessions, peak, day_alt, nights = await _read(db, user_id, today, user, zone)
     sources = set((await db.execute(select(HealthMetric.source).distinct().where(
         HealthMetric.user_id == user_id, HealthMetric.metric != FEEL))).scalars().all())
     # the night awaited is the calendar day's (how soon the page syncs again); the page reads the cycle's day
@@ -110,6 +102,72 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     out["trends"] = [t for t in (trends.get("weight"), trends.get("body_fat")) if t]
     out["explanations"] = sante_explain.build(out)
     return out
+
+
+async def _read(db: AsyncSession, user_id: int, today: date, user, zone):
+    """What the day's state is computed from, read ONE way (the page; Coaching's morning reading): the sessions with
+    their HR segments, the HR reference, Garmin's day altitudes, the tagged nights."""
+    sessions = await st.load_sessions(db, user_id, today, zone=zone)
+    # the laps (else km splits) of the sessions with HR: their loads and their steady splits (Forme)
+    await st.load_hr_segments(db, user_id, sessions, today - timedelta(days=st.HISTORY_DAYS))
+    peak = st.hr_max(sessions, today, getattr(user, "max_heart_rate", None))
+    # Garmin's day altitudes: where the athlete slept, first (R2)
+    day_alt = await nt.day_altitudes(db, user_id, today - timedelta(days=HISTORY_DAYS), today)
+    # the nights' tags read the efforts' classes only
+    nights = await nt.load_nights(db, user_id, today, days=HISTORY_DAYS, sessions=sessions,
+                                  efforts=st.efforts(sessions), peak=peak, day_alt=day_alt)
+    return sessions, peak, day_alt, nights
+
+
+# ── the index, for Coaching (docs/coaching.md › « La forme ») ───────────────
+# Coaching reads THIS index and its own bands (sante_score.HOLD: « ok » from 70, below it « à surveiller » or
+# « inhabituelle »), never a second score, and only for an athlete who turned that option on.
+
+INDEX_RECENT_DAYS = 7  # « Santé has an index »: one in the last 7 days
+
+
+def _states(nights, sessions, days: list[date], max_heart_rate) -> list[dict]:
+    """The state of each of `days` (sante_score.score_of's dict), as the page computes a day's: pure."""
+    rest_of = partial(nt.rest_hr, nights)
+    efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of, max_heart_rate))
+    with nt.memo():
+        nt.freeze(nights)
+        return [_assess(nights, sessions, efforts, d)["score"] for d in days]
+
+
+async def morning_index(db: AsyncSession, user_id: int, today: date, zone=None) -> dict | None:
+    """This morning's index as the page computes it — the night that ended on the morning of `today`, never
+    yesterday's — as {value, tone, low}; None while there is none (no night received yet, no usable reference).
+    `low`: the state is not « ok » (the index under sante_score.HOLD's green band: « à surveiller » or
+    « inhabituelle »). The same reads and the same computation as /sante (_read, _assess)."""
+    from app.models.user import User
+
+    user = await db.get(User, user_id)
+    if zone is None:
+        zone = await st.athlete_clock(db, user_id, user)
+    sessions, _peak, _alt, nights = await _read(db, user_id, today, user, zone)
+    (score,) = await anyio.to_thread.run_sync(partial(_states, nights, sessions, [today],
+                                                      getattr(user, "max_heart_rate", None)))
+    if score.get("value") is None:
+        return None
+    return {"value": score["value"], "tone": score["tone"], "low": score["tone"] != "ok"}
+
+
+async def has_index(db: AsyncSession, user_id: int, today: date, zone=None) -> bool:
+    """Whether Santé gave this athlete an index on one of the last INDEX_RECENT_DAYS days: a yes or a no, no value
+    (what decides whether Coaching offers its option at all)."""
+    from app.models.user import User
+
+    user = await db.get(User, user_id)
+    if zone is None:
+        zone = await st.athlete_clock(db, user_id, user)
+    sessions, _peak, _alt, nights = await _read(db, user_id, today, user, zone)
+    if not nights:
+        return False
+    days = [today - timedelta(days=k) for k in range(INDEX_RECENT_DAYS)]
+    scores = await anyio.to_thread.run_sync(partial(_states, nights, sessions, days,
+                                                    getattr(user, "max_heart_rate", None)))
+    return any(s.get("value") is not None for s in scores)
 
 
 def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: bool, peak: float | None, day_alt,

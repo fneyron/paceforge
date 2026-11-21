@@ -54,6 +54,7 @@ HEURISTICS = {
     "TWO_QUALITY": (5, 240), "REP_EVERY": 2, "ADAPT_FACTOR": 0.8, "SIGNAL_FROM": 4, "SIGNAL_DAYS": 7,
     "MISSED_FROM": 2, "START_CHOICES": (60, 120, 180, 240, 300), "BASE_RANGE": (60, 900),
     "RACE_TIME_STEP": 15, "CLIMB_START": 0.6, "CLIMB_RATE_CAP": 500, "CLIMB_MIN": 100,
+    "FORM_FOOTING_SHARE": 0.6, "FORM_FOOTING_CAP": 45, "FORM_LOW_COUNT": 3, "FORM_LOW_DAYS": 5,
 }
 
 
@@ -409,3 +410,81 @@ def test_a_person_s_session_gets_a_structure_that_fits_its_duration():
     assert cp.default_structure(cp.QUALITY, 55)["text"] == "3 × 8 min soutenu, récup 2 min"
     assert cp.describe(cp.FOOTING, cp.default_structure(cp.FOOTING, 45)) == ""
     assert cp.main_level(cp.RECUP, cp.default_structure(cp.RECUP, 30)) == 1
+
+
+# ── the form: a low morning ─────────────────────────────────────────────────
+
+def test_the_form_cites_the_hrv_guided_studies_and_marks_the_rest_h():
+    doc = (ROOT / "docs/coaching.md").read_text(encoding="utf-8")
+    for source in ("Kiviniemi", "Vesterinen", "Javaloyes", "10.1007/s00421-007-0552-2", "10.1249/MSS.0000000000000910",
+                   "10.1123/ijspp.2018-0122"):
+        assert source in doc, source
+
+
+def test_the_footing_of_a_low_morning_is_shorter_and_capped_but_keeps_a_tapers_duration():
+    assert [cp.form_footing(m) for m in (35, 45, 55, 70, 90, 150, 210)] == [30, 30, 35, 40, 45, 45, 45]
+    assert all(cp.MIN_SESSION <= cp.form_footing(m) <= min(m, cp.FORM_FOOTING_CAP) for m in range(30, 400, 5))
+    assert [cp.form_footing(m, taper=True) for m in (35, 60)] == [35, 60], "a taper's volume is never cut"
+
+
+def test_three_low_mornings_within_five_days_lighten_the_week_after_the_last_of_them():
+    d = lambda k: M0 + timedelta(days=k)  # noqa: E731
+    nxt = M0 + timedelta(weeks=1)
+    assert cp.form_week([d(0), d(2), d(4)], nxt), "Monday, Wednesday, Friday: three within five days"
+    assert not cp.form_week([d(0), d(2), d(5)], nxt), "the third is the sixth day"
+    assert not cp.form_week([d(0), d(1)], nxt) and not cp.form_week([], nxt)
+    assert cp.form_week([d(-2), d(-1), d(1)], nxt), "across two weeks, the last of them this week"
+    assert not cp.form_week([d(0), d(1), d(2)], nxt + timedelta(weeks=1)), "only the week right after"
+    assert cp.form_week([d(-3), d(-2), d(-1)], M0) and not cp.form_week([d(-3), d(-2), d(-1)], nxt)
+
+
+def test_the_form_and_the_ressenti_never_stack():
+    assert cp.with_form(None) == {"reason": "forme", "factor": cp.ADAPT_FACTOR}
+    ressenti = {"reason": "ressenti", "factor": cp.ADAPT_FACTOR}
+    assert cp.with_form(ressenti) is ressenti, "the same reduction: one, under the ressenti's name"
+    assert cp.with_form({"reason": "manquees", "factor": 0.9}) == {"reason": "forme", "factor": cp.ADAPT_FACTOR}
+    assert cp.with_form({"reason": "ressenti", "factor": 0.7})["factor"] == 0.7, "the larger reduction wins"
+    for other in ({"reason": "semaine_manquee"}, {"reason": "reprise", "base": 90}):
+        assert cp.with_form(other) is other
+    plain = _inputs((1, 3, 5, 6), 240, start=M0 - timedelta(weeks=1))
+    nxt = (M0 + timedelta(weeks=1)).isoformat()
+    form = cp.Inputs(plain.days, plain.long_day, plain.base, plain.start_monday, plain.goal,
+                     {nxt: {"reason": "forme", "factor": 0.8}})
+    a, b = (cp.week_targets(i, M0 + timedelta(weeks=1))[M0 + timedelta(weeks=1)] for i in (plain, form))
+    assert b["target"] == cp.round5(a["target"] * 0.8) and b["easy"] and b["reason"] == "forme"
+
+
+@pytest.mark.parametrize("inp", CASES[::3])
+def test_a_moved_hard_session_never_makes_two_hard_days_in_a_row(inp):
+    """On every day of the first weeks that holds a hard session: where it would go on a low morning keeps the rule
+    (today is a footing by then), is an available day of the same week, later than today, free or holding one easy
+    session, and never puts a long run within three days of the race."""
+    weeks = cp.build(inp, TODAY)[:4]
+    sessions = [s for w in weeks for s in w.sessions]
+    rd = inp.goal.race_day
+    for s in sessions:
+        if s.kind not in (cp.LONG, cp.QUALITY, cp.HILLS):
+            continue
+        slots = [cp.Slot(x.day, x.kind) for x in sessions if s.day <= x.day <= cp.monday_of(s.day) + timedelta(days=7)]
+        to = cp.move_day(s.day, inp.days, slots, s.kind, rd)
+        if to is None:
+            continue
+        assert s.day < to <= cp.monday_of(s.day) + timedelta(days=6) and to.weekday() in inp.days
+        there = [x for x in sessions if x.day == to]
+        assert len(there) <= 1 and all(x.kind in (cp.FOOTING, cp.RECUP) for x in there)
+        hard = {x.day for x in sessions if x.kind in cp.HARD and x.day != s.day} | {to}
+        ordered = sorted(hard)
+        assert all((b - a).days >= 2 for a, b in zip(ordered, ordered[1:])), (s.day, to)
+        if s.kind == cp.LONG and rd is not None:
+            assert not 0 < (rd - to).days <= cp.NO_LONG_BEFORE_RACE
+
+
+def test_a_session_a_person_holds_is_never_the_target_of_a_move():
+    mon = M0
+    slots = [cp.Slot(mon + timedelta(days=1), cp.QUALITY), cp.Slot(mon + timedelta(days=3), cp.FOOTING, free=False),
+             cp.Slot(mon + timedelta(days=5), cp.FOOTING), cp.Slot(mon + timedelta(days=6), cp.LONG)]
+    days = (1, 3, 4, 5, 6)
+    assert cp.move_day(mon + timedelta(days=1), days, slots, cp.QUALITY) == mon + timedelta(days=4), \
+        "Thursday is pinned, Friday is free and empty"
+    assert cp.move_day(mon + timedelta(days=1), (1, 3, 5, 6), slots, cp.QUALITY) is None, \
+        "Thursday pinned, Saturday the eve of the long run: dropped"
