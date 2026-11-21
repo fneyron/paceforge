@@ -1,20 +1,23 @@
-# Connecteurs officiels COROS et Garmin
+# Connecteurs officiels COROS, Garmin, Wahoo et Polar
 
 Statut au 20 novembre 2026 : **code prêt, désactivé**. Les demandes d’accès sont envoyées : COROS Partner API
 (courriel à api@coros.com, 15 nov.) ; Garmin Connect Developer Program, accès Business « Starter » (formulaire
 envoyé au nom de Hello Stay le 20 nov., réponse de Garmin : « Thank you for your interest, we'll be reaching out
 to you soon »). Autres demandes du 20 nov., sans code de connecteur à ce jour : Suunto Partner Program avec accès
-Cloud API (contrat signé au nom de Hello Stay, réponse sous deux semaines) ; Wahoo Cloud API, app de production
+Cloud API (contrat signé au nom de Hello Stay, réponse sous deux semaines). Wahoo Cloud API, app de production
 « PaceForge » en lecture seule (`user_read`, `workouts_read`, `offline_data`, webhook `/webhook/wahoo`), **approuvée
 le 20 nov.** ; Polar AccessLink (libre-service), client « PaceForge » créé le 20 nov. (exercices, activité du jour,
-informations physiques ; redirect `/connect/polar/callback`). Comptes au nom de contact@paceforge.fr ; secrets hors
+informations physiques ; redirect `/connect/polar/callback`) : **code prêt, désactivé, le 21 nov.** (activités
+seulement, voir « Wahoo et Polar » plus bas). Comptes au nom de contact@paceforge.fr ; secrets hors
 dépôt, sur le Mac du propriétaire. Strava : compte « PaceForge App » créé, mais l’API Strava exige un abonnement payant
 pour créer l’app. Tant que les identifiants ne sont pas arrivés et
 posés dans Coolify, rien ne change pour personne : aucune route (404), aucune page, aucune tâche planifiée, aucun
 appel sortant, aucune ligne dans la politique de confidentialité.
 
 Un connecteur est **actif** seulement si son drapeau est à `true` **et** son client id et son secret sont posés
-(`settings.coros_partner_ready`, `settings.garmin_connect_ready`).
+(`settings.coros_partner_ready`, `settings.garmin_connect_ready`, `settings.wahoo_cloud_ready`,
+`settings.polar_accesslink_ready`). Le jeton du webhook Wahoo et la clé du webhook Polar n’activent rien : sans eux,
+les pushes sont refusés (401) et seule la lecture périodique apporte les séances.
 
 ## Architecture
 
@@ -24,14 +27,17 @@ Un connecteur est **actif** seulement si son drapeau est à `true` **et** son cl
 | `app/connectors/base.py` | OAuth (state, PKCE pour Garmin, vérifieur chiffré 10 min dans la session), jetons chiffrés (Fernet), rafraîchissement avec rotation (un seul à la fois par lien : verrou de ligne + verrou de processus, nouveaux jetons commités d’abord, comme `services/coros.py`), déconnexion (désinscription chez le fournisseur), état affiché, import des activités (une ligne par sortie). |
 | `app/connectors/garmin_connect.py` | Garmin : OAuth, identifiant utilisateur, permissions, désinscription, lecture des pushes, correspondance vers PaceForge. |
 | `app/connectors/coros_partner.py` | COROS : OAuth, push des séances, lecture périodique (séances, données du jour), fichier FIT. |
+| `app/connectors/wahoo_cloud.py` | Wahoo : OAuth (refresh avec rotation), identifiant (`/v1/user`), webhook (jeton), lecture des séances (`/v1/workouts`), fichier FIT, révocation (`DELETE /v1/permissions`). |
+| `app/connectors/polar_accesslink.py` | Polar : OAuth (Basic, pas de refresh), inscription de l’utilisateur (`POST /v3/users`), webhook (signature HMAC), lecture des exercices et de leur FIT, désinscription (`DELETE /v3/users/{id}`), création du webhook du client (commande du propriétaire). |
 | `app/connectors/fit.py` | Lecteur FIT minimal (tours et session), format public du SDK FIT. |
-| `app/models/official_connection.py` | Table `official_connections` (migration `k2f3a4b5c6d7`, à chaîner après les autres au moment du merge). |
-| `app/routers/official_connectors.py` | `/connect/{coros,garmin}`, `/connect/…/callback`, `/connect/…/disconnect`, `/webhook/coros`, `/webhook/garmin[/{type}]`. |
-| `app/tasks/official_connectors.py` | Le travail dans Celery : traitement des pushes, nuits en attente, lecture COROS, tour horaire. |
+| `app/models/official_connection.py` | Table `official_connections` (migration `k2f3a4b5c6d7`, à chaîner après les autres au moment du merge) ; colonnes `activities.wahoo_activity_id`, `activities.polar_activity_id` (migration `l3a4b5c6d7e8`, juste après). |
+| `app/routers/official_connectors.py` | `/connect/{coros,garmin,wahoo,polar}`, `/connect/…/callback`, `/connect/…/disconnect`, `/webhook/coros`, `/webhook/garmin[/{type}]`, `/webhook/wahoo`, `/webhook/polar`. |
+| `app/tasks/official_connectors.py` | Le travail dans Celery : traitement des pushes, nuits en attente, lectures COROS, Wahoo et Polar, tour horaire. |
 | `partials/official_connection.html`, `partials/official_privacy.html` | Le bloc de Réglages et les lignes de la politique, affichés seulement connecteur actif. |
 
-Table `official_connections` : `user_id`, `provider` (`coros` | `garmin`), `provider_user_id` (openId COROS,
-identifiant API Garmin : ce que nomment les pushes), jetons d’accès et de rafraîchissement chiffrés, `expires_at`,
+Table `official_connections` : `user_id`, `provider` (`coros` | `garmin` | `wahoo` | `polar`, chaîne libre, aucune
+contrainte), `provider_user_id` (openId COROS, identifiant API Garmin, id utilisateur Wahoo, `x_user_id` Polar : ce
+que nomment les pushes), jetons d’accès et de rafraîchissement chiffrés, `expires_at`,
 `refresh_expires_at`, `scopes`, `status` (`active` | `reauth`), `created_at`, `updated_at`, `last_push_at`,
 `last_sync_at`, `sync_claimed_at`, `last_error`. Un lien par compte et par fournisseur ; un compte fournisseur
 relié à un seul compte PaceForge (sinon refus explicite).
@@ -52,6 +58,19 @@ relié à un seul compte PaceForge (sinon refus explicite).
 | `GARMIN_CONNECT_API_BASE_URL` | `https://apis.garmin.com` | API (identifiant, permissions, désinscription). |
 | `GARMIN_CONNECT_URLS` | vide | JSON : clés `authorize`, `token`, `user_id`, `permissions`, `registration`. |
 | `GARMIN_CONNECT_REQUIRE_CLIENT_HEADER` | `true` | Exige l’en-tête `garmin-client-id` sur chaque push. |
+| `WAHOO_CLOUD_ENABLED` | `false` | Interrupteur Wahoo. |
+| `WAHOO_CLOUD_CLIENT_ID` / `WAHOO_CLOUD_CLIENT_SECRET` | vide | Fournis par Wahoo (portail développeur). |
+| `WAHOO_CLOUD_WEBHOOK_TOKEN` | vide | Le « webhook token » posé sur l’app dans le portail Wahoo (chaîne aléatoire) ; vide : tous les pushes refusés. |
+| `WAHOO_CLOUD_BASE_URL` | `https://api.wahooligan.com` | Hôte OAuth et API. |
+| `WAHOO_CLOUD_URLS` | vide | JSON : clés `authorize`, `token`, `user`, `workouts`, `permissions`. |
+| `WAHOO_CLOUD_FIT_HOSTS` | `wahooligan.com` | Hôtes (et sous-domaines) d’où un fichier FIT Wahoo peut être téléchargé. |
+| `POLAR_ACCESSLINK_ENABLED` | `false` | Interrupteur Polar. |
+| `POLAR_ACCESSLINK_CLIENT_ID` / `POLAR_ACCESSLINK_CLIENT_SECRET` | vide | Fournis par Polar (admin.polaraccesslink.com). |
+| `POLAR_ACCESSLINK_WEBHOOK_SECRET` | vide | `signature_secret_key` rendue à la création du webhook ; vide : tous les pushes (sauf PING) refusés. |
+| `POLAR_ACCESSLINK_AUTHORIZE_URL` | `https://flow.polar.com/oauth2/authorization` | Page de consentement. |
+| `POLAR_ACCESSLINK_TOKEN_URL` | `https://polarremote.com/v2/oauth2/token` | Jetons (Basic client id:secret). |
+| `POLAR_ACCESSLINK_API_BASE_URL` | `https://www.polaraccesslink.com` | API v3. |
+| `POLAR_ACCESSLINK_URLS` | vide | JSON : clés `authorize`, `token`, `users`, `exercises`, `webhooks`. |
 | `OFFICIAL_CONNECTORS_PILOT_USERS` | vide | Ids de comptes PaceForge (séparés par des virgules) : eux seuls voient et lancent les connexions officielles. Vide : tout le monde. |
 
 Toutes sont dans `docker-compose.prod.yml` et `.env.example`.
@@ -65,6 +84,10 @@ Toutes sont dans `docker-compose.prod.yml` et `.env.example`.
 | Garmin | Redirection OAuth | `https://paceforge.fr/connect/garmin/callback` |
 | Garmin | Pushes, un chemin par type de résumé | `https://paceforge.fr/webhook/garmin/{type}` |
 | Garmin | ou tous les types sur un seul chemin | `https://paceforge.fr/webhook/garmin` |
+| Wahoo | Redirection OAuth | `https://paceforge.fr/connect/wahoo/callback` |
+| Wahoo | Webhook (`workout_summary`), avec son jeton | `https://paceforge.fr/webhook/wahoo` |
+| Polar | Redirection OAuth | `https://paceforge.fr/connect/polar/callback` |
+| Polar | Webhook du client (`EXERCISE`), créé par la commande ci-dessous | `https://paceforge.fr/webhook/polar` |
 
 Types Garmin à activer dans le portail (« API Configuration », livraison **Push**) :
 `https://paceforge.fr/webhook/garmin/activities`, `…/activityDetails`, `…/manuallyUpdatedActivities`,
@@ -115,7 +138,30 @@ la liste publique des fournisseurs de Nango (`packages/providers/providers.yaml`
 | `labelId` = l’identifiant que stocke le lien MCP | Supposé (un doublon sous un autre id est de toute façon rattaché, jamais dupliqué) | — |
 | Données du jour (`happenDay`, `steps`, `calorie`) | Supposé ; seuls les pas (et kcal) sont lus | — |
 
-Les exemples de charges utiles des tests (`tests/official_connector_fixtures.py`) sont **étiquetés comme
+### Wahoo et Polar
+
+Sources lues le 21 novembre 2026 : la documentation publique de Wahoo (cloud-api.wahooligan.com) et celle de Polar
+AccessLink v3 (www.polar.com/accesslink-api), telles que résumées dans la demande du propriétaire ; rien n’a encore
+été vérifié sur un vrai compte.
+
+| Élément | Statut | Source |
+|---|---|---|
+| Wahoo : `api.wahooligan.com/oauth/authorize` (`client_id`, `redirect_uri`, `response_type=code`, `scope`, `state`), `/oauth/token` (formulaire avec `client_id`, `client_secret`), scopes `user_read workouts_read offline_data`, jeton d’accès ~2 h, **nouveau refresh à chaque rafraîchissement** | Doc publique, non relue ici | Doc Wahoo |
+| Wahoo : `GET /v1/user` → `id` ; `GET /v1/workouts?page=&per_page=` → `{workouts: […]}` ; `DELETE /v1/permissions` | Doc publique, non relue ici (enveloppe `workouts` supposée ; une liste nue est lue aussi) | Doc Wahoo |
+| Wahoo : webhook `{event_type: "workout_summary", webhook_token, user {id}, workout_summary {…, file {url}, workout {…}}}` ; autres `event_type` acquittés, ignorés | Doc publique, non relue ici ; un 2xx suffit (supposé) | Doc Wahoo |
+| Wahoo : champs (`id`, `starts` ISO 8601 UTC, `minutes`, `name`, `workout_type_id` ; résumé `distance_accum` m, `duration_active_accum` / `duration_total_accum` s, `heart_rate_avg`, `ascent_accum`, `calories_accum`, `power_avg`) ; nombres possiblement en chaînes (lus des deux façons) | Supposé ; **le FIT l’emporte** | — |
+| Wahoo : fichier FIT sur un hôte `wahooligan.com` | Supposé (`WAHOO_CLOUD_FIT_HOSTS`) | — |
+| Wahoo : table `workout_type_id` (`WORKOUT_TYPES`) : 1 course, 3 piste, 4 trail, 5 tapis, 67 course (compétition), 71 course virtuelle ; quelques vélos, marche, rando, natation, rameur, yoga ; inconnu → « Workout » (importé quand même, comme COROS et Garmin) | Supposé. **Divergence** : la consigne du 21 nov. disait « 3 tapis, 5 trail » ; la table publique de Wahoo lue de mémoire dit 3 piste, 4 trail, 5 tapis (retenue). Sans effet sur « course ou pas » (1, 3, 4, 5 sont tous des courses) ; le FIT tranche trail/tapis quand il est lu. | Table publique de Wahoo (mémoire) |
+| Polar : `flow.polar.com/oauth2/authorization` (`scope=accesslink.read_all`), jetons à `polarremote.com/v2/oauth2/token` en Basic, réponse `access_token`, `expires_in` (années), `x_user_id`, **pas de refresh** | Doc publique, non relue ici | Doc Polar |
+| Polar : `POST /v3/users {"member-id"}` (409 = déjà inscrit, accepté), `DELETE /v3/users/{x_user_id}`, `GET /v3/exercises` (30 derniers jours), `GET /v3/exercises/{id}`, `GET /v3/exercises/{id}/fit` | Doc publique, non relue ici | Doc Polar |
+| Polar : `member-id` = `pf-` + 32 caractères hex de HMAC-SHA256(`SECRET_KEY`, id du compte) : opaque, jamais l’e-mail ; change si `SECRET_KEY` change (409 alors impossible à relier : sans effet, Polar renvoie l’identifiant par `x_user_id`) | Choix PaceForge | — |
+| Polar : webhook `POST /v3/webhooks {events: ["EXERCISE"], url}` (Basic), réponse `data.signature_secret_key` ; push `{event, user_id, entity_id, timestamp, url}`, en-tête `Polar-Webhook-Signature` = HMAC-SHA256 hex du corps brut | Doc publique, non relue ici (enveloppe `data` supposée ; un objet nu est lu aussi) | Doc Polar |
+| Polar : un PING est acquitté sans vérifier sa signature (envoyé à la création, avant que PaceForge ait la clé ; il ne porte rien) ; l’`url` du push est ignorée, PaceForge reconstruit l’adresse depuis `entity_id` (lettres, chiffres, `_`, `-`, 64 au plus) | Choix PaceForge | — |
+| Polar : champs d’un exercice (`id` chaîne courte, `start_time` à l’heure locale + `start_time_utc_offset` en minutes, `duration` ISO 8601, `distance` m, `sport`, `detailed_sport_info`, `heart_rate {average, maximum}`, `calories`, `ascent`) ; table des sports (`SPORTS` : RUNNING, ROAD_RUNNING, TRAIL_RUNNING, TREADMILL_RUNNING, TRACK_AND_FIELD_RUNNING, INDOOR_RUNNING… ; inconnu → « Workout ») | Supposé ; **le FIT l’emporte** | — |
+| `user_id` d’un push Polar = `x_user_id` de l’échange de jetons | Supposé | — |
+
+Les exemples de charges utiles des tests (`tests/official_connector_fixtures.py`, et ceux en tête de
+`tests/test_official_connectors_wahoo_polar.py`) sont **étiquetés comme
 supposés** : à remplacer par de vraies charges (doc du portail, ou premier push journalisé sur le compte du
 propriétaire).
 
@@ -134,6 +180,7 @@ santé porte `details.via` (`garmin_connect_api` ou `coros_partner_api`) pour la
 | Respiration | `resp_night` : relevés du résumé de sommeil (`timeOffsetSleepRespiration`) ; `allDayRespiration` ignoré | — |
 | Journée | `steps` (kcal, minutes d’intensité), `hr_day` (24 h), `stress` (moyenne Garmin, contexte seulement, comme l’ancienne connexion) | `steps` (kcal) |
 | Pesées | `weight`, `body_fat` avec `measured_at` (lues par `athlete_weight` et Santé) | — |
+| Activités Wahoo / Polar | `Activity.wahoo_activity_id` (id de la séance Wahoo, entier) / `Activity.polar_activity_id` (id de l’exercice Polar, chaîne) ; `raw_data.source` « wahoo » / « polar », `raw_data.via` `wahoo_cloud_api` / `polar_accesslink_api` ; valeurs et tours du FIT quand il est lisible ; rien d’autre (ni santé, ni charge, ni index de marque) | |
 | Jamais | Body Battery, Training Readiness, score de sommeil, statut VFC, VO2 max, charge, FC de repos de marque, SpO2 | récupération, charge, stress, score de sommeil, niveau, FC de repos de marque |
 
 Ordre d’arrivée : une VFC ou une FC de nuit reçue avant la nuit attend (nouvel essai toutes les 30 min pendant
@@ -142,7 +189,8 @@ abandonnée.
 
 Consentement : sans consentement aux données de santé, un push de santé Garmin est écarté dès la requête web (rien
 n’est mis en file) et `health.store_daily` / `store_samples` refusent de toute façon ; la lecture COROS ne demande
-même pas les données du jour. Les activités arrivent toujours.
+même pas les données du jour. Les activités arrivent toujours. Wahoo et Polar n’apportent que des activités : la
+connexion ne demande pas le consentement aux données de santé (comme Strava), et le retirer ne les déconnecte pas.
 
 Idempotence : même résumé deux fois → une ligne (identifiant d’activité unique ; une valeur par jour, métrique et
 source).
@@ -159,8 +207,10 @@ retrouvé (même sport, départ à 3 min, distance à 15 %) et rattaché.
 
 - COROS : client id et secret de l’application dans les en-têtes, comparés à temps constant ; sinon 401.
 - Garmin : en-tête `garmin-client-id` comparé à temps constant (désactivable par `GARMIN_CONNECT_REQUIRE_CLIENT_HEADER`) ; corps qui doit être un objet de types connus (sinon 400) ; chaque élément doit nommer un `userId` d’un lien actif (les inconnus sont ignorés, réponse identique) ; un élément dont l’identifiant ne correspond pas à son lien est écarté dans le worker ; une désinscription n’est appliquée que si Garmin ne confirme plus l’accès actuel (avis tardif d’une ancienne autorisation).
-- Tailles maximales (seulement connecteur actif) : `activityDetails` et la racine 32 Mo (réduits aux tours avant la file), autres types 8 Mo, désinscriptions et permissions 64 Ko, COROS 1 Mo.
-- Les fichiers FIT ne sont téléchargés que depuis `COROS_PARTNER_FIT_HOSTS`, en HTTPS, 32 Mo au plus.
+- Wahoo : `webhook_token` du corps comparé à temps constant à `WAHOO_CLOUD_WEBHOOK_TOKEN` (vide : tout est refusé) ; sinon 401. Le worker vérifie encore que le lien nomme bien l’utilisateur Wahoo du push.
+- Polar : `Polar-Webhook-Signature` comparée à temps constant au HMAC-SHA256 du corps brut (clé `POLAR_ACCESSLINK_WEBHOOK_SECRET`, vide : tout est refusé) ; sinon 401. PING acquitté sans rien faire.
+- Tailles maximales (seulement connecteur actif) : `activityDetails` et la racine 32 Mo (réduits aux tours avant la file), autres types 8 Mo, désinscriptions et permissions 64 Ko, COROS et Wahoo 1 Mo, Polar 64 Ko.
+- Les fichiers FIT ne sont téléchargés que depuis `COROS_PARTNER_FIT_HOSTS` / `WAHOO_CLOUD_FIT_HOSTS`, en HTTPS, 32 Mo au plus ; ceux de Polar depuis l’API Polar, avec le jeton de l’athlète.
 - Courtier Celery indisponible : 503, le fournisseur renvoie (Garmin n’envoie chaque résumé qu’une fois).
 
 ## Liste d’activation
@@ -169,7 +219,8 @@ retrouvé (même sport, départ à 3 min, distance à 15 %) et rattaché.
    corriger au besoin par `*_URLS` ou dans le code (chemins COROS `daily` et `fit`, hôte des jetons Garmin).
 2. Vérifier que les URLs déclarées sont exactement celles du tableau ; pour Garmin, activer les types listés en
    livraison Push.
-3. Merger la branche (migration `k2f3a4b5c6d7` chaînée après les autres) et déployer : rien ne change encore.
+3. Merger la branche (migrations `k2f3a4b5c6d7` puis `l3a4b5c6d7e8` chaînées après les autres) et déployer : rien ne
+   change encore.
 4. Dans Coolify : `OFFICIAL_CONNECTORS_PILOT_USERS=<id du compte du propriétaire>`, puis
    `GARMIN_CONNECT_CLIENT_ID`, `GARMIN_CONNECT_CLIENT_SECRET`, `GARMIN_CONNECT_ENABLED=true` (et/ou les variables
    COROS). Redéployer (le worker relit la planification au démarrage).
@@ -180,7 +231,18 @@ retrouvé (même sport, départ à 3 min, distance à 15 %) et rattaché.
 6. Remplacer les exemples supposés des tests par une vraie charge (anonymisée) et ajuster les correspondances.
 7. Ouvrir à tous : vider `OFFICIAL_CONNECTORS_PILOT_USERS`, redéployer. La politique de confidentialité affiche
    alors les lignes du connecteur actif (déjà le cas pendant le pilote : le traitement a lieu).
-8. Application iPhone/Android : livrer la petite modification native Garmin (ci-dessous) **avant** d’ouvrir Garmin
+8. **Wahoo** : dans le portail développeur Wahoo, sur l’app « PaceForge », poser l’URL de webhook
+   `https://paceforge.fr/webhook/wahoo` et un jeton aléatoire, le même dans `WAHOO_CLOUD_WEBHOOK_TOKEN` ; vérifier
+   que la redirection déclarée est `https://paceforge.fr/connect/wahoo/callback`. Puis `WAHOO_CLOUD_CLIENT_ID`,
+   `WAHOO_CLOUD_CLIENT_SECRET`, `WAHOO_CLOUD_ENABLED=true` (pilote d’abord, comme ci-dessus). Après la connexion,
+   les 120 dernières séances arrivent ; vérifier `workout_type_id` et le FIT d’une vraie séance (hôte du fichier :
+   `WAHOO_CLOUD_FIT_HOSTS`).
+9. **Polar** : `POLAR_ACCESSLINK_CLIENT_ID`, `POLAR_ACCESSLINK_CLIENT_SECRET` posés, créer **une fois** le webhook du
+   client : `docker compose exec web python -m app.connectors.polar_accesslink create-webhook` (URL par défaut
+   `BASE_URL/webhook/polar` ; `show-webhook` pour relire). Copier `signature_secret_key` dans
+   `POLAR_ACCESSLINK_WEBHOOK_SECRET`, puis `POLAR_ACCESSLINK_ENABLED=true`, redéployer. Sans webhook, les séances
+   arrivent quand même par la lecture des 12 h.
+10. Application iPhone/Android : livrer la petite modification native Garmin (ci-dessous) **avant** d’ouvrir Garmin
    à tous, sinon l’app continue d’ouvrir l’ancienne connexion Garmin.
 
 ## Bascule depuis les anciens liens (à faire par le propriétaire, pas fait ici)
@@ -207,7 +269,8 @@ la politique, blocs masqués. Les liens officiels restent en base, inertes ; ils
 chez le fournisseur, au mieux) à la suppression du compte ou au retrait du consentement. Les données reçues restent.
 Les anciens liens n’ont jamais été touchés par le code et fonctionnent toujours ; un athlète passé à l’officiel
 reconnecte l’ancien lien dans Réglages. Pour effacer complètement : vider `official_connections` (la migration
-descendante supprime la table).
+descendante supprime la table). La descente de `l3a4b5c6d7e8` supprime les séances que seuls Wahoo ou Polar avaient
+apportées, les liens Wahoo et Polar, puis les deux colonnes.
 
 ## Confidentialité (texte prêt)
 
@@ -227,7 +290,20 @@ Affiché dans « Qui reçoit quoi » de `/privacy` **seulement** quand le connec
   « Déconnecter » ou la suppression de ton compte retirent cet accès chez Garmin ; tu peux aussi le retirer dans
   Garmin Connect.
 
-Rien d’autre à changer : la ligne « Activités importées de Strava, COROS ou Garmin » et la liste des données de
+- **Wahoo** (Wahoo Fitness LLC, États-Unis, hors UE), si tu relies Wahoo par sa connexion officielle : tu autorises
+  PaceForge sur la page de Wahoo, en lecture seule, sans lui donner ton mot de passe. Wahoo envoie ensuite à
+  PaceForge le résumé de chaque séance enregistrée (date, durée, distance, dénivelé, fréquence cardiaque, puissance,
+  calories), et PaceForge y lit le fichier de la séance (tours, fréquence cardiaque) ; seulement tes activités,
+  aucune donnée de santé. « Déconnecter » ou la suppression de ton compte retirent cet accès chez Wahoo.
+- **Polar** (Polar Electro Oy, Finlande), si tu relies Polar par sa connexion officielle : tu autorises PaceForge sur
+  la page de Polar, en lecture seule, sans lui donner ton mot de passe, et PaceForge t’inscrit auprès de Polar sous
+  un identifiant anonyme (jamais ton e-mail). Polar signale ensuite à PaceForge chaque nouvelle séance, que PaceForge
+  lit avec son fichier (date, durée, distance, dénivelé, fréquence cardiaque, tours) ; seulement tes activités : ni
+  ton activité du jour, ni ton sommeil, ni tes informations physiques. « Déconnecter » ou la suppression de ton
+  compte retirent cet accès chez Polar.
+
+La ligne du tableau « Activités importées de Strava, COROS ou Garmin » nomme aussi Wahoo et Polar, chacun seulement
+quand il est actif. Rien d’autre à changer : cette ligne et la liste des données de
 santé (texte du consentement, `health_consent.DATA`) couvrent déjà ces données ; le consentement n’a pas à être
 redemandé (même liste). À vérifier avec les contrats : l’entité COROS et la localisation des serveurs de la Partner
 API (le texte reprend celle du lien MCP), un éventuel accord de traitement à signer avec chaque fournisseur.

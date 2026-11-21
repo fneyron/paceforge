@@ -18,7 +18,7 @@ class Activity(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    # None for a session that only came from a watch (Garmin, COROS)
+    # None for a session that only came from a watch (Garmin, COROS, Wahoo, Polar)
     strava_activity_id: Mapped[int | None] = mapped_column(
         BigInteger, unique=True, index=True, nullable=True
     )
@@ -29,6 +29,14 @@ class Activity(Base):
     # set when COROS also has (or alone has) this session (its labelId)
     coros_activity_id: Mapped[int | None] = mapped_column(
         BigInteger, unique=True, index=True, nullable=True
+    )
+    # set when Wahoo (its workout id) or Polar (its exercise id, a short string) also has, or alone has, this session
+    # (the official connectors, app.connectors)
+    wahoo_activity_id: Mapped[int | None] = mapped_column(
+        BigInteger, unique=True, index=True, nullable=True
+    )
+    polar_activity_id: Mapped[str | None] = mapped_column(
+        String(64), unique=True, index=True, nullable=True
     )
     # indexed by ix_activities_user_start_date (user_id first): every read is per athlete, most by date
     user_id: Mapped[int] = mapped_column(

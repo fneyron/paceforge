@@ -50,13 +50,16 @@ DEFAULT_LIMIT = 1 * MiB  # forms, the webhook's JSON, everything else
 # The official connectors' pushes (app.connectors, docs/official-connectors.md), their caps only while the connector
 # is active (else DEFAULT_LIMIT, and the route answers 404). Garmin's activity details carry the session's samples
 # (a long ultra: tens of MB; reduced to laps before being queued), the other summaries far less; its lifecycle
-# notices are a few user ids. COROS pushes workout summaries only (the FIT file is fetched, never pushed).
+# notices are a few user ids. COROS and Wahoo push workout summaries only (the FIT file is fetched, never pushed);
+# Polar's events name an exercise, nothing more.
 OFFICIAL_LIMITS: tuple[tuple[re.Pattern[str], int, str], ...] = tuple(
     (re.compile(pattern), limit, provider) for pattern, limit, provider in (
         (r"/webhook/garmin/(deregistrations|userPermissionsChange)", 64 * KiB, "garmin"),
         (r"/webhook/garmin(/activityDetails)?", 32 * MiB, "garmin"),
         (r"/webhook/garmin/[A-Za-z]+", 8 * MiB, "garmin"),
         (r"/webhook/coros", 1 * MiB, "coros"),
+        (r"/webhook/wahoo", 1 * MiB, "wahoo"),
+        (r"/webhook/polar", 64 * KiB, "polar"),
     ))
 
 TOO_LARGE = "Envoi trop volumineux."  # the phone's routes say the same (routers.mobile.capped_body)

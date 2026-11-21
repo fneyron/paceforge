@@ -34,7 +34,8 @@
                     <td data-label="Durée">Jusqu’à la suppression du plan ou du compte</td>
                 </tr>
                 <tr>
-                    <th scope="row">Activités importées de Strava, COROS ou Garmin</th>
+                    {% set official_active = official_connectors_active() if official_connectors_active is defined else [] %}
+                    <th scope="row">Activités importées de Strava, COROS{% if 'wahoo' in official_active %}, Wahoo{% endif %}{% if 'polar' in official_active %}, Polar{% endif %} ou Garmin</th>
                     <td data-label="Données">Date, distance, durée, dénivelé, vitesse, fréquence cardiaque, cadence, tracé&#8239;; profil Strava (nom, photo)&#8239;; accès à ces services, chiffrés</td>
                     <td data-label="Base légale">Contrat</td>
                     <td data-label="Durée">Tant que ton compte existe. Déconnecter un service garde les activités reçues.</td>

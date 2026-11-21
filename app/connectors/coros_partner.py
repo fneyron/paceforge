@@ -25,7 +25,7 @@ and HRV: not read by this connector until getDailyData's fields are known (the M
 import logging
 import secrets
 from datetime import date, datetime, timedelta, timezone
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -37,6 +37,9 @@ logger = logging.getLogger(__name__)
 
 PROVIDER, NAME, SOURCE = "coros", "COROS", "COROS"
 VIA = "coros_partner_api"
+HEALTH = True  # brings health data: the consent to health data before connecting
+BACKFILL = True  # three months read right after connecting (in the worker)
+CONNECTED = "COROS connecté. Tes activités des trois derniers mois arrivent, puis chaque séance après sa synchro."
 PKCE = False
 REFRESH_MARGIN = timedelta(days=1)
 TOKEN_LIFETIME_S = 30 * 24 * 3600  # (assumed) what a refresh answering « 0000 » alone gives the current token
@@ -119,7 +122,8 @@ async def refresh(client: httpx.AsyncClient, refresh_token: str, current: str | 
     return {"access_token": current, "expires_in": TOKEN_LIFETIME_S}
 
 
-async def identify(client: httpx.AsyncClient, tokens: dict) -> tuple[str | None, str | None]:
+async def identify(client: httpx.AsyncClient, tokens: dict,
+                   account_id: int | None = None) -> tuple[str | None, str | None]:
     """(openId, scopes): the openId comes with the token answer; COROS lists no scopes."""
     uid = tokens.get("openId") or tokens.get("openid") or tokens.get("open_id")
     return (str(uid)[:128] if uid else None), None
@@ -275,53 +279,12 @@ def workout_fields(rec: dict) -> dict | None:
     }
 
 
-HR_PLAUSIBLE = (40, 250)
-
-
-def with_fit(fields: dict, decoded: dict) -> dict:
-    """The summary's columns with what its FIT file says (public format, its units known): sport, start, times,
-    distance, D+, heart rate, start position, laps."""
-    s = decoded.get("session") or {}
-    out = {**fields, "raw_data": {**fields["raw_data"], "laps_read": True}}
-    if fit.sport_type(s):
-        out["sport_type"] = fit.sport_type(s)
-        if fit.indoor(s):
-            out["raw_data"]["trainer"] = True
-    start = s.get("start_time")
-    if isinstance(start, datetime) and abs((start - fields["start_date"]).total_seconds()) < 3600:
-        out["start_date"] = start
-    if s.get("timer") and s["timer"] > 0:
-        out["moving_time"] = round(s["timer"])
-    if s.get("elapsed") and s["elapsed"] > 0:
-        out["elapsed_time"] = round(max(s["elapsed"], out["moving_time"]))
-    if s.get("distance") is not None and s["distance"] >= 0:
-        out["distance"] = round(float(s["distance"]), 1)
-    if s.get("ascent") is not None and 0 <= s["ascent"] <= 20_000:
-        out["total_elevation_gain"] = float(s["ascent"])
-    for key, name in (("average_heartrate", "avg_hr"), ("max_heartrate", "max_hr")):
-        if s.get(name) and HR_PLAUSIBLE[0] <= s[name] <= HR_PLAUSIBLE[1]:
-            out[key] = float(s[name])
-    if s.get("start_latlng") and s["start_latlng"] != [0, 0]:
-        out["raw_data"]["start_latlng"] = s["start_latlng"]
-    if out["distance"] and out["moving_time"]:
-        out["average_speed"] = out["distance"] / out["moving_time"]
-    laps = fit.strava_laps(decoded.get("laps") or [])
-    if laps:
-        out["laps"] = laps
-    return out
+with_fit = base.with_fit  # the FIT file's values over the summary's (shared with Wahoo and Polar)
 
 
 def fit_host_allowed(url: str | None) -> bool:
     """An https URL on one of COROS_PARTNER_FIT_HOSTS (or a subdomain): never fetch a host a payload chose."""
-    if not url:
-        return False
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        return False
-    host = (parts.hostname or "").lower()
-    allowed = [h.strip().lower() for h in settings.COROS_PARTNER_FIT_HOSTS.split(",") if h.strip()]
-    return parts.scheme == "https" and any(host == h or host.endswith("." + h) for h in allowed)
+    return base.host_allowed(url, settings.COROS_PARTNER_FIT_HOSTS)
 
 
 async def download_fit(client: httpx.AsyncClient, url: str) -> bytes | None:
@@ -329,16 +292,7 @@ async def download_fit(client: httpx.AsyncClient, url: str) -> bytes | None:
     if not fit_host_allowed(url):
         logger.info("COROS FIT file on a host not allowed: skipped")
         return None
-    async with client.stream("GET", url) as r:
-        if r.status_code != 200:
-            return None
-        chunks, size = [], 0
-        async for chunk in r.aiter_bytes():
-            size += len(chunk)
-            if size > fit.MAX_BYTES:
-                return None
-            chunks.append(chunk)
-    return b"".join(chunks)
+    return await base.download_fit(client, url)
 
 
 async def _api(client: httpx.AsyncClient, url: str, token: str, conn, **params):
@@ -407,22 +361,10 @@ def daily_rows(rec: dict) -> list[Daily]:
 # ── processing (the Celery worker: app.tasks.official_connectors) ───────────
 
 async def _fit_wanted(db, user_id: int, fields: dict) -> bool | None:
-    """Whether this workout's FIT file is worth reading: yes for a new session or this connector's own row not read
-    yet; no for a row whose file was read (None: not even its summary is written again, it is rougher) or a row
-    another service owns (Strava's, or the MCP link's under another id: their own details stand)."""
-    from sqlalchemy import select
-
-    from app.models.activity import Activity
-
-    act = (await db.execute(select(Activity).where(
-        Activity.coros_activity_id == fields["coros_activity_id"], Activity.user_id == user_id))).scalar_one_or_none()
-    if act is not None:
-        if (act.raw_data or {}).get("laps_read"):
-            return None
-        return act.strava_activity_id is None and act.garmin_activity_id is None
-    twin = await base.find_twin(db, user_id, fields["sport_type"], fields["start_date"], fields["distance"],
-                                fields["moving_time"])
-    return twin is None
+    """Whether this workout's FIT file is worth reading (base.fit_wanted): yes for a new session or this connector's
+    own row not read yet; no for a row whose file was read (None) or a row another service owns (Strava's, or the
+    MCP link's under another id: their own details stand)."""
+    return await base.fit_wanted(db, user_id, PROVIDER, fields)
 
 
 async def import_workouts(db, conn, client: httpx.AsyncClient, token: str | None, records: list[dict]) -> dict:
@@ -467,17 +409,7 @@ async def process_push(db, conn, records: list[dict]) -> dict:
 
 async def claim(db, conn) -> bool:
     """Take this link's pull for this worker; False when another one holds it."""
-    from sqlalchemy import or_, update
-
-    from app.models.official_connection import OfficialConnection
-
-    now = datetime.now(timezone.utc)
-    res = await db.execute(update(OfficialConnection).where(
-        OfficialConnection.id == conn.id,
-        or_(OfficialConnection.sync_claimed_at.is_(None), OfficialConnection.sync_claimed_at < now - CLAIM_TTL),
-    ).values(sync_claimed_at=now).execution_options(synchronize_session=False))
-    await db.commit()
-    return res.rowcount == 1
+    return await base.claim(db, conn, CLAIM_TTL)
 
 
 def _records(data) -> list[dict]:

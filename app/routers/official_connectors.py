@@ -1,13 +1,16 @@
-"""The official COROS and Garmin connections (app.connectors): OAuth start and callback, disconnect, and the
-providers' pushes. Every route answers 404 while its connector is not active (enabled, with its credentials).
+"""The official COROS, Garmin, Wahoo and Polar connections (app.connectors): OAuth start and callback, disconnect, and
+the providers' pushes. Every route answers 404 while its connector is not active (enabled, with its credentials).
 
-URLs registered with the providers (docs/official-connectors.md): https://paceforge.fr/connect/{coros,garmin}/callback
-for OAuth, https://paceforge.fr/webhook/coros and https://paceforge.fr/webhook/garmin[/{summary type}] for the pushes.
-They never collide with the former links' (/coros/callback, /connections/…, /garmin/…) nor Strava's webhook.
+URLs registered with the providers (docs/official-connectors.md):
+https://paceforge.fr/connect/{coros,garmin,wahoo,polar}/callback for OAuth, https://paceforge.fr/webhook/coros,
+https://paceforge.fr/webhook/garmin[/{summary type}], https://paceforge.fr/webhook/wahoo and
+https://paceforge.fr/webhook/polar for the pushes. They never collide with the former links' (/coros/callback,
+/connections/…, /garmin/…) nor Strava's webhook.
 
 The pushes are answered fast: checked (COROS: its client id and secret in the headers; Garmin: its garmin-client-id
-header, a summary type it sends, user ids PaceForge knows), matched to their links, health items dropped for the
-athletes who have not consented, then queued for the worker (app.tasks.official_connectors). Unknown users are
+header, a summary type it sends, user ids PaceForge knows; Wahoo: the webhook token in the body; Polar: the HMAC
+signature of the body), matched to their links, health items dropped for the athletes who have not consented, then
+queued for the worker (app.tasks.official_connectors). Unknown users are
 ignored without saying so (every accepted push gets the same answer). A broker that does not take the work answers
 503: the provider sends it again (Garmin pushes each summary only once otherwise).
 """
@@ -57,6 +60,8 @@ def _back(request: Request, provider: str, target: str | None, *, error: str | N
 
 
 def _next(provider: str, next_: str | None) -> str:
+    if provider not in base.LEGACY:  # Wahoo and Polar: Réglages only (no app sheet, no connection page)
+        return _settings_anchor(provider)
     if next_ == "app":  # started from the app's screen of that connection, in its sign-in sheet
         return app_return(provider)
     if next_ == "devices":
@@ -67,14 +72,15 @@ def _next(provider: str, next_: str | None) -> str:
 @router.get("/connect/{provider}")
 async def connect(provider: str, request: Request, next: str | None = None, user: User = Depends(get_current_user)):
     """Send the athlete to the provider's consent page (state, and PKCE for Garmin). The consent to health data
-    first: these sources bring nights, HRV, heart rate."""
+    first for COROS and Garmin: they bring nights, HRV, heart rate (Wahoo and Polar bring activities only, as
+    Strava: not asked)."""
     _known(provider)
     if not visible_to(provider, user.id):
         raise HTTPException(status_code=404)
-    if not health_consent.given(user):
+    spec = base.module(provider)
+    if spec.HEALTH and not health_consent.given(user):
         here = request.url.path + (f"?{request.url.query}" if request.url.query else "")
         return RedirectResponse(health_consent.consent_url(here), status_code=303)
-    spec = base.module(provider)
     verifier, challenge = base.pkce_pair() if spec.PKCE else (None, None)
     state = base.new_state()
     request.session[_pending_key(provider)] = {
@@ -107,7 +113,7 @@ async def callback(provider: str, request: Request, code: str | None = None, sta
     try:
         async with base.http_client() as client:
             tokens = await spec.exchange(client, code, verifier)
-            provider_user_id, scopes = await spec.identify(client, tokens)
+            provider_user_id, scopes = await spec.identify(client, tokens, user.id)
     except base.TokenError as e:
         logger.warning("%s official code exchange failed for user %d: %s", name, user.id, e.code)
         return _back(request, provider, target, error=f"La connexion à {name} a échoué. Réessaie.")
@@ -124,21 +130,18 @@ async def callback(provider: str, request: Request, code: str | None = None, sta
         return _back(request, provider, target, error=str(e))
     await base.replace_legacy(db, user.id, provider)
     await db.commit()  # the worker reads the link from its own session
-    if provider == "coros":
-        _queue_backfill(conn.id)
-        ok = "COROS connecté. Tes activités des trois derniers mois arrivent, puis chaque séance après sa synchro."
-    else:  # Garmin pushes what is new only (no history on this program)
-        ok = "Garmin connecté. Tes prochaines activités et mesures arrivent dès que ta montre se synchronise."
-    return _back(request, provider, target, ok=ok)
+    if spec.BACKFILL:  # Garmin pushes what is new only (no history on this program)
+        _queue_backfill(provider, conn.id)
+    return _back(request, provider, target, ok=spec.CONNECTED)
 
 
-def _queue_backfill(conn_id: int) -> None:
-    from app.tasks.official_connectors import coros_sync
+def _queue_backfill(provider: str, conn_id: int) -> None:
+    from app.tasks.official_connectors import SYNC_TASKS
 
     try:
-        coros_sync.apply_async(args=[conn_id, True], retry=False)
+        SYNC_TASKS[provider].apply_async(args=[conn_id, True], retry=False)
     except Exception:  # the hourly round pulls it then
-        logger.exception("COROS official backfill not queued for connection %d", conn_id)
+        logger.exception("%s official backfill not queued for connection %d", NAMES[provider], conn_id)
 
 
 @router.post("/connect/{provider}/disconnect")
@@ -149,7 +152,8 @@ async def disconnect(provider: str, request: Request, next: str = Form(""), user
     if conn is not None:
         await base.disconnect(db, conn)
         await db.commit()
-    target = f"/connections/{provider}" if next == "devices" else _settings_anchor(provider)
+    target = (f"/connections/{provider}" if next == "devices" and provider in base.LEGACY
+              else _settings_anchor(provider))
     return _back(request, provider, target, ok=f"{NAMES[provider]} déconnecté. Les données déjà reçues restent.")
 
 
@@ -230,3 +234,64 @@ async def coros_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     if entries and not _queue(coros_push, entries):
         return JSONResponse({"result": "5000", "message": "Try again later"}, status_code=503)
     return JSONResponse({"result": "0000", "message": "OK"})
+
+
+@router.post("/webhook/wahoo")
+async def wahoo_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """Wahoo's workout_summary events: the webhook token checked (constant time), the athlete matched to a link,
+    the summary queued. Other events, and unknown athletes, get the same answer and nothing more."""
+    from app.connectors import wahoo_cloud as wahoo
+    from app.tasks.official_connectors import wahoo_push
+
+    _known("wahoo")
+    body = _json(await request.body())
+    if not wahoo.token_ok(body.get("webhook_token") if isinstance(body, dict) else None):
+        logger.warning("Wahoo push refused: webhook token missing or wrong")
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    try:
+        _, uid, summary = wahoo.parse_push(body)
+    except wahoo.PayloadError:
+        logger.warning("Wahoo push refused: not an event")
+        return JSONResponse({"detail": "Bad request"}, status_code=400)
+    if summary is None or uid is None:
+        return JSONResponse({"status": "ok"})
+    links = await base.connections_of(db, "wahoo", [uid])
+    if uid not in links:
+        logger.info("Wahoo push: a workout of an unknown user ignored")
+        return JSONResponse({"status": "ok"})
+    if not _queue(wahoo_push, [{"conn": links[uid].id, "user": uid, "item": summary}]):
+        return JSONResponse({"detail": "Try again later"}, status_code=503)
+    return JSONResponse({"status": "ok"})
+
+
+@router.post("/webhook/polar")
+async def polar_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """Polar's events: a PING answered (Polar sends one when the webhook is created, before PaceForge holds its key;
+    it carries nothing), an EXERCISE only with a valid Polar-Webhook-Signature (HMAC-SHA256 of the raw body,
+    constant time), its athlete matched to a link, the exercise id queued (the worker reads it from Polar)."""
+    from app.connectors import polar_accesslink as polar
+    from app.tasks.official_connectors import polar_push
+
+    _known("polar")
+    raw = await request.body()
+    body = _json(raw)
+    if isinstance(body, dict) and body.get("event") == "PING":
+        return JSONResponse({"status": "ok"})
+    if not polar.signature_ok(raw, request.headers.get(polar.SIGNATURE_HEADER)):
+        logger.warning("Polar push refused: signature missing or wrong")
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    try:
+        event = polar.parse_push(body)
+    except polar.PayloadError:
+        logger.warning("Polar push refused: not an exercise event")
+        return JSONResponse({"detail": "Bad request"}, status_code=400)
+    if event["event"] != "EXERCISE":
+        return JSONResponse({"status": "ok"})
+    links = await base.connections_of(db, "polar", [event["user_id"]])
+    if event["user_id"] not in links:
+        logger.info("Polar push: an exercise of an unknown user ignored")
+        return JSONResponse({"status": "ok"})
+    entry = {"conn": links[event["user_id"]].id, "user": event["user_id"], "item": {"entity_id": event["entity_id"]}}
+    if not _queue(polar_push, [entry]):
+        return JSONResponse({"detail": "Try again later"}, status_code=503)
+    return JSONResponse({"status": "ok"})

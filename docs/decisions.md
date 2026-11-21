@@ -109,3 +109,9 @@ l’ordre chronologique. Les citations sont celles du propriétaire.
 | Décision | Raison | Source |
 |---|---|---|
 | « FC en footing » se lit sur une ligne : ta FC habituelle (médiane des 4 semaines jusqu’au jour, lissée sur 7 jours pour le dessin), devant des points de sortie petits et pâles ; la bande « tes valeurs habituelles » est retirée. Le statut se lit sur cette même ligne : « −6 bpm depuis mai · en progrès » (de son premier point à aujourd’hui, 4 semaines au moins, seuil 3 bpm, H), au lieu d’un écart sur 8 semaines qui disait « stable » sous une courbe visiblement descendante. | « Le graphique de forme n’est pas très clair » : les points se chevauchaient en barres, la bande brouillait, le mot contredisait le dessin. | Propriétaire, 19 nov. — `training_view.footing`, `training_view.easy_trend`, `viz.dots` |
+
+## 21 novembre 2026
+
+| Décision | Raison | Source |
+|---|---|---|
+| Deux connecteurs officiels de plus, construits comme COROS et Garmin et éteints de même : Wahoo Cloud API et Polar AccessLink v3, en lecture seule et **activités seulement** (aucune donnée de santé lue : pas de consentement aux données de santé demandé pour eux, et le retirer les laisse, comme Strava). Actifs seulement drapeau à `true` et identifiants posés ; webhook Wahoo authentifié par son jeton, webhook Polar (un par client, créé une fois par le propriétaire) par sa signature HMAC ; une lecture toutes les 12 h rattrape un push manqué. Identifiants d’activité dans deux nouvelles colonnes (`wahoo_activity_id`, `polar_activity_id`, migration `l3a4b5c6d7e8`), sources « wahoo » et « polar ». | App Wahoo de production approuvée et client Polar créé le 20 novembre : « quand les identifiants sont posés, ça marche », sans rien changer pour personne d’ici là. | Propriétaire, 21 nov. — `app/connectors/wahoo_cloud.py`, `app/connectors/polar_accesslink.py`, docs/official-connectors.md |

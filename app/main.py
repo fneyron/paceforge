@@ -270,7 +270,7 @@ def create_app() -> FastAPI:
     app.include_router(webhook.router)
     app.include_router(api_v1.router)     # the personal API: read-only, a key per use (Réglages › Accès API)
     app.include_router(api_v1.pages)      # its documentation, /developpeurs
-    # the official COROS and Garmin connectors: every route 404 while its connector is off (app.connectors)
+    # the official COROS, Garmin, Wahoo and Polar connectors: every route 404 while it is off (app.connectors)
     app.include_router(official_connectors.router)
 
     # Browsers ask for /favicon.ico at the root, whatever the page links to

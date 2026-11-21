@@ -10,8 +10,8 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
+from app.connectors import HEALTH_PROVIDERS, ready
 from app.connectors import base as official
-from app.connectors import ready
 from app.csrf import check_csrf, csrf
 from app.dependencies import get_current_user, get_optional_user, get_db
 from app.features import cycling_enabled
@@ -318,7 +318,8 @@ async def _revoke_links(db: AsyncSession, user: User, strava: bool = True) -> No
     revocation), the official links let go at their provider (app.connectors). A provider that fails or does not answer in time never stops
     the deletion: the session is then rolled back to a clean state (nothing is
     deleted yet), the explicit deletions follow. `strava=False`: the health
-    sources only (the consent to health data withdrawn)."""
+    sources only (the consent to health data withdrawn: the official Wahoo and Polar links, activities only, stay
+    as Strava does)."""
     user_id = user.id
     steps = []
     if strava and (user.has_strava_linked or user.strava_webhook_subscription_id):
@@ -330,7 +331,10 @@ async def _revoke_links(db: AsyncSession, user: User, strava: bool = True) -> No
     if garmin_conn is not None:
         steps.append(("Garmin", lambda: garmin_service.disconnect(db, garmin_conn)))
     # the official links (app.connectors): COROS deauthorized, Garmin's registration deleted (its program requires it)
-    for link in (await db.execute(select(OfficialConnection).where(OfficialConnection.user_id == user_id))).scalars():
+    links = select(OfficialConnection).where(OfficialConnection.user_id == user_id)
+    if not strava:
+        links = links.where(OfficialConnection.provider.in_(HEALTH_PROVIDERS))
+    for link in (await db.execute(links)).scalars():
         steps.append((f"{link.provider} (official)", partial(official.disconnect, db, link)))
     clean = True
     for name, step in steps:
@@ -351,7 +355,8 @@ async def withdraw_health_consent(
 ):
     """« Retirer mon consentement » (GDPR art. 7.3), and « Refuser et effacer » for an account that holds health data
     without having consented (Santé's card, Réglages): COROS and Garmin disconnected as account deletion does it,
-    the phones unpaired, the health data erased and the consent cleared. Activities, plans and Strava stay. Both
+    the phones unpaired, the health data erased and the consent cleared. Activities, plans, Strava and the official
+    Wahoo and Polar links (activities only) stay. Both
     pages confirm first (partials/_erase_confirm.html)."""
     from app.models.coros import CorosConnection
     from app.models.garmin import GarminConnection
@@ -359,8 +364,10 @@ async def withdraw_health_consent(
     user_id, had_consented = user.id, health_consent.given(user)
     await _revoke_links(db, user, strava=False)
     # a link a provider did not let go of in time (rolled back) is forgotten all the same
-    for model in (CorosConnection, GarminConnection, OfficialConnection):
+    for model in (CorosConnection, GarminConnection):
         await db.execute(delete(model).where(model.user_id == user_id))
+    await db.execute(delete(OfficialConnection).where(OfficialConnection.user_id == user_id,
+                                                      OfficialConnection.provider.in_(HEALTH_PROVIDERS)))
     await health_consent.erase_health_data(db, user_id)
     await db.commit()
     request.session["health_ok"] = "Consentement retiré\u00a0: tes sources sont déconnectées et tes données de santé effacées."

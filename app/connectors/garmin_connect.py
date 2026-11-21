@@ -67,6 +67,9 @@ logger = logging.getLogger(__name__)
 
 PROVIDER, NAME, SOURCE = "garmin", "Garmin", "Garmin"
 VIA = "garmin_connect_api"
+HEALTH = True  # brings health data: the consent to health data before connecting
+BACKFILL = False  # Garmin pushes what is new only (no history on this program)
+CONNECTED = "Garmin connecté. Tes prochaines activités et mesures arrivent dès que ta montre se synchronise."
 PKCE = True
 # Garmin: « subtract 600 seconds or more from the expiration value » (access tokens last a day)
 REFRESH_MARGIN = timedelta(minutes=15)
@@ -146,7 +149,8 @@ def parse_permissions(body) -> list[str] | None:
     return sorted({str(p) for p in body if isinstance(p, str)})
 
 
-async def identify(client: httpx.AsyncClient, tokens: dict) -> tuple[str | None, str | None]:
+async def identify(client: httpx.AsyncClient, tokens: dict,
+                   account_id: int | None = None) -> tuple[str | None, str | None]:
     """(API user id, permissions as one space-separated string): the user id is required, the permissions best
     effort (their changes are pushed: userPermissionsChange)."""
     token = str(tokens["access_token"])
@@ -535,7 +539,7 @@ async def apply_details(db, conn, reduced: dict) -> str:
     elif (gid := _int(reduced.get("activityId"))) is not None:
         act = (await db.execute(select(Activity).where(Activity.garmin_activity_id == gid,
                                                        Activity.user_id == conn.user_id))).scalar_one_or_none()
-    if act is None or act.strava_activity_id is not None or act.coros_activity_id is not None:
+    if act is None or not base._own_row(act, PROVIDER):
         return "kept"
     if reduced.get("laps"):
         act.laps = reduced["laps"]

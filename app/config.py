@@ -81,6 +81,27 @@ class Settings(BaseSettings):
     GARMIN_CONNECT_URLS: str = ""
     # a push must carry the garmin-client-id header with this app's client id (as public integrations read it)
     GARMIN_CONNECT_REQUIRE_CLIENT_HEADER: bool = True
+    # Wahoo Cloud API (cloud-api.wahooligan.com): read-only, activities only
+    WAHOO_CLOUD_ENABLED: bool = False
+    WAHOO_CLOUD_CLIENT_ID: str = ""
+    WAHOO_CLOUD_CLIENT_SECRET: str = ""
+    # the token set on the app's webhook in Wahoo's developer portal: every push carries it (webhook_token)
+    WAHOO_CLOUD_WEBHOOK_TOKEN: str = ""
+    WAHOO_CLOUD_BASE_URL: str = "https://api.wahooligan.com"
+    WAHOO_CLOUD_URLS: str = ""
+    # the hosts a workout's FIT file may be downloaded from (comma-separated; a host or any of its subdomains)
+    WAHOO_CLOUD_FIT_HOSTS: str = "wahooligan.com"
+    # Polar AccessLink v3 (www.polar.com/accesslink-api): read-only, exercises only
+    POLAR_ACCESSLINK_ENABLED: bool = False
+    POLAR_ACCESSLINK_CLIENT_ID: str = ""
+    POLAR_ACCESSLINK_CLIENT_SECRET: str = ""
+    # the signature_secret_key Polar returns when the client's webhook is created (python -m
+    # app.connectors.polar_accesslink create-webhook): every push is signed with it (Polar-Webhook-Signature)
+    POLAR_ACCESSLINK_WEBHOOK_SECRET: str = ""
+    POLAR_ACCESSLINK_AUTHORIZE_URL: str = "https://flow.polar.com/oauth2/authorization"
+    POLAR_ACCESSLINK_TOKEN_URL: str = "https://polarremote.com/v2/oauth2/token"
+    POLAR_ACCESSLINK_API_BASE_URL: str = "https://www.polaraccesslink.com"
+    POLAR_ACCESSLINK_URLS: str = ""
     # while set (PaceForge account ids, comma-separated), only those accounts see and can start the official
     # connections: a first try in production on the owner's own account. Empty: every account.
     OFFICIAL_CONNECTORS_PILOT_USERS: str = ""
@@ -98,6 +119,16 @@ class Settings(BaseSettings):
     def garmin_connect_ready(self) -> bool:
         return bool(self.GARMIN_CONNECT_ENABLED and self.GARMIN_CONNECT_CLIENT_ID.strip()
                     and self.GARMIN_CONNECT_CLIENT_SECRET.strip())
+
+    @property
+    def wahoo_cloud_ready(self) -> bool:
+        return bool(self.WAHOO_CLOUD_ENABLED and self.WAHOO_CLOUD_CLIENT_ID.strip()
+                    and self.WAHOO_CLOUD_CLIENT_SECRET.strip())
+
+    @property
+    def polar_accesslink_ready(self) -> bool:
+        return bool(self.POLAR_ACCESSLINK_ENABLED and self.POLAR_ACCESSLINK_CLIENT_ID.strip()
+                    and self.POLAR_ACCESSLINK_CLIENT_SECRET.strip())
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

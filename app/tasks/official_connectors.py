@@ -107,11 +107,93 @@ async def _coros_sync(conn_id: int, backfill: bool) -> dict | None:
         return None if outcome is None else {"ok": bool(outcome.get("ok"))}
 
 
+@celery_app.task(name="paceforge.official_wahoo_push", ignore_result=True)
+def wahoo_push(entries: list[dict]) -> None:
+    """One Wahoo webhook event: a workout summary for its link ({"conn": id, "user": Wahoo id, "item": …})."""
+    if not ready("wahoo"):
+        return
+    asyncio.run(_push("wahoo", entries))
+
+
+@celery_app.task(name="paceforge.official_polar_push", ignore_result=True)
+def polar_push(entries: list[dict]) -> None:
+    """One Polar webhook event: an exercise id for its link ({"conn": id, "user": Polar id, "item": {entity_id}})."""
+    if not ready("polar"):
+        return
+    asyncio.run(_push("polar", entries))
+
+
+async def _push(provider: str, entries: list[dict]) -> None:
+    """Wahoo's and Polar's pushes: each entry for its link, only when the link is still active and still the
+    provider account the push named (never trust a mismatch)."""
+    from app.connectors import base
+    from app.database import get_task_session
+    from app.models.official_connection import OfficialConnection
+
+    spec = base.module(provider)
+    by_conn: dict[int, list[dict]] = {}
+    for e in entries:
+        if isinstance(e.get("conn"), int) and isinstance(e.get("item"), dict):
+            by_conn.setdefault(e["conn"], []).append(e)
+    async with get_task_session() as db:
+        for conn_id, mine in by_conn.items():
+            conn = await db.get(OfficialConnection, conn_id)
+            if conn is None or conn.provider != provider or conn.status != base.ACTIVE:
+                continue
+            items = [e["item"] for e in mine if str(e.get("user")) == conn.provider_user_id]
+            if not items:
+                continue
+            try:
+                await spec.process_push(db, conn, items)
+                await db.commit()
+            except Exception:
+                logger.exception("%s official push failed for user %d", spec.NAME, conn.user_id)
+                await db.rollback()
+
+
+@celery_app.task(name="paceforge.official_wahoo_sync", ignore_result=True)
+def wahoo_sync(conn_id: int, backfill: bool = False) -> dict | None:
+    """One Wahoo link's pull: a few pages of workouts right after connecting (backfill), else the latest page."""
+    if not ready("wahoo"):
+        return None
+    return asyncio.run(_sync("wahoo", conn_id, backfill))
+
+
+@celery_app.task(name="paceforge.official_polar_sync", ignore_result=True)
+def polar_sync(conn_id: int, backfill: bool = False) -> dict | None:
+    """One Polar link's pull: the exercises Polar lists (its last 30 days)."""
+    if not ready("polar"):
+        return None
+    return asyncio.run(_sync("polar", conn_id, backfill))
+
+
+async def _sync(provider: str, conn_id: int, backfill: bool) -> dict | None:
+    from app.connectors import base
+    from app.database import get_task_session
+    from app.models.official_connection import OfficialConnection
+
+    async with get_task_session() as db:
+        conn = await db.get(OfficialConnection, conn_id)
+        if conn is None or conn.provider != provider:
+            return None
+        outcome = await base.module(provider).run_sync(db, conn, backfill=backfill)
+        return None if outcome is None else {"ok": bool(outcome.get("ok"))}
+
+
+# the pull right after connecting, per provider (routers.official_connectors)
+SYNC_TASKS = {"coros": coros_sync, "wahoo": wahoo_sync, "polar": polar_sync}
+PULLED = ("coros", "wahoo", "polar")  # the providers the hourly round pulls when due (each its SYNC_EVERY)
+# the providers whose tokens the round refreshes ahead: COROS and Garmin (a Garmin push-only link must keep a working
+# refresh token); Wahoo's last two hours (refreshed when used), Polar's years without any refresh token
+REFRESHED = ("coros", "garmin")
+
+
 @celery_app.task(name="paceforge.official_round")
 def official_round() -> dict:
-    """Hourly (beat, only while a connector is active): the COROS links not pulled for 2 hours, and every official
-    link whose tokens lapse within a week refreshed (Garmin's push-only links included: deregistering one later
-    needs a working refresh token)."""
+    """Hourly (beat, only while a connector is active): the COROS links not pulled for 2 hours and the Wahoo and
+    Polar ones not pulled for 12 hours (their webhooks bring what is new; the pull catches a missed push), and
+    every COROS and Garmin link whose tokens lapse within a week refreshed (Garmin's push-only links included:
+    deregistering one later needs a working refresh token)."""
     try:
         return asyncio.run(_round())
     except Exception:
@@ -120,16 +202,16 @@ def official_round() -> dict:
 
 
 async def _round() -> dict:
-    from app.connectors import base, coros_partner
+    from app.connectors import base
     from app.database import get_task_session
     from app.models.official_connection import OfficialConnection
 
     pulled = refreshed = failed = 0
     async with get_task_session() as db:
-        providers = [p for p in ("coros", "garmin") if ready(p)]
+        providers = [p for p in REFRESHED if ready(p)]
         ids = (await db.execute(select(OfficialConnection.id).where(
             OfficialConnection.provider.in_(providers), OfficialConnection.status == base.ACTIVE)
-            .order_by(OfficialConnection.id))).scalars().all()
+            .order_by(OfficialConnection.id))).scalars().all() if providers else []
         for conn_id in ids:
             conn = await db.get(OfficialConnection, conn_id)
             if conn is None:
@@ -141,20 +223,21 @@ async def _round() -> dict:
                 logger.warning("Official tokens of connection %d not refreshed", conn_id, exc_info=True)
                 await db.rollback()
                 failed += 1
-        due_before = datetime.now(timezone.utc) - coros_partner.SYNC_EVERY + timedelta(minutes=10)
-        if "coros" in providers:
-            coros_ids = (await db.execute(select(OfficialConnection.id).where(
-                OfficialConnection.provider == "coros", OfficialConnection.status == base.ACTIVE,
+        for provider in (p for p in PULLED if ready(p)):
+            spec = base.module(provider)
+            due_before = datetime.now(timezone.utc) - spec.SYNC_EVERY + timedelta(minutes=10)
+            due_ids = (await db.execute(select(OfficialConnection.id).where(
+                OfficialConnection.provider == provider, OfficialConnection.status == base.ACTIVE,
                 or_(OfficialConnection.last_sync_at.is_(None), OfficialConnection.last_sync_at < due_before))
                 .order_by(OfficialConnection.last_sync_at.asc().nulls_first()))).scalars().all()
-            for conn_id in coros_ids:
+            for conn_id in due_ids:
                 conn = await db.get(OfficialConnection, conn_id)
                 if conn is None:
                     continue
                 try:
-                    outcome = await coros_partner.run_sync(db, conn)
+                    outcome = await spec.run_sync(db, conn)
                 except Exception:
-                    logger.exception("COROS official pull crashed for connection %d", conn_id)
+                    logger.exception("%s official pull crashed for connection %d", spec.NAME, conn_id)
                     await db.rollback()
                     outcome = {"ok": False}
                 if outcome and outcome.get("ok"):

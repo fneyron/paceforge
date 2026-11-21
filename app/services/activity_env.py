@@ -166,7 +166,8 @@ async def _key(db: AsyncSession, user_id: int, since: datetime) -> tuple:
     read)."""
     return tuple((await db.execute(select(
         func.count(Activity.id), func.max(Activity.id), func.count(Activity.strava_activity_id),
-        func.count(Activity.garmin_activity_id), func.count(Activity.coros_activity_id), func.sum(raw_size(db)))
+        func.count(Activity.garmin_activity_id), func.count(Activity.coros_activity_id),
+        func.count(Activity.wahoo_activity_id), func.count(Activity.polar_activity_id), func.sum(raw_size(db)))
         .where(Activity.user_id == user_id, Activity.start_date >= since))).one())
 
 

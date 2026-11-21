@@ -1,8 +1,8 @@
 """One row per outing, whichever service brought it first.
 
-Strava, Garmin and COROS can each send the same session. The first one in
+Strava, Garmin, COROS, Wahoo and Polar can each send the same session. The first one in
 creates the row; the others only attach their id to it:
-- a watch (Garmin, COROS) finding the outing already there links its id to
+- a watch (Garmin, COROS, Wahoo, Polar) finding the outing already there links its id to
   that row (`find_twin`);
 - Strava finding a watch-only row of the outing takes it over: Strava's fields
   (splits, name…) replace the watch's, the watch ids stay
@@ -23,7 +23,7 @@ from app.models.activity import Activity
 from app.models.route import Route
 from app.services.activity_dedupe import _DUP_DISTANCE_TOL, _DUP_WINDOW_S, _same_family
 
-WATCH_IDS = ("garmin_activity_id", "coros_activity_id")
+WATCH_IDS = ("garmin_activity_id", "coros_activity_id", "wahoo_activity_id", "polar_activity_id")
 KEEP = {"id", "created_at", *WATCH_IDS}  # what Strava never overwrites on a watch row
 
 

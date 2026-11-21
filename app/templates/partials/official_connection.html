@@ -13,12 +13,12 @@
     {% if oc.ok %}<div class="pf-note !text-ok" role="status">{{ oc.ok }}</div>{% endif %}
     {% if oc.error %}<div class="pf-note !text-danger" role="alert">{{ oc.error }}</div>{% endif %}
     {% if not oc.connected or oc.needs_reauth %}
-    <p class="text-sm text-gray-500">{% if oc.provider == 'garmin' %}Tes activités et tes mesures arrivent automatiquement de Garmin Connect, dès que ta montre se synchronise. Tu autorises PaceForge sur la page de Garmin, sans donner ton mot de passe.{% else %}Tes activités arrivent automatiquement de COROS quelques minutes après chaque synchronisation de ta montre. Tu autorises PaceForge sur la page de COROS.{% endif %}</p>
+    <p class="text-sm text-gray-500">{% if oc.provider == 'garmin' %}Tes activités et tes mesures arrivent automatiquement de Garmin Connect, dès que ta montre se synchronise. Tu autorises PaceForge sur la page de Garmin, sans donner ton mot de passe.{% elif oc.provider == 'wahoo' %}Tes activités arrivent automatiquement de Wahoo dès qu’une séance est enregistrée sur ton compte. Tu autorises PaceForge sur la page de Wahoo, en lecture seule, sans donner ton mot de passe.{% elif oc.provider == 'polar' %}Tes activités arrivent automatiquement de Polar Flow après chaque synchronisation de ta montre. Tu autorises PaceForge sur la page de Polar, en lecture seule, sans donner ton mot de passe.{% else %}Tes activités arrivent automatiquement de COROS quelques minutes après chaque synchronisation de ta montre. Tu autorises PaceForge sur la page de COROS.{% endif %}</p>
     {% if oc.legacy %}<p class="text-xs text-gray-500">Elle remplace la connexion {{ oc.name }} actuelle. Les données déjà reçues restent.</p>{% endif %}
     {% if oc.needs_reauth and oc.last_error %}<p class="text-xs text-gray-600">{{ oc.last_error }}</p>{% endif %}
     <a href="/connect/{{ oc.provider }}" class="pf-btn pf-btn-primary pf-btn-sm">{{ 'Reconnecter' if oc.needs_reauth else 'Connecter ' ~ oc.name }}</a>
     {% else %}
-    <p class="text-xs text-gray-500">{% if oc.last_sync_ago %}Dernières données reçues {{ oc.last_sync_ago }}.{% else %}Les données apparaîtront après la prochaine synchronisation de ta montre.{% endif %}</p>
+    <p class="text-xs text-gray-500">{% if oc.last_sync_ago %}Dernières données reçues {{ oc.last_sync_ago }}.{% else %}Les données apparaîtront après la prochaine synchronisation de ta {{ 'montre ou de ton compteur' if oc.provider == 'wahoo' else 'montre' }}.{% endif %}</p>
     {% if oc.missing %}<p class="text-xs text-gray-600">{{ oc.name }} ne partage pas tes {{ oc.missing|join(' ni tes ') }} : change-le dans les autorisations de {{ 'Garmin Connect' if oc.provider == 'garmin' else 'ton compte ' ~ oc.name }}.</p>{% endif %}
     {% if oc.last_error %}<p class="text-xs text-gray-600">Dernière synchro échouée : {{ oc.last_error }}</p>{% endif %}
     {% endif %}

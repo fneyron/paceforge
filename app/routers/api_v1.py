@@ -176,7 +176,7 @@ class ActivitySummary(BaseModel):
     average_speed_mps: float | None
     max_speed_mps: float | None
     calories_kcal: float | None
-    sources: list[Literal["strava", "garmin", "coros"]]
+    sources: list[Literal["strava", "garmin", "coros", "wahoo", "polar"]]
 
 
 class Split(BaseModel):
@@ -516,12 +516,13 @@ async def plan(plan_id: int, c: Caller = Depends(caller), db: AsyncSession = Dep
 
 # ── activities ───────────────────────────────────────────────────────────────
 
-SOURCES = (("strava", "strava_activity_id"), ("garmin", "garmin_activity_id"), ("coros", "coros_activity_id"))
+SOURCES = (("strava", "strava_activity_id"), ("garmin", "garmin_activity_id"), ("coros", "coros_activity_id"),
+           ("wahoo", "wahoo_activity_id"), ("polar", "polar_activity_id"))
 ACTIVITY_COLUMNS = (Activity.id, Activity.name, Activity.sport_type, Activity.start_date, Activity.distance,
                     Activity.moving_time, Activity.elapsed_time, Activity.total_elevation_gain,
                     Activity.average_heartrate, Activity.max_heartrate, Activity.average_speed, Activity.max_speed,
                     Activity.calories, Activity.strava_activity_id, Activity.garmin_activity_id,
-                    Activity.coros_activity_id)
+                    Activity.coros_activity_id, Activity.wahoo_activity_id, Activity.polar_activity_id)
 
 
 def _activity(row: Any, zone) -> dict:
