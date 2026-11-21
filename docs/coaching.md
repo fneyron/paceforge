@@ -19,12 +19,12 @@ Un seul interrupteur reste, `COACHING_BETA_USERS` :
 
 | Valeur | Effet |
 |---|---|
-| `*` (**par défaut**, aussi quand rien n’est réglé) | Chaque compte connecté a Coaching. |
+| `*`, vide ou absent (**par défaut**) | Chaque compte connecté a Coaching. |
 | Des e-mails séparés par des virgules (la casse ne compte pas) | Seuls ces comptes l’ont ; pour les autres, la fonction n’existe pas. Un coach doit lui aussi être dans la liste. |
-| Vide, ou `off` (tout mot qui n’est ni `*` ni un e-mail) | **La fonction n’existe pas** : toutes les routes `/coaching…` répondent 404 (le flux calendrier aussi), aucun onglet, aucune carte, aucune ligne dans la politique de confidentialité, aucune tâche planifiée. |
+| `off` (ou `0`, `false`, `non`, `no`, `none`), sans e-mail | **La fonction n’existe pas** : toutes les routes `/coaching…` répondent 404 (le flux calendrier aussi), aucun onglet, aucune carte, aucune ligne dans la politique de confidentialité, aucune tâche planifiée. |
 
-- En production (`docker-compose.prod.yml`, `${COACHING_BETA_USERS:-*}`), une variable absente **ou laissée vide**
-  dans Coolify vaut `*` : pour éteindre, écrire `off`. Hors Docker, une valeur vide éteint.
+- Une valeur vide vaut « tout le monde », partout : Coolify avait gardé la valeur vide de la bêta fermée et
+  éteignait la fonction en silence (21 nov.). Pour éteindre, écrire `off`.
 - Chaque requête d’un coach revérifie le lien athlète → coach et que l’athlète a toujours Coaching : sinon 404.
 - La variable se lit au démarrage du worker pour la tâche quotidienne (comme tout réglage : un redéploiement), et à
   chaque requête pour le reste.

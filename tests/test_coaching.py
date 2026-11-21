@@ -123,9 +123,18 @@ async def test_by_default_every_account_has_coaching(client: AsyncClient, people
     assert plan.user_id == people.outsider.id and await task.run(db_session) == 1
 
 
-@pytest.mark.parametrize("value", ["", "  ", "off", "OFF", "non, 0"])
+@pytest.mark.parametrize("value", ["", "  ", "*", "'*'", "-*", "tout le monde"])
+def test_an_empty_or_unreadable_switch_means_everyone(value, monkeypatch):
+    """Coolify kept the closed beta's empty default: an empty value (or anything that is neither an email nor an
+    « off » word) must leave Coaching on for every account, never switch it off in silence."""
+    monkeypatch.setattr(settings, "COACHING_BETA_USERS", value)
+    assert features.coaching_enabled() and features.coaching_for_everyone()
+    assert features.coaching_for(User(email=OUTSIDER)) and features.coaching_beat_schedule()
+
+
+@pytest.mark.parametrize("value", ["off", "OFF", "non, 0", " Off ,", "false"])
 def test_the_switch_reads_everyone_a_list_or_nobody(value, monkeypatch):
-    """« * »: every account, also beside emails; emails: those accounts; anything else (empty, « off »): nobody."""
+    """« * »: every account, also beside emails; emails: those accounts; an « off » word: nobody."""
     stella, other = User(email=ATHLETE), User(email=OUTSIDER)
     monkeypatch.setattr(settings, "COACHING_BETA_USERS", value)
     assert not features.coaching_enabled() and not features.coaching_for(stella)
@@ -138,18 +147,18 @@ def test_the_switch_reads_everyone_a_list_or_nobody(value, monkeypatch):
 
 
 def test_production_defaults_to_everyone_even_with_an_empty_variable():
-    """docker-compose.prod.yml: unset or left empty in Coolify, the variable reaches the app as « * » (« :- »: an
-    empty value falls back too, so only « off » or a list changes anything there); .env.example says the same."""
+    """docker-compose.prod.yml passes the variable as it is (no default Coolify could store once and keep): unset
+    or left empty it reaches the app empty, which means every account; .env.example shows « * »."""
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent
-    assert "  COACHING_BETA_USERS: ${COACHING_BETA_USERS:-*}\n" in (root / "docker-compose.prod.yml").read_text()
+    assert "  COACHING_BETA_USERS: ${COACHING_BETA_USERS:-}\n" in (root / "docker-compose.prod.yml").read_text()
     assert "\nCOACHING_BETA_USERS=*\n" in (root / ".env.example").read_text()
 
 
-@pytest.mark.parametrize("off", ["", "off"])
+@pytest.mark.parametrize("off", ["off", "0"])
 async def test_switched_off_nothing_exists(off, client: AsyncClient, people, db_session, same_today, monkeypatch):
-    """Switched off (an empty value, or « off »): every route 404 (the feed too, even for a token that exists), no
+    """Switched off (« off »): every route 404 (the feed too, even for a token that exists), no
     menu entry, no card, no privacy row, nothing scheduled."""
     monkeypatch.setattr(settings, "COACHING_BETA_USERS", off)
     assert not features.coaching_enabled()
@@ -230,7 +239,7 @@ async def test_the_card_and_the_way_back_are_for_an_app_older_than_its_coaching_
 
 @pytest.mark.parametrize("on", ["*", ATHLETE])
 async def test_the_privacy_row_shows_only_while_coaching_is_on(on, client: AsyncClient, monkeypatch):
-    monkeypatch.setattr(settings, "COACHING_BETA_USERS", "")
+    monkeypatch.setattr(settings, "COACHING_BETA_USERS", "off")
     assert "Coaching" not in (await client.get("/privacy")).text
     monkeypatch.setattr(settings, "COACHING_BETA_USERS", on)
     page = (await client.get("/privacy")).text
@@ -794,7 +803,7 @@ async def test_the_feed_is_stable_follows_edits_and_dies_with_its_token(client, 
     # its owner is no longer in the list; then Coaching is off
     monkeypatch.setattr(settings, "COACHING_BETA_USERS", COACH)
     assert (await client.get(f"/coaching/cal/{plan.feed_token}.ics")).status_code == 404
-    monkeypatch.setattr(settings, "COACHING_BETA_USERS", "")
+    monkeypatch.setattr(settings, "COACHING_BETA_USERS", "off")
     assert (await client.get(f"/coaching/cal/{plan.feed_token}.ics")).status_code == 404
 
 
@@ -824,7 +833,7 @@ async def test_the_daily_round_brings_every_beta_plan_up_to_date(client, people,
     await db_session.refresh(missed)
     await db_session.refresh(done)
     assert missed.status == "missed" and (done.status, done.done_minutes) == ("done", 44)
-    monkeypatch.setattr(settings, "COACHING_BETA_USERS", "")
+    monkeypatch.setattr(settings, "COACHING_BETA_USERS", "off")
     assert await task._run() == 0, "nothing while it is off (no database opened)"
 
 
