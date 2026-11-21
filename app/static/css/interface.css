@@ -1611,8 +1611,13 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-coach { --pf-coach-easy: var(--pf-accent); --pf-coach-long: var(--pf-sleep); --pf-coach-hard: var(--pf-warn-mark); --pf-coach-race: var(--pf-ink); --pf-viz-mark: var(--pf-accent); max-width: 1040px; }
 .pf-coach-head { padding-bottom: 16px; }
 .pf-coach-head .pf-tag, .pf-coach-entry .pf-tag { vertical-align: middle; margin-left: 6px; font-family: var(--pf-font-text); letter-spacing: .02em; }
-.pf-coach-goal { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 8px; font-size: 1rem; color: rgb(var(--pf-ink)); }
+.pf-coach-goal { display: flex; align-items: center; flex-wrap: wrap; gap: 0 10px; margin-top: 4px; min-height: 44px; font-size: 1rem; color: rgb(var(--pf-ink)); }
 .pf-coach-goal b { font-weight: 650; letter-spacing: -.01em; }
+.pf-coach-goal-time { display: inline-flex; align-items: center; min-height: 44px; font-size: 0.9375rem; font-weight: 600; font-variant-numeric: tabular-nums; color: rgb(var(--pf-gray-600)); white-space: nowrap; }
+a.pf-coach-goal-time { color: rgb(var(--pf-accent-strong)); text-decoration: underline; text-underline-offset: 3px; }
+.dark a.pf-coach-goal-time { color: rgb(var(--pf-accent)); }
+.pf-coach-ended { margin: 0 0 14px; }
+.pf-rp-coaching { margin-top: 18px; }
 .pf-coach-main { display: grid; gap: 14px; align-items: start; }
 .pf-coach-card { min-width: 0; background: rgb(var(--pf-surface)); border: 1px solid rgb(var(--pf-line)); border-radius: 22px; padding: 16px 14px; }
 fieldset.pf-coach-card { margin: 0; }

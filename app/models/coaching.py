@@ -3,8 +3,10 @@
 - coaching_plans: one per athlete. The goal (a Route with a race date, or none: « Progresser »), the weekdays
   available, the long run's weekday, the starting weekly minutes, the Monday the progression counts from, what the
   ressenti changed week by week (`adaptations`: {Monday ISO: {"factor", "reason", …}}, kept so that a past week
-  still says why it was lighter) and the calendar feed's token (encrypted, so its owner can read the link again;
-  looked up by its SHA-256).
+  still says why it was lighter), what the plan last read of its race (`goal_state`: the race page's objective and
+  estimate, kept for the day; or, once the race is deleted or behind, why the plan went on without it and from
+  which Monday) and the calendar feed's token (encrypted, so its owner can read the link again; looked up by its
+  SHA-256).
 - coaching_sessions: one session on one local day. `auto_day` is the day the generator gave it (None for a session a
   person added): a moved session keeps it, so a regeneration never fills the day it left. `pinned`: a person edited
   it, a regeneration never rewrites it. `seq` counts its changes (the calendar feed's SEQUENCE).
@@ -35,6 +37,9 @@ class CoachingPlan(Base):
     start_monday: Mapped[date] = mapped_column(Date, nullable=False)  # week 0 of the progression
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     adaptations: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+    # the race's times as its page reads them, kept for the day: {"route", "sig", "day", "objective_s", "estimate_s"};
+    # or, the race deleted or behind: {"ended": "passee" | "supprimee", "name", "from": Monday ISO}
+    goal_state: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     feed_token: Mapped[str | None] = mapped_column(EncryptedString(255), nullable=True)
     feed_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

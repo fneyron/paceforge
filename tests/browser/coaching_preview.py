@@ -59,6 +59,8 @@ async def lifespan(app):
                                     average_speed=km * 1000 / (minutes * 60), raw_data={"utc_offset": 0}))
             route = (await db.execute(select(Route).where(Route.user_id == athlete.id))).scalars().first()
             route.name, route.race_date = "Trail des Crêtes", (today + timedelta(days=54)).isoformat()
+            # an objective the athlete set on the race page (today's page marks its saves): « Objectif 5h00 »
+            route.target_time_s, route.params_json = 5 * 3600, {"target_v": 2}
             await db.flush()
             # the plan was made 3 weeks ago: its past weeks are generated as they were then, then read against the runs
             start = today - timedelta(weeks=3)

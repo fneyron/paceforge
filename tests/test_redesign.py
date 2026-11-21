@@ -115,7 +115,8 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     assert 'aria-label="Outils"' not in html and "pf-plan-tools" not in html and " Outils " not in text
     assert "pf-legend" not in html and 'id="weather-result"' not in html and 'id="pass-count"' not in html
     # no « Préparer » section (its only row was Nutrition, removed on 2026-10-09)
-    assert 'class="pf-prep"' not in html and "Préparer" not in text
+    # (Coaching's one link, « Préparer cette course avec Coaching », is not that section)
+    assert 'class="pf-prep"' not in html and "Préparer" not in text.replace("Préparer cette course avec Coaching", "")
     # nothing explains the obvious, nothing duplicated
     assert surface.count("Exporter pour ma montre") == 1
     for gone in ("Carte du parcours", "Masquer la carte", "Agrandir la carte", "Verdict", "postes", "Double-clic sur le profil",

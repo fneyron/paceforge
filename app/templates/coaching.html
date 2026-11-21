@@ -13,9 +13,11 @@
     <div class="pf-head pf-coach-head">
         <div>
             <h1 class="pf-h1">{{ athlete_name if scope.coach else "Coaching" }} <span class="pf-tag">bêta</span></h1>
-            <p class="pf-coach-goal"><b>{{ head.goal }}</b>{% if head.phase %}<span class="pf-pill pf-pill-accent">{{ head.phase }}</span>{% endif %}</p>
+            {#- the time the plan runs on, said once: the race page's objective, else the simulator's estimate -#}
+            <p class="pf-coach-goal"><b>{{ head.goal }}</b>{% if head.time %}{% if head.time.href %}<a class="pf-coach-goal-time" href="{{ head.time.href }}">{{ head.time.label }}</a>{% else %}<span class="pf-coach-goal-time">{{ head.time.label }}</span>{% endif %}{% endif %}{% if head.phase %}<span class="pf-pill pf-pill-accent">{{ head.phase }}</span>{% endif %}</p>
         </div>
     </div>
+    {% if head.ended %}<p class="pf-coach-reason pf-coach-ended">{{ head.ended }}</p>{% endif %}
 
     {% include "partials/coaching_main.html" %}
 

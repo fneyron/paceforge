@@ -7,6 +7,7 @@ edit) and once a day for every plan (app.tasks.coaching). Nothing hooks into the
 matched the next time the plan is read (the page, the coach's page) or at the daily round at the latest.
 """
 import hashlib
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -22,6 +23,8 @@ from app.models.user import User
 from app.services import coaching_plan as cp
 from app.services import race_prep as rp
 from app.services import sante_training as st
+
+logger = logging.getLogger(__name__)
 
 INVITE_DAYS = 7  # a coach's code lives 7 days
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L: read aloud or typed from a phone
@@ -92,22 +95,132 @@ async def goal_options(db: AsyncSession, user_id: int, today: date) -> list[Rout
     return out
 
 
-def goal_of(route) -> cp.Goal:
+OBJECTIVE, ESTIMATE, ROUGH = "objectif", "estimation", "approx"  # which time the plan runs on (Goal.time_kind)
+PASSED, GONE = "passee", "supprimee"  # why a plan lost its race (CoachingPlan.goal_state["ended"])
+# what the plan reads of its race: the light columns, and the row's last change (a save on the race page)
+GOAL_COLUMNS = (*rp.RACE_COLUMNS, Route.updated_at)
+
+
+def goal_of(route, objective_s: int | None = None, estimate_s: int | None = None) -> cp.Goal:
+    """The race aimed at. Its expected time: the race page's objective (`objective_s`), else the simulator's own
+    estimate for this athlete (`estimate_s`: both from routers.simulator.race_times, the page's reading), else — no
+    prediction at all — the saved time or race_prep's rough guess from the distance and the D+. A trail race also
+    gives its D+ per hour of race (the climb the long runs aim at)."""
     rd = rp.race_day(route)
     if route is None or rd is None:
         return cp.Goal()
-    expected = rp.expected_s(route)
-    km = route.total_distance_km or 0
-    trail = (getattr(route, "sport_type", None) or "trail").lower() in ("trail", "ultra") or (
-        (route.total_elevation_gain or 0) >= 10 * km > 0)
-    return cp.Goal(rd, (expected or 3600) / 60, trail, route.id, route.name or "")
+    km, up = route.total_distance_km or 0, route.total_elevation_gain or 0
+    trail = (getattr(route, "sport_type", None) or "trail").lower() in ("trail", "ultra") or up >= 10 * km > 0
+    if objective_s:
+        seconds, kind = objective_s, OBJECTIVE
+    elif estimate_s:
+        seconds, kind = estimate_s, ESTIMATE
+    else:
+        seconds = rp.expected_s(route) or 3600
+        kind = OBJECTIVE if getattr(route, "target_time_s", None) else ROUGH
+    rate = up / (seconds / 3600) if trail and up > 0 else None
+    return cp.Goal(rd, seconds / 60, trail, route.id, route.name or "", kind, rate)
 
 
 async def plan_route(db: AsyncSession, plan: CoachingPlan):
     if not plan.route_id:
         return None
-    return (await db.execute(select(Route).options(load_only(*rp.RACE_COLUMNS)).where(
+    return (await db.execute(select(Route).options(load_only(*GOAL_COLUMNS)).where(
         Route.id == plan.route_id, Route.user_id == plan.user_id))).scalar_one_or_none()
+
+
+async def race_entry(db: AsyncSession, user: User, route) -> dict | None:
+    """The race page's one line about Coaching, for a foot race still to come: {href, label} — the plan that
+    prepares it (« Plan de coaching · semaine 5 sur 12 »), else the way to make one with this race chosen. None
+    without Coaching, for another sport, a race behind or undated, or on any failure (the race page never blanks)."""
+    try:
+        rd = rp.race_day(route)
+        if not features.coaching_for(user) or rd is None or rp.sport(route) != "foot":
+            return None
+        today = (await clock(db, user)).today
+        if rd < today:
+            return None
+        plan = await get_plan(db, user.id)
+        if plan is not None and plan.route_id == route.id:
+            weeks = max(1, (cp.monday_of(rd) - plan.start_monday).days // 7 + 1)
+            week = min(weeks, max(1, (cp.monday_of(today) - plan.start_monday).days // 7 + 1))
+            return {"href": "/coaching", "label": f"Plan de coaching · semaine {week} sur {weeks}"}
+        return {"href": f"/coaching?refaire=1&course={route.id}", "label": "Préparer cette course avec Coaching"}
+    except Exception:
+        logger.exception("Coaching: the race page's line failed for route %s", getattr(route, "id", None))
+        return None
+
+
+def signature(route) -> str:
+    """What a save on the race page moves: its date, objective, distance, D+, start, and the row's last change."""
+    return "|".join(str(getattr(route, name, None)) for name in (
+        "id", "race_date", "target_time_s", "total_distance_km", "total_elevation_gain", "start_hour", "start_minute",
+        "updated_at"))
+
+
+async def race_times(db: AsyncSession, plan: CoachingPlan, route, today: date) -> tuple[int | None, int | None]:
+    """(objective, estimate) of the plan's race in seconds, as its page prints them (routers.simulator.race_times:
+    the simulator's own prediction, never a second estimator). A prediction reads the whole course: it is kept on
+    the plan for the day (`goal_state`) and read again when the race page saved something (`signature`) or the day
+    changed (the athlete's level moves the estimate). A failure reads as « no prediction » for the day: the plan
+    then runs on the saved time or the rough guess, the page never blanks."""
+    sig, kept = signature(route), plan.goal_state or {}
+    if kept.get("sig") == sig and kept.get("day") == today.isoformat():
+        return kept.get("objective_s"), kept.get("estimate_s")
+    times = None
+    try:
+        from app.routers import simulator
+
+        times = await simulator.race_times(db, plan.user_id, route.id)  # reads only
+    except Exception:
+        logger.exception("Coaching: the race's prediction failed for user %d", plan.user_id)
+    objective, estimate = times or (None, None)
+    plan.goal_state = {"route": route.id, "sig": sig, "day": today.isoformat(), "objective_s": objective,
+                       "estimate_s": estimate}
+    return objective, estimate
+
+
+def goal_ended(plan: CoachingPlan) -> dict | None:
+    """{ended, name, from (date)} while the plan says it lost its race, else None."""
+    kept = plan.goal_state or {}
+    if not kept.get("ended"):
+        return None
+    try:
+        return {"ended": kept["ended"], "name": kept.get("name") or "", "from": date.fromisoformat(kept["from"])}
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+async def follow_goal(db: AsyncSession, plan: CoachingPlan, route, rows: list, today: date):
+    """The plan's race, or None once it is deleted (or lost its date) or behind: the plan then goes on as
+    « Progresser, sans course » from the next week — the Monday after the race, or after the week its deletion is
+    seen — which becomes its week 0; this week's sessions stay as they are, the deleted race's own session goes. One
+    line says so (`goal_state`) until that first week is over. Returns (route, rows)."""
+    ended = goal_ended(plan)
+    if ended is not None:
+        if today >= ended["from"] + timedelta(weeks=1):
+            plan.goal_state = None
+        return None, rows
+    rd = rp.race_day(route)
+    kept = plan.goal_state or {}
+    if rd is not None and rd >= today:
+        return route, rows
+    race_rows = [r for r in rows if r.kind == cp.RACE and r.status == PLANNED and r.day >= today
+                 and r.origin == "auto"]
+    if rd is not None:  # behind
+        kind, start, name = PASSED, cp.monday_of(rd) + timedelta(weeks=1), route.name or ""
+    elif plan.route_id or kept.get("route") or race_rows:  # deleted, or its date removed on its page
+        kind, start = GONE, cp.monday_of(today) + timedelta(weeks=1)
+        name = (route.name if route is not None else None) or next(
+            ((r.structure or {}).get("text") for r in race_rows), None) or ""
+    else:
+        return None, rows  # « Progresser, sans course » from the start
+    for r in race_rows:
+        rows = [x for x in rows if x is not r]
+        await db.delete(r)
+    plan.route_id, plan.start_monday = None, start
+    plan.goal_state = {"ended": kind, "name": name, "from": start.isoformat()}
+    return None, rows
 
 
 def inputs(plan: CoachingPlan, goal: cp.Goal) -> cp.Inputs:
@@ -168,6 +281,7 @@ async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | N
         new_feed_token(plan)
     plan.route_id, plan.days, plan.long_day, plan.base_minutes = route_id, ",".join(map(str, days)), long_day, base
     plan.start_monday, plan.adaptations, plan.generated_at = cp.monday_of(c.today), None, c.now
+    plan.goal_state = None  # the race's times are read again; a lost race's line goes
     await db.flush()
     return plan
 
@@ -250,6 +364,8 @@ def read_adaptations(plan: CoachingPlan, rows: list, done: dict[date, float], to
     kept = dict(plan.adaptations or {})
     m0 = cp.monday_of(today)
     for week, closed in ((m0, True), (m0 + timedelta(weeks=1), False)):
+        if week < plan.start_monday:
+            continue  # a week before week 0 (the plan lost its race: this week stays as it was)
         key = week.isoformat()
         new = cp.adaptation(facts, week, done, fresh_base, closed) if week > plan.start_monday else None
         old = kept.get(key)
@@ -322,12 +438,15 @@ async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime |
     await db.execute(select(CoachingPlan.id).where(CoachingPlan.id == plan.id).with_for_update())
     rows = await sessions_of(db, plan)
     match(rows, runs, c.today)
-    goal = goal_of(await plan_route(db, plan))
+    route, rows = await follow_goal(db, plan, await plan_route(db, plan), rows, c.today)
+    goal = goal_of(route, *(await race_times(db, plan, route, c.today) if route is not None else ()))
     fresh = cp.starting_minutes(weekly_minutes(runs, c.today))
     read_adaptations(plan, rows, done_by_week(runs, rows), c.today, fresh)
     inp = inputs(plan, goal)
-    weeks = cp.build(inp, c.today)
-    rows = await apply(db, plan, rows, weeks, c.today, c.now)
+    # a plan that just lost its race starts again next Monday: until then nothing of this week is rewritten
+    since = max(c.today, plan.start_monday)
+    weeks = cp.build(inp, since)
+    rows = await apply(db, plan, rows, weeks, since, c.now)
     match(rows, runs, c.today)  # a session made just now for today takes today's run at once
     await db.flush()
     return State(plan, c, goal, rows, runs, weeks, inp)

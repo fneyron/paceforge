@@ -55,7 +55,9 @@ async def test_the_race_page_print_exports_and_rows_carry_nothing_of_the_tool(as
 
     page = await as_user.get(f"/simulator/routes/{rid}")
     assert page.status_code == 200 and not GONE.search(page.text), GONE.search(page.text)
-    assert "Préparer" not in page.text and "pf-prep" not in page.text and "rpanel-tool" in page.text
+    # (Coaching's one link, « Préparer cette course avec Coaching », is not that section: tests/test_coaching_goal.py)
+    assert "Préparer" not in page.text.replace("Préparer cette course avec Coaching", "")
+    assert "pf-prep" not in page.text and "rpanel-tool" in page.text
     # the old deep links open the plan itself
     page = await as_user.get(f"/simulator/routes/{rid}?vue=nutrition&open=produits#nutrition")
     assert page.status_code == 200 and not GONE.search(page.text) and 'id="rpanel-plan" class="pf-col"' in page.text

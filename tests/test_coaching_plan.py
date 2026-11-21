@@ -53,6 +53,7 @@ HEURISTICS = {
     "LONG_CAP_RANGE": (120, 210), "FREE_LONG_CAP": 150, "NO_LONG_BEFORE_RACE": 3, "QUALITY_FROM_DAYS": 3,
     "TWO_QUALITY": (5, 240), "REP_EVERY": 2, "ADAPT_FACTOR": 0.8, "SIGNAL_FROM": 4, "SIGNAL_DAYS": 7,
     "MISSED_FROM": 2, "START_CHOICES": (60, 120, 180, 240, 300), "BASE_RANGE": (60, 900),
+    "RACE_TIME_STEP": 15, "CLIMB_START": 0.6, "CLIMB_RATE_CAP": 500, "CLIMB_MIN": 100,
 }
 
 
@@ -260,6 +261,68 @@ def test_the_ceiling_and_the_long_run_scale_with_the_race():
     assert cp.ceiling(ten_k, 400) == 400, "never under the athlete's base"
     assert cp.ceiling(cp.Goal(), 200) == 300 and cp.ceiling(cp.Goal(), 100) == 180 and cp.ceiling(cp.Goal(), 400) == 480
     assert [cp.long_cap(g) for g in (ten_k, marathon, ultra)] == [120, 130, 210] and cp.long_cap(cp.Goal()) == 150
+
+
+def test_the_rules_read_the_race_time_to_the_quarter_hour():
+    """An estimate that moves by a minute from one day to the next leaves the weeks as they are; the race's own
+    session keeps the exact time."""
+    assert [cp.rule_minutes(cp.Goal(TODAY, m)) for m in (422, 427, 428, 437, 5)] == [420, 420, 435, 435, 15]
+    a, b = (_inputs((1, 3, 5, 6), 240, TODAY + timedelta(days=75), minutes) for minutes in (422, 427))
+    plain = lambda inp: [(s.day, s.kind, s.minutes) for w in cp.build(inp, TODAY) for s in w.sessions if s.kind != cp.RACE]  # noqa: E731
+    assert plain(a) == plain(b)
+    race = [s.minutes for inp in (a, b) for w in cp.build(inp, TODAY) for s in w.sessions if s.kind == cp.RACE]
+    assert race == [422, 427]
+
+
+# ── a trail race's climb ────────────────────────────────────────────────────
+
+def _trail(rate, race=TODAY + timedelta(days=75), minutes=360, trail=True, days=(1, 3, 5, 6), base=300):
+    goal = cp.Goal(race, minutes, trail, 1, "Trail des Crêtes", "objectif", rate)
+    return cp.Inputs(tuple(days), 6, base, M0, goal, {})
+
+
+def test_the_climb_target_follows_the_races_dplus_per_hour_capped_and_rounded():
+    goal = cp.Goal(TODAY, 360, True, climb_rate=400)
+    assert cp.climb_target(goal, 120) == 800 and cp.climb_target(goal, 120, 0.6) == 500, "rate × share × hours"
+    assert cp.climb_target(goal, 100, 0.6) == 400 and cp.climb_target(goal, 95, 0.6) == 400, "to 50 m"
+    steep = cp.Goal(TODAY, 60, True, climb_rate=1000)  # a vertical kilometre: held to 500 m an hour
+    assert cp.climb_target(steep, 120) == 1000 == cp.CLIMB_RATE_CAP * 2
+    assert cp.climb_target(cp.Goal(TODAY, 360, True, climb_rate=40), 90) is None, "under 100 m: no target"
+    assert cp.climb_target(cp.Goal(TODAY, 240, False, climb_rate=400), 120) is None, "a road race: none"
+    assert cp.climb_target(cp.Goal(None, None, True, climb_rate=400), 120) is None, "no race: none"
+    assert cp.climb_target(cp.Goal(TODAY, 360, True), 120) is None
+
+
+def test_the_climb_grows_week_by_week_to_the_whole_before_the_taper():
+    inp = _trail(400)
+    first_taper = cp.taper_start(inp.goal.race_day)
+    mondays = cp.horizon(inp, TODAY)
+    shares = [cp.climb_share(m, inp) for m in mondays]
+    before = [s for m, s in zip(mondays, shares) if m < first_taper]
+    assert before[0] == cp.CLIMB_START and before[-1] == 1.0 and before == sorted(before)
+    assert len(set(round(b - a, 9) for a, b in zip(before, before[1:]))) == 1, "equal steps"
+    assert all(s == 1.0 for m, s in zip(mondays, shares) if m >= first_taper)
+    assert cp.climb_share(M0, cp.Inputs((1, 3, 6), 6, 200, M0, cp.Goal(), {})) == 1.0
+
+
+@pytest.mark.parametrize("rate", (150, 400, 900))
+def test_only_the_long_run_and_the_long_hills_carry_a_climb(rate):
+    seen = set()
+    for days in ((1, 3, 6), (0, 1, 3, 5, 6), (1, 2, 3, 4, 5, 6)):
+        inp = _trail(rate, days=days)
+        for w in cp.build(inp, TODAY):
+            share = cp.climb_share(w.monday, inp)
+            for s in w.sessions:
+                carries = s.kind == cp.LONG or s.structure.get("key") in cp.CLIMB_KEYS
+                want = cp.climb_target(inp.goal, s.minutes, share) if carries else None
+                assert s.structure.get("climb") == want, (s.day, s.kind)
+                if want:
+                    assert want % cp.CLIMB_STEP == 0 and want >= cp.CLIMB_MIN
+                    assert want <= cp.CLIMB_RATE_CAP * s.minutes / 60 + cp.CLIMB_STEP / 2
+                    seen.add(s.structure.get("key") or s.kind)
+    assert seen == {cp.LONG, "cotes_longues"}
+    for inp in (_trail(rate, trail=False), _trail(None)):
+        assert not [s for w in cp.build(inp, TODAY) for s in w.sessions if "climb" in s.structure]
 
 
 # ── the ressenti's adaptation ───────────────────────────────────────────────
