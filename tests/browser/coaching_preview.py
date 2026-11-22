@@ -17,6 +17,9 @@ uvicorn tests.browser.coaching_preview:app --host 127.0.0.1 --port 8961
     PF_COACHING_AS=athlete (default) | coach | new   who is signed in: the athlete (Stella), her coach (Florent),
                                                      or a new account: no plan, no activity, no race (the onboarding)
 
+A fifth account (Léa, POST /__preview/coaching/as/story) is the owner's story: a new account, no activity, no race —
+the visual check adds « 10 km du lac d’Annecy » on 24 April 2027 without a GPX file, keeps two days and makes the plan.
+
 A fourth account has no plan either but a habit (Hugo: Monday, Wednesday and Saturday for eight weeks, the long run
 on Saturday, a race in 40 days): what the onboarding proposes from a history. A fixture signs it in on request —
 POST /__preview/coaching/as/habit (and back: …/as/new) — so that no fourth server is needed.
@@ -64,7 +67,9 @@ async def lifespan(app):
             coach = User(firstname="Florent", email=EMAILS["coach"], email_verified=True, timezone="UTC")
             new = User(firstname="Nina", email=EMAILS["new"], email_verified=True, timezone="UTC")
             habit = User(firstname="Hugo", email="hugo@example.org", email_verified=True, timezone="UTC")
-            db.add_all([coach, new, habit])
+            # the owner's story: a new account, no activity, that will add a race without a GPX file
+            story = User(firstname="Léa", email="story@example.org", email_verified=True, timezone="UTC")
+            db.add_all([coach, new, habit, story])
             await db.flush()
             # Hugo: eight weeks on Monday, Wednesday and Saturday (the long run), and a race to come
             for week in range(1, 9):
@@ -159,7 +164,7 @@ async def lifespan(app):
             await db.flush()
             await co.sync(db, plan, athlete, noon)
             await db.commit()
-            ids = {"athlete": athlete.id, "coach": coach.id, "new": new.id, "habit": habit.id}
+            ids = {"athlete": athlete.id, "coach": coach.id, "new": new.id, "habit": habit.id, "story": story.id}
             app.state.coaching_ids = ids
             app.state.user_id = ids[AS]
             app.state.coaching_feed = plan.feed_token
