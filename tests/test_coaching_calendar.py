@@ -307,3 +307,46 @@ async def test_a_missed_session_is_reported_or_was_the_run_of_another_day(client
     assert r.status_code == 200 and "Cette séance ne se déplace pas." in r.text
     r = await client.post(f"/coaching/sessions/{tue.id}/move", data={"to": "2026-11-17"}, headers=HTMX)
     assert "à partir d’aujourd’hui" in r.text and (await db_session.get(CoachingSession, tue.id)).day == FRI
+
+
+# ── a run that does not look like the session: « Fait autrement », and the way out ──
+def test_a_run_far_from_the_planned_duration_is_a_misfit_never_the_race():
+    from types import SimpleNamespace as Run
+    row = _row(TUE)  # 45 min planned: within 20 % is the session
+    assert [co.misfit(row, Run(minutes=m)) for m in (36, 45, 54, 35, 55, 197)] == [False] * 3 + [True] * 3
+    assert not co.misfit(row, None) and not co.misfit(_row(TUE, cp.RACE), Run(minutes=197))
+
+
+async def test_a_run_that_does_not_match_is_said_and_can_leave_the_session(client, people, db_session, clock):
+    athlete = people.athlete
+    _as(client, athlete)
+    await _plan(client, db_session, athlete, days=("1", "3", "6"), base="180")
+    clock.day = TUE
+    tue = next(r for r in await _rows(db_session, athlete) if r.day == TUE)
+    db_session.add(_run(athlete, TUE, 197, 2, name="Chantier"))
+    await db_session.flush()
+    page = _main((await client.get("/coaching")).text)
+    await db_session.refresh(tue)
+    assert tue.status == "done" and tue.activity_id and tue.done_minutes == 197, "the day's run is the day's load"
+    assert '<span class="pf-pill pf-pill-soft">Fait autrement</span>' in page and ">Fait</span>" not in page
+    assert f'<p class="pf-coach-s-guide pf-coach-misfit">{hm(197)} au lieu de {hm(tue.minutes)}</p>' in page
+    assert re.search(rf'<button type="submit" name="value" value="missed" id="coach-unlink-{tue.id}" '
+                     r'class="pf-coach-quietbtn">Ce n’est pas cette séance</button>', page)
+    # the way out: the run goes back out of the plan, the session is not done and can be planned again
+    r = await client.post(f"/coaching/sessions/{tue.id}/status", data={"value": "missed"}, headers=HTMX)
+    await db_session.refresh(tue)
+    assert (tue.status, tue.activity_id, tue.done_minutes, tue.manual) == ("missed", None, None, True)
+    assert "Hors plan · Chantier" in r.text and "Fait autrement" not in r.text
+    assert re.search(rf'<a id="coach-move-{tue.id}"[^>]*>Reporter</a>', r.text)
+    r = await client.get("/coaching/calendar", headers=HTMX)  # the next reading leaves the choice alone
+    await db_session.refresh(tue)
+    assert tue.status == "missed" and tue.activity_id is None
+    # a run close to the plan is simply « Fait », with the same way out
+    thu = next(r for r in await _rows(db_session, athlete) if r.day == THU)
+    db_session.add(_run(athlete, THU, thu.minutes + 3, 3, name="Footing"))
+    await db_session.flush()
+    clock.day = THU
+    page = _main((await client.get("/coaching")).text)
+    await db_session.refresh(thu)
+    assert thu.status == "done" and thu.activity_id
+    assert ">Fait</span>" in page and "Fait autrement" not in page and f'id="coach-unlink-{thu.id}"' in page

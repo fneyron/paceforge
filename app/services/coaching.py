@@ -36,6 +36,7 @@ CODE_LENGTH = 8
 NOTE_MAX = 280
 MINUTES_RANGE = (10, 600)  # what a typed duration is held to
 MATCH_DAYS = 365  # sessions older than a year are no longer read against the activities
+FIT = 0.2  # choix pratique: a run within 20 % of the planned duration is the session; beyond, « Fait autrement »
 PLANNED, DONE, MISSED, CANCELLED = "planned", "done", "missed", "cancelled"
 
 
@@ -533,6 +534,15 @@ def match(rows: list, runs: list, today: date) -> bool:
         if r.status == PLANNED and r.day < today:
             r.status, changed = MISSED, True
     return changed
+
+
+def misfit(row, run) -> bool:
+    """The run linked to this session does not look like it: its duration is more than FIT away from the planned
+    one. It stays linked (the day's run is the day's load) and is said so — « Fait autrement » — with the way out
+    (« Ce n’est pas cette séance »). Never for the race: its time is what it is."""
+    if run is None or row.kind == cp.RACE or not row.minutes:
+        return False
+    return abs(float(run.minutes) - row.minutes) > FIT * row.minutes
 
 
 def hors_plan(runs: list, rows: list) -> list:
