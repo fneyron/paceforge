@@ -1938,6 +1938,10 @@ a.pf-coach-activity:hover b { color: rgb(var(--pf-accent)); }
 .pf-coach-intent-line { min-height: 2.6em; margin: 10px 2px 0; font-size: 0.875rem; line-height: 1.35; color: rgb(var(--pf-gray-700)); }
 .pf-coach-races { margin-top: 12px; }
 .pf-coach-races[hidden] { display: none; }
+.pf-coach-level { margin: 8px 0 0; font-size: 0.875rem; line-height: 1.4; color: rgb(var(--pf-gray-700)); }
+.pf-coach-level b { font-weight: 650; color: rgb(var(--pf-ink)); }
+.pf-coach-level small { display: block; font-size: 0.8125rem; color: rgb(var(--pf-gray-500)); }
+.pf-coach-head .pf-coach-level { margin-top: 0; max-width: 46ch; }
 .pf-coach-pv-lines { display: grid; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
 .pf-coach-pv-lines li { position: relative; padding-left: 14px; font-size: 0.875rem; line-height: 1.35; color: rgb(var(--pf-gray-700)); }
 .pf-coach-pv-lines li::before { content: ""; position: absolute; left: 2px; top: .5em; width: 5px; height: 5px; border-radius: 50%; background: rgb(var(--pf-accent)); }

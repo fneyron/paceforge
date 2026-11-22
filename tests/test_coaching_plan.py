@@ -57,11 +57,12 @@ FIGURES = {
     "FORM_FOOTING_SHARE": 0.6, "FORM_FOOTING_CAP": 45, "FORM_LOW_COUNT": 3, "FORM_LOW_DAYS": 5,
     # the profiles (docs/coaching.md › « Les profils »)
     "FORME_FLOOR": 75, "FORME_GROWTH": 0.0, "FORME_LIGHT": None, "FORME_LONG_CAP": 90, "FORME_REPS": "fewest",
+    "NOVICE": (8, 75), "TRAINED": (10, 3, 240, 90), "NOVICE_EASY_WEEKS": 8, "NOVICE_MAX_DAYS": 4,
 }
 # not a training decision: how far ahead to write, a rounding, a stable reading — its line says « choix pratique »
 PRACTICAL = {
     "STEP": 5, "WEEK_FLOOR": 60, "HORIZON_WEEKS": 24, "BLOCK_WEEKS": 12, "START_CHOICES": (60, 120, 180, 240, 300),
-    "BASE_RANGE": (60, 900), "RACE_TIME_STEP": 15, "CLIMB_STEP": 50,
+    "BASE_RANGE": (60, 900), "RACE_TIME_STEP": 15, "CLIMB_STEP": 50, "LEVEL_WEEKS": 12, "NOVICE_NO_HISTORY": 120,
 }
 # the value is a study's: its line names it, and the study is in the document's sources with its DOI
 CITED = {

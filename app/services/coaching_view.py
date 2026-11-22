@@ -62,6 +62,11 @@ INTENT_CARDS = (
 AIM_LINE = {cp.FINIR: "Sans temps visé, une seule séance de qualité par semaine : le reste en aisance.",
             cp.PERFORMER: "Avec un temps visé : jusqu’à deux séances de qualité par semaine, à partir de 5 jours "
                           "et 4 h."}
+# the level read from the history (never asked), said to the athlete in one line with its reason — never to the
+# person who follows the plan (they read the plan itself)
+LEVEL_LEAD = {cp.DEBUTANT: "Tu débutes", cp.REGULIER: "Tu cours régulièrement", cp.ENTRAINE: "Tu t’entraînes beaucoup"}
+NOVICE_RULE = ("huit semaines en aisance d’abord, quatre jours de course au plus.",
+               "une séance de qualité par semaine au plus, courte, et quatre jours de course au plus.")
 METHOD = (
     "Ton plan est en temps, pas en kilomètres. Il part de ton volume habituel et monte d’environ 10 % par semaine ; "
     "une semaine sur quatre est plus légère.",
@@ -608,23 +613,45 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
 FIRST_EMPTY = "Aucune séance à placer cette semaine-là."
 
 
+def level_line(level: cp.Level | None, week: int = 0) -> dict | None:
+    """« Tu débutes : huit semaines en aisance d’abord, quatre jours de course au plus. », and why — what the level
+    read (`week`: the plan's week, the easy weeks said only while they last)."""
+    if level is None or level.level not in LEVEL_LEAD:
+        return None
+    if level.history:
+        why = f"Lu sur tes {cp.LEVEL_WEEKS} dernières semaines : {level.weeks} avec une sortie"
+        if level.level == cp.ENTRAINE:
+            why += f", {level.busy} avec 3 sorties ou plus"
+        why += f", {hm(level.median)} par semaine." if level.median else "."
+    else:
+        why = f"Aucune sortie enregistrée : lu sur ton volume, {hm(level.base)} par semaine."
+    if level.level == cp.DEBUTANT:
+        text = NOVICE_RULE[0 if week < cp.NOVICE_EASY_WEEKS else 1]
+    else:
+        text = why[:1].lower() + why[1:]
+        why = ""
+    return {"lead": LEVEL_LEAD[level.level], "text": rp.fr(text) or text, "why": rp.fr(why) or why,
+            "said": f"{LEVEL_LEAD[level.level]} : {text}" + (f" {why}" if why else "")}
+
+
 def profile_lines(inp: cp.Inputs) -> list[str]:
     """What the start screen says of the rules these answers bring, one short line each: a race « pour finir » or
-    « pour performer » (read from its time aimed at)."""
+    « pour performer » (read from its time aimed at; a « débutant » always « pour finir »)."""
     lines = []
     aim = cp.aim(inp.goal)
     if inp.intent == cp.COURSE and aim:
-        lines.append(AIM_LINE[aim])
+        lines.append(AIM_LINE[cp.FINIR if cp.novice(inp) else aim])
     return lines
 
 
 def first_week(days: tuple[int, ...], long_day: int, base: int, goal: cp.Goal, today: date,
-               intent: str | None = None) -> dict:
+               intent: str | None = None, level: cp.Level | None = None) -> dict:
     """The onboarding's preview: the first complete week of the plan these answers would make — this week on a
     Monday, the next one otherwise (the only week left before a race this week) — drawn day by day, and the first
     session to come. The sessions are the generator's own (coaching_plan.build, the call sync makes for a plan
     saved now, with the intent's rules); nothing is read or written."""
-    inp = cp.Inputs(tuple(days), long_day, base, cp.monday_of(today), goal, {}, intent=intent)
+    inp = cp.Inputs(tuple(days), long_day, base, cp.monday_of(today), goal, {}, intent=intent,
+                    level=level.level if level is not None and intent is not None else None)
     weeks = cp.build(inp, today)
     ahead = [s for w in weeks for s in w.sessions if s.day >= today]
     week = weeks[0] if weeks and (today.weekday() == 0 or len(weeks) == 1) else weeks[1] if len(weeks) > 1 else None
@@ -662,7 +689,8 @@ def first_week(days: tuple[int, ...], long_day: int, base: int, goal: cp.Goal, t
             "legend": [(cls, word) for cls, word in LEGEND if cls in kinds],
             "aria": f"Semaine du {week_label(monday)}, {len(shown)} séance{'s' if len(shown) > 1 else ''}"
                     + (f", {hm_long(total)}" if total else "") + (" : " + " ; ".join(said) if said else "") + ".",
-            "first": {"when": when, "what": what} if first is not None else None, "lines": profile_lines(inp)}
+            "first": {"when": when, "what": what} if first is not None else None, "lines": profile_lines(inp),
+            "level": level_line(level) if intent is not None else None}
 
 
 def header(state: co.State, coach: bool = False) -> dict:
@@ -671,7 +699,9 @@ def header(state: co.State, coach: bool = False) -> dict:
     monday = cp.monday_of(today)
     # a plan that lost its race starts again next Monday: this week keeps no phase
     phase = cp.phase_of(monday, state.inputs) if monday >= state.plan.start_monday else "apres"
+    week = (monday - state.plan.start_monday).days // 7
     return {"goal": countdown(state.goal, today, state.inputs.intent), "time": goal_time(state.goal, coach),
+            "level": None if coach else level_line(co.level_of(state.plan), week),
             "phase": cp.PHASES.get(phase) if phase != "apres" else None, "ended": ended_line(state)}
 
 

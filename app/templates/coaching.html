@@ -19,6 +19,8 @@
             <h1 class="pf-h1">{{ athlete_name if scope.coach else "Coaching" }} <span class="pf-tag">bêta</span></h1>
             {#- the time the plan runs on, said once: the race page's objective, else the simulator's estimate -#}
             <p class="pf-coach-goal"><b>{{ head.goal }}</b>{% if head.time %}{% if head.time.href %}<a class="pf-coach-goal-time" href="{{ head.time.href }}">{{ head.time.label }}</a>{% else %}<span class="pf-coach-goal-time">{{ head.time.label }}</span>{% endif %}{% endif %}</p>
+            {#- the level read from the history, with its reason: the athlete's own, never a follower's -#}
+            {% if head.level %}<p class="pf-coach-level"><b>{{ head.level.lead }}</b>&nbsp;: {{ head.level.text }}{% if head.level.why %} <small>{{ head.level.why }}</small>{% endif %}</p>{% endif %}
         </div>
     </div>
     {% if head.ended %}<p class="pf-coach-reason pf-coach-ended">{{ head.ended }}</p>{% endif %}

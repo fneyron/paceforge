@@ -114,6 +114,16 @@ FORME_LIGHT = None  # (H) no lighter week: the load does not rise, there is noth
 FORME_LONG_CAP = 90  # (H) the longest session held at 1 h 30 (aucune étude)
 FORME_REPS = "fewest"  # (H) one quality session at its fewest repetitions, never more: fitness drops when the intensity is cut (Hickson 1985; Spiering 2021)
 
+# a level read from the athlete's history, never asked (training habit only: PaceForge knows no VO2max). Its
+# « entraîné » is the studies' « recreational to moderately trained », not their « well trained ».
+DEBUTANT, REGULIER, ENTRAINE = "debutant", "regulier", "entraine"
+LEVEL_WEEKS = 12  # choix pratique: the level reads the 12 complete weeks (Monday to Sunday) before today
+NOVICE = (8, 75)  # (H) « débutant »: fewer than 8 of those weeks with a run, or a median week under 75 min — the novice and restarting runners of the injury studies (Kemler 2018: twice the injuries per hour, as Videbæk 2015); 75 min: Bull 2020
+TRAINED = (10, 3, 240, 90)  # (H) « entraîné »: 10 weeks with 3 runs or more, a median week of 4 h or more, a run of 1 h 30 or more — above a VO2max of 50 fewer than 3 sessions no longer improve it (Wenger & Bell 1986); 4 h is TWO_QUALITY's, near the recreational marathoners' 45 km (Muniz-Pumares 2025)
+NOVICE_NO_HISTORY = 120  # choix pratique: no run recorded at all — under 2 h a week announced reads « débutant », never « entraîné »
+NOVICE_EASY_WEEKS = 8  # (H) a « débutant »: the plan's first 8 weeks easy only — WHO's « gradually increase frequency, intensity and duration » (Bull 2020); the unfit gain from continuous running alone (Milanović 2015); 8 weeks copies a trial's common phase, a design choice (Ramskov 2018)
+NOVICE_MAX_DAYS = 4  # (H) …and at most 4 running days used, a day off between runs where the days allow (novices: Videbæk 2015; no study fixes 4)
+
 PHASES = {"base": "Base", "specifique": "Spécifique", "affutage": "Affûtage", "progression": "Progression",
           "entretien": "Entretien", "apres": "Après la course"}
 REASONS = {
@@ -182,8 +192,69 @@ class Inputs:
     # the days behind; empty (no run recorded): the plan's own sessions stand for them
     recent: tuple[tuple[date, int], ...] = ()
     # the profile (docs/coaching.md › « Les profils »): the intent chosen on the start screen — None for a plan made
-    # before the profiles, which keeps the rules it was made with
+    # before the profiles, which keeps the rules it was made with — and the level read when it was made
     intent: str | None = None
+    level: str | None = None
+
+
+@dataclass(frozen=True)
+class Level:
+    """The level read from the history (`read_level`) and why: the weeks with a run, the weeks with 3 runs or more,
+    the median week and the longest run (minutes) of the LEVEL_WEEKS weeks; `history` False: no run recorded, the
+    level comes from the volume announced (`base`)."""
+    level: str
+    weeks: int = 0
+    busy: int = 0
+    median: int = 0
+    longest: int = 0
+    history: bool = True
+    base: int = 0
+
+
+def read_level(runs, today: date, base: int) -> Level:
+    """The athlete's level from `runs` (anything with a `.day` and its `.minutes`) of the LEVEL_WEEKS complete weeks
+    before `today`; two runs the same day count as one day of running. Never asked; without any run recorded, read
+    from the volume announced (NOVICE_NO_HISTORY), never « entraîné »."""
+    m0 = monday_of(today)
+    first = m0 - timedelta(weeks=LEVEL_WEEKS)
+    minutes: dict[date, float] = {}
+    days: dict[date, set] = {}
+    longest = 0.0
+    for run in runs:
+        if first <= run.day < m0 and run.minutes > 0:
+            week = monday_of(run.day)
+            minutes[week] = minutes.get(week, 0.0) + run.minutes
+            days.setdefault(week, set()).add(run.day)
+            longest = max(longest, float(run.minutes))
+    if not minutes:
+        return Level(DEBUTANT if base < NOVICE_NO_HISTORY else REGULIER, history=False, base=int(base))
+    weekly = [minutes.get(first + timedelta(weeks=i), 0.0) for i in range(LEVEL_WEEKS)]
+    weeks, busy = len(minutes), sum(1 for d in days.values() if len(d) >= TRAINED[1])
+    median = int(round(statistics.median(weekly)))
+    if weeks < NOVICE[0] or median < NOVICE[1]:
+        level = DEBUTANT
+    elif busy >= TRAINED[0] and median >= TRAINED[2] and longest >= TRAINED[3]:
+        level = ENTRAINE
+    else:
+        level = REGULIER
+    return Level(level, weeks, busy, median, int(round(longest)), True, int(base))
+
+
+def novice(inp: "Inputs") -> bool:
+    """The « débutant » rules apply: a plan made with the profiles, at the « débutant » level."""
+    return inp.intent is not None and inp.level == DEBUTANT
+
+
+def days_used(inp: "Inputs") -> tuple[int, ...]:
+    """The days the plan writes on: the days available — for a « débutant », NOVICE_MAX_DAYS of them at most, the
+    long run's day first, then each time the day furthest from those kept (around the week), the earliest on a tie."""
+    days = tuple(sorted(inp.days))
+    if not novice(inp) or len(days) <= NOVICE_MAX_DAYS:
+        return days
+    kept = [inp.long_day if inp.long_day in days else default_long_day(days)]
+    while len(kept) < NOVICE_MAX_DAYS:
+        kept.append(max((d for d in days if d not in kept), key=lambda d: (min(circular(d, k) for k in kept), -d)))
+    return tuple(sorted(kept))
 
 
 def aim(goal: Goal) -> str | None:
@@ -206,7 +277,11 @@ def rule_set(inp: Inputs) -> str:
         return BEFORE
     if inp.intent == ENTRETIEN:
         return HOLD
+    if inp.level == DEBUTANT:  # a « débutant » prepares a race « pour finir »
+        return ONE
     if inp.intent == COURSE and aim(inp.goal) == PERFORMER:
+        return TODAY
+    if inp.intent != COURSE and inp.level == ENTRAINE:  # « Progresser », entraîné: today's rules
         return TODAY
     return ONE
 
@@ -550,7 +625,8 @@ def week_sessions(monday: date, inp: Inputs, info: dict, phase: str, index: int,
     if phase == "apres":
         return out
     volume = int(info["target"])
-    days = [d for d in sorted(inp.days) if race_in_week is None or d < race_in_week.weekday()]
+    writable = days_used(inp)  # a « débutant »: NOVICE_MAX_DAYS of the days at most
+    days = [d for d in writable if race_in_week is None or d < race_in_week.weekday()]
     n = min(len(days), volume // MIN_SESSION)
     if n <= 0:
         return out
@@ -565,14 +641,16 @@ def week_sessions(monday: date, inp: Inputs, info: dict, phase: str, index: int,
     long_date = monday + timedelta(days=inp.long_day)
     has_long = (n >= 2 and inp.long_day in days and not race_week
                 and not (rd is not None and 0 < (rd - long_date).days <= NO_LONG_BEFORE_RACE))
-    rules = rule_set(inp)
+    rules, beginner = rule_set(inp), novice(inp)
     wanted = 0
-    if len(inp.days) >= QUALITY_FROM_DAYS and n >= QUALITY_FROM_DAYS and not info.get("easy"):
-        wanted = 2 if (rules in (BEFORE, TODAY) and len(inp.days) >= TWO_QUALITY[0] and inp.base >= TWO_QUALITY[1]
+    if len(writable) >= QUALITY_FROM_DAYS and n >= QUALITY_FROM_DAYS and not info.get("easy"):
+        wanted = 2 if (rules in (BEFORE, TODAY) and len(writable) >= TWO_QUALITY[0] and inp.base >= TWO_QUALITY[1]
                        and phase in ("base", "specifique", "progression") and not info.get("light")) else 1
+    if beginner:  # easy only for the plan's first weeks, then one quality session at its fewest repetitions
+        wanted = 0 if index < NOVICE_EASY_WEEKS else min(wanted, 1)
     keys = _quality_keys(phase, index, goal.trail)
     cap = long_cap_of(inp) if limit is None else min(long_cap_of(inp), limit)
-    least = bool(info.get("light")) or phase == "affutage" or rules == HOLD
+    least = bool(info.get("light")) or phase == "affutage" or rules == HOLD or beginner
     chosen: tuple[list, int, int, int] | None = None
     for q in range(wanted, -1, -1):
         spots = place(days, inp.long_day if has_long else None, anchors, q)

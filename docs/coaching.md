@@ -85,6 +85,9 @@ suite ; l’athlète ajuste si elle veut.
 | **Jour de la sortie longue** | Le jour qui porte le plus souvent sa plus longue sortie de la semaine, s’il est parmi les jours proposés ; sinon dimanche, sinon le dernier jour proposé. | Une liste, qui ne propose que les jours choisis. |
 | **Volume de départ** | La médiane des minutes de course des 4 dernières semaines complètes (famille « course » de `sante_training.load_family` : route, trail, tapis ; semaines du lundi au dimanche à l’horloge de l’athlète), arrondie à 5 min. Sans historique : 2 h (H). | Une liste (de 1 h à 15 h) ; sans historique, cinq choix : 1 h, 2 h, 3 h, 4 h, 5 h et plus (H). |
 
+**Le niveau n’est pas une réponse** : il est lu dans l’historique et dit en une ligne sous la semaine dessinée
+(« Tu débutes : … », voir « Les profils »).
+
 **De 2 à 6 jours**, donc un jour de repos au moins. (H) chiffre. Le principe : chez 446 athlètes d’endurance de haut niveau, moins de 2 jours de repos par semaine allait avec 5,2 fois plus de blessures de surmenage (Ristolainen 2014 — une seule étude, rétrospective, par questionnaire). Son seuil est deux jours ; PaceForge en impose un et laisse le sixième jour au choix de l’athlète : c’est moins strict que l’étude, et dit ici. Le minimum de 2 jours est un choix pratique (une sortie longue et une autre séance) ; l’ACSM recommande 3 jours ou plus à intensité soutenue (Garber 2011).
 
 « Quand peux-tu courir ? » (Matin, Midi, Soir) n’est plus demandé ici : la question ne sert qu’avec un agenda relié,
@@ -267,10 +270,54 @@ repose sur une poignée de coureurs, Schnohr 2015 ; aucun excès de risque à di
 séance de renforcement, de consigne de descente ni de phrase sur le sommeil pour l’instant (hors du périmètre de ce
 changement).
 
+### Le niveau, lu dans l’historique
+
+**Jamais demandé** (`read_level`, pur). PaceForge connaît le temps de course, la fréquence et la plus longue sortie,
+pas la VO2max : le niveau est un niveau d’**habitude d’entraînement**. Il lit les 12 dernières semaines complètes
+(du lundi au dimanche, la semaine en cours exclue) : les sorties enregistrées et les séances cochées « Fait » sans
+sortie ; deux sorties le même jour comptent pour un jour.
+
+| Niveau | Règle | Source |
+|---|---|---|
+| **Débutant** | Moins de 8 des 12 semaines avec une sortie, **ou** une semaine médiane sous 75 min | (H) chiffre `NOVICE`. Les seuils sont les nôtres ; ils visent les « débutants » et les « reprises » des études de blessures : les débutants se blessent environ deux fois plus par heure de course que les coureurs amateurs (Videbæk 2015, méta-analyse de 13 études : 17,8 contre 7,7 pour 1 000 h ; Kemler 2018, 4 621 coureurs, débutants = moins de 12 mois de course : 8,78 contre 4,24) ; « 0 à 2 ans d’expérience » et « reprise » vont avec plus de blessures chez les hommes (van der Worp 2015, revue de 15 cohortes). 75 min : le bas de la bande intense de l’OMS (Bull 2020). |
+| **Entraîné** | Au moins 10 des 12 semaines avec 3 sorties ou plus, **et** une semaine médiane de 4 h ou plus, **et** une sortie d’1 h 30 ou plus | (H) chiffre `TRAINED`. Au-dessus d’une VO2max de 50, moins de 3 séances par semaine ne l’améliorent plus (Wenger & Bell 1986, revue ancienne) ; 4 h est le seuil déjà utilisé pour deux séances de qualité (`TWO_QUALITY`), environ 40 km par semaine à 6 min/km : le bas de la bande du milieu des marathoniens de Fokkema 2020, près des 45 km moyens de Muniz-Pumares 2025. |
+| **Régulier** | Tout le reste | Le « coureur amateur » des essais. |
+| Aucune sortie enregistrée | Le volume annoncé : moins de 2 h par semaine → débutant, 2 h ou plus → régulier ; **jamais** « entraîné » sans semaines enregistrées | choix pratique `NOVICE_NO_HISTORY` |
+
+**Ce qu’il faut savoir de ces mots.** L’« entraîné » de PaceForge est le « amateur à modérément entraîné » des
+études, pas leur « bien entraîné » (VO2max de 58–60 et plus), où la plupart des essais d’intervalles ont été faits :
+un effet mesuré chez eux peut être plus petit, ou autre, ici. Un cadre en six niveaux existe (McKay 2022) ; ses
+critères n’ont pas pu être lus (texte intégral inaccessible) : il n’est pas utilisé.
+
+**Ce que le niveau change** (`novice`, `days_used`) — il ne fait **qu’enlever** :
+
+| Niveau | Règle | Source |
+|---|---|---|
+| Débutant | **Les 8 premières semaines du plan en aisance seulement** (aucune séance de qualité), puis **une** séance de qualité par semaine au plus, à son plus petit nombre de répétitions ; **4 jours de course au plus** parmi les jours choisis (la sortie longue d’abord, puis chaque fois le jour le plus éloigné de ceux gardés) ; une course est préparée **« pour finir »**, même avec un temps visé. Toute intention. | (H) chiffre `NOVICE_EASY_WEEKS`, `NOVICE_MAX_DAYS`. Le principe : l’OMS demande d’augmenter « progressivement la fréquence, l’intensité et la durée » (Bull 2020) ; les adultes peu entraînés progressent déjà par l’endurance continue seule (+4,9 mL/kg/min ; Milanović 2015, 28 essais, 723 adultes de 25 ans en moyenne, peu de coureurs). **Aucune étude ne montre que retenir l’intensité protège un débutant** : progresser en intensité n’a pas blessé plus que progresser en volume (Ramskov 2018, 447 coureurs amateurs). Les 8 semaines copient la phase commune de cet essai — un choix de protocole, pas un résultat ; aucune étude ne fixe 4 jours. Le +10 % par semaine reste le même pour tous : un programme plus lent n’a pas blessé moins de débutants (Buist 2008). |
+| Régulier | Rien de plus que l’intention. | — |
+| Entraîné | « Progresser » suit les règles complètes (deux séances de qualité à partir de 5 jours et 4 h) ; le reste comme l’intention. | Aucune étude ne distingue régulier et entraîné sur une décision d’entraînement : à tous les niveaux, le temps dur est le même et les plus rapides ajoutent du facile (Muniz-Pumares 2025). Le seuil de 5 jours et 4 h fait déjà ce travail. |
+
+**Ce que voit l’athlète.** Une ligne sous l’objectif, sur l’écran de départ (elle suit les réponses, comme la
+semaine dessinée) et en haut de sa page : « **Tu débutes** : huit semaines en aisance d’abord, quatre jours de course
+au plus. » et dessous ce qui a été lu (« Lu sur tes 12 dernières semaines : 5 avec une sortie, 40 min par
+semaine. » ; « Aucune sortie enregistrée : lu sur ton volume, 1h00 par semaine. ») ; après les 8 semaines : « une
+séance de qualité par semaine au plus, courte, et quatre jours de course au plus. ». « **Tu cours régulièrement** : lu
+sur tes 12 dernières semaines : 11 avec une sortie, 2h10 par semaine. » ; « **Tu t’entraînes beaucoup** : … 11 avec 3
+sorties ou plus … ». **La personne qui suit le plan ne voit jamais cette ligne** : elle voit le plan lui-même.
+
+**Quand il change.** Le niveau est lu, et gardé sur le plan (`coaching_plans.level`, `level_read` : ce qui a été lu
+et le jour), **quand le plan est créé et à chaque « Refaire le plan »** ; jamais entre les deux. L’écran de départ
+montre la ligne avant que l’athlète confirme : après douze semaines de course régulière, « Refaire le plan » dit
+« Tu cours régulièrement » et retire les règles « débutant ». La revue proposait de le relire à chaque lecture du
+plan pour qu’il ne puisse que **baisser** de lui-même ; ce n’est pas fait : un historique partiel juste après la
+création (une montre reliée depuis trois semaines, des séances cochées à la main) se lirait « débutant » et changerait
+d’un coup un plan qui se passe bien, alors que l’adaptation (semaine allégée au ressenti, reprise après deux semaines
+manquées) retire déjà la charge quand l’habitude se perd. choix pratique.
+
 ### Les plans faits avant les profils
 
-Un plan créé avant le 22 novembre 2026 n’a pas d’intention (`coaching_plans.intent` vide). **Il garde exactement ses
-règles** (`BEFORE` : deux séances de qualité à partir de 5 jours et 4 h, une séance de qualité à partir de 3 jours),
+Un plan créé avant le 22 novembre 2026 n’a ni intention ni niveau (`coaching_plans.intent`, `level` vides). **Il
+garde exactement ses règles** (`BEFORE` : deux séances de qualité à partir de 5 jours et 4 h, une séance de qualité à partir de 3 jours),
 et rien de ses séances ne bouge à sa lecture suivante : aucune règle de profil ne s’y applique, aucune ligne de profil
 ne s’affiche. « Refaire le plan » rouvre l’écran avec l’intention qu’il est déjà (« Préparer une course » s’il vise
 une course, sinon « Progresser ») ; c’est en le refaisant que l’athlète passe aux règles de profil. Un écran ouvert
@@ -564,7 +611,7 @@ quand tu vois de nouvelle séance une notif pour débrief du ressenti etc. » **
 **`/coaching`, de haut en bas.**
 
 1. **L’en-tête** : l’objectif et le compte à rebours (« Garder la forme » ou « Progresser, sans course » sans
-   course), le temps visé (« Objectif 6h30 » ou « Estimation 7h10 », une
+   course), pour l’athlète seulement la ligne de son niveau et sa raison (« Tu débutes : … »), le temps visé (« Objectif 6h30 » ou « Estimation 7h10 », une
    fois, lié à la page de la course).
 2. **Le débrief** (`#debrief`), seulement quand une séance faite attend son ressenti : « Ta sortie de mardi est
    arrivée — c’était comment ? » (« Ta séance d’aujourd’hui est faite — … » pour une coche à la main), ce qu’elle
@@ -811,6 +858,34 @@ DOI vérifiés sur Crossref)
   race performance. *Open Access Journal of Sports Medicine*, 6, 129.
   [10.2147/OAJSM.S80637](https://doi.org/10.2147/OAJSM.S80637). Observationnel, marathon et 100 km sur route
   (Crossref donne Knechtle en premier auteur, PubMed Tanda).
+
+- Videbæk S., Bueno A. M., Nielsen R. O. et al. (2015). Incidence of running-related injuries per 1000 h of running
+  in different types of runners: a systematic review and meta-analysis. *Sports Medicine*, 45(7), 1017–1026.
+  [10.1007/s40279-015-0333-8](https://doi.org/10.1007/s40279-015-0333-8). 13 études prospectives ; débutants,
+  amateurs, ultra, piste.
+- Kemler E., Blokland D., Backx F. et al. (2018). Differences in injury risk and characteristics of injuries between
+  novice and experienced runners over a 4-year period. *The Physician and Sportsmedicine*, 46(4), 485–491.
+  [10.1080/00913847.2018.1507410](https://doi.org/10.1080/00913847.2018.1507410). Enquête, 4 621 coureurs dont 1 405
+  débutants ; blessures déclarées.
+- van der Worp M. P., ten Haaf D. S. M., van Cingel R. et al. (2015). Injuries in runners; a systematic review on
+  risk factors and sex differences. *PLOS ONE*, 10(2), e0114937.
+  [10.1371/journal.pone.0114937](https://doi.org/10.1371/journal.pone.0114937). 15 études longitudinales.
+- Wenger H. A., Bell G. J. (1986). The interactions of intensity, frequency and duration of exercise training in
+  altering cardiorespiratory fitness. *Sports Medicine*, 3(5), 346–356.
+  [10.2165/00007256-198603050-00004](https://doi.org/10.2165/00007256-198603050-00004). Revue ancienne, populations
+  et protocoles mêlés.
+- Milanović Z., Sporiš G., Weston M. (2015). Effectiveness of high-intensity interval training (HIT) and continuous
+  endurance training for VO2max improvements: a systematic review and meta-analysis of controlled trials. *Sports
+  Medicine*, 45(10), 1469–1481. [10.1007/s40279-015-0365-0](https://doi.org/10.1007/s40279-015-0365-0). 28 essais,
+  723 adultes en bonne santé (25 ans en moyenne), peu de coureurs.
+- Ramskov D., Rasmussen S., Sørensen H. et al. (2018). Run Clever – no difference in risk of injury when comparing
+  progression in running volume and running intensity in recreational runners: a randomised trial. *BMJ Open Sport
+  & Exercise Medicine*, 4(1), e000333. [10.1136/bmjsem-2017-000333](https://doi.org/10.1136/bmjsem-2017-000333).
+  Essai randomisé, 447 coureurs amateurs après 8 semaines communes.
+- McKay A. K. A., Stellingwerff T., Smith E. S. et al. (2022). Defining training and performance caliber: a
+  participant classification framework. *International Journal of Sports Physiology and Performance*, 17(2),
+  317–331. [10.1123/ijspp.2021-0451](https://doi.org/10.1123/ijspp.2021-0451). Résumé seul : les critères des six
+  niveaux n’ont pas été lus et ne sont pas utilisés.
 
 **La répartition, la récupération, la périodisation**
 
