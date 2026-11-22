@@ -1,7 +1,11 @@
 """Coaching › « Mon agenda »: where a session goes in the day (docs/coaching.md). Pure functions: the week's
 sessions, the athlete's busy time and preferences in, a time (or a day) for each session out. No database, no clock.
 
-Every time is in minutes after midnight on the athlete's clock. All of it is (H), PaceForge's choices:
+Every time is in minutes after midnight on the athlete's clock. These are practical choices (« choix pratique »:
+where a session fits in a day, not what it is) — no study is claimed for them. One of them touches training, the
+quality session's hour: adaptations are greater at the time of day one usually trains, and short hard efforts go
+better in the late afternoon than early in the morning (Chtourou & Souissi 2012; for endurance the effect of the
+hour is equivocal) — hence « the usual hour, else the evening ».
 - the athlete runs in the morning, at midday or in the evening (WINDOWS), all three unless they say otherwise;
 - a session needs its duration and MARGIN minutes more (to change, to shower) free of any busy time, inside one of
   those moments; a session longer than the moment itself starts at the moment's start and runs past its end;
@@ -19,14 +23,14 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 MORNING, MIDDAY, EVENING = "matin", "midi", "soir"
-WINDOWS = {MORNING: (6 * 60, 9 * 60), MIDDAY: (11 * 60 + 45, 14 * 60), EVENING: (17 * 60 + 30, 21 * 60)}  # (H)
+WINDOWS = {MORNING: (6 * 60, 9 * 60), MIDDAY: (11 * 60 + 45, 14 * 60), EVENING: (17 * 60 + 30, 21 * 60)}  # choix
 MOMENTS = (MORNING, MIDDAY, EVENING)
 MOMENT_WORDS = {MORNING: "Matin", MIDDAY: "Midi", EVENING: "Soir"}
-MARGIN = 30  # (H) minutes after the session: to change, to shower
+MARGIN = 30  # choix pratique: minutes after the session, to change, to shower
 STEP = 15  # a time starts on a quarter of an hour
-CYCLE = 30  # (H) « Autre créneau » offers a time every 30 minutes
-USUAL_WEEKS = 8  # (H) the athlete's usual hour: the runs of the last 8 weeks…
-USUAL_MIN_RUNS = 3  # (H) …3 of them at least
+CYCLE = 30  # choix pratique: « Autre créneau » offers a time every 30 minutes
+USUAL_WEEKS = 8  # choix pratique: the athlete's usual hour, the runs of the last 8 weeks…
+USUAL_MIN_RUNS = 3  # choix pratique: …3 of them at least
 HORIZON_DAYS = 21  # the busy time known: the sessions further ahead get no time
 FULL = "chargee"  # a session's flag: its day has no room and no other day would take it
 LONG, HARD_KINDS = "sortie_longue", frozenset({"sortie_longue", "seance", "cotes", "course"})

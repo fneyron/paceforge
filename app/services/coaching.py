@@ -226,9 +226,20 @@ async def follow_goal(db: AsyncSession, plan: CoachingPlan, route, rows: list, t
     return None, rows
 
 
-def inputs(plan: CoachingPlan, goal: cp.Goal) -> cp.Inputs:
+def recent_runs(runs: list[st.Session], rows: list[CoachingSession], day: date) -> tuple[tuple[date, int], ...]:
+    """What the single-session rule reads (coaching_plan.session_limit; Frandsen 2025): the athlete's real runs of
+    the 30 days up to `day`, as (day, minutes) — every recorded run, in the plan or not, and the sessions ticked
+    « Fait » without a recorded activity."""
+    first = day - timedelta(days=cp.SPIKE_DAYS)
+    out = [(s.day, int(round(s.minutes))) for s in runs if first <= s.day <= day]
+    out += [(r.day, int(r.done_minutes or r.minutes)) for r in rows
+            if r.status == DONE and r.activity_id is None and first <= r.day <= day]
+    return tuple(sorted(out))
+
+
+def inputs(plan: CoachingPlan, goal: cp.Goal, recent: tuple[tuple[date, int], ...] = ()) -> cp.Inputs:
     return cp.Inputs(plan.weekdays, plan.long_day, plan.base_minutes, plan.start_monday, goal,
-                     dict(plan.adaptations or {}))
+                     dict(plan.adaptations or {}), recent)
 
 
 # ── the plan's rows ─────────────────────────────────────────────────────────
@@ -263,6 +274,8 @@ async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | N
     """The onboarding's answers kept: a new plan, or the same one made again (« Refaire le plan »: week 0 is this
     week again, what the ressenti changed is forgotten; the sessions done, past or edited by a person stay)."""
     days = clean_days(days)
+    # 2 to 6 days, so one rest day at least — (H): rest days go with fewer overuse injuries in endurance athletes
+    # (Ristolainen 2014, whose own threshold is two); the least, 2 days, is a practical choice (docs/coaching.md)
     if not 2 <= len(days) <= 6:
         raise Invalid("Choisis entre 2 et 6 jours.")
     try:
@@ -460,9 +473,9 @@ async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime |
     if had_form and plan.form_on_at is None:  # the consent is no longer given: the form's marks were just cleared
         rows = await sessions_of(db, plan)
     read_adaptations(plan, rows, done_by_week(runs, rows), c.today, fresh, low)
-    inp = inputs(plan, goal)
     # a plan that just lost its race starts again next Monday: until then nothing of this week is rewritten
     since = max(c.today, plan.start_monday)
+    inp = inputs(plan, goal, recent_runs(runs, rows, since))
     weeks = cp.build(inp, since)
     rows = await apply(db, plan, rows, weeks, since, c.now)
     if c.today in low:

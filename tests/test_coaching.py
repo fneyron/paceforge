@@ -424,6 +424,52 @@ async def test_a_regeneration_only_rewrites_future_sessions_nobody_touched(clien
             for r in await _rows(db_session, athlete)} == again
 
 
+async def test_no_session_runs_ten_percent_past_the_longest_run_of_the_last_thirty_days(client, people, beta,
+                                                                                         db_session, same_today):
+    """Frandsen 2025 (docs/coaching.md › « Sources »). A plan that already exists meets the rule at its next reading:
+    its sessions to come that nobody touched are shortened in place (same rows, same ids), a session a person edited
+    and one already done stay as they are, and the plan grows back from the real runs."""
+    athlete = people.athlete
+    _as(client, athlete)
+    plan = await _plan(client, db_session, athlete, days=("1", "3", "6"), base="180")  # no run recorded: no limit
+    rows = await _rows(db_session, athlete)
+    ahead = [r for r in rows if r.day > same_today]
+    assert max(r.minutes for r in ahead) > 70, "long runs past an hour, as the plan was written"
+    edited = next(r for r in ahead if r.kind == cp.LONG and r.day > same_today + timedelta(days=7))
+    r = await client.post(f"/coaching/sessions/{edited.id}/edit", data={"kind": "sortie_longue", "minutes": "90"},
+                          headers=HTMX)
+    assert r.status_code == 200
+    ids = {r.id for r in ahead}
+    # her watch arrives: three runs this month, 40 min at most (one of 2 h, 45 days ago, is outside the 30 days)
+    db_session.add_all([_run(athlete, same_today - timedelta(days=d), m, n)
+                        for n, (d, m) in enumerate(((2, 40), (9, 36), (16, 38), (45, 120)), 1)])
+    await db_session.flush()
+    state = await co.sync(db_session, plan, athlete)
+    assert state.inputs.recent == tuple(sorted((same_today - timedelta(days=d), m) for d, m in ((2, 40), (9, 36), (16, 38))))
+    rows = await _rows(db_session, athlete)
+    ahead = [r for r in rows if r.day >= same_today and r.status == "planned"]
+    assert {r.id for r in ahead if r.day > same_today} == ids, "rewritten in place: the calendar feed keeps its events"
+    m0 = cp.monday_of(same_today)
+    this_week = [r for r in ahead if r.day < m0 + timedelta(days=7) and not r.pinned]
+    assert all(r.minutes <= cp.session_limit(40) == 45 for r in this_week)
+    assert (await db_session.get(CoachingSession, edited.id)).minutes == 90, "a session she edited is hers"
+    by_week: dict = {}
+    for row in ahead:
+        if not row.pinned:
+            by_week.setdefault(cp.monday_of(row.day), []).append(row.minutes)
+    longest = [max(v) for _m, v in sorted(by_week.items())]
+    assert longest[0] <= 45 and all(b <= cp.session_limit(a) for a, b in zip(longest, longest[1:])), longest
+    assert longest[-1] > longest[0], "and it grows back, 10 % at most a week"
+    assert [r for r in ahead if r.kind in (cp.QUALITY, cp.HILLS)], "the quality sessions keep their place"
+    # a second reading writes nothing more
+    seqs = {r.id: r.seq for r in rows}
+    await co.sync(db_session, plan, athlete)
+    assert {r.id: r.seq for r in await _rows(db_session, athlete)} == seqs
+    # the athlete's fold says the rule, in her words
+    page = (await client.get("/coaching")).text
+    assert "Aucune séance ne dépasse de plus de 10 % ta plus longue sortie des 30 derniers jours" in page
+
+
 async def test_moving_a_session_swaps_with_the_one_already_there(client, people, beta, db_session, same_today):
     athlete = people.athlete
     _as(client, athlete)
@@ -499,9 +545,10 @@ async def test_the_ressenti_lightens_the_next_week_and_says_why(client, people, 
     plain = week(await _rows(db_session, athlete), nxt)
     assert [r for r in plain if r.kind in (cp.QUALITY, cp.HILLS)]
     was = sum(r.minutes for r in plain)  # read now: the rows are rewritten in place
-    # a footing done this week, felt « Très dur »
+    # a footing done this week, felt « Très dur » (long enough to leave next week's sessions their length: no
+    # session runs more than 10 % past the longest run of the last 30 days)
     day = m0 if same_today > m0 else same_today
-    row = await _past_session(db_session, plan, day, minutes=45, status="done", manual=True, done_minutes=45)
+    row = await _past_session(db_session, plan, day, minutes=100, status="done", manual=True, done_minutes=100)
     r = await client.post(f"/coaching/sessions/{row.id}/ressenti", data={"value": "5"}, headers=HTMX)
     assert r.status_code == 200
     await db_session.refresh(plan)
@@ -719,7 +766,7 @@ def test_the_feed_escapes_folds_and_parses_back():
     now = datetime(2026, 11, 21, 8, 30, tzinfo=timezone.utc)
     rows = [
         SimpleNamespace(id=7, day=date(2026, 11, 24), kind="seance", minutes=55, seq=3, updated_at=now,
-                        status="planned", structure=cp.quality_session("intervalles", 6)[2]),
+                        status="planned", structure=cp.quality_session("seuil", 3)[2]),
         SimpleNamespace(id=8, day=date(2026, 11, 22), kind="sortie_longue", minutes=110, seq=0, updated_at=now,
                         status="done", structure=cp.steady(110, 2)),
         SimpleNamespace(id=9, day=date(2026, 11, 25), kind="footing", minutes=45, seq=0, updated_at=now,
@@ -739,7 +786,7 @@ def test_the_feed_escapes_folds_and_parses_back():
     assert quality["SUMMARY"] == "Séance 55 min" and events[1]["SUMMARY"] == "Sortie longue 1h50"
     assert quality["DTSTART;VALUE=DATE"] == "20261124" and quality["DTEND;VALUE=DATE"] == "20261125"
     assert quality["SEQUENCE"] == "3" and quality["DTSTAMP"] == quality["LAST-MODIFIED"] == "20261121T083000Z"
-    assert quality["DESCRIPTION"] == ("6 × 3 min soutenu, récup 2 min\n"
+    assert quality["DESCRIPTION"] == ("3 × 8 min soutenu, récup 2 min\n"
                                       "Soutenu ; quelques mots, pas des phrases. Été, à cœur : 149–167 bpm" + BS + "fin")
     assert "DTSTART" not in " ".join(k for k in quality if "VALUE=DATE" not in k), "all-day events only"
     assert BS + ", récup" in text and "Soutenu " + BS + "; quelques" in text and "bpm" + BS * 2 + "fin" in text

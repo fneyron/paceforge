@@ -33,7 +33,7 @@ async def _run(morning: bool = False) -> int:
         return await (run_morning(db) if morning else run(db))
 
 
-MORNING = (5, 12)  # (H) the athlete's morning: from 5:00 to noon on their clock
+MORNING = (5, 12)  # choix pratique: the athlete's morning, from 5:00 to noon on their clock
 
 
 async def run_morning(db, now=None) -> int:

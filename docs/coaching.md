@@ -6,8 +6,21 @@ sur le ressenti, quelque chose de simple, graphique, efficace, avec un calendrie
 
 Tout est déterministe : les mêmes réponses, les mêmes activités et le même jour donnent le même plan. Les règles
 sont des constantes de `app/services/coaching_plan.py` (fonctions pures), épinglées une à une dans
-`tests/test_coaching_plan.py`. **(H)** marque une heuristique de PaceForge : un choix raisonnable, pas un seuil
-publié. Les sources citées sont en bas de page.
+`tests/test_coaching_plan.py`.
+
+**Chaque règle porte son étude, ou dit qu’elle n’en a pas** (propriétaire, 22 novembre 2026 : « Toute les séances
+étude choix que tu fais doivent être basé sur des études scientifiques »). Trois marques, dans cette page comme
+dans le code :
+
+| Marque | Ce qu’elle dit |
+|---|---|
+| Une étude seule (« Frandsen 2025 ») | La valeur est celle de l’étude. |
+| **(H) chiffre** | Un chiffre de PaceForge. Soit une étude appuie le principe et aucune ne fixe le chiffre : l’étude est citée, et la ligne dit pourquoi ce chiffre. Soit aucune étude n’existe : la ligne dit « aucune étude ». |
+| **choix pratique** | Pas une décision d’entraînement : jusqu’où écrire le plan, un arrondi, une lecture stable, une marge dans l’agenda. |
+
+Les études d’entraînement fixent rarement un chiffre : beaucoup sont petites, courtes, faites sur des cyclistes ou
+des athlètes de haut niveau. Cette page dit ce que chacune a trouvé et sur qui, pas davantage. Les références
+complètes, avec leur DOI, sont en bas de page (« Sources ») ; chacune a été ouverte et lue le 22 novembre 2026.
 
 ## Qui y a accès
 
@@ -61,14 +74,19 @@ ouvre alors « Écran indisponible » (404) pour un compte qui ne l’a pas.
 Un écran, quatre questions et une valeur calculée :
 
 1. **Objectif** : une course à venir de l’athlète (un parcours à pied avec une date), ou « Progresser, sans course »
-   (un bloc glissant de 12 semaines (H) qui se prolonge de lui-même).
-2. **Jours disponibles** : de 2 à 6.
+   (un bloc glissant de 12 semaines, choix pratique, qui se prolonge de lui-même).
+2. **Jours disponibles** : de 2 à 6, donc un jour de repos au moins. (H) chiffre. Le principe : chez 446 athlètes
+   d’endurance de haut niveau, moins de 2 jours de repos par semaine allait avec 5,2 fois plus de blessures de
+   surmenage (Ristolainen 2014 — une seule étude, rétrospective, par questionnaire). Son seuil est deux jours ;
+   PaceForge en impose un et laisse le sixième jour au choix de l’athlète : c’est moins strict que l’étude, et dit
+   ici. Le minimum de 2 jours est un choix pratique (une sortie longue et une autre séance) ; l’ACSM recommande 3
+   jours ou plus à intensité soutenue (Garber 2011).
 3. **Jour de la sortie longue** : parmi eux ; dimanche par défaut, sinon le dernier jour disponible.
 4. **Quand peux-tu courir ?** Matin, Midi, Soir ; les trois par défaut. Ne sert qu’à placer les séances dans la
    journée quand l’athlète relie son agenda (« Mon agenda »).
 5. **Volume de départ** : la médiane des minutes de course des 4 dernières semaines complètes (famille « course » de
    `sante_training.load_family` : route, trail, tapis ; semaines du lundi au dimanche à l’horloge de l’athlète),
-   arrondie à 5 min, modifiable. Sans historique : cinq choix, 1 h, 2 h, 3 h, 4 h, 5 h et plus (H).
+   arrondie à 5 min, modifiable. Sans historique : cinq choix, 1 h, 2 h, 3 h, 4 h, 5 h et plus (choix pratique).
 
 Ouvert depuis la page d’une course (« Préparer cette course avec Coaching »), l’écran arrive avec cette course
 choisie.
@@ -99,15 +117,20 @@ Le plan se règle sur le **temps de course attendu**, lu à **une seule source**
 - **Le plan suit la course** : un objectif, une date ou une distance changés sur la page de la course déplacent les
   séances à venir que personne n’a modifiées, à la lecture suivante du plan (la page, celle du coach, la tâche
   quotidienne). Les séances modifiées, faites ou passées restent.
-- Les règles lisent ce temps **au quart d’heure** (H, `RACE_TIME_STEP`) : une estimation qui bouge d’une minute d’un
-  jour à l’autre ne réécrit pas les semaines. La séance « Course » garde le temps exact.
+- Les règles lisent ce temps **au quart d’heure** (choix pratique, `RACE_TIME_STEP`) : une estimation qui bouge
+  d’une minute d’un jour à l’autre ne réécrit pas les semaines. La séance « Course » garde le temps exact.
 
 **Sur la page de la course**, une ligne discrète : « Plan de coaching · semaine 5 sur 12 » quand cette course est
 l’objectif du plan (vers `/coaching`) ; sinon, pour une course à pied à venir, « Préparer cette course avec
 Coaching » (vers l’écran de départ, cette course choisie). Rien pour une course passée, un autre sport, ou un
 compte sans Coaching.
 
-**Le dénivelé d’un trail** (H, `climb_target`). Pour une course de trail, la sortie longue et la séance de côtes
+**Le dénivelé d’un trail** (`climb_target`). Le principe : courir en côte est une capacité à part. Chez des
+coureurs de montagne, le coût énergétique en côte ne se déduit pas de celui du plat (Balducci 2016, 10 coureurs) ;
+sur un trail de 27 km, l’économie de course sur une pente de 10 % et l’endurance musculaire locale prédisent la
+performance bien mieux que le modèle classique sur le plat (Ehrström 2018, 9 coureurs). Aucune étude ne fixe
+combien de dénivelé viser à l’entraînement : la règle qui suit est (H) chiffre — celui de la course elle-même,
+approché par paliers. Pour une course de trail, la sortie longue et la séance de côtes
 longues portent un dénivelé à viser : le D+ par heure de la course (D+ ÷ temps attendu, tenu à 500 m/h au plus,
 `CLIMB_RATE_CAP`) × la durée de la séance × la part de la semaine. Cette part part de 60 % (`CLIMB_START`) la
 première semaine et monte par pas égaux jusqu’à 100 % la dernière semaine avant l’affûtage ; elle reste entière
@@ -128,44 +151,56 @@ Le plan est en **minutes** (arrondies à 5), jamais en kilomètres.
 
 | Règle | Valeur | Source |
 |---|---|---|
-| Semaines | Du lundi au dimanche, à l’horloge de l’athlète ; de la semaine en cours à celle de la course, 24 semaines au plus (une course plus lointaine : des semaines de base d’abord). | (H) `HORIZON_WEEKS` |
-| Phases | Base → Spécifique (les 6 dernières semaines avant l’affûtage, 8 quand le plan en compte 16 ou plus avant lui) → Affûtage → le jour de la course, une séance « Course » liée au parcours. Sans course : « Progression ». | (H) `SPECIFIC_WEEKS`, `SPECIFIC_LONG_FROM` |
-| Affûtage | Les semaines qui contiennent J-14 → J-1. Volume : les bandes de la page de course (`race_prep.week_target`), J-14 → J-8 à 55–70 % de la base, J-7 → J-1 à 35–50 %, au milieu de la bande ; la base est la médiane des 4 semaines qui précèdent. L’intensité reste : un rappel court par semaine. | Bosquet 2007 ; Mujika 2003 (comme `race_prep`) |
-| Progression | Volume de départ, puis +10 % par semaine de charge. | (H) `GROWTH` |
-| Semaine légère | Une semaine sur quatre à 75 % de la dernière semaine de charge ; la suivante reprend la progression. | (H) `LIGHT_EVERY`, `LIGHT_FACTOR` |
-| Plafond | 150 min + 70 % du temps de course attendu (l’objectif de la course, sinon l’estimation du simulateur : voir « L’objectif et le temps de course »), entre 3 h et 12 h. Sans course : 1,5 × la base, entre 3 h et 8 h. Jamais sous la base. | (H) `CEILING`, `CEILING_RANGE`, `FREE_CEILING` |
-| Plancher | Une semaine d’entraînement ne descend pas sous 1 h (hors affûtage). | (H) `WEEK_FLOOR` |
-| Facile / dur | Au plus 20 % du temps de la semaine en efforts durs (les répétitions des séances) ; le reste en aisance. | Seiler 2010 pour la répartition ; la compter en minutes est (H) `HARD_SHARE` |
-| Sortie longue | Environ 35 % de la semaine (au moins autant que les autres séances), plafonnée à 55 % du temps de course attendu, ce plafond tenu entre 2 h et 3 h 30 ; sans course : 2 h 30. Aucune à partir de J-3. | (H) `LONG_SHARE`, `LONG_RACE_SHARE`, `LONG_CAP_RANGE`, `FREE_LONG_CAP`, `NO_LONG_BEFORE_RACE` |
-| Séances de qualité | Une par semaine à partir de 3 jours disponibles ; deux à partir de 5 jours et d’une base de 4 h, hors semaine légère et hors affûtage. | (H) `QUALITY_FROM_DAYS`, `TWO_QUALITY` |
-| Jours durs | Jamais deux de suite : une séance de qualité n’est jamais la veille ni le lendemain de la sortie longue, d’une autre séance ou de la course (dimanche et lundi sont voisins). | (H) `place` |
-| Durée minimale | Aucune séance de moins de 30 min ; une semaine trop courte pour tous ses jours en garde moins. | (H) `MIN_SESSION` |
-| Jours | Uniquement les jours disponibles ; le lendemain d’un jour dur, le footing devient une « Récup » (très facile). | (H) |
+| Semaines | Du lundi au dimanche, à l’horloge de l’athlète ; de la semaine en cours à celle de la course, 24 semaines au plus (une course plus lointaine : des semaines de base d’abord). | choix pratique `HORIZON_WEEKS` |
+| Phases | Base → Spécifique (les 6 dernières semaines avant l’affûtage, 8 quand le plan en compte 16 ou plus avant lui) → Affûtage → le jour de la course, une séance « Course » liée au parcours. Sans course : « Progression ». | (H) chiffre `SPECIFIC_WEEKS`, `SPECIFIC_LONG_FROM`. Aucune étude ne fixe la durée d’une phase : les modèles de périodisation tiennent plus de la tradition que de la preuve (Kiely 2012). 6 à 8 semaines : la durée sur laquelle les séances de la phase ont été étudiées (6 semaines : Barnes 2013 ; 7 : Seiler 2013 ; 8 : Helgerud 2007 ; 10 : Esfarjani 2007). |
+| Affûtage | Les semaines qui contiennent J-14 → J-1. Volume : les bandes de la page de course (`race_prep.week_target`), J-14 → J-8 à 55–70 % de la base, J-7 → J-1 à 35–50 %, au milieu de la bande ; la base est la médiane des 4 semaines qui précèdent. L’intensité reste : un rappel court par semaine. | Bosquet 2007 (2 semaines, volume réduit de 41 à 60 %, intensité gardée) ; Mujika 2003 (comme `race_prep`) |
+| Progression de la semaine | Volume de départ, puis +10 % par semaine de charge. | (H) chiffre `GROWTH`. Aucune étude ne rend 10 % protecteur : un programme gradué à 10 % n’a pas blessé moins qu’un programme plus rapide (20,8 % contre 20,3 %, Buist 2008). Les hausses trouvées avec plus de blessures sont plus fortes : plus de 30 % sur deux semaines (Nielsen 2014, non significatif), 20 à 60 % d’une semaine à l’autre (Damsted 2019, à 21 jours seulement). 10 % reste sous ces seuils. Une revue systématique conclut à des preuves « très limitées » d’un lien entre hausse de charge et blessure (Damsted 2018, 4 études). |
+| **Progression d’une séance** | **Aucune séance ne dure plus de 10 % de plus que la plus longue sortie des 30 jours qui la précèdent.** Pour les jours passés : les sorties réelles de l’athlète (toute sortie de course enregistrée, dans le plan ou non, et les séances cochées « Fait » à la main). Pour les jours à venir : les séances que le plan écrit. Sans aucune sortie enregistrée sur 30 jours, il n’y a rien à comparer : les séances du plan tiennent lieu de sorties. Arrondi à 5 min vers le bas ; un pas de 5 min reste toujours permis (sous 50 min c’est plus de 10 % : la limite de l’arrondi, pas celle de l’étude) ; jamais sous 30 min. En affûtage, aucune séance ne grandit : pas plus longue que la plus longue des 30 jours précédents (le volume baisse : Bosquet 2007). Une semaine qui ne tient pas dans des séances aussi courtes **demande moins que son objectif** : les séances de qualité gardent leur place, les séances faciles rendent les minutes. | Frandsen 2025 `SPIKE`, `SPIKE_DAYS`, `session_limit` : 5 205 coureurs, 18 mois. Une séance dépassant de plus de 10 % la plus longue des 30 derniers jours allait avec plus de blessures de surmenage (+64 % de 10 à 30 %, +128 % au-delà du double) ; la hausse d’une semaine à l’autre, elle, n’y était pas liée. Limites dites par les auteurs : étude d’observation, blessures déclarées, mesure en **distance** — PaceForge compte en **temps**, c’est sa transposition. |
+| Semaine légère | Une semaine sur quatre à 75 % de la dernière semaine de charge ; la suivante reprend la progression. | (H) chiffre `LIGHT_EVERY`, `LIGHT_FACTOR`. Le principe : une charge élevée et sans variation va avec plus de maladies bénignes (Foster 1998, 25 athlètes) ; « éviter une monotonie excessive » (Meeusen 2013). Aucune étude ne fixe le cycle ni la baisse. |
+| Plafond | 150 min + 70 % du temps de course attendu (l’objectif de la course, sinon l’estimation du simulateur : voir « L’objectif et le temps de course »), entre 3 h et 12 h. Sans course : 1,5 × la base, entre 3 h et 8 h. Jamais sous la base. | (H) chiffre `CEILING`, `CEILING_RANGE`, `FREE_CEILING`. **Aucune étude.** Plus de volume va avec un meilleur temps sur marathon (Doherty 2020 ; Fokkema 2020) ; aucune ne donne un maximum. Ce plafond est un garde-fou : il arrête la hausse, il ne retire jamais rien à la base de l’athlète. |
+| Plancher | Une semaine d’entraînement ne descend pas sous 1 h (hors affûtage). | choix pratique `WEEK_FLOOR` : deux séances de 30 min. |
+| Facile / dur | Au plus 20 % du temps de la semaine en efforts durs (les répétitions des séances) ; le reste en aisance. | Seiler 2010 (environ 80 % de séances faciles, 20 % dures, chez des athlètes de haut niveau) ; compté **en temps** par Muñoz 2014 `HARD_SHARE` : 30 coureurs amateurs, 10 semaines, un groupe à 77 % du temps en aisance et 20 % au-dessus du second seuil a progressé de 5,0 % sur 10 km (3,6 % pour le groupe « entre les seuils » ; écart non significatif). Une répartition polarisée fait mieux qu’une répartition au seuil (Rosenblat 2019, 3 essais). 20 % est ici un plafond, pas une cible. |
+| Sortie longue | Environ 35 % de la semaine (au moins autant que les autres séances), plafonnée à 55 % du temps de course attendu, ce plafond tenu entre 2 h et 3 h 30 ; sans course : 2 h 30. Aucune à partir de J-3. | (H) chiffre `LONG_SHARE`, `LONG_RACE_SHARE`, `LONG_CAP_RANGE`, `FREE_LONG_CAP`, `NO_LONG_BEFORE_RACE`. Le principe : plus la plus longue sortie de la préparation est longue, meilleur est le temps sur semi et marathon, sans plus de blessures (Fokkema 2020 ; Doherty 2020). **Aucune étude** ne fixe sa part de la semaine ni son plafond. J-3 : l’affûtage baisse le volume (Bosquet 2007) ; le jour est le nôtre. Sa progression suit « Progression d’une séance ». |
+| Séances de qualité | Une par semaine à partir de 3 jours disponibles ; deux à partir de 5 jours et d’une base de 4 h, hors semaine légère et hors affûtage. Jamais plus de deux. | Deux au plus : Seiler & Tønnessen 2009 (« environ deux séances par semaine suffisent pour progresser sans stress excessif »). Les seuils (3 jours ; 5 jours et 4 h) sont (H) chiffre `QUALITY_FROM_DAYS`, `TWO_QUALITY` : les essais cités font 2 séances d’intervalles parmi 4 à 5 séances par semaine (Esfarjani 2007 ; Seiler 2013). |
+| Jours durs | Jamais deux de suite : une séance de qualité n’est jamais la veille ni le lendemain de la sortie longue, d’une autre séance ou de la course (dimanche et lundi sont voisins). | Stanley 2013 `place` : la récupération du système nerveux autonome demande au moins 48 h après un effort intense, 24 à 48 h après un effort au seuil, jusqu’à 24 h après un effort facile. Compter la sortie longue comme un jour dur est (H) chiffre : la même revue note, sur peu de données, que la durée pèse moins que l’intensité. |
+| Durée minimale | Aucune séance de moins de 30 min ; une semaine trop courte pour tous ses jours en garde moins. | Garber 2011 `MIN_SESSION` : la recommandation de l’ACSM, 30 min par jour ou plus à intensité modérée. Une recommandation de santé, pas un essai d’entraînement. |
+| Jours | Uniquement les jours disponibles ; le lendemain d’un jour dur, le footing devient une « Récup » (très facile). | Stanley 2013 (même constat : le lendemain d’un effort intense, la récupération n’est pas finie). |
 
 ### Les séances de qualité
 
 Échauffement 15 min, les répétitions (pas de récupération après la dernière), retour au calme 10 min au moins
 (arrondi pour un total multiple de 5). Une répétition de plus toutes les 2 semaines de la phase, sans jamais
-dépasser le budget d’efforts durs de la semaine (H) ; le minimum en semaine légère et en affûtage.
+dépasser le budget d’efforts durs de la semaine ; le minimum en semaine légère et en affûtage.
 
-| Phase | Séance | Répétitions |
+| Phase | Séance | Répétitions | Source |
+|---|---|---|---|
+| Base | Côtes courtes : *n* × 1 min en côte, récup en descente | 6 à 10 | Barnes 2013 : chez 20 coureurs entraînés, 6 semaines d’intervalles en côte, quelle que soit leur durée, améliorent le temps sur 5 km d’environ 2 % ; aucune durée ne se détache. Des efforts d’1 min chargent moins que ceux de 2 min et plus (82 % contre 92 % de VO2max, Seiler & Sjursen 2004) : la séance de la phase de base. Le nombre est (H) chiffre. |
+| Base | Fartlek : *n* × 2 min vite, récup 2 min | 5 à 8 | Seiler & Sjursen 2004 : des efforts de 2 min avec une récupération égale atteignent environ 92 % de VO2max (12 coureurs entraînés, 12 × 2 min). 5 à 8 : moins que l’étude, (H) chiffre. |
+| Spécifique | Seuil : *n* × 8 min soutenu, récup 2 min | 2 à 4 | Seiler 2013 : 4 × 8 min à 90 % de la FC max, deux fois par semaine pendant 7 semaines, font progresser plus que 4 × 4 min et 4 × 16 min (35 **cyclistes** amateurs entraînés). Commencer à 2 est (H) chiffre. |
+| Spécifique (trail) | Côtes longues : *n* × 4 min en côte, récup en descente | 3 à 6 | Seiler & Hetlelid 2005 : 6 × 4 min sur une pente de 5 %, la séance même de l’étude (9 coureurs très entraînés) ; Barnes 2013. Commencer à 3 est (H) chiffre. |
+| Spécifique (route) | Intervalles : *n* × 3 min **vite**, récup 2 min | 4 à 8 | Seiler & Sjursen 2004 : des efforts de 3 à 5 min sont ceux qui chargent le plus. Courus à 90–95 % de la FC max, 4 × 4 min font progresser VO2max plus que le même travail au seuil (Helgerud 2007, 40 hommes modérément entraînés) ; 8 efforts à la vitesse de VO2max, avec une récupération égale, améliorent le 3 000 m de 7,3 % en 10 semaines (Esfarjani 2007, 17 coureurs). **Changé le 22 novembre 2026** : ces efforts étaient « soutenus » (80–90 % de la FC max), une intensité qu’aucune de ces études n’utilise pour des efforts de 3 min ; ils sont « vite ». |
+| Affûtage | Rappels : *n* × 2 min soutenu, récup 2 min | 3 à 5 | Le principe : l’affûtage garde l’intensité (Bosquet 2007 ; Mujika 2003). Le format est (H) chiffre. |
+
+Les semaines alternent les deux séances de leur phase ; sans course : fartlek, côtes courtes, seuil à tour de rôle
+(`TEMPLATES`, `BY_PHASE`).
+
+| Autour des efforts | Valeur | Source |
 |---|---|---|
-| Base | Côtes courtes : *n* × 1 min en côte, récup en descente | 6 à 10 |
-| Base | Fartlek : *n* × 2 min vite, récup 2 min | 5 à 8 |
-| Spécifique | Seuil : *n* × 8 min soutenu, récup 2 min | 2 à 4 |
-| Spécifique (trail) | Côtes longues : *n* × 4 min en côte, récup en descente | 3 à 6 |
-| Spécifique (route) | Intervalles : *n* × 3 min soutenu, récup 2 min | 4 à 8 |
-| Affûtage | Rappels : *n* × 2 min soutenu, récup 2 min | 3 à 5 |
-
-Les semaines alternent les deux séances de leur phase ; sans course : fartlek, côtes courtes, seuil à tour de rôle.
-Tout ce tableau est (H) (`TEMPLATES`, `BY_PHASE`).
+| Récupération entre les efforts | 2 min (en descente pour les côtes) | Seiler & Hetlelid 2005 : entre des efforts de 4 min, environ 2 min suffisent ; de 1 à 4 min, la vitesse tenue change peu. |
+| Échauffement | 15 min faciles | Le principe : un échauffement améliore la performance dans 79 % des critères étudiés (Fradkin 2010, 32 études). 15 min est (H) chiffre `WARM_UP`. |
+| Retour au calme | 10 min au moins, très faciles | (H) chiffre `COOL_DOWN`. **Aucun bénéfice démontré** : un retour au calme actif n’améliore guère la récupération, ne prévient pas les blessures et ne freine pas l’adaptation (Van Hooren & Peake 2018). Il est gardé court, comme du volume facile. |
+| Une répétition de plus toutes les 2 semaines | de la plus petite à la plus grande valeur du tableau | (H) chiffre `REP_EVERY`. **Aucune étude** ne fixe ce rythme. |
 
 ### L’intensité
 
 Quatre niveaux, dits d’abord par la sensation (le test de la parole : Persinger 2004 ; Foster 2008), puis par une
 plage de fréquence cardiaque quand une FC maximale est connue (confirmée dans Réglages, sinon le repère observé de
-Santé, `heart_rate_reference`). Les plages reprennent les cinq zones de l’app (`heart_rate_zones`), leur
-correspondance avec les niveaux est (H) :
+Santé, `heart_rate_reference`). Les plages reprennent les cinq zones de l’app (`heart_rate_zones`).
+
+Leur correspondance avec les niveaux : le moment où parler devient difficile est le seuil ventilatoire, mesuré à
+86–89 % de la FC de pointe sur tapis chez 16 volontaires (Persinger 2004) ; tant que la parole est confortable,
+l’effort est sous ce seuil. « Facile » (60–80 %) reste donc dessous, « Soutenu » (80–90 %) le contient — c’est aussi
+la FC des 4 × 8 min de Seiler 2013 (90 %). Les bornes exactes sont celles des zones de l’app : (H) chiffre.
 
 | Niveau | Sensation | Plage de FC |
 |---|---|---|
@@ -182,8 +217,16 @@ Après une séance faite : « C’était comment ? », cinq niveaux (Très facil
 enregistrés au toucher, modifiables. C’est l’effort ressenti de la séance, rien d’autre : aucun champ de douleur,
 de blessure ni de maladie n’est collecté.
 
-Sur une séance **facile** (footing, sortie longue, récup), « Dur » ou « Très dur » est un signal. Toutes ces règles
-sont (H) (`adaptation`, `lighter_reason`, `week_missed`) :
+Sur une séance **facile** (footing, sortie longue, récup), « Dur » ou « Très dur » est un signal.
+
+Le principe : ce que l’athlète rapporte suit la charge d’entraînement mieux que les mesures objectives courantes
+(Saw 2016, revue de 56 études) ; l’effort perçu d’une séance est une mesure valide de sa charge (Foster 2001) ; le
+consensus sur le surentraînement demande d’« ajuster l’intensité ou le volume, ou d’accorder un jour de repos,
+quand l’athlète se plaint d’une fatigue excessive » (Meeusen 2013). Après un arrêt, les adaptations se perdent vite
+(Mujika 2000) et une séance trop longue au retour est ce qui va avec les blessures (Frandsen 2025) : d’où la
+reprise depuis les activités réelles. **Aucune étude ne fixe les chiffres de ce tableau** (−20 %, deux signaux en
+7 jours, deux séances manquées, une puis deux semaines) : ils sont (H) chiffre, choisis pour n’enlever que de la
+charge (`adaptation`, `lighter_reason`, `week_missed`).
 
 | Ce qui s’est passé dans la semaine | La semaine suivante | Ligne affichée |
 |---|---|---|
@@ -221,22 +264,24 @@ pas (jamais celui de la veille).
 
 **La règle du matin.** Les séances dures seulement quand la récupération est là : c’est le principe des études
 d’entraînement guidé par la VFC (Kiviniemi 2007 ; Vesterinen 2016 ; Javaloyes 2019), où un matin de VFC basse
-remplace la séance intense par du facile ou du repos. Tout le reste — durées, déplacement, règle des trois matins —
-est (H).
+remplace la séance intense par du facile ou du repos. L’effet mesuré est modeste : deux méta-analyses trouvent un
+gain de performance petit et non significatif face à un plan fixe, avec moins de séances intenses et moins
+d’athlètes qui ne progressent pas (Düking 2021 ; Manresa-Rocamora 2021). Les durées, le déplacement et la règle
+des trois matins sont (H) chiffre.
 
 | Ce matin | Ce que fait le plan | Source |
 |---|---|---|
-| Indice bas, séance dure du jour (séance de qualité, côtes, sortie longue) générée et jamais modifiée | Elle devient un **footing** facile : 60 % de sa durée, entre 30 et 45 min, et pas plus long que le footing dont elle prend la place. La séance dure **se décale** au prochain jour disponible de la même semaine (jusqu’au dimanche) qui est libre ou porte un footing que le plan peut réécrire, et qui garde « jamais deux jours durs de suite » (une sortie longue jamais à partir de J-3). Aucun jour : elle est **abandonnée**. | Principe : Kiviniemi 2007 ; Vesterinen 2016 ; Javaloyes 2019. Valeurs : (H) `FORM_FOOTING_SHARE`, `FORM_FOOTING_CAP`, `move_day` |
-| Indice bas, séance dure **épinglée** (modifiée ou déplacée par une personne) ou **écrite par le coach** | Rien n’est changé. L’athlète lit « Récupération basse ce matin. » et un bouton « Alléger aujourd’hui » : son toucher en fait le même footing (rien n’est déplacé). | (H) `lighten_by_hand` |
+| Indice bas, séance dure du jour (séance de qualité, côtes, sortie longue) générée et jamais modifiée | Elle devient un **footing** facile : 60 % de sa durée, entre 30 et 45 min, et pas plus long que le footing dont elle prend la place. La séance dure **se décale** au prochain jour disponible de la même semaine (jusqu’au dimanche) qui est libre ou porte un footing que le plan peut réécrire, et qui garde « jamais deux jours durs de suite » (une sortie longue jamais à partir de J-3). Aucun jour : elle est **abandonnée**. | Principe : Kiviniemi 2007 ; Vesterinen 2016 ; Javaloyes 2019. Le footing de 30 à 45 min : (H) chiffre `FORM_FOOTING_SHARE`, `FORM_FOOTING_CAP`, autour des 40 min de la séance facile de Kiviniemi 2007. Le déplacement (`move_day`) : chez Vesterinen 2016 la séance dure se fait le jour où la VFC est revenue ; le garder dans la semaine est (H) chiffre. |
+| Indice bas, séance dure **épinglée** (modifiée ou déplacée par une personne) ou **écrite par le coach** | Rien n’est changé. L’athlète lit « Récupération basse ce matin. » et un bouton « Alléger aujourd’hui » : son toucher en fait le même footing (rien n’est déplacé). | choix pratique `lighten_by_hand` : ce qu’une personne a décidé n’est jamais réécrit. |
 | Indice bas, semaine d’affûtage | Seulement le passage en footing, à la même durée : ni déplacement, ni baisse de volume. | Comme le ressenti |
-| Trois matins bas en cinq jours | La semaine suivante est allégée comme par le ressenti (−20 %, la séance de qualité devient un footing), par le même mécanisme (`adaptations`, raison `forme`). **Jamais deux baisses cumulées** : avec le ressenti, une seule s’applique, la plus forte (à égalité, celle du ressenti) ; une semaine répétée ou une reprise reste telle quelle. | (H) `FORM_LOW_COUNT`, `FORM_LOW_DAYS`, `with_form` |
+| Trois matins bas en cinq jours | La semaine suivante est allégée comme par le ressenti (−20 %, la séance de qualité devient un footing), par le même mécanisme (`adaptations`, raison `forme`). **Jamais deux baisses cumulées** : avec le ressenti, une seule s’applique, la plus forte (à égalité, celle du ressenti) ; une semaine répétée ou une reprise reste telle quelle. | (H) chiffre `FORM_LOW_COUNT`, `FORM_LOW_DAYS`, `with_form`. Kiviniemi 2007 allège sur une baisse d’un jour ou une tendance de deux jours, pour la séance du jour ; **aucune étude** n’allège une semaine entière sur trois matins. |
 | Pas d’indice ce matin (pas de nuit reçue, repères en construction) | Rien ne change. | — |
 | Indice habituel | Rien ne change. **Un bon indice n’ajoute jamais de charge.** | — |
 | Jour de course | Jamais touché. | — |
 
 **Quand.** À l’ouverture de la page, après chaque toucher, à la tâche quotidienne, et toutes les heures à :12
 (`paceforge.coaching_morning`) pour les plans dont l’option est allumée, pendant la matinée de l’athlète (de 5 h à
-midi à son horloge, H) et tant que l’indice du matin n’a pas été lu : la nuit arrive quand la montre se
+midi à son horloge, choix pratique) et tant que l’indice du matin n’a pas été lu : la nuit arrive quand la montre se
 synchronise. Tant qu’elle manque, Santé n’est relue qu’une fois toutes les 10 minutes au plus. Une fois l’indice du
 matin lu, la journée est fixée : relire ne change plus rien (idempotent, pas d’aller-retour). **Seul aujourd’hui est
 lu** : un jour passé n’est jamais réécrit.
@@ -305,7 +350,7 @@ participant n’est jamais lu.
 | Un événement avec une heure | Occupé de son début à sa fin : heure UTC, `TZID` (nom IANA, ou nom Windows d’Outlook parmi les plus courants : `WINDOWS_ZONES`), ou heure « flottante » lue à l’horloge de l’athlète (un `TZID` inconnu aussi). |
 | `TRANSP:TRANSPARENT` (affiché « disponible ») ou `STATUS:CANCELLED` | Ignoré. |
 | Un événement d’une journée entière | Ignoré : c’est le plus souvent un rappel ou un anniversaire. |
-| Un événement de journée entière de 2 jours ou plus | L’athlète est « absent » ces jours-là : aucune séance n’y est placée, rien n’est demandé. (H) `AWAY_DAYS` |
+| Un événement de journée entière de 2 jours ou plus | L’athlète est « absent » ces jours-là : aucune séance n’y est placée, rien n’est demandé. choix pratique `AWAY_DAYS` |
 | Un événement répété (`RRULE`) | Développé avec `python-dateutil` (déjà installé : Celery en dépend, épinglé dans les verrous) pour `FREQ=DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY`, à l’horloge de l’événement (un 9 h hebdomadaire reste à 9 h au changement d’heure), moins ses `EXDATE` et les occurrences qu’une exception (`RECURRENCE-ID`) remplace. Une règle à l’heure, à la minute ou à la seconde, une règle illisible et `RDATE` ne sont pas développées : l’événement compte une fois. |
 | Le flux de PaceForge lui-même | Jamais du temps occupé : un calendrier dont le `PRODID` est le nôtre est refusé en entier, un événement dont l’`UID` est celui d’une de nos séances est ignoré (l’athlète qui s’est abonnée au flux dans l’agenda qu’elle a donné). |
 
@@ -314,9 +359,14 @@ participant n’est jamais lu.
 ceux de la dernière réussie). **Jamais un titre, une description, un lieu ni un participant.**
 
 **Les moments.** « Quand peux-tu courir ? » — Matin, Midi, Soir, par plan, dans l’écran de départ et dans « Mon
-agenda » ; les trois par défaut. (H) `WINDOWS` : 6 h–9 h, 11 h 45–14 h, 17 h 30–21 h, à l’horloge de l’athlète.
+agenda » ; les trois par défaut. Choix pratique `WINDOWS` : 6 h–9 h, 11 h 45–14 h, 17 h 30–21 h, à l’horloge de
+l’athlète.
 
-**Le placement** (`app/services/coaching_slots.py`, pur ; tout est (H)).
+**Le placement** (`app/services/coaching_slots.py`, pur). Ce sont des choix pratiques : où une séance tient dans
+une journée, pas ce qu’elle est. Une seule règle touche à l’entraînement, l’heure de la séance de qualité : les
+adaptations sont plus fortes à l’heure où l’on s’entraîne d’habitude, et les performances courtes et intenses sont
+meilleures en fin d’après-midi que tôt le matin — pour l’endurance, l’effet de l’heure est incertain (Chtourou &
+Souissi 2012, revue). D’où « l’heure habituelle, sinon le soir ».
 
 | Règle | Valeur |
 |---|---|
@@ -348,7 +398,7 @@ occupées, ni qu’un jour est plein, ni « Journée chargée », ni les adresse
 - Sans montre : « Fait » (durée réelle modifiable) et « Pas faite ». Un « Pas faite » coché à la main n’est jamais
   défait par une sortie ; un « Fait » coché à la main prend la sortie quand elle arrive.
 - Une séance prévue dont le jour est passé sans sortie devient **pas faite**.
-- Le jour de la course et l’activité qui lui est liée ne comptent pas dans les temps de la semaine (H).
+- Le jour de la course et l’activité qui lui est liée ne comptent pas dans les temps de la semaine (choix pratique).
 
 **Où cela se déclenche.** Rien n’est branché dans les synchronisations Strava, COROS, Garmin ou des connecteurs
 officiels. `services/coaching.sync` relit le plan à l’affichage de la page (celle de l’athlète, celle du coach),
@@ -363,6 +413,15 @@ au plus tard le lendemain matin.
 modifiées, faites ni manquées. Une séance modifiée ou déplacée par l’athlète ou le coach est épinglée ; déplacée,
 elle garde le jour que le plan lui avait donné (`auto_day`), qui n’est donc pas rempli à nouveau ; supprimée par un
 coach, elle reste en base comme annulée pour la même raison.
+
+**Quand une règle change** (22 novembre 2026 : « Progression d’une séance », les intervalles « vite »). Aucun plan
+n’est réécrit d’un coup, aucune donnée n’est migrée : à sa lecture suivante (la page, celle du coach, la tâche
+quotidienne), les séances à venir que personne n’a touchées sont recalculées **en place** — la même ligne, le même
+événement dans un calendrier abonné (`SEQUENCE` + 1). Les séances faites, manquées, passées, modifiées, déplacées,
+allégées par la forme ou écrites par un coach restent telles quelles. Ce qu’un plan existant voit : une sortie
+plus courte quand elle dépassait de plus de 10 % la plus longue sortie réelle des 30 derniers jours (et une
+semaine qui demande un peu moins), puis des séances qui remontent de 10 % au plus par semaine ; pour une course
+sur route en phase spécifique, « *n* × 3 min vite » à la place de « soutenu ».
 
 ## Les écrans
 
@@ -461,34 +520,194 @@ séances, jamais l’agenda) ; gardé jusqu’au retrait de l’adresse, l’arr
 
 ## Sources
 
+Chaque référence a été ouverte le 22 novembre 2026 (sa fiche PubMed, ou le texte intégral quand c’est dit) et son
+résumé lu : ce qui lui est attribué plus haut est ce qu’elle dit. La phrase qui suit chacune dit sur qui elle porte.
+
+**La progression et les blessures**
+
+- Frandsen J. S. B., Hulme A., Parner E. T. et al. (2025). How much running is too much? Identifying high-risk
+  running sessions in a 5200-person cohort study. *British Journal of Sports Medicine*, 59(17), 1203–1210.
+  [10.1136/bjsports-2024-109380](https://doi.org/10.1136/bjsports-2024-109380). Texte intégral lu. Cohorte de
+  5 205 coureurs suivis 18 mois ; la règle « une séance » de PaceForge en vient.
+- Buist I., Bredeweg S. W., van Mechelen W. et al. (2008). No effect of a graded training program on the number of
+  running-related injuries in novice runners: a randomized controlled trial. *American Journal of Sports Medicine*,
+  36(1), 33–39. [10.1177/0363546507307505](https://doi.org/10.1177/0363546507307505). Essai randomisé, 532
+  débutants.
+- Nielsen R. Ø., Parner E. T., Nohr E. A. et al. (2014). Excessive progression in weekly running distance and risk
+  of running-related injuries: an association which varies according to type of injury. *Journal of Orthopaedic &
+  Sports Physical Therapy*, 44(10), 739–747. [10.2519/jospt.2014.5164](https://doi.org/10.2519/jospt.2014.5164).
+  Cohorte de 874 débutants, un an.
+- Damsted C., Parner E. T., Sørensen H. et al. (2019). The association between changes in weekly running distance
+  and running-related injury: preparing for a half marathon. *Journal of Orthopaedic & Sports Physical Therapy*,
+  49(4), 230–238. [10.2519/jospt.2019.8541](https://doi.org/10.2519/jospt.2019.8541). Cohorte de 261 coureurs, 14
+  semaines.
+- Damsted C., Glad S., Nielsen R. O., Sørensen H., Malisoux L. (2018). Is there evidence for an association between
+  changes in training load and running-related injuries? A systematic review. *International Journal of Sports
+  Physical Therapy*, 13(6), 931–942. [PMID 30534459](https://pubmed.ncbi.nlm.nih.gov/30534459/) (pas de DOI). 4
+  études retenues.
+- Ristolainen L., Kettunen J. A., Waller B., Heinonen A., Kujala U. M. (2014). Training-related risk factors in the
+  etiology of overuse injuries in endurance sports. *Journal of Sports Medicine and Physical Fitness*, 54(1),
+  78–87. [PMID 24445548](https://pubmed.ncbi.nlm.nih.gov/24445548/) (pas de DOI). Questionnaire rétrospectif, 446
+  athlètes de haut niveau (ski de fond, natation, course de fond).
+- Fokkema T., van Damme A. A. D. N., Fornerod M. W. J. et al. (2020). Training for a (half-)marathon: training
+  volume and longest endurance run related to performance and running injuries. *Scandinavian Journal of Medicine
+  & Science in Sports*, 30(9), 1692–1704. [10.1111/sms.13725](https://doi.org/10.1111/sms.13725). 997 coureurs
+  amateurs.
+- Doherty C., Keogh A., Davenport J. et al. (2020). An evaluation of the training determinants of marathon
+  performance: a meta-analysis with meta-regression. *Journal of Science and Medicine in Sport*, 23(2), 182–188.
+  [10.1016/j.jsams.2019.09.013](https://doi.org/10.1016/j.jsams.2019.09.013). 85 études.
+
+**La répartition, la récupération, la périodisation**
+
+- Seiler S. (2010). What is best practice for training intensity and duration distribution in endurance athletes?
+  *International Journal of Sports Physiology and Performance*, 5(3), 276–291.
+  [10.1123/ijspp.5.3.276](https://doi.org/10.1123/ijspp.5.3.276). Revue ; athlètes de niveau national et
+  international s’entraînant 10 à 13 fois par semaine.
+- Seiler S., Tønnessen E. (2009). Intervals, thresholds, and long slow distance: the role of intensity and duration
+  in endurance training. *Sportscience*, 13, 32–53. [sportsci.org/2009/ss.htm](https://www.sportsci.org/2009/ss.htm)
+  (revue en ligne, relue par des pairs, sans DOI). Texte intégral lu.
+- Muñoz I., Seiler S., Bautista J. et al. (2014). Does polarized training improve performance in recreational
+  runners? *International Journal of Sports Physiology and Performance*, 9(2), 265–272.
+  [10.1123/ijspp.2012-0350](https://doi.org/10.1123/ijspp.2012-0350). Essai randomisé, 30 coureurs amateurs.
+- Rosenblat M. A., Perrotta A. S., Vicenzino B. (2019). Polarized vs. threshold training intensity distribution on
+  endurance sport performance: a systematic review and meta-analysis of randomized controlled trials. *Journal of
+  Strength and Conditioning Research*, 33(12), 3491–3500.
+  [10.1519/JSC.0000000000002618](https://doi.org/10.1519/JSC.0000000000002618). 3 essais dans la méta-analyse, de
+  qualité moyenne.
+- Stanley J., Peake J. M., Buchheit M. (2013). Cardiac parasympathetic reactivation following exercise:
+  implications for training prescription. *Sports Medicine*, 43(12), 1259–1277.
+  [10.1007/s40279-013-0083-4](https://doi.org/10.1007/s40279-013-0083-4). Revue quantitative.
+- Garber C. E., Blissmer B., Deschenes M. R. et al. (2011). Quantity and quality of exercise for developing and
+  maintaining cardiorespiratory, musculoskeletal, and neuromotor fitness in apparently healthy adults: guidance
+  for prescribing exercise (ACSM position stand). *Medicine & Science in Sports & Exercise*, 43(7), 1334–1359.
+  [10.1249/MSS.0b013e318213fefb](https://doi.org/10.1249/MSS.0b013e318213fefb). Recommandation pour adultes en
+  bonne santé.
+- Foster C. (1998). Monitoring training in athletes with reference to overtraining syndrome. *Medicine & Science
+  in Sports & Exercise*, 30(7), 1164–1168.
+  [10.1097/00005768-199807000-00023](https://doi.org/10.1097/00005768-199807000-00023). 25 athlètes.
+- Meeusen R., Duclos M., Foster C. et al. (2013). Prevention, diagnosis and treatment of the overtraining syndrome:
+  joint consensus statement of the European College of Sport Science and the American College of Sports Medicine.
+  *European Journal of Sport Science*, 13(1), 1–24.
+  [10.1080/17461391.2012.730061](https://doi.org/10.1080/17461391.2012.730061) (aussi *Medicine & Science in
+  Sports & Exercise*, 45(1), 186–205). Texte lu dans sa version d’auteur (archive HAL hal-02651426).
+- Kiely J. (2012). Periodization paradigms in the 21st century: evidence-led or tradition-driven? *International
+  Journal of Sports Physiology and Performance*, 7(3), 242–250.
+  [10.1123/ijspp.7.3.242](https://doi.org/10.1123/ijspp.7.3.242). Revue critique.
 - Bosquet L., Montpetit J., Arvisais D., Mujika I. (2007). Effects of tapering on performance: a meta-analysis.
   *Medicine & Science in Sports & Exercise*, 39(8), 1358–1365.
+  [10.1249/mss.0b013e31806010e0](https://doi.org/10.1249/mss.0b013e31806010e0). 27 études.
 - Mujika I., Padilla S. (2003). Scientific bases for precompetition tapering strategies. *Medicine & Science in
   Sports & Exercise*, 35(7), 1182–1187.
-- Seiler S. (2010). What is best practice for training intensity and duration distribution in endurance athletes?
-  *International Journal of Sports Physiology and Performance*, 5(3), 276–291. Il décrit environ 80 % de séances à
-  basse intensité chez les athlètes d’endurance ; PaceForge en tire une borne en minutes, qui est une heuristique.
+  [10.1249/01.MSS.0000074448.73931.11](https://doi.org/10.1249/01.MSS.0000074448.73931.11). Revue.
+- Mujika I., Padilla S. (2000). Detraining: loss of training-induced physiological and performance adaptations.
+  Part I: short term insufficient training stimulus. *Sports Medicine*, 30(2), 79–87.
+  [10.2165/00007256-200030020-00002](https://doi.org/10.2165/00007256-200030020-00002). Revue.
+
+**Les séances de qualité**
+
+- Seiler S., Jøranson K., Olesen B. V., Hetlelid K. J. (2013). Adaptations to aerobic interval training:
+  interactive effects of exercise intensity and total work duration. *Scandinavian Journal of Medicine & Science
+  in Sports*, 23(1), 74–83. [10.1111/j.1600-0838.2011.01351.x](https://doi.org/10.1111/j.1600-0838.2011.01351.x).
+  Essai randomisé, 35 cyclistes amateurs entraînés.
+- Seiler S., Hetlelid K. J. (2005). The impact of rest duration on work intensity and RPE during interval training.
+  *Medicine & Science in Sports & Exercise*, 37(9), 1601–1607.
+  [10.1249/01.mss.0000177560.18014.d8](https://doi.org/10.1249/01.mss.0000177560.18014.d8). 9 coureurs très
+  entraînés.
+- Seiler S., Sjursen J. E. (2004). Effect of work duration on physiological and rating scale of perceived exertion
+  responses during self-paced interval training. *Scandinavian Journal of Medicine & Science in Sports*, 14(5),
+  318–325. [10.1046/j.1600-0838.2003.00353.x](https://doi.org/10.1046/j.1600-0838.2003.00353.x). 12 coureurs
+  entraînés.
+- Helgerud J., Høydal K., Wang E. et al. (2007). Aerobic high-intensity intervals improve VO2max more than moderate
+  training. *Medicine & Science in Sports & Exercise*, 39(4), 665–671.
+  [10.1249/mss.0b013e3180304570](https://doi.org/10.1249/mss.0b013e3180304570). Essai randomisé, 40 hommes
+  modérément entraînés.
+- Esfarjani F., Laursen P. B. (2007). Manipulating high-intensity interval training: effects on VO2max, the lactate
+  threshold and 3000 m running performance in moderately trained males. *Journal of Science and Medicine in
+  Sport*, 10(1), 27–35. [10.1016/j.jsams.2006.05.014](https://doi.org/10.1016/j.jsams.2006.05.014). 17 coureurs.
+- Barnes K. R., Hopkins W. G., McGuigan M. R., Kilding A. E. (2013). Effects of different uphill interval-training
+  programs on running economy and performance. *International Journal of Sports Physiology and Performance*, 8(6),
+  639–647. [10.1123/ijspp.8.6.639](https://doi.org/10.1123/ijspp.8.6.639). 20 coureurs entraînés.
+- Fradkin A. J., Zazryn T. R., Smoliga J. M. (2010). Effects of warming-up on physical performance: a systematic
+  review with meta-analysis. *Journal of Strength and Conditioning Research*, 24(1), 140–148.
+  [10.1519/JSC.0b013e3181c643a0](https://doi.org/10.1519/JSC.0b013e3181c643a0). 32 études, tous sports.
+- Van Hooren B., Peake J. M. (2018). Do we need a cool-down after exercise? A narrative review of the
+  psychophysiological effects and the effects on performance, injuries and the long-term adaptive response.
+  *Sports Medicine*, 48(7), 1575–1595. [10.1007/s40279-018-0916-2](https://doi.org/10.1007/s40279-018-0916-2).
+  Revue narrative.
+
+**L’intensité et le ressenti**
+
 - Persinger R., Foster C., Gibson M., Fater D. C. W., Porcari J. P. (2004). Consistency of the talk test for exercise
   prescription. *Medicine & Science in Sports & Exercise*, 36(9), 1632–1636.
+  [PMID 15354048](https://pubmed.ncbi.nlm.nih.gov/15354048/). 16 volontaires en bonne santé.
 - Foster C., Porcari J. P., Anderson J. et al. (2008). The talk test as a marker of exercise training intensity.
   *Journal of Cardiopulmonary Rehabilitation and Prevention*, 28(1), 24–30.
+  [10.1097/01.HCR.0000311504.41775.78](https://doi.org/10.1097/01.HCR.0000311504.41775.78). Jeunes adultes en
+  bonne santé.
+- Saw A. E., Main L. C., Gastin P. B. (2016). Monitoring the athlete training response: subjective self-reported
+  measures trump commonly used objective measures: a systematic review. *British Journal of Sports Medicine*,
+  50(5), 281–291. [10.1136/bjsports-2015-094758](https://doi.org/10.1136/bjsports-2015-094758). 56 études.
+- Foster C., Florhaug J. A., Franklin J. et al. (2001). A new approach to monitoring exercise training. *Journal of
+  Strength and Conditioning Research*, 15(1), 109–115. [PMID 11708692](https://pubmed.ncbi.nlm.nih.gov/11708692/)
+  (pas de DOI). Vélo et basket.
+
+**La forme**
+
 - Kiviniemi A. M., Hautala A. J., Kinnunen H., Tulppo M. P. (2007). Endurance training guided individually by daily
   heart rate variability measurements. *European Journal of Applied Physiology*, 101(6), 743–751.
-  [10.1007/s00421-007-0552-2](https://doi.org/10.1007/s00421-007-0552-2).
+  [10.1007/s00421-007-0552-2](https://doi.org/10.1007/s00421-007-0552-2). Essai randomisé, 26 hommes, course.
 - Vesterinen V., Nummela A., Heikura I. et al. (2016). Individual endurance training prescription with heart rate
   variability. *Medicine & Science in Sports & Exercise*, 48(7), 1347–1354.
-  [10.1249/MSS.0000000000000910](https://doi.org/10.1249/MSS.0000000000000910).
+  [10.1249/MSS.0000000000000910](https://doi.org/10.1249/MSS.0000000000000910). 40 coureurs amateurs.
 - Javaloyes A., Sarabia J. M., Lamberts R. P., Moya-Ramon M. (2019). Training prescription guided by heart-rate
   variability in cycling. *International Journal of Sports Physiology and Performance*, 14(1), 23–32.
-  [10.1123/ijspp.2018-0122](https://doi.org/10.1123/ijspp.2018-0122).
+  [10.1123/ijspp.2018-0122](https://doi.org/10.1123/ijspp.2018-0122). 17 cyclistes entraînés.
+- Düking P., Zinner C., Trabelsi K. et al. (2021). Monitoring and adapting endurance training on the basis of heart
+  rate variability monitored by wearable technologies: a systematic review with meta-analysis. *Journal of Science
+  and Medicine in Sport*, 24(11), 1180–1192.
+  [10.1016/j.jsams.2021.04.012](https://doi.org/10.1016/j.jsams.2021.04.012). 8 études, 198 participants.
+- Manresa-Rocamora A., Sarabia J. M., Javaloyes A., Flatt A. A., Moya-Ramón M. (2021). Heart rate
+  variability-guided training for enhancing cardiac-vagal modulation, aerobic fitness, and endurance performance:
+  a methodological systematic review with meta-analysis. *International Journal of Environmental Research and
+  Public Health*, 18(19), 10299. [10.3390/ijerph181910299](https://doi.org/10.3390/ijerph181910299).
 
-Ces trois études guident l’entraînement par la VFC du matin : les séances intenses les jours où elle est dans ses
+Les trois essais guident l’entraînement par la VFC du matin : les séances intenses les jours où elle est dans ses
 valeurs habituelles, du facile ou du repos sinon. PaceForge en reprend le principe sur l’indice de Santé (VFC, FC de
 nuit, sommeil), qui n’est pas le critère de ces études : le seuil reste celui de Santé, et la durée du footing, le
-déplacement de la séance et la règle des trois matins sont des heuristiques (H). L’indice de Santé reste une lecture
+déplacement de la séance et la règle des trois matins sont (H) chiffre. L’indice de Santé reste une lecture
 descriptive, pas une autorisation de s’entraîner : la règle ne fait qu’enlever de l’intensité, jamais en ajouter.
 
-Aucune étude n’est citée pour la progression de 10 % par semaine, la semaine légère sur quatre, les plafonds, la
-part de la sortie longue, l’adaptation au ressenti, le dénivelé à viser, la lecture du temps de course au quart
-d’heure, ni les moments, la marge et l’ordre du placement dans l’agenda : ce sont des usages d’entraînement ou des
-choix de PaceForge, marqués (H).
+**Le trail et l’heure de la séance**
+
+- Balducci P., Clémençon M., Morel B. et al. (2016). Comparison of level and graded treadmill tests to evaluate
+  endurance mountain runners. *Journal of Sports Science and Medicine*, 15(2), 239–246.
+  [PMID 27274660](https://pubmed.ncbi.nlm.nih.gov/27274660/) (pas de DOI). 10 coureurs de montagne de haut niveau.
+- Ehrström S., Tartaruga M. P., Easthope C. S. et al. (2018). Short trail running race: beyond the classic model for
+  endurance running performance. *Medicine & Science in Sports & Exercise*, 50(3), 580–588.
+  [10.1249/MSS.0000000000001467](https://doi.org/10.1249/MSS.0000000000001467). 9 traileurs très entraînés.
+- Chtourou H., Souissi N. (2012). The effect of training at a specific time of day: a review. *Journal of Strength
+  and Conditioning Research*, 26(7), 1984–2005.
+  [10.1519/JSC.0b013e31825770a7](https://doi.org/10.1519/JSC.0b013e31825770a7). Revue.
+
+### Ce qui n’a pas d’étude
+
+Dit sans détour, pour que cette page reste vraie :
+
+- **Aucune étude ne fixe ces chiffres ; une étude appuie leur principe** — (H) chiffre : +10 % par semaine, la
+  semaine légère sur quatre à 75 %, la durée des phases, la part et le plafond de la sortie longue, les seuils des
+  séances de qualité (3 jours ; 5 jours et 4 h), le nombre de répétitions au départ, l’échauffement de 15 min, les
+  bornes des zones de FC, les chiffres de l’adaptation au ressenti, la durée du footing et la règle des trois
+  matins de la forme, le dénivelé à viser, le jour de repos obligatoire (l’étude citée en demanderait deux).
+- **Aucune étude du tout** : le plafond hebdomadaire, le rythme d’une répétition de plus toutes les 2 semaines, les
+  deux séances manquées qui allègent la semaine suivante. Le retour au calme de 10 min n’a pas de bénéfice
+  démontré. Ces règles ne font que limiter ou enlever de la charge ; elles restent marquées.
+- **Des transpositions** : la règle « une séance » vient d’une étude en kilomètres et s’applique ici en minutes ;
+  le seuil de 4 × 8 min vient de cyclistes ; la règle du matin lit l’indice de Santé, pas la VFC seule ; plusieurs
+  études portent sur des athlètes très entraînés ou sur une dizaine de personnes.
+- **Des choix pratiques**, qui ne sont pas des décisions d’entraînement : la semaine du lundi au dimanche,
+  l’arrondi à 5 min, les 24 et 12 semaines écrites, les cinq volumes de départ, la lecture du temps de course au
+  quart d’heure, le plancher d’une heure, et dans l’agenda les moments, la marge de 30 min, l’ordre du placement
+  et l’absence à partir de 2 jours.
+
+Une règle nouvelle ou changée arrive avec son étude, ou porte l’une de ces marques (docs/decisions.md, 22 novembre
+2026 ; `tests/test_coaching_plan.py` vérifie que chaque étude nommée dans le code est dans cette liste).

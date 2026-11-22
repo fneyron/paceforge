@@ -371,9 +371,11 @@ async def test_three_low_mornings_in_five_days_lighten_the_next_week_once(client
     theirs = (await _as(client, coach).get(f"/coaching/athletes/{athlete.id}/calendar?w={nxt}", headers=HTMX)).text
     assert '<p class="pf-coach-reason">Semaine allégée.</p>' in theirs and "récupération" not in theirs
     # the ressenti asks for a lighter week too: one reduction, never both (0.8, not 0.64)
-    done = CoachingSession(plan_id=plan.id, user_id=athlete.id, day=m0, auto_day=m0, kind=cp.FOOTING, minutes=45,
-                           structure=cp.default_structure(cp.FOOTING, 45), status="done", manual=True, done_minutes=45,
-                           ressenti=5)
+    # (a run long enough to leave next week's sessions their length: none runs more than 10 % past the longest run
+    # of the last 30 days)
+    done = CoachingSession(plan_id=plan.id, user_id=athlete.id, day=m0, auto_day=m0, kind=cp.FOOTING, minutes=100,
+                           structure=cp.default_structure(cp.FOOTING, 100), status="done", manual=True,
+                           done_minutes=100, ressenti=5)
     db_session.add(done)
     await db_session.flush()
     await co.sync(db_session, plan, athlete)

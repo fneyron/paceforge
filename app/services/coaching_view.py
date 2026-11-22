@@ -40,6 +40,8 @@ ENDED = {co.PASSED: "{name} est derrière toi : {when}le plan continue sans cour
 METHOD = (
     "Ton plan est en temps, pas en kilomètres. Il part de ton volume habituel et monte d’environ 10 % par semaine ; "
     "une semaine sur quatre est plus légère.",
+    "Aucune séance ne dépasse de plus de 10 % ta plus longue sortie des 30 derniers jours : la semaine peut alors "
+    "demander un peu moins que prévu.",
     "La semaine, c’est surtout du facile : au moins 80 % du temps en aisance, une sortie longue, et une séance "
     "plus soutenue quand tu as trois jours ou plus.",
     "Jamais deux jours durs de suite, pas de séance de moins de 30 minutes, et seulement tes jours disponibles.",

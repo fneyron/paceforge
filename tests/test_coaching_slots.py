@@ -16,17 +16,20 @@ ROOT = Path(__file__).resolve().parent.parent
 TODAY = date(2026, 11, 23)  # a Monday
 ALL = cs.MOMENTS
 
-HEURISTICS = {"WINDOWS": {"matin": (360, 540), "midi": (705, 840), "soir": (1050, 1260)}, "MARGIN": 30, "CYCLE": 30,
-              "USUAL_WEEKS": 8, "USUAL_MIN_RUNS": 3}
+PRACTICAL = {"WINDOWS": {"matin": (360, 540), "midi": (705, 840), "soir": (1050, 1260)}, "MARGIN": 30, "CYCLE": 30,
+             "USUAL_WEEKS": 8, "USUAL_MIN_RUNS": 3}
 
 
-@pytest.mark.parametrize("name,value", HEURISTICS.items())
-def test_each_heuristic_is_pinned_and_marked_h(name, value):
+@pytest.mark.parametrize("name,value", PRACTICAL.items())
+def test_each_practical_choice_is_pinned_and_says_so(name, value):
+    """Where a session fits in a day is not a training decision: no study is claimed, and the line says « choix »
+    (docs/coaching.md: « choix pratique »), never (H) — that mark is for the figures of the plan's rules."""
     assert getattr(cs, name) == value
     source = (ROOT / "app/services/coaching_slots.py").read_text(encoding="utf-8")
     line = next(ln for ln in source.splitlines() if re.match(rf"{name}\s*=", ln))
-    assert "(H)" in line, f"{name} is a heuristic: its line says (H)"
-    assert f"`{name}`" in (ROOT / "docs/coaching.md").read_text(encoding="utf-8"), "and the page says it"
+    assert "# choix" in line and "(H)" not in source, f"{name} is a practical choice: its line says so"
+    doc = (ROOT / "docs/coaching.md").read_text(encoding="utf-8")
+    assert f"`{name}`" in doc and "Chtourou" in doc and "Chtourou & Souissi 2012" in source, "and the page says it"
 
 
 def _item(key, day, kind=cp.FOOTING, minutes=45, **more):
