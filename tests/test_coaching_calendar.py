@@ -259,7 +259,8 @@ async def test_moving_is_one_tap_on_any_day_and_two_hard_days_are_said(client, p
                           headers=HTMX)
     moved = await db_session.get(CoachingSession, hard.id)
     assert r.status_code == 200 and (moved.day, moved.pinned, moved.origin, moved.auto_day) == (SAT, True, "athlete", THU)
-    assert '<p class="pf-coach-reason pf-coach-hardpair">Samedi et dimanche\u00a0: deux jours durs de suite.</p>' in r.text
+    assert ('<p class="pf-coach-reason pf-coach-hardpair">Samedi et dimanche\u00a0: deux jours durs de suite. '
+            'Tu peux courir la séance en footing.</p>') in r.text, "a quality session: it may be run as a footing"
     assert "samedi 21 novembre" in r.text and "Modifiée par toi" in r.text
     # it stays there: a reading of the plan never rewrites a session a person moved, nor fills the day it left
     await client.get("/coaching")

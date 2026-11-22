@@ -21,6 +21,7 @@
             <p class="pf-coach-goal"><b>{{ head.goal }}</b>{% if head.time %}{% if head.time.href %}<a class="pf-coach-goal-time" href="{{ head.time.href }}">{{ head.time.label }}</a>{% else %}<span class="pf-coach-goal-time">{{ head.time.label }}</span>{% endif %}{% endif %}</p>
             {#- the level read from the history, with its reason: the athlete's own, never a follower's -#}
             {% if head.level %}<p class="pf-coach-level"><b>{{ head.level.lead }}</b>&nbsp;: {{ head.level.text }}{% if head.level.why %} <small>{{ head.level.why }}</small>{% endif %}</p>{% endif %}
+            {% for note in head.notes %}<p class="pf-coach-level">{{ note }}</p>{% endfor %}
         </div>
     </div>
     {% if head.ended %}<p class="pf-coach-reason pf-coach-ended">{{ head.ended }}</p>{% endif %}
