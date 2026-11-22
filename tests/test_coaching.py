@@ -820,7 +820,11 @@ async def test_the_feed_is_stable_follows_edits_and_dies_with_its_token(client, 
     # an edit, a move and a removal reach the feed
     edited, moved, removed = rows[0], rows[1], rows[2]
     _as(client, athlete)
-    await client.post(f"/coaching/sessions/{edited.id}/edit", data={"kind": "footing", "minutes": "35"}, headers=HTMX)
+    # (a length the session does not already have: on some weekdays the first one ahead is a 35-min footing, and
+    # an edit that changes nothing rightly leaves the feed's SEQUENCE alone)
+    length = 40 if edited.minutes == 35 else 35
+    await client.post(f"/coaching/sessions/{edited.id}/edit", data={"kind": "footing", "minutes": str(length)},
+                      headers=HTMX)
     free = next(d for d in (moved.day + timedelta(days=i) for i in range(1, 9)) if d.weekday() == 0)
     await client.post(f"/coaching/sessions/{moved.id}/move", data={"to": free.isoformat()}, headers=HTMX)
     db_session.add(CoachingLink(athlete_id=athlete.id, coach_id=people.coach.id))
@@ -831,7 +835,7 @@ async def test_the_feed_is_stable_follows_edits_and_dies_with_its_token(client, 
     after = {e["UID"]: e for e in _parse((await client.get(f"/coaching/cal/{token}.ics")).text)[1]}
     before = {e["UID"]: e for e in events}
     uid = lambda row: f"coaching-{row.id}@paceforge.example"  # noqa: E731
-    assert after[uid(edited)]["SUMMARY"] == "Footing 35 min"
+    assert after[uid(edited)]["SUMMARY"] == f"Footing {length} min"
     assert int(after[uid(edited)]["SEQUENCE"]) == int(before[uid(edited)]["SEQUENCE"]) + 1
     assert after[uid(moved)]["DTSTART;VALUE=DATE"] == free.strftime("%Y%m%d")
     assert int(after[uid(moved)]["SEQUENCE"]) > int(before[uid(moved)]["SEQUENCE"])
