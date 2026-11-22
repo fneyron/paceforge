@@ -12,6 +12,7 @@ to the page.
 import logging
 from dataclasses import dataclass
 from datetime import date, timezone
+from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -29,6 +30,7 @@ from app.services import coaching_agenda as ag
 from app.services import coaching_ics as ics
 from app.services import coaching_plan as cp
 from app.services import coaching_slots as cs
+from app.services import coaching_start as cst
 from app.services import coaching_view as cv
 from app.services import race_prep as rp
 from app.services.viz import d_long, d_short, fr_int, fr_num, hm
@@ -179,33 +181,64 @@ async def calendar_feed(token: str, request: Request, db: AsyncSession = Depends
 
 # ── the athlete's page, the onboarding ──────────────────────────────────────
 
+WEEKDAYS = ("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim.")
+WEEKDAYS_L = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
+
+
+async def _preview(db: AsyncSession, user: User, c: co.Clock, *, goal: str | None, days, long_day, base) -> dict:
+    """The onboarding's week, drawn from the answers as they stand (coaching_view.first_week: the generator's own
+    sessions). Reads only. Answers that cannot make a plan give {"error"}: the screen says what is missing where
+    the week would be."""
+    try:
+        clean_days, clean_long, clean_base = co.clean_answers(days, long_day, base)
+        target = await co.first_goal(db, user, int(goal) if goal and goal.isdigit() else None, c.today)
+    except co.Invalid as e:
+        picked = co.clean_days(days)
+        # days out of range are said by the line under the days (`silent`: not twice)
+        return {"error": str(e), "silent": not 2 <= len(picked) <= 6, "label": "", "aria": str(e), "empty": None,
+                "cols": [{"wd": w, "bars": []} for w in WEEKDAYS], "legend": [], "first": None, "note": None,
+                "long_day": _int(long_day), "long_days": [(d, WEEKDAYS_L[d]) for d in picked]}
+    return {**cv.first_week(clean_days, clean_long, clean_base, target, c.today), "error": None, "silent": False,
+            "long_day": clean_long, "long_days": [(d, WEEKDAYS_L[d]) for d in clean_days]}
+
+
 async def _onboarding(request: Request, db: AsyncSession, user: User, *, plan: CoachingPlan | None,
                       error: str | None = None, form: dict | None = None, status_code: int = 200,
                       course: int | None = None) -> Response:
-    """`course`: a race chosen before the screen opens (the race page's « Préparer cette course avec Coaching »)."""
+    """One screen, a plan already proposed: every answer is filled in before the athlete touches anything (the next
+    race, else « Progresser, sans course »; the days they usually run and the day of their usual longest run,
+    coaching_start; the computed volume), and the week these answers make is drawn. `course`: a race chosen before
+    the screen opens (the race page's « Préparer cette course avec Coaching »)."""
     c = await co.clock(db, user)
     races = await co.goal_options(db, user.id, c.today)
     if course is not None and not form and course in {r.id for r in races}:
         form = {"goal": str(course)}
-    computed = await co.starting_volume(db, user, c)
-    days = plan.weekdays if plan else ()
-    chosen = {"goal": str(plan.route_id) if plan and plan.route_id else ("none" if plan or not races else None),
-              "days": list(days), "long_day": plan.long_day if plan else None,
-              # the starting volume is computed again when the plan is made again (the plan's own without a history)
-              "base": computed or (plan.base_minutes if plan else None),
-              "moments": list(ag.moments_of(plan)) if plan else list(cs.MOMENTS)}
+    runs = await co.runs_of(db, user.id, c)
+    computed = cp.starting_minutes(co.weekly_minutes(runs, c.today))
+    if plan is not None:  # « Refaire le plan »: its own answers
+        days, long_day = plan.weekdays, plan.long_day
+    else:
+        proposed = cst.proposal(runs, c.today)
+        days, long_day = proposed.days, proposed.long_day
+    chosen: dict[str, Any] = {
+        "goal": str(plan.route_id) if plan and plan.route_id else ("none" if plan or not races else None),
+        "days": list(days), "long_day": long_day,
+        # the starting volume is computed again when the plan is made again (the plan's own without a history)
+        "base": computed or (plan.base_minutes if plan else None)}
     if form:
         chosen.update(form)
     if chosen["goal"] is None and races:
         chosen["goal"] = str(races[0].id)
+    if not chosen["base"]:
+        chosen["base"] = cp.START_CHOICES[1]  # no history: 2 h a week, until the athlete says otherwise
     base = chosen["base"]
-    volumes = sorted({*range(60, 901, 15), *([base] if base else [])})
+    volumes = sorted({*range(60, 901, 15), base})
+    pv = await _preview(db, user, c, goal=chosen["goal"], days=chosen["days"], long_day=chosen["long_day"], base=base)
     return templates.TemplateResponse(request, "coaching_onboarding.html", status_code=status_code, context={
-        "user": user, "redo": plan is not None, "error": error, "chosen": chosen, "computed": computed,
+        "user": user, "redo": plan is not None, "error": error, "chosen": chosen, "computed": computed, "pv": pv,
         "races": [{"id": r.id, "name": r.name, "when": d_short(day), "j": rp.j_label(-(day - c.today).days)}
                   for r, day in ((r, rp.race_day(r)) for r in races) if day is not None],
-        "weekdays": list(enumerate(("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."))),
-        "moments": [(m, cs.MOMENT_WORDS[m]) for m in cs.MOMENTS],
+        "weekdays": list(enumerate(zip(WEEKDAYS, WEEKDAYS_L, strict=True))),
         "volumes": [(m, hm(m)) for m in volumes],
         "choices": [(m, f"{m // 60}\u00a0h" + (" et +" if m == cp.START_CHOICES[-1] else ""))
                     for m in cp.START_CHOICES]})
@@ -257,7 +290,7 @@ def _queue_agenda(user_id: int) -> None:
 
 async def _page(request: Request, db: AsyncSession, scope: Scope, d: str | None, w: str | None, v: str | None,
                 tool: str | None = None, tool_error: str | None = None, tool_note: str | None = None):
-    """`tool`: the fold left open under the calendar (« agenda »), with its error or its note."""
+    """`tool`: what « Options du plan » opens on (« agenda », « forme »…), with the agenda's error or note."""
     state = await _state(db, scope)
     await db.commit()
     p = cv.page(state, d=_day(d), w=_day(w), month=v == "mois", coach=scope.coach,
@@ -278,8 +311,22 @@ async def coaching_page(request: Request, d: str | None = None, w: str | None = 
         return RedirectResponse("/coaching/athletes", status_code=303)  # a coach without a plan of their own
     if plan is None or refaire == "1":
         return await _onboarding(request, db, scope.viewer, plan=plan, course=_int(course))
-    return await _page(request, db, scope, d, w, v, tool="agenda" if outil in ("agenda", "agenda-lu") else None,
+    return await _page(request, db, scope, d, w, v, tool=TOOLS.get(outil or ""),
                        tool_note=AGENDA_ASKED if outil == "agenda-lu" else None)
+
+
+@router.get("/coaching/apercu", response_class=HTMLResponse)
+async def coaching_preview(request: Request, scope: Scope = Depends(own_scope), db: AsyncSession = Depends(get_db)):
+    """The onboarding's week, drawn again as a chip changes (htmx): the sessions the generator would make from the
+    answers as they stand. Reads only — no plan, no session, nothing is written; always answered 200 (answers that
+    cannot make a plan say so in the drawing's place)."""
+    if not _htmx(request):  # an address someone opened by itself: the screen
+        return RedirectResponse("/coaching", status_code=303)
+    q = request.query_params
+    user = scope.viewer
+    pv = await _preview(db, user, await co.clock(db, user), goal=q.get("goal"), days=q.getlist("days"),
+                        long_day=q.get("long_day"), base=q.get("base"))
+    return templates.TemplateResponse(request, "partials/coaching_preview.html", context={"pv": pv, "part": "swap"})
 
 
 @router.post("/coaching/plan")
@@ -292,13 +339,13 @@ async def coaching_save_plan(request: Request, scope: Scope = Depends(own_scope)
     try:
         plan = await co.save_plan(db, user, c, route_id=int(goal) if goal.isdigit() else None, days=days,
                                   long_day=form.get("long_day"), base=form.get("base"),
+                                  # no longer asked here (« Mon agenda » asks it); a screen opened before still sends it
                                   moments=form.getlist("moments") if "moments_asked" in form else None)
     except co.Invalid as e:  # nothing was written: the answers are checked first. Answered 200: the app's shell
         # replaces any document answered 4xx by « Écran indisponible », hiding the message the form shows
         return await _onboarding(request, db, user, plan=await co.get_plan(db, user.id), error=str(e), status_code=200,
                                  form={"goal": goal, "days": list(co.clean_days(days)),
-                                       "long_day": _int(form.get("long_day")), "base": _int(form.get("base")),
-                                       "moments": list(cs.clean_moments(form.getlist("moments")))})
+                                       "long_day": _int(form.get("long_day")), "base": _int(form.get("base"))})
     await co.sync(db, plan, user)
     await db.commit()
     logger.info("Coaching: plan saved for user %d", user.id)
@@ -330,12 +377,14 @@ async def coaching_form(value: str = Form(default=""), scope: Scope = Depends(ow
     await co.sync(db, plan, scope.athlete)
     await db.commit()
     logger.info("Coaching: form option %s for user %d", "on" if plan.form_on_at else "off", scope.athlete.id)
-    return RedirectResponse("/coaching#coach-form", status_code=303)
+    return RedirectResponse("/coaching?outil=forme#coach-form", status_code=303)
 
 
 # ── « Mon agenda »: the athlete's calendar addresses (never fetched in a request: app.tasks.coaching) ──
 
 AGENDA = "/coaching?outil=agenda#coach-tool-agenda"
+# ?outil=…: what « Options du plan » opens on when the page comes back from one of its forms
+TOOLS = {"agenda": "agenda", "agenda-lu": "agenda", "forme": "form", "options": "options"}
 AGENDA_ASKED = "Lecture demandée : recharge la page dans un instant."
 AGENDA_WAIT = "Une actualisation par minute : réessaie dans un instant."
 AGENDA_BUSY = "Trop de changements pour l’instant. Réessaie dans une heure."

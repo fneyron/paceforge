@@ -13,6 +13,10 @@ Tuesday's moved to Friday, which her coach had freed (« Mardi est plein : séan
 uvicorn tests.browser.coaching_preview:app --host 127.0.0.1 --port 8961
     PF_COACHING_AS=athlete (default) | coach | new   who is signed in: the athlete (Stella), her coach (Florent),
                                                      or a new account: no plan, no activity, no race (the onboarding)
+
+A fourth account has no plan either but a habit (Hugo: Monday, Wednesday and Saturday for eight weeks, the long run
+on Saturday, a race in 40 days): what the onboarding proposes from a history. A fixture signs it in on request —
+POST /__preview/coaching/as/habit (and back: …/as/new) — so that no fourth server is needed.
 """
 import os
 from contextlib import asynccontextmanager
@@ -56,8 +60,21 @@ async def lifespan(app):
             athlete.firstname, athlete.max_heart_rate, athlete.timezone = "Stella", 186, "UTC"
             coach = User(firstname="Florent", email=EMAILS["coach"], email_verified=True, timezone="UTC")
             new = User(firstname="Nina", email=EMAILS["new"], email_verified=True, timezone="UTC")
-            db.add_all([coach, new])
+            habit = User(firstname="Hugo", email="hugo@example.org", email_verified=True, timezone="UTC")
+            db.add_all([coach, new, habit])
             await db.flush()
+            # Hugo: eight weeks on Monday, Wednesday and Saturday (the long run), and a race to come
+            for week in range(1, 9):
+                for wd, name, minutes, km in ((0, "Footing", 40, 6.4), (2, "Fractionné", 50, 8.6),
+                                              (5, "Sortie longue", 85 + 5 * (week % 2), 13.8)):
+                    day = monday - timedelta(weeks=week) + timedelta(days=wd)
+                    db.add(Activity(user_id=habit.id, strava_activity_id=800000 + week * 10 + wd, name=name,
+                                    sport_type="Run", start_date=datetime.combine(day, time(7), timezone.utc),
+                                    distance=km * 1000, moving_time=minutes * 60, elapsed_time=minutes * 60 + 60,
+                                    total_elevation_gain=60, average_speed=km * 1000 / (minutes * 60),
+                                    raw_data={"utc_offset": 0}))
+            db.add(Route(user_id=habit.id, name="Semi des Vignes", total_distance_km=21.1, total_elevation_gain=180,
+                         sport_type="road", race_date=(today + timedelta(days=40)).isoformat()))
             # the athlete's runs: the last 5 weeks on Tuesday, Thursday, Friday and Sunday, this week before today
             await db.execute(delete(Activity).where(Activity.user_id == athlete.id))
             n = 0
@@ -131,7 +148,7 @@ async def lifespan(app):
             await db.flush()
             await co.sync(db, plan, athlete, noon)
             await db.commit()
-            ids = {"athlete": athlete.id, "coach": coach.id, "new": new.id}
+            ids = {"athlete": athlete.id, "coach": coach.id, "new": new.id, "habit": habit.id}
             app.state.coaching_ids = ids
             app.state.user_id = ids[AS]
             app.state.coaching_feed = plan.feed_token
@@ -147,3 +164,10 @@ app.router.lifespan_context = lifespan
 async def fixture():
     return {"synthetic": True, "as": AS, "day": app.state.coaching_day, "ids": app.state.coaching_ids,
             "feed": app.state.coaching_feed}
+
+
+@app.post("/__preview/coaching/as/{who}")
+async def sign_in_as(who: str):
+    """This preview's signed-in account, changed on request (synthetic accounts of this temporary database only)."""
+    app.state.user_id = app.state.coaching_ids[who]
+    return {"synthetic": True, "as": who}

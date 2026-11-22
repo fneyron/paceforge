@@ -1,7 +1,10 @@
 {% extends "base.html" %}
-{#- Coaching (beta): the athlete's plan, or the same calendar seen by a coach (scope.coach), titled with the athlete's
-    first name. « ‹ Activités » is the way back of an installed app older than the native Coaching tab only. The calendar part is partials/coaching_main.html (swapped in place on every tap); the rules are in
-    one fold, the rest (calendar feed, sharing, redo, stop) in a list of tools. -#}
+{#- Coaching (beta): the athlete's plan, or the same screens seen by a coach (scope.coach), titled with the athlete's
+    first name. « ‹ Activités » is the way back of an installed app older than the native Coaching tab only. The part
+    swapped in place on every tap is partials/coaching_main.html: the day first, then the week, then the plan. Under
+    it, two rows: the rules in one fold, and « Options du plan » — everything else (the form option, the calendar
+    feed, « Mon agenda », sharing, redo, stop), closed until asked for. `open`: what the options open on when the
+    page comes back from one of their forms (?outil=…). -#}
 {% from "partials/_icons.html" import icon %}
 
 {% block title %}{{ athlete_name ~ " · " if scope.coach }}Coaching — PaceForge{% endblock title %}
@@ -14,7 +17,7 @@
         <div>
             <h1 class="pf-h1">{{ athlete_name if scope.coach else "Coaching" }} <span class="pf-tag">bêta</span></h1>
             {#- the time the plan runs on, said once: the race page's objective, else the simulator's estimate -#}
-            <p class="pf-coach-goal"><b>{{ head.goal }}</b>{% if head.time %}{% if head.time.href %}<a class="pf-coach-goal-time" href="{{ head.time.href }}">{{ head.time.label }}</a>{% else %}<span class="pf-coach-goal-time">{{ head.time.label }}</span>{% endif %}{% endif %}{% if head.phase %}<span class="pf-pill pf-pill-accent">{{ head.phase }}</span>{% endif %}</p>
+            <p class="pf-coach-goal"><b>{{ head.goal }}</b>{% if head.time %}{% if head.time.href %}<a class="pf-coach-goal-time" href="{{ head.time.href }}">{{ head.time.label }}</a>{% else %}<span class="pf-coach-goal-time">{{ head.time.label }}</span>{% endif %}{% endif %}</p>
         </div>
     </div>
     {% if head.ended %}<p class="pf-coach-reason pf-coach-ended">{{ head.ended }}</p>{% endif %}
@@ -22,11 +25,16 @@
     {% include "partials/coaching_main.html" %}
 
     {% if not scope.coach %}
-    <details class="pf-fold pf-method pf-coach-how">
-        <summary>Comment ça marche</summary>
-        <ul>{% for line in method %}<li>{{ line }}</li>{% endfor %}</ul>
-    </details>
-    {% include "partials/coaching_tools.html" %}
+    <div class="pf-coach-more">
+        <details class="pf-coach-tool pf-method pf-coach-how">
+            <summary class="pf-tool"><span>{{ icon("info") }}<span>Comment ça marche</span></span>{{ icon("chev-r", "pf-chev") }}</summary>
+            <ul>{% for line in method %}<li>{{ line }}</li>{% endfor %}</ul>
+        </details>
+        <details class="pf-coach-tool pf-coach-opts" id="coach-options"{% if open %} open{% endif %}>
+            <summary class="pf-tool" id="coach-options-toggle"><span>{{ icon("sliders") }}<span>Options du plan <small>Calendrier, agenda, coach, refaire le plan</small></span></span>{{ icon("chev-r", "pf-chev") }}</summary>
+            {% include "partials/coaching_tools.html" %}
+        </details>
+    </div>
     {% else %}
     <form method="post" action="{{ scope.base }}/leave" class="pf-coach-leave" onsubmit="event.preventDefault(); var f = this; var msg = 'Ne plus suivre {{ athlete_name|e }} ? Tu ne verras plus son plan.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Ne plus suivre'); } else if (confirm(msg)) { f.submit(); }">
         <button type="submit" class="pf-btn pf-btn-ghost pf-btn-sm text-danger">Ne plus suivre {{ athlete_name }}</button>
@@ -51,6 +59,29 @@ document.addEventListener("click", function (event) {
         if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(field.value).then(done, function () { field.select(); });
         else { field.select(); try { document.execCommand("copy"); done(); } catch (_) {} }
     }
+});
+{% if not scope.coach %}
+// A link to one of the options (/coaching#coach-form, the address a form comes back to) lands on it, opened: the
+// options are a closed fold, which a fragment alone does not open.
+(function () {
+    function reveal() {
+        var target = location.hash.length > 1 && document.getElementById(location.hash.slice(1));
+        var options = document.getElementById("coach-options");
+        if (!target || !options || !options.contains(target)) return;
+        for (var el = target; el && el !== options.parentNode; el = el.parentNode) if (el.tagName === "DETAILS") el.open = true;
+        target.scrollIntoView({ block: "start" });
+    }
+    reveal();
+    addEventListener("hashchange", reveal);
+})();
+{% endif %}
+// « Déplacer »: the days become the targets — the week comes into view, the instruction takes the focus.
+document.addEventListener("htmx:afterSettle", function () {
+    var moving = document.getElementById("coach-moving");
+    if (!moving || moving.dataset.seen) return;
+    moving.dataset.seen = "1";
+    moving.closest(".pf-coach-cal").scrollIntoView({ block: "nearest" });  // its scroll margins clear the bars
+    if (!document.activeElement || document.activeElement === document.body) moving.focus({ preventScroll: true });
 });
 </script>
 {% endblock scripts %}

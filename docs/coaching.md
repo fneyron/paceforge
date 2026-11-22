@@ -71,28 +71,65 @@ ouvre alors « Écran indisponible » (404) pour un compte qui ne l’a pas.
 
 ## Les réponses de départ
 
-Un écran, quatre questions et une valeur calculée :
+Demande du propriétaire, 22 novembre 2026 : « Regarde l’ux de fond en comble pour le coaching fait quelque chose de
+visuel out of the box facile à utiliser et simple ».
 
-1. **Objectif** : une course à venir de l’athlète (un parcours à pied avec une date), ou « Progresser, sans course »
-   (un bloc glissant de 12 semaines, choix pratique, qui se prolonge de lui-même).
-2. **Jours disponibles** : de 2 à 6, donc un jour de repos au moins. (H) chiffre. Le principe : chez 446 athlètes
-   d’endurance de haut niveau, moins de 2 jours de repos par semaine allait avec 5,2 fois plus de blessures de
-   surmenage (Ristolainen 2014 — une seule étude, rétrospective, par questionnaire). Son seuil est deux jours ;
-   PaceForge en impose un et laisse le sixième jour au choix de l’athlète : c’est moins strict que l’étude, et dit
-   ici. Le minimum de 2 jours est un choix pratique (une sortie longue et une autre séance) ; l’ACSM recommande 3
-   jours ou plus à intensité soutenue (Garber 2011).
-3. **Jour de la sortie longue** : parmi eux ; dimanche par défaut, sinon le dernier jour disponible.
-4. **Quand peux-tu courir ?** Matin, Midi, Soir ; les trois par défaut. Ne sert qu’à placer les séances dans la
-   journée quand l’athlète relie son agenda (« Mon agenda »).
-5. **Volume de départ** : la médiane des minutes de course des 4 dernières semaines complètes (famille « course » de
-   `sante_training.load_family` : route, trail, tapis ; semaines du lundi au dimanche à l’horloge de l’athlète),
-   arrondie à 5 min, modifiable. Sans historique : cinq choix, 1 h, 2 h, 3 h, 4 h, 5 h et plus (choix pratique).
+**Un écran, un plan déjà proposé.** Toutes les réponses arrivent remplies et « Créer mon plan » est actif tout de
+suite ; l’athlète ajuste si elle veut.
+
+| Réponse | Ce qui est proposé | Comment elle se change |
+|---|---|---|
+| **Objectif** | La prochaine course à venir de l’athlète (un parcours à pied avec une date) ; sans course : « Progresser, sans course » (un bloc glissant de 12 semaines (H) qui se prolonge de lui-même), dit en une ligne, sans question à une seule réponse. | Une carte par course, plus « Progresser, sans course ». |
+| **Jours disponibles** (de 2 à 6) | Les jours où l’athlète court vraiment (voir plus bas) ; sans habitude : mardi, jeudi, dimanche (H, `DEFAULT_DAYS` : à 2 h par semaine, chaque jour porte une séance). | Sept pastilles, **sous les barres de la semaine** : un toucher ajoute ou enlève un jour. |
+| **Jour de la sortie longue** | Le jour qui porte le plus souvent sa plus longue sortie de la semaine, s’il est parmi les jours proposés ; sinon dimanche, sinon le dernier jour proposé. | Une liste, qui ne propose que les jours choisis. |
+| **Volume de départ** | La médiane des minutes de course des 4 dernières semaines complètes (famille « course » de `sante_training.load_family` : route, trail, tapis ; semaines du lundi au dimanche à l’horloge de l’athlète), arrondie à 5 min. Sans historique : 2 h (H). | Une liste (de 1 h à 15 h) ; sans historique, cinq choix : 1 h, 2 h, 3 h, 4 h, 5 h et plus (H). |
+
+**De 2 à 6 jours.** De 2 à 6, donc un jour de repos au moins. (H) chiffre. Le principe : chez 446 athlètes d’endurance de haut niveau, moins de 2 jours de repos par semaine allait avec 5,2 fois plus de blessures de surmenage (Ristolainen 2014 — une seule étude, rétrospective, par questionnaire). Son seuil est deux jours ; PaceForge en impose un et laisse le sixième jour au choix de l’athlète : c’est moins strict que l’étude, et dit ici. Le minimum de 2 jours est un choix pratique (une sortie longue et une autre séance) ; l’ACSM recommande 3 jours ou plus à intensité soutenue (Garber 2011).
+
+« Quand peux-tu courir ? » (Matin, Midi, Soir) n’est plus demandé ici : la question ne sert qu’avec un agenda relié,
+et elle vit dans « Mon agenda ».
+
+**Les jours habituels** (`app/services/coaching_start.py`, pur ; tout est (H)). Sont lues les sorties de course des
+8 semaines avant aujourd’hui (`HABIT_WEEKS`) ; deux sorties le même jour comptent pour un jour.
+
+| Règle | Valeur |
+|---|---|
+| Une habitude | Au moins 4 jours de course sur la période (`HABIT_MIN_RUNS`), sur au moins deux jours de la semaine différents. Sinon : la semaine par défaut. |
+| Combien de jours | Le nombre habituel de jours de course dans une semaine (la médiane des semaines où l’athlète a couru), tenu entre 3 et 5 (`HABIT_DAYS`) ; moins si elle n’a couru que sur moins de jours différents. |
+| Lesquels | Les jours de la semaine le plus souvent courus ; à égalité, celui qui porte le plus de minutes, puis le premier de la semaine. |
+| La sortie longue | Le jour qui a le plus souvent porté la plus longue sortie de sa semaine, s’il est parmi les jours retenus ; sinon dimanche, sinon le dernier jour retenu. |
+
+Ce n’est pas une règle d’entraînement : seulement ce qui est coché à l’ouverture. Le plan reste fait par
+`coaching_plan` à partir des jours que l’athlète valide.
+
+**L’aperçu : « Ta première semaine ».** Sept colonnes, une barre par séance, haute comme sa durée (écrite au-dessus),
+de la couleur de son type, et une légende des types présents. C’est la **première semaine complète** du plan : la
+semaine en cours un lundi, la suivante les autres jours (la seule semaine qui reste avant une course cette
+semaine-là). Sous le bouton, la première séance à venir : « Première séance aujourd’hui : Séance 45 min ».
+
+- **Il dit vrai.** Les séances sont celles du générateur lui-même (`coaching_view.first_week` appelle
+  `coaching_plan.build`, l’appel que fait `sync` pour un plan créé à l’instant), sur le même temps de course que le
+  plan (`coaching.first_goal` : la lecture de la page de la course). Un jour choisi qui ne porte aucune séance cette
+  semaine-là (un volume trop court pour tous ses jours) est dit : « Samedi reste libre cette semaine-là. »
+- **Il réagit.** À chaque changement (un jour, la sortie longue, le volume, l’objectif), la semaine est redessinée
+  sur place (htmx, `GET /coaching/apercu`).
+- **Il n’écrit rien.** La route ne fait que lire : aucun plan, aucune séance, rien sur un plan existant. La
+  prédiction d’une course, qui lit tout le tracé, est celle que le plan a déjà gardée pour la journée, sinon elle est
+  calculée une fois par processus, course et jour.
+- Toujours répondue 200 : des réponses qui ne font pas un plan le disent à la place du dessin. Hors de 2 à 6 jours,
+  le bouton attend et la ligne sous les jours dit pourquoi (« Garde un jour de repos : 6 jours au plus. », « Choisis
+  au moins 2 jours. »). Un formulaire refusé répond lui aussi 200 : l’app remplace tout document répondu 4xx par
+  « Écran indisponible ».
+- Sans JavaScript, le formulaire s’envoie tel quel ; l’aperçu reste celui de l’ouverture.
+- Sur « Refaire le plan », l’aperçu montre ce que le générateur ferait des nouvelles réponses : les séances faites,
+  passées ou modifiées par une personne restent, et un agenda relié peut encore déplacer une séance.
 
 Ouvert depuis la page d’une course (« Préparer cette course avec Coaching »), l’écran arrive avec cette course
 choisie.
 
-« Refaire le plan » repose ces questions : la semaine en cours redevient la semaine 0, ce que le ressenti avait
-changé est oublié ; les séances faites, passées ou modifiées par une personne restent.
+« Refaire le plan » rouvre cet écran avec les réponses du plan (jamais celles de l’habitude) et le volume recalculé :
+la semaine en cours redevient la semaine 0, ce que le ressenti avait changé est oublié ; les séances faites, passées
+ou modifiées par une personne restent.
 
 ## L’objectif et le temps de course
 
@@ -213,8 +250,8 @@ Le flux calendrier, public, ne lit que la FC maximale confirmée.
 
 ## Le ressenti et l’adaptation
 
-Après une séance faite : « C’était comment ? », cinq niveaux (Très facile, Facile, Bien, Dur, Très dur),
-enregistrés au toucher, modifiables. C’est l’effort ressenti de la séance, rien d’autre : aucun champ de douleur,
+Après une séance faite : « C’était comment ? », cinq niveaux (Très facile, Facile, Bien, Dur, Très dur) sur une
+échelle de cinq marches, enregistrés au toucher, modifiables. C’est l’effort ressenti de la séance, rien d’autre : aucun champ de douleur,
 de blessure ni de maladie n’est collecté.
 
 Sur une séance **facile** (footing, sortie longue, récup), « Dur » ou « Très dur » est un signal.
@@ -358,9 +395,8 @@ participant n’est jamais lu.
 « absence » ou non — fusionnés quand ils se touchent, remplacés à chaque lecture réussie (une lecture ratée garde
 ceux de la dernière réussie). **Jamais un titre, une description, un lieu ni un participant.**
 
-**Les moments.** « Quand peux-tu courir ? » — Matin, Midi, Soir, par plan, dans l’écran de départ et dans « Mon
-agenda » ; les trois par défaut. Choix pratique `WINDOWS` : 6 h–9 h, 11 h 45–14 h, 17 h 30–21 h, à l’horloge de
-l’athlète.
+**Les moments.** « Quand peux-tu courir ? » — Matin, Midi, Soir, par plan, dans « Mon agenda » (l’écran de départ
+ne le demande plus depuis le 22 novembre 2026) ; les trois par défaut. Choix pratique `WINDOWS` : 6 h–9 h, 11 h 45–14 h, 17 h 30–21 h, à l’horloge de l’athlète.
 
 **Le placement** (`app/services/coaching_slots.py`, pur). Ce sont des choix pratiques : où une séance tient dans
 une journée, pas ce qu’elle est. Une seule règle touche à l’entraînement, l’heure de la séance de qualité : les
@@ -384,7 +420,7 @@ qu’une adresse n’a jamais été lue, rien n’est placé : une heure donnée
 Retirer la dernière adresse efface les heures et remet à leur jour les séances que l’agenda avait déplacées.
 
 **Ce que voit l’athlète.** Sur la carte du jour, le créneau : « 12 h 15 – 13 h 05 » (une heure s’écrit « 12 h 15 »,
-une durée « 1h05 »), et « Autre créneau ». La frise de la semaine reste telle quelle.
+une durée « 1h05 »), et « Autre créneau ». Les barres de la semaine restent telles quelles.
 
 **Ce que voit le coach.** L’heure des séances, et « Séance déplacée de mardi à mercredi. » ; jamais les heures
 occupées, ni qu’un jour est plein, ni « Journée chargée », ni les adresses, ni « Autre créneau ».
@@ -395,8 +431,9 @@ occupées, ni qu’un jour est plein, ni « Journée chargée », ni les adresse
   même jour : la durée la plus proche d’abord. Les minutes faites sont celles de l’activité.
 - Une sortie sans séance ce jour-là apparaît « hors plan » dans le calendrier et compte dans le temps fait de la
   semaine.
-- Sans montre : « Fait » (durée réelle modifiable) et « Pas faite ». Un « Pas faite » coché à la main n’est jamais
-  défait par une sortie ; un « Fait » coché à la main prend la sortie quand elle arrive.
+- Sans montre : « C’est fait » (durée réelle modifiable) et « Pas faite ». Un « Pas faite » coché à la main n’est
+  jamais défait par une sortie ; un « C’est fait » coché à la main prend la sortie quand elle arrive. « Annuler »
+  défait l’un comme l’autre.
 - Une séance prévue dont le jour est passé sans sortie devient **pas faite**.
 - Le jour de la course et l’activité qui lui est liée ne comptent pas dans les temps de la semaine (choix pratique).
 
@@ -425,22 +462,54 @@ sur route en phase spécifique, « *n* × 3 min vite » à la place de « souten
 
 ## Les écrans
 
-- `/coaching` : l’objectif et le compte à rebours, le temps visé (« Objectif 6h30 » ou « Estimation 7h10 », une
-  fois, lié à la page de la course), la phase ; la semaine en sept jours (une pastille par séance,
-  pleine avec une coche quand elle est faite, en pointillés quand elle est manquée), les flèches, la vue « Mois » ;
-  une barre « fait / prévu » ; la carte du jour (le profil d’intensité dessiné, la consigne, « Fait », « Pas
-  faite », « Déplacer », « Modifier ») ; une fois faite : l’activité, le ressenti, la note, le commentaire du coach ;
-  un graphique des semaines (prévu en contour, fait en plein, phases, semaine en cours) ; un pli « Comment ça
-  marche » ; « Adapter mes séances à ma forme » (si l’option est proposée), « Ajouter à mon calendrier »,
-  « Mon agenda »,
-  « Partager avec un coach », « Refaire le plan », « Arrêter le coaching ».
-- « Déplacer » : on touche le bouton puis un jour (à partir d’aujourd’hui) ; un jour qui porte déjà une séance
-  prévue l’échange. Tout se fait au clavier (ce sont des boutons). Pas de glisser-déposer.
+Demande du propriétaire, 22 novembre 2026 (la même) : la page s’ouvre sur « qu’est-ce que je fais aujourd’hui »,
+une action principale par séance, le reste discret, les outils repliés.
+
+**`/coaching`, de haut en bas.**
+
+1. **L’en-tête** : l’objectif et le compte à rebours, le temps visé (« Objectif 6h30 » ou « Estimation 7h10 », une
+   fois, lié à la page de la course).
+2. **La carte du jour** — aujourd’hui à l’ouverture, toujours, même un jour sans séance :
+   - le type en grand, avec sa couleur, et la durée ; le créneau quand il y en a un (« Autre créneau », discret) ;
+   - **l’effort d’un coup d’œil** : une séance continue montre une jauge de quatre marches, autant de pleines que
+     son niveau (1 très facile … 4 vite) ; une séance structurée garde son profil dessiné, bloc par bloc, dans la
+     couleur de son type ; à côté, la consigne (le test de la parole) et la plage de FC ;
+   - **une action principale, « C’est fait »**, sur toute la largeur ; les autres sont discrètes, en texte : « Pas
+     faite », « Déplacer », « Modifier ». Une séance à venir n’a pas d’action principale ;
+   - une fois faite : l’activité liée, le **ressenti** — une échelle de cinq marches, un toucher l’enregistre —, la
+     note derrière « Ajouter une note » (aucun champ ni bouton « Enregistrer » tant qu’on ne l’ouvre pas), le
+     commentaire du coach ; « Annuler » défait une coche faite à la main ;
+   - **un jour sans séance** dit « Repos » et nomme la prochaine séance (« Prochaine séance · demain », un toucher
+     y mène) ; un autre jour qu’aujourd’hui a « Aujourd’hui » pour y revenir.
+3. **La semaine** : sept colonnes, une barre par séance, haute comme sa durée (contre la plus longue séance de la
+   semaine, 1 h au moins), de la couleur de son type — **pleine** une fois faite, **en contour** tant qu’elle est
+   prévue, **en pointillés** quand elle est manquée ; une sortie hors plan est une barre grise ; aujourd’hui est
+   marqué, un toucher choisit un jour. À côté des dates : le total « 2h36 / 4h00 » et la phase de la semaine. Pas
+   de légende (la carte du jour nomme le type) ; chaque jour porte un nom complet pour un lecteur d’écran (« mardi
+   17 novembre : Footing 45 minutes, faite »). Les flèches changent de semaine, « Mois » ouvre la grille du mois
+   (avec sa légende).
+4. **« Le plan »** : le graphique des semaines (prévu en contour, fait en plein, phases, semaine en cours).
+5. **Deux lignes** : « Comment ça marche » (les règles, en un pli) et **« Options du plan »**, fermé par défaut, qui
+   contient tout le reste, inchangé : « Adapter mes séances à ma forme » (si l’option est proposée, avec son texte
+   d’accord), « Ajouter à mon calendrier », « Mon agenda », « Partager avec un coach », « Suivre un athlète »,
+   « Refaire le plan », « Arrêter le coaching ». Un formulaire des options revient sur les options ouvertes
+   (`/coaching?outil=agenda#coach-tool-agenda`, `?outil=forme#coach-form`) ; une adresse qui ne porte que le
+   fragment (`/coaching#coach-form`) les ouvre aussi, par script.
+
+Sur un écran large, la carte du jour est à gauche, la semaine et le plan à droite.
+
+- « Déplacer » : on touche le bouton puis un jour (à partir d’aujourd’hui) ; la semaine vient à l’écran, la carte du
+  jour n’a plus d’action tant qu’on choisit. Un jour qui porte déjà une séance prévue l’échange. Tout se fait au
+  clavier (ce sont des boutons). Pas de glisser-déposer.
+- Chaque toucher remplace la partie du milieu sur place (htmx), sans recharger la page ; le focus reste sur
+  l’élément touché. Sans JavaScript, les mêmes liens et formulaires renvoient à la page.
 - `/coaching/athletes` : la liste du coach (la barre de la semaine, les dernières séances avec statut et ressenti) et
-  le champ du code. `/coaching/athletes/<id>` : le même calendrier, au prénom de l’athlète ; le coach ajoute,
-  déplace, modifie, supprime des séances (épinglées, origine « coach ») et écrit un commentaire. Il voit le plan, les
-  statuts, le ressenti, les notes et le résumé de l’activité liée ; **jamais les données de Santé**, ni le détail
-  d’une activité. Une séance allégée par la forme lui dit « Séance adaptée ce matin », sans la cause.
+  le champ du code. `/coaching/athletes/<id>` : **la même mise en page**, au prénom de l’athlète — la carte du jour,
+  la semaine, le plan — avec ce qu’un coach peut faire : il ajoute, déplace, modifie, supprime des séances
+  (épinglées, origine « coach ») et écrit un commentaire (« Commenter »). Il ne coche jamais une séance et n’a pas
+  les options. Il voit le plan, les statuts, le ressenti (la même échelle, en lecture), les notes et le résumé de
+  l’activité liée ; **jamais les données de Santé**, ni le détail d’une activité. Une séance allégée par la forme
+  lui dit « Séance adaptée ce matin », sans la cause.
 - Le lien : l’athlète touche « Partager avec un coach » → un code de 8 caractères affiché une fois, valable 7 jours et
   une seule fois, stocké par son empreinte → le coach le saisit. L’athlète retire l’accès, le coach arrête de
   suivre : immédiat dans les deux sens. « Arrêter le coaching » supprime le plan, ses séances, les liens et les codes.
@@ -509,7 +578,7 @@ séances, jamais l’agenda) ; gardé jusqu’au retrait de l’adresse, l’arr
 
 1. Rien à régler : sans `COACHING_BETA_USERS`, chaque compte a Coaching dès le déploiement (web et workers lisent la
    même variable).
-2. L’athlète ouvre l’onglet Coaching, répond aux questions.
+2. L’athlète ouvre l’onglet Coaching : un plan est proposé, elle l’ajuste si elle veut et touche « Créer mon plan ».
 3. Elle touche « Partager avec un coach », donne le code ; le coach le saisit dans Coaching › Suivre un athlète.
 4. L’onglet natif arrive avec la version 1.1.0 de l’app, publiée sur TestFlight par un commit sur `main` dont le
    message contient `[testflight]` (docs/testflight-without-expo-build-quota.md). En attendant, l’app installée

@@ -390,8 +390,8 @@ async def test_the_feed_emits_timed_events_under_the_same_uid(client, people, db
 async def test_the_moments_the_athlete_chose_hold_the_times(client, people, db_session, clock, queued, net):
     athlete = people.athlete
     _as(client, athlete)
-    page = (await client.get("/coaching")).text
-    assert page.count('name="moments" value="') == 3 and page.count('name="moments" value="matin" checked') == 1
+    # the onboarding no longer asks (« Mon agenda » does); a screen opened before the change still posts them
+    assert 'name="moments"' not in (await client.get("/coaching")).text
     clock.day = cp.monday_of(clock.day)
     r = await client.post("/coaching/plan", data={"goal": "none", "days": ["1", "3", "4", "6"], "long_day": "6",
                                                   "base": "240", "moments_asked": "1", "moments": ["midi", "soir"]})

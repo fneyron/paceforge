@@ -65,7 +65,7 @@ async def _wednesday(client, db, athlete, clock, *, low=True, on=True, days=("1"
     await _nights(db, athlete, clock.day, low=low)
     if on:
         r = await _as(client, athlete).post("/coaching/form", data={"value": "on"})
-        assert r.status_code == 303 and r.headers["location"] == "/coaching#coach-form"
+        assert r.status_code == 303 and r.headers["location"] == "/coaching?outil=forme#coach-form"
     return plan
 
 

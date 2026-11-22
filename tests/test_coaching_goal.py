@@ -59,6 +59,12 @@ def _goal_line(page: str) -> str:
     return re.search(r'<p class="pf-coach-goal">(.*?)</p>', page, re.S).group(1)
 
 
+def _phase(page: str) -> str | None:
+    """The phase of the week shown, said beside the week's total."""
+    found = re.search(r'<span class="pf-coach-phase">(.*?)</span>', page)
+    return found.group(1) if found else None
+
+
 # ── the objective, else the simulator's estimate ────────────────────────────
 
 async def test_the_plan_runs_on_the_race_pages_estimate_then_on_its_objective(client, people, db_session, clock):
@@ -304,7 +310,7 @@ async def test_a_deleted_race_leaves_a_plan_without_a_race_from_the_next_week(cl
     clock.day = nxt + timedelta(days=2)
     page = (await client.get("/coaching")).text
     assert "Trail des Crêtes n’est plus dans tes courses : le plan continue sans course." in page
-    assert "Progression" in _goal_line(page)
+    assert _phase(page) == "Progression"
     clock.day = nxt + timedelta(weeks=1)
     assert "continue sans course" not in (await client.get("/coaching")).text
     assert (await db_session.execute(select(CoachingPlan.goal_state))).scalar() is None
@@ -336,4 +342,4 @@ async def test_a_race_behind_leaves_a_plan_without_a_race_from_the_next_week(cli
     # the plan not opened for weeks after the race: it went on from the Monday after it
     clock.day = nxt + timedelta(days=3)
     page = (await client.get("/coaching")).text
-    assert "est derrière toi : le plan continue sans course." in page and "Progression" in _goal_line(page)
+    assert "est derrière toi : le plan continue sans course." in page and _phase(page) == "Progression"
