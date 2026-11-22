@@ -228,3 +228,23 @@ async def test_ten_seconds_for_the_whole_exchange(net, monkeypatch):
     with pytest.raises(sf.Refused) as e:
         await sf.fetch("https://cal.example.org/a.ics")
     assert e.value.code == "network" and "10.0.0.1" not in str(e.value)
+
+
+async def test_an_address_that_refuses_the_connection_hands_over_to_the_next_checked_one(net):
+    """A host with an IPv6 and an IPv4 address, read from a machine without IPv6: the second address answers. Both
+    were checked public first, the name stays in Host, and a private address in the list still refuses it all."""
+    v6 = "2606:2800:220:1:248:1893:25c8:1946"
+    net.hosts["cal.example.org"] = [v6, PUBLIC]
+
+    def handler(request):
+        if request.url.host != PUBLIC:
+            raise httpx.ConnectError("no route")
+        return httpx.Response(200, content=CALENDAR)
+    net.handler = handler
+    assert await sf.fetch("https://cal.example.org/a.ics") == CALENDAR
+    assert [r.url.host for r in net.requests] == [v6, PUBLIC]
+    assert all(r.headers["host"] == "cal.example.org" for r in net.requests)
+
+    net.hosts["cal.example.org"] = [v6, "10.0.0.5"]
+    net.requests.clear()
+    assert await _refused("https://cal.example.org/a.ics") == "host" and net.requests == []
