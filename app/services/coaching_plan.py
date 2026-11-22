@@ -29,6 +29,10 @@ The plan is in TIME (minutes, to 5), week by week, Monday to Sunday on the athle
   reads low, the day's hard session becomes a short footing and moves to the next available day of the week that
   keeps « never two hard days in a row », else is dropped (hard sessions only when recovered: Kiviniemi 2007;
   Vesterinen 2016; Javaloyes 2019 — the durations, the move and the 3-mornings rule are ours, H).
+- the profiles (docs/coaching.md › « Les profils »): the intent chosen on the start screen — « Garder la forme »
+  holds the volume (FORME_*), « Progresser » and a race « pour finir » keep one quality session a week, a race
+  « pour performer » (a time aimed at) keeps today's rules; a plan made before the profiles (intent None) keeps
+  the rules it was made with (`rule_set`).
 tests/test_coaching_plan.py pins each value and its mark.
 """
 import math
@@ -95,8 +99,23 @@ FORM_RETRY_MIN = 10  # minutes between two readings of Santé while this morning
 FORM = "forme"  # the adaptation's reason
 LIGHTENED, MOVED = "allegee", "reportee"  # a session's `form`: lightened on a low morning; moved from one
 
+# ── the profiles (docs/coaching.md › « Les profils ») ───────────────────────
+# Three intents, one tap on the start screen. A race is prepared « pour finir » without a time aimed at and « pour
+# performer » with one — read, never asked. No study compared these profiles: each rule below removes or holds load
+# against today's rules, which are the « performer » ones (the trials they cite ran on trained runners).
+ENTRETIEN, PROGRESSER, COURSE = "entretien", "progresser", "course"  # « Garder la forme », « Progresser », « Préparer une course »
+INTENTS = (ENTRETIEN, PROGRESSER, COURSE)
+FINIR, PERFORMER = "finir", "performer"
+# the rule sets the intents come to: a plan made before the profiles (intent None) keeps today's rules untouched
+BEFORE, HOLD, ONE, TODAY = "avant", "entretien", "une", "performer"
+FORME_FLOOR = 75  # (H) « Garder la forme »: never under 75 min a week, the lower bound of WHO's vigorous band (Bull 2020); runners at any dose had the lower mortality (Lee 2014)
+FORME_GROWTH = 0.0  # (H) …and no growth at or above it (+GROWTH a week below): fitness is held with less volume when the intensity is kept (Hickson 1982; Spiering 2021); no dose-response among runners (Pedisic 2020)
+FORME_LIGHT = None  # (H) no lighter week: the load does not rise, there is nothing to absorb (aucune étude)
+FORME_LONG_CAP = 90  # (H) the longest session held at 1 h 30 (aucune étude)
+FORME_REPS = "fewest"  # (H) one quality session at its fewest repetitions, never more: fitness drops when the intensity is cut (Hickson 1985; Spiering 2021)
+
 PHASES = {"base": "Base", "specifique": "Spécifique", "affutage": "Affûtage", "progression": "Progression",
-          "apres": "Après la course"}
+          "entretien": "Entretien", "apres": "Après la course"}
 REASONS = {
     "ressenti": "Semaine allégée : tes séances faciles t’ont paru dures.",
     "manquees": "Semaine allégée : plusieurs séances manquées la semaine dernière.",
@@ -136,7 +155,7 @@ TEMPLATES = {
 # which one, by phase: the week's parity picks in the pair (the second quality session of a week takes the other)
 BY_PHASE = {"base": ("cotes_courtes", "fartlek"), "specifique_trail": ("seuil", "cotes_longues"),
             "specifique_route": ("seuil", "intervalles"), "affutage": ("rappels", "rappels"),
-            "progression": ("fartlek", "cotes_courtes", "seuil")}
+            "progression": ("fartlek", "cotes_courtes", "seuil"), "entretien": ("fartlek", "cotes_courtes", "seuil")}
 
 
 @dataclass(frozen=True)
@@ -162,6 +181,34 @@ class Inputs:
     # the athlete's real runs of the last SPIKE_DAYS days, (day, minutes): what the single-session rule reads for
     # the days behind; empty (no run recorded): the plan's own sessions stand for them
     recent: tuple[tuple[date, int], ...] = ()
+    # the profile (docs/coaching.md › « Les profils »): the intent chosen on the start screen — None for a plan made
+    # before the profiles, which keeps the rules it was made with
+    intent: str | None = None
+
+
+def aim(goal: Goal) -> str | None:
+    """A race is prepared « pour performer » when it has an objective (the race page's, or the time typed with a race
+    without a course), « pour finir » otherwise — read, never asked; None without a race."""
+    if goal.race_day is None:
+        return None
+    return PERFORMER if goal.time_kind == "objectif" else FINIR
+
+
+def rule_set(inp: Inputs) -> str:
+    """Which rules the plan follows (docs/coaching.md › « Les profils »):
+    - BEFORE: a plan made before the profiles — today's rules, untouched, until « Refaire le plan »;
+    - HOLD: « Garder la forme » — the volume held, no lighter week, one quality session at its fewest repetitions,
+      the long run held at 1 h 30;
+    - ONE: « Progresser », and a race « pour finir » — today's rules with one quality session a week at most;
+    - TODAY: a race « pour performer » — today's rules (two quality sessions from 5 days and 4 h).
+    A « course » plan whose race is behind or gone goes on as « Progresser »."""
+    if inp.intent is None:
+        return BEFORE
+    if inp.intent == ENTRETIEN:
+        return HOLD
+    if inp.intent == COURSE and aim(inp.goal) == PERFORMER:
+        return TODAY
+    return ONE
 
 
 @dataclass
@@ -251,6 +298,11 @@ def long_cap(goal: Goal) -> int:
     return FREE_LONG_CAP
 
 
+def long_cap_of(inp: Inputs) -> int:
+    """The long run's cap for this plan: « Garder la forme » holds it at FORME_LONG_CAP."""
+    return FORME_LONG_CAP if rule_set(inp) == HOLD else long_cap(inp.goal)
+
+
 # ── one session against the longest run of the last 30 days ─────────────────
 
 def session_limit(longest: float | None, taper: bool = False) -> int | None:
@@ -318,7 +370,7 @@ def specific_weeks(start_monday: date, race_day: date) -> int:
 def phase_of(monday: date, inp: Inputs) -> str:
     rd = inp.goal.race_day
     if rd is None:
-        return "progression"
+        return "entretien" if rule_set(inp) == HOLD else "progression"
     if monday > monday_of(rd):
         return "apres"
     first = taper_start(rd)
@@ -349,6 +401,7 @@ def week_targets(inp: Inputs, until: date) -> dict[date, dict]:
     so it is computed from week 0 every time: the same answer whatever the day it is asked."""
     rd = inp.goal.race_day
     first_taper = taper_start(rd) if rd else None
+    hold = rule_set(inp) == HOLD  # « Garder la forme »: the base held (raised to FORME_FLOOR first), no lighter week
     out: dict[date, dict] = {}
     base, anchor, shift, top = inp.base, 0, 0, ceiling(inp.goal, inp.base)
     k, m = 0, inp.start_monday
@@ -361,10 +414,15 @@ def week_targets(inp: Inputs, until: date) -> dict[date, dict]:
         elif reason == "semaine_manquee":
             shift += 1
         rel = k - anchor
-        light = rel % LIGHT_EVERY == LIGHT_EVERY - 1
+        light = rel % LIGHT_EVERY == LIGHT_EVERY - 1 and not hold
         # loading weeks behind it (a lighter week: 75 % of the last loading week, which the next one builds on)
         steps = max(0, rel - rel // LIGHT_EVERY - shift - (1 if light else 0))
-        volume = min(top, base * (1 + GROWTH) ** steps) * (LIGHT_FACTOR if light else 1)
+        if hold:
+            steps = max(0, rel - shift)
+            volume = base * (1 + FORME_GROWTH) ** steps if base >= FORME_FLOOR else min(
+                FORME_FLOOR, base * (1 + GROWTH) ** steps)
+        else:
+            volume = min(top, base * (1 + GROWTH) ** steps) * (LIGHT_FACTOR if light else 1)
         easy = reason in ("ressenti", "manquees", FORM)
         if rd and first_taper and m >= first_taper:
             # Affûtage: race_prep's bands on the base = the median of the 4 weeks before it (its own rule); the
@@ -507,13 +565,14 @@ def week_sessions(monday: date, inp: Inputs, info: dict, phase: str, index: int,
     long_date = monday + timedelta(days=inp.long_day)
     has_long = (n >= 2 and inp.long_day in days and not race_week
                 and not (rd is not None and 0 < (rd - long_date).days <= NO_LONG_BEFORE_RACE))
+    rules = rule_set(inp)
     wanted = 0
     if len(inp.days) >= QUALITY_FROM_DAYS and n >= QUALITY_FROM_DAYS and not info.get("easy"):
-        wanted = 2 if (len(inp.days) >= TWO_QUALITY[0] and inp.base >= TWO_QUALITY[1]
+        wanted = 2 if (rules in (BEFORE, TODAY) and len(inp.days) >= TWO_QUALITY[0] and inp.base >= TWO_QUALITY[1]
                        and phase in ("base", "specifique", "progression") and not info.get("light")) else 1
     keys = _quality_keys(phase, index, goal.trail)
-    cap = long_cap(goal) if limit is None else min(long_cap(goal), limit)
-    least = bool(info.get("light")) or phase == "affutage"
+    cap = long_cap_of(inp) if limit is None else min(long_cap_of(inp), limit)
+    least = bool(info.get("light")) or phase == "affutage" or rules == HOLD
     chosen: tuple[list, int, int, int] | None = None
     for q in range(wanted, -1, -1):
         spots = place(days, inp.long_day if has_long else None, anchors, q)

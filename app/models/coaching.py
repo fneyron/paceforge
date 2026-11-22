@@ -47,6 +47,9 @@ class CoachingPlan(Base):
     race_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     race_km: Mapped[float | None] = mapped_column(Float, nullable=True)
     race_target_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # the intent chosen on the start screen (docs/coaching.md › « Les profils »): « entretien » (Garder la forme),
+    # « progresser », « course »; None: a plan made before the profiles, which keeps the rules it was made with
+    intent: Mapped[str | None] = mapped_column(String(12), nullable=True)
     days: Mapped[str] = mapped_column(String(16), nullable=False)  # weekdays available, « 1,3,5,6 » (0 = Monday)
     long_day: Mapped[int] = mapped_column(Integer, nullable=False)
     base_minutes: Mapped[int] = mapped_column(Integer, nullable=False)  # the starting weekly minutes

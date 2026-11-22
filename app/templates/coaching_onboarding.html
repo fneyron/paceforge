@@ -23,13 +23,19 @@
         {% if error %}<p class="pf-coach-error" role="alert">{{ error }}</p>{% endif %}
 
         <fieldset class="pf-coach-card pf-coach-q-card">
-            <legend class="pf-coach-h">Ton objectif</legend>
-            <div class="pf-coach-options">
+            <legend class="pf-coach-h">Ce que tu veux</legend>
+            <div class="pf-coach-intents">
+                {% for key, title, ic, line in intents %}
+                <label class="pf-coach-intent"><input type="radio" name="intent" value="{{ key }}" data-line="{{ line }}"{% if chosen.intent == key %} checked{% endif %}><span>{{ icon(ic, "w-6 h-6") }}<b>{{ title }}</b></span></label>
+                {% endfor %}
+            </div>
+            <p class="pf-coach-intent-line" id="coach-intent-line">{% for key, title, ic, line in intents if chosen.intent == key %}{{ line }}{% endfor %}</p>
+            {#- « Préparer une course »: which one (open only for it, always shown without JavaScript) -#}
+            <div class="pf-coach-options pf-coach-races" id="coach-races" role="radiogroup" aria-label="Ta course">
                 {% for r in races %}
                 <label class="pf-coach-option"><input type="radio" name="goal" value="{{ r.id }}"{% if chosen.goal == r.id %} checked{% endif %}><span><b>{{ r.name }}</b><small>{{ r.when }} · {{ r.j }}</small></span></label>
                 {% endfor %}
                 {% include "partials/coaching_newrace.html" %}
-                <label class="pf-coach-option"><input type="radio" name="goal" value="none"{% if chosen.goal == "none" %} checked{% endif %}><span><b>Progresser, sans course</b><small>12 semaines, renouvelées au fil de l’eau</small></span></label>
             </div>
         </fieldset>
 
@@ -85,13 +91,21 @@
     // « Ajouter une course »: its fields open once it is chosen; typing in them chooses it; the button waits for a
     // name, a date and a distance
     var fresh = document.getElementById("coach-goal-new"), block = document.getElementById("coach-newrace");
+    var races = document.getElementById("coach-races"), line = document.getElementById("coach-intent-line");
+    function intent() { var i = form.querySelector('input[name="intent"]:checked'); return i ? i : null; }
     function filled() {
+        var i = intent();
+        if (i && i.value !== "course") return true;
+        if (i && !form.querySelector('input[name="goal"]:checked')) return false;
         if (!fresh || !fresh.checked || !block) return true;
         return ["race_name", "race_date", "race_km"].every(function (n) { var f = form.elements[n]; return f && f.value.trim(); });
     }
     function sync() {
         var n = [].filter.call(days, function (d) { return d.checked; }).length;
         if (block && fresh) block.hidden = !fresh.checked;
+        var i = intent();
+        if (races) races.hidden = !!i && i.value !== "course";
+        if (line && i && line.textContent !== i.getAttribute("data-line")) line.textContent = i.getAttribute("data-line");
         if (go) go.disabled = n < 2 || n > 6 || !filled();
         if (!hint) return;
         var text = n > 6 ? "Garde un jour de repos : 6 jours au plus." : n < 2 ? "Choisis au moins 2 jours." : "Touche un jour pour l’ajouter ou l’enlever.";

@@ -13,6 +13,7 @@
 {% endif %}
 {% if part in ("more", "swap") %}
 <div id="coach-preview-more" class="pf-coach-pv-more"{{ oob|safe }}>
+    {% if pv.lines %}<ul class="pf-coach-pv-lines">{% for line in pv.lines %}<li>{{ line }}</li>{% endfor %}</ul>{% endif %}
     {% if pv.note %}<p class="pf-label pf-coach-pv-note">{{ pv.note }}</p>{% endif %}
     {% if pv.legend %}<p class="pf-viz-legend pf-coach-legend" aria-hidden="true">{% for cls, word in pv.legend %}<span><i class="pf-coach-pill is-{{ cls }}"></i>{{ word }}</span>{% endfor %}</p>{% endif %}
     {% if pv.long_days %}

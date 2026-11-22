@@ -79,7 +79,8 @@ suite ; l’athlète ajuste si elle veut.
 
 | Réponse | Ce qui est proposé | Comment elle se change |
 |---|---|---|
-| **Objectif** | La prochaine course à venir de l’athlète (un parcours à pied avec une date) ; sans course : « Progresser, sans course » (un bloc glissant de 12 semaines (H) qui se prolonge de lui-même). | Une carte par course, « Ajouter une course » (une course sans fichier GPX, voir plus bas), et « Progresser, sans course ». |
+| **Intention** | « Préparer une course » quand une course est à venir, sinon « Progresser » ; sur « Refaire le plan », l’intention du plan (voir « Les profils »). | Trois cartes, un toucher : « Garder la forme », « Progresser », « Préparer une course ». |
+| **Objectif** (pour « Préparer une course ») | La prochaine course à venir de l’athlète (un parcours à pied avec une date) ; sans course : « Progresser, sans course » (un bloc glissant de 12 semaines (H) qui se prolonge de lui-même). | Une carte par course, « Ajouter une course » (une course sans fichier GPX, voir plus bas), et « Progresser, sans course ». |
 | **Jours disponibles** (de 2 à 6) | Les jours où l’athlète court vraiment (voir plus bas) ; sans habitude : mardi, jeudi, dimanche (H, `DEFAULT_DAYS` : à 2 h par semaine, chaque jour porte une séance). | Sept pastilles, **sous les barres de la semaine** : un toucher ajoute ou enlève un jour. |
 | **Jour de la sortie longue** | Le jour qui porte le plus souvent sa plus longue sortie de la semaine, s’il est parmi les jours proposés ; sinon dimanche, sinon le dernier jour proposé. | Une liste, qui ne propose que les jours choisis. |
 | **Volume de départ** | La médiane des minutes de course des 4 dernières semaines complètes (famille « course » de `sante_training.load_family` : route, trail, tapis ; semaines du lundi au dimanche à l’horloge de l’athlète), arrondie à 5 min. Sans historique : 2 h (H). | Une liste (de 1 h à 15 h) ; sans historique, cinq choix : 1 h, 2 h, 3 h, 4 h, 5 h et plus (H). |
@@ -209,6 +210,71 @@ course, ou après la semaine où la suppression est vue. Ce lundi devient la sem
 progression) ; les séances de la semaine en cours restent telles quelles, la séance « Course » d’une course
 supprimée est retirée. Une ligne le dit jusqu’à la fin de cette première semaine : « Trail des Crêtes est derrière
 toi : dès lundi, le plan continue sans course. » ou « … n’est plus dans tes courses : … ».
+
+## Les profils
+
+Demandes du propriétaire, 22 novembre 2026 : « Toute les séances étude choix que tu fais doivent être basé sur des
+études scientifiques » ; « il faut également adaptés les études au profils des athlètes quelqu’un qui cherche à
+courir pour garder la forme ou pour performer par exemple ». La revue qui fonde cette section a été faite le même
+jour ; chaque référence est dans « Sources » avec son DOI.
+
+**Ce que la littérature permet, dit d’abord.** Aucune étude lue n’a comparé des profils d’athlètes sur une décision
+d’entraînement. Ce qu’elle donne : des recommandations de santé pour qui court pour la santé ; une épidémiologie des
+blessures qui sépare les débutants des autres ; quelques essais chez des coureurs amateurs, souvent petits ; beaucoup
+d’essais chez des coureurs entraînés — la population sur laquelle les règles d’avant avaient été construites. Les
+règles d’avant sont donc, en fait, celles de « performer ». Chaque règle de profil ci-dessous **retire ou retient de
+la charge** par rapport à elles ; aucune n’en ajoute sur une preuve mince.
+
+### Trois intentions, un toucher
+
+L’écran de départ propose trois cartes, une icône et un mot chacune ; la phrase de celle qui est choisie s’affiche
+dessous. Rien d’autre n’est demandé.
+
+| Intention | La phrase affichée | Les règles |
+|---|---|---|
+| **Garder la forme** | « On garde ton rythme : le même volume chaque semaine, et une séance un peu rythmée. » | Voir le tableau suivant. Aucune course. |
+| **Progresser** | « Ton volume monte peu à peu, une semaine sur quatre plus légère, avec une séance de qualité par semaine. » | Les règles du plan, avec **une** séance de qualité par semaine au plus. Aucune course. |
+| **Préparer une course** | « Le plan mène à ta course : il monte, puis s’allège les deux dernières semaines. » | La course choisie (un parcours, ou une course sans fichier). **Pour finir** quand elle n’a pas de temps visé, **pour performer** quand elle en a un : lu, jamais demandé (ci-dessous). |
+
+Par défaut : « Préparer une course » avec la prochaine course quand il y en a une, sinon « Progresser ». « Préparer
+une course » sans course ouvre directement « Ajouter une course ».
+
+**« Garder la forme »** — `HOLD`, `rule_set`. Population : des adultes de la population générale ; les études de
+maintien portent sur de jeunes adultes qui venaient de s’entraîner fort, pas sur un joggeur de longue date.
+
+| Règle | Valeur | Source |
+|---|---|---|
+| Le volume | Celui de l’athlète, **chaque semaine**, sans hausse ; sous 75 min, +10 % par semaine jusqu’à 75 min, puis tenu. Jamais sous la base, pas de plafond. | (H) chiffre `FORME_FLOOR`, `FORME_GROWTH`. L’OMS recommande 150 à 300 min d’activité modérée ou 75 à 150 min d’activité intense par semaine, « un peu vaut mieux que rien » (Bull 2020, texte intégral) : 75 min est la lecture basse de cette bande, et le choix est le nôtre. Les coureurs avaient une mortalité plus basse quelle que soit la dose, déjà sous 51 min ou à 1–2 sorties par semaine (Lee 2014, 55 137 adultes) ; aucune relation dose-réponse parmi les coureurs (Pedisic 2020, méta-analyse, 232 149 adultes). Rien ne justifie donc de pousser vers plus de volume pour la santé. La forme se maintient avec moins de volume tant que l’intensité reste : VO2max tenu 15 semaines à 2 jours par semaine (Hickson 1981) ou avec des séances raccourcies de 40 à 26 ou 13 min (Hickson 1982), **pas** quand l’intensité baisse d’un tiers (Hickson 1985) ; revue narrative : jusqu’à 15 semaines avec 2 séances par semaine « tant que l’intensité est maintenue », données insuffisantes chez les athlètes (Spiering 2021). |
+| Semaine allégée | Aucune. | (H) chiffre `FORME_LIGHT`, **aucune étude** : la charge ne monte pas, il n’y a rien à absorber. Une simplification, pas un résultat. |
+| Séance de qualité | Une par semaine (à partir de 3 jours ; 2 jours : voir « Deux jours par semaine »), **à son plus petit nombre de répétitions**, sans « une de plus toutes les 2 semaines » : fartlek, côtes courtes, seuil à tour de rôle. | (H) chiffre `FORME_REPS`. Garder l’intensité est ce qui tient la forme (Hickson 1985 ; Spiering 2021) ; pour un joggeur, ce que ces études ne disent pas, c’est s’il lui faut des intervalles : la séance reste courte. Elle peut devenir un footing sans conséquence. |
+| Sortie longue | La plus longue séance reste l’habitude : 1 h 30 au plus. | (H) chiffre `FORME_LONG_CAP`, **aucune étude** : l’OMS n’exige aucune séance longue (toute durée compte, Bull 2020). Elle reste comptée comme un jour dur pour le placement (la revue proposait de ne plus la compter ; la garder rend « jamais deux jours durs de suite » vrai pour tous les plans, et n’ajoute rien). |
+| Phase | « Entretien », un bloc glissant de 12 semaines. | choix pratique |
+| Ce qui ne change pas | La règle « une séance » (Frandsen 2025), les 20 % d’efforts durs au plus, le ressenti, la forme, jamais deux jours durs de suite. | — |
+
+**« Pour finir » ou « pour performer »** — `aim`. Une course est préparée « pour performer » quand elle a un temps
+visé (l’objectif de sa page, ou le temps donné avec une course sans fichier), « pour finir » sinon (l’estimation du
+simulateur n’est pas un objectif). L’écran le dit sous la course : « Sans temps visé, une seule séance de qualité par
+semaine : le reste en aisance. » ou « Avec un temps visé : jusqu’à deux séances de qualité par semaine, à partir de
+5 jours et 4 h. »
+
+| Règle | Pour finir, et « Progresser » | Pour performer | Source |
+|---|---|---|---|
+| Séances de qualité | **Une** par semaine au plus, même à 5 jours et 4 h | Jusqu’à deux (5 jours et 4 h), comme avant | **Aucune étude** ne compare « finir » et « performer » : c’est un choix de PaceForge, dans le sens qui retire de la charge. Le raisonnement : sur 151 813 marathons, le temps passé en intensité est à peu près le même à tous les niveaux, les plus rapides ajoutent du volume facile (Muniz-Pumares 2025, observationnel, marathon) ; sur 100 km, le volume prédit mieux l’allure que la vitesse à l’entraînement (Tanda & Knechtle 2015). Une seconde séance dure est l’ajout le moins appuyé pour qui n’a pas de temps à viser. |
+
+**Ce qui n’est pas fait** (la revue le déconseille) : pas de plafond de volume « pour la santé » (la courbe en U
+repose sur une poignée de coureurs, Schnohr 2015 ; aucun excès de risque à dix fois le minimum, Arem 2015) ; pas de
+« 80/20 » comme cible (les répartitions testées chez des amateurs font aussi bien les unes que les autres) ; pas de
+séance de renforcement, de consigne de descente ni de phrase sur le sommeil pour l’instant (hors du périmètre de ce
+changement).
+
+### Les plans faits avant les profils
+
+Un plan créé avant le 22 novembre 2026 n’a pas d’intention (`coaching_plans.intent` vide). **Il garde exactement ses
+règles** (`BEFORE` : deux séances de qualité à partir de 5 jours et 4 h, une séance de qualité à partir de 3 jours),
+et rien de ses séances ne bouge à sa lecture suivante : aucune règle de profil ne s’y applique, aucune ligne de profil
+ne s’affiche. « Refaire le plan » rouvre l’écran avec l’intention qu’il est déjà (« Préparer une course » s’il vise
+une course, sinon « Progresser ») ; c’est en le refaisant que l’athlète passe aux règles de profil. Un écran ouvert
+avant ce changement, qui n’envoie pas d’intention, fait de même un plan aux règles d’avant.
 
 ## Les règles du plan
 
@@ -497,7 +563,8 @@ quand tu vois de nouvelle séance une notif pour débrief du ressenti etc. » **
 
 **`/coaching`, de haut en bas.**
 
-1. **L’en-tête** : l’objectif et le compte à rebours, le temps visé (« Objectif 6h30 » ou « Estimation 7h10 », une
+1. **L’en-tête** : l’objectif et le compte à rebours (« Garder la forme » ou « Progresser, sans course » sans
+   course), le temps visé (« Objectif 6h30 » ou « Estimation 7h10 », une
    fois, lié à la page de la course).
 2. **Le débrief** (`#debrief`), seulement quand une séance faite attend son ressenti : « Ta sortie de mardi est
    arrivée — c’était comment ? » (« Ta séance d’aujourd’hui est faite — … » pour une coche à la main), ce qu’elle
@@ -700,6 +767,50 @@ résumé lu : ce qui lui est attribué plus haut est ce qu’elle dit. La phrase
 - Doherty C., Keogh A., Davenport J. et al. (2020). An evaluation of the training determinants of marathon
   performance: a meta-analysis with meta-regression. *Journal of Science and Medicine in Sport*, 23(2), 182–188.
   [10.1016/j.jsams.2019.09.013](https://doi.org/10.1016/j.jsams.2019.09.013). 85 études.
+
+**Les profils : santé, maintien, niveaux** (ouvertes le 22 novembre 2026 sur PubMed, résumé lu sauf mention ;
+DOI vérifiés sur Crossref)
+
+- Bull F. C., Al-Ansari S. S., Biddle S. et al. (2020). World Health Organization 2020 guidelines on physical
+  activity and sedentary behaviour. *British Journal of Sports Medicine*, 54(24), 1451–1462.
+  [10.1136/bjsports-2020-102955](https://doi.org/10.1136/bjsports-2020-102955). Recommandation de l’OMS, tous les
+  adultes. Texte intégral lu.
+- Lee D. C., Pate R. R., Lavie C. J. et al. (2014). Leisure-time running reduces all-cause and cardiovascular
+  mortality risk. *Journal of the American College of Cardiology*, 64(5), 472–481.
+  [10.1016/j.jacc.2014.04.058](https://doi.org/10.1016/j.jacc.2014.04.058). Cohorte de 55 137 adultes, 15 ans.
+- Pedisic Z., Shrestha N., Kovalchik S. et al. (2020). Is running associated with a lower risk of all-cause,
+  cardiovascular and cancer mortality, and is the more the better? *British Journal of Sports Medicine*, 54(15),
+  898–905. [10.1136/bjsports-2018-100493](https://doi.org/10.1136/bjsports-2018-100493). Méta-analyse, 232 149
+  adultes.
+- Schnohr P., O’Keefe J. H., Marott J. L. et al. (2015). Dose of jogging and long-term mortality. *Journal of the
+  American College of Cardiology*, 65(5), 411–419.
+  [10.1016/j.jacc.2014.11.023](https://doi.org/10.1016/j.jacc.2014.11.023). 1 098 joggeurs ; très peu de joggeurs
+  « intenses », intervalles larges : cité pour dire ce qu’il ne montre pas.
+- Arem H., Moore S. C., Patel A. et al. (2015). Leisure time physical activity and mortality: a detailed pooled
+  analysis of the dose-response relationship. *JAMA Internal Medicine*, 175(6), 959.
+  [10.1001/jamainternmed.2015.0533](https://doi.org/10.1001/jamainternmed.2015.0533). 661 137 adultes, toutes
+  activités.
+- Hickson R. C., Rosenkoetter M. A. (1981). Reduced training frequencies and maintenance of increased aerobic power.
+  *Medicine & Science in Sports & Exercise*, 13(1), 13–16. [PMID 7219129](https://pubmed.ncbi.nlm.nih.gov/7219129/)
+  (pas de DOI). 12 jeunes adultes, vélo et course.
+- Hickson R. C., Kanakis C., Davis J. R. et al. (1982). Reduced training duration effects on aerobic power,
+  endurance, and cardiac growth. *Journal of Applied Physiology*, 53(1), 225–229.
+  [10.1152/jappl.1982.53.1.225](https://doi.org/10.1152/jappl.1982.53.1.225). 13 jeunes adultes.
+- Hickson R. C., Foster C., Pollock M. L. et al. (1985). Reduced training intensities and loss of aerobic power,
+  endurance, and cardiac growth. *Journal of Applied Physiology*, 58(2), 492–499.
+  [10.1152/jappl.1985.58.2.492](https://doi.org/10.1152/jappl.1985.58.2.492). 12 jeunes adultes.
+- Spiering B. A., Mujika I., Sharp M. A. et al. (2021). Maintaining physical performance: the minimal dose of
+  exercise needed to preserve endurance and strength over time. *Journal of Strength & Conditioning Research*,
+  35(5), 1449–1458. [10.1519/JSC.0000000000003964](https://doi.org/10.1519/JSC.0000000000003964). Revue narrative ;
+  population générale (les auteurs disent les données insuffisantes chez les athlètes).
+- Muniz-Pumares D., Hunter B., Meyler S. et al. (2025). The training intensity distribution of marathon runners
+  across performance levels. *Sports Medicine*, 55(4), 1023–1035.
+  [10.1007/s40279-024-02137-7](https://doi.org/10.1007/s40279-024-02137-7). 151 813 marathons de 119 452 coureurs,
+  carnets d’entraînement ; observationnel.
+- Tanda G., Knechtle B. (2015). Effects of training and anthropometric factors on marathon and 100 km ultramarathon
+  race performance. *Open Access Journal of Sports Medicine*, 6, 129.
+  [10.2147/OAJSM.S80637](https://doi.org/10.2147/OAJSM.S80637). Observationnel, marathon et 100 km sur route
+  (Crossref donne Knechtle en premier auteur, PubMed Tanda).
 
 **La répartition, la récupération, la périodisation**
 

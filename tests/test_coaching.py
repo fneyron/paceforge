@@ -263,7 +263,7 @@ async def test_the_onboarding_computes_the_starting_volume_from_four_complete_we
                                                                                    same_today):
     athlete, m0 = people.athlete, cp.monday_of(same_today)
     page = (await _as(client, athlete).get("/coaching")).text
-    assert "Progresser, sans course" in page and 'name="days"' in page and 'name="long_day"' in page
+    assert 'value="progresser" data-line' in page and 'name="days"' in page and 'name="long_day"' in page
     assert page.count('type="radio" name="base"') == 5, "no history: five coarse choices"
     # 4 complete weeks of 100, 200, 140, 160 min; this week's runs and a ride never count
     n = 0
