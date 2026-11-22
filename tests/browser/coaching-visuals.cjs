@@ -734,7 +734,9 @@ async function theme(page, dark) {
       await page.locator('.pf-coach-note textarea').first().fill('Bien géré. Garde cette allure jeudi.');
       await swap(page, () => page.locator('.pf-coach-note button').first().click());
       assert.equal(await page.locator('.pf-coach-said').innerText(), 'Ton commentaire\nBien géré. Garde cette allure jeudi.');
-      assert.equal(await page.locator('.pf-coach-notefold > summary').innerText(), 'Modifier mon commentaire');
+      assert.equal(await page.locator('.pf-coach-notefold > summary').innerText(), 'Commenter', 'one short word, the comment kept in its field');
+      const row = await page.locator('.pf-coach-quiet > :is(a, details) , .pf-coach-quiet > details > summary').evaluateAll(all => [...new Set(all.map(el => Math.round(el.getBoundingClientRect().top)))]);
+      assert.equal(row.length, 1, 'the session’s quiet actions sit on one line ' + JSON.stringify(row));
       await noOverflow(page, 'coach athlete');
       await shot(page, 'coach-athlete-393');
       await theme(page, true); await shot(page, 'coach-athlete-393-dark'); await theme(page, false);
