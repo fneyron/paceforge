@@ -7,7 +7,7 @@ are read; a title, a description, a place or an attendee is never looked at, let
   names, WINDOWS_ZONES — or a floating time read on the athlete's clock);
 - TRANSP:TRANSPARENT (shown as free) and STATUS:CANCELLED events are ignored;
 - an all-day event is ignored (a birthday, a reminder), unless it lasts AWAY_DAYS days or more: the athlete is then
-  « away » those days (H) and no session is placed on them;
+  « away » those days (a practical choice) and no session is placed on them;
 - a repeated event (RRULE) is expanded with python-dateutil (already installed: celery needs it) for FREQ=DAILY,
   WEEKLY, MONTHLY and YEARLY, on its own wall clock (a weekly 9:00 stays at 9:00 across a clock change), minus its
   EXDATEs and the occurrences an override (RECURRENCE-ID) replaces; a rule by the hour, minute or second, and RDATE,
@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone, tzinfo
 from zoneinfo import ZoneInfo
 
-AWAY_DAYS = 2  # (H) an all-day event of 2 days or more: away
+AWAY_DAYS = 2  # choix pratique: an all-day event of 2 days or more is « away »
 HORIZON_DAYS = 21  # the busy time kept: the next 21 days
 MAX_OCCURRENCES = 400  # per repeated event, within the window
 MAX_INTERVALS = 1500  # kept per calendar, once merged

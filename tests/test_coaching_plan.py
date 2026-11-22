@@ -1,6 +1,7 @@
 """Coaching: the plan's rules (app/services/coaching_plan.py, docs/coaching.md), as properties over many inputs —
 every set of available days, bases from 1 h to 10 h, races on every weekday from 1 to 30 weeks away, road and
-trail, and no race at all. Each heuristic (H) is pinned here: changing one is a decision."""
+trail, and no race at all. Each value is pinned here with its mark — a study's, a figure of ours (H), a practical
+choice: changing one is a decision, and a rule ships with its study or says it has none (owner, 22 Nov. 2026)."""
 import itertools
 import re
 from datetime import date, timedelta
@@ -44,34 +45,76 @@ def _training(week):
     return [s for s in week.sessions if s.kind != cp.RACE]
 
 
-# ── the heuristics, pinned and marked ───────────────────────────────────────
+# ── every value, pinned and marked ──────────────────────────────────────────
 
-HEURISTICS = {
-    "MIN_SESSION": 30, "GROWTH": 0.10, "LIGHT_EVERY": 4, "LIGHT_FACTOR": 0.75, "WEEK_FLOOR": 60, "HORIZON_WEEKS": 24,
-    "BLOCK_WEEKS": 12, "SPECIFIC_WEEKS": (6, 8), "SPECIFIC_LONG_FROM": 16, "CEILING": (150, 0.7),
-    "CEILING_RANGE": (180, 720), "FREE_CEILING": (1.5, 180, 480), "LONG_SHARE": 0.35, "LONG_RACE_SHARE": 0.55,
-    "LONG_CAP_RANGE": (120, 210), "FREE_LONG_CAP": 150, "NO_LONG_BEFORE_RACE": 3, "QUALITY_FROM_DAYS": 3,
-    "TWO_QUALITY": (5, 240), "REP_EVERY": 2, "ADAPT_FACTOR": 0.8, "SIGNAL_FROM": 4, "SIGNAL_DAYS": 7,
-    "MISSED_FROM": 2, "START_CHOICES": (60, 120, 180, 240, 300), "BASE_RANGE": (60, 900),
-    "RACE_TIME_STEP": 15, "CLIMB_START": 0.6, "CLIMB_RATE_CAP": 500, "CLIMB_MIN": 100,
+# a figure of PaceForge's: a study backs the principle, or none does — its line says (H)
+FIGURES = {
+    "GROWTH": 0.10, "LIGHT_EVERY": 4, "LIGHT_FACTOR": 0.75, "SPECIFIC_WEEKS": (6, 8), "SPECIFIC_LONG_FROM": 16,
+    "CEILING": (150, 0.7), "CEILING_RANGE": (180, 720), "FREE_CEILING": (1.5, 180, 480), "LONG_SHARE": 0.35,
+    "LONG_RACE_SHARE": 0.55, "LONG_CAP_RANGE": (120, 210), "FREE_LONG_CAP": 150, "NO_LONG_BEFORE_RACE": 3,
+    "QUALITY_FROM_DAYS": 3, "TWO_QUALITY": (5, 240), "REP_EVERY": 2, "ADAPT_FACTOR": 0.8, "SIGNAL_FROM": 4,
+    "SIGNAL_DAYS": 7, "MISSED_FROM": 2, "CLIMB_START": 0.6, "CLIMB_RATE_CAP": 500, "CLIMB_MIN": 100,
     "FORM_FOOTING_SHARE": 0.6, "FORM_FOOTING_CAP": 45, "FORM_LOW_COUNT": 3, "FORM_LOW_DAYS": 5,
+}
+# not a training decision: how far ahead to write, a rounding, a stable reading — its line says « choix pratique »
+PRACTICAL = {
+    "STEP": 5, "WEEK_FLOOR": 60, "HORIZON_WEEKS": 24, "BLOCK_WEEKS": 12, "START_CHOICES": (60, 120, 180, 240, 300),
+    "BASE_RANGE": (60, 900), "RACE_TIME_STEP": 15, "CLIMB_STEP": 50,
+}
+# the value is a study's: its line names it, and the study is in the document's sources with its DOI
+CITED = {
+    "MIN_SESSION": (30, "Garber 2011"), "SPIKE": (0.10, "Frandsen 2025"), "SPIKE_DAYS": (30, "that study"),
+    "HARD_SHARE": (0.20, "Muñoz 2014"),
 }
 
 
-@pytest.mark.parametrize("name,value", HEURISTICS.items())
-def test_each_heuristic_is_pinned_and_marked_h(name, value):
-    assert getattr(cp, name) == value
+def _line(name):
     source = (ROOT / "app/services/coaching_plan.py").read_text(encoding="utf-8")
-    line = next(ln for ln in source.splitlines() if re.match(rf"{name}\s*=", ln))
-    assert "(H)" in line, f"{name} is a heuristic: its line says (H)"
+    return next(ln for ln in source.splitlines() if re.match(rf"{name}\s*=", ln))
+
+
+@pytest.mark.parametrize("name,value", FIGURES.items())
+def test_each_figure_of_ours_is_pinned_and_marked_h(name, value):
+    assert getattr(cp, name) == value
+    assert "(H)" in _line(name), f"{name} is a figure no study fixes: its line says (H)"
+
+
+@pytest.mark.parametrize("name,value", PRACTICAL.items())
+def test_each_practical_choice_is_pinned_and_says_so(name, value):
+    assert getattr(cp, name) == value
+    assert "choix pratique" in _line(name) and "(H)" not in _line(name)
+
+
+@pytest.mark.parametrize("name,expected", CITED.items())
+def test_each_value_taken_from_a_study_names_it(name, expected):
+    value, study = expected
+    assert getattr(cp, name) == value
+    assert study in _line(name) and "(H)" not in _line(name)
+
+
+def test_every_study_the_rules_name_is_in_the_sources_with_its_doi():
+    """A rule ships with its study: each « Name 2013 » written in the rules' module is a line of the document's
+    « Sources », with a DOI or a PubMed link."""
+    source = (ROOT / "app/services/coaching_plan.py").read_text(encoding="utf-8")
+    doc = (ROOT / "docs/coaching.md").read_text(encoding="utf-8")
+    sources = doc[doc.index("## Sources"):]
+    named = set(re.findall(r"([A-ZÀ-Ý][\w-]+(?: (?:&|et) [A-ZÀ-Ý][\w-]+)?) ((?:19|20)\d\d)\b", source))
+    assert len(named) >= 20, named
+    entries = [e for e in re.split(r"\n- ", sources) if re.search(r"\((?:19|20)\d\d\)", e)]
+    for name, year in sorted(named):
+        first = name.split(" ")[0]
+        entry = next((e for e in entries if e.lstrip().startswith(first) and f"({year})" in e), None)
+        assert entry, f"{name} {year} is named in the rules and missing from the sources"
+        assert "https://doi.org/" in entry or "https://pubmed.ncbi.nlm.nih.gov/" in entry or "sportsci.org" in entry, entry
 
 
 def test_the_cited_rules_are_the_race_pages():
-    """The taper is race_prep's (Bosquet 2007; Mujika 2003), not a copy; the hard share is Seiler's 20 %."""
+    """The taper is race_prep's (Bosquet 2007; Mujika 2003), not a copy; the hard share is Seiler's 20 %, counted in
+    time as Muñoz 2014 did."""
     assert (rp.TAPER_SHARE_EARLY, rp.TAPER_SHARE_LATE, rp.TAPER_DAYS) == ((0.55, 0.70), (0.35, 0.50), 14)
     assert cp.HARD_SHARE == 0.20
     doc = (ROOT / "docs/coaching.md").read_text(encoding="utf-8")
-    for source in ("Bosquet", "Mujika", "Seiler", "(H)"):
+    for source in ("Bosquet", "Mujika", "Seiler", "Muñoz", "(H)", "choix pratique"):
         assert source in doc
 
 
@@ -98,13 +141,21 @@ def test_every_plan_keeps_the_rules(inp):
             assert cp.monday_of(s.day) == w.monday
             assert sum(step.get("min", 0) or step["reps"] * step["effort"] + (step["reps"] - 1) * step["recup"]
                        for step in s.structure["steps"]) == s.minutes, "the structure adds up to the duration"
-        # the week's sessions add up to its target (nothing lost in the rounding), or the target holds no session
-        assert w.minutes == (w.target if w.target >= cp.MIN_SESSION and _training(w) else w.minutes)
+        easy = [s for s in _training(w) if s.kind in (cp.FOOTING, cp.RECUP, cp.LONG)]
+        # the week's sessions add up to its target (nothing lost in the rounding) — or every easy session is as long
+        # as the single-session rule lets it be, and the week asks for less than its target
         if _training(w):
-            assert w.minutes == w.target
+            assert w.minutes == w.target or (
+                w.limit and w.minutes < w.target and all(s.minutes == w.limit for s in easy)), (w.index, w.limit)
+        # no session more than 10 % longer than the longest of the 30 days before the week (Frandsen 2025)
+        before = [x.minutes for x in sessions if x.kind != cp.RACE
+                  and w.monday - timedelta(days=cp.SPIKE_DAYS) <= x.day < w.monday]
+        assert w.limit == cp.session_limit(max(before, default=None), taper=w.phase == "affutage")
+        if w.limit:
+            assert all(s.minutes <= w.limit for s in _training(w)), (w.index, w.limit)
         # at most 20 % of the week in hard efforts
         hard = sum(cp.hard_minutes(s.structure) for s in _training(w))
-        assert hard <= cp.HARD_SHARE * w.target + 1e-9
+        assert hard <= cp.HARD_SHARE * w.minutes + 1e-9
         # the long run on its day, never longer than its cap
         longs = [s for s in _training(w) if s.kind == cp.LONG]
         assert len(longs) <= 1
@@ -219,9 +270,9 @@ def test_the_quality_session_follows_its_phase_and_says_its_structure():
     assert {s.structure["key"] for w in road if w.phase == "specifique" for s in w.sessions
             if s.kind in (cp.QUALITY, cp.HILLS)} == {"seuil", "intervalles"}
     kind, minutes, structure = cp.quality_session("intervalles", 6)
-    assert (kind, minutes, structure["text"]) == (cp.QUALITY, 55, "6 × 3 min soutenu, récup 2 min")
+    assert (kind, minutes, structure["text"]) == (cp.QUALITY, 55, "6 × 3 min vite, récup 2 min")
     assert [s["t"] for s in structure["steps"]] == ["echauffement", "bloc", "retour"]
-    assert cp.hard_minutes(structure) == 18 and cp.main_level(kind, structure) == 3
+    assert cp.hard_minutes(structure) == 18 and cp.main_level(kind, structure) == 4
     # the repetitions grow through a phase, from the fewest
     seuil = [s.structure["steps"][1]["reps"] for w in trail if w.phase == "specifique" for s in w.sessions
              if s.structure.get("key") == "seuil" and not w.light]
@@ -246,6 +297,66 @@ def test_the_same_inputs_give_the_same_plan_whatever_the_day_it_is_asked():
         again = {s.day: (s.kind, s.minutes, s.structure) for w in cp.build(inp, TODAY + timedelta(days=later))
                  for s in w.sessions}
         assert again and all(first[d] == v for d, v in again.items())
+
+
+# ── one session against the longest run of the last 30 days (Frandsen 2025) ─
+
+def test_a_session_is_held_to_ten_percent_over_the_longest_run_of_the_last_thirty_days():
+    assert (cp.SPIKE, cp.SPIKE_DAYS) == (0.10, 30), "the study's threshold and its window"
+    assert cp.session_limit(None) is None and cp.session_limit(0) is None, "no run to compare with: no limit"
+    # 10 % more, to 5 min, rounded DOWN: 100 → 110, 131 → 144.1 → 140, 60 → 66 → 65
+    assert [cp.session_limit(m) for m in (100, 131, 60, 200)] == [110, 140, 65, 220]
+    # one step of 5 min is always left (a plan in 5-min steps could not grow under 50 min), never under 30 min
+    assert [cp.session_limit(m) for m in (20, 30, 44, 45, 50, 59)] == [30, 35, 45, 50, 55, 60]
+    for m in range(50, 400):
+        assert m <= cp.session_limit(m) <= m * (1 + cp.SPIKE) + 1e-9, "from 50 min on: never more than 10 %"
+    # a week of Affûtage: nothing longer than the longest run before it (its volume comes down: Bosquet 2007)
+    assert [cp.session_limit(m, taper=True) for m in (20, 62, 100, 125)] == [30, 60, 100, 125]
+    assert cp.session_limit(None, taper=True) is None
+
+
+def _sessions(inp, today=TODAY):
+    return {s.day: s for w in cp.build(inp, today) for s in w.sessions}
+
+
+def test_the_real_runs_of_the_last_thirty_days_hold_the_first_week_and_the_plan_grows_from_there():
+    """She ran 40 min at most this month and asks for 3 h on three days: no session of 70 min the first week."""
+    days, base = (1, 3, 6), 180
+    free = _inputs(days, base)
+    runs = tuple((TODAY - timedelta(days=d), m) for d, m in ((3, 40), (9, 35), (20, 38), (45, 120)))
+    held = cp.Inputs(free.days, free.long_day, free.base, free.start_monday, free.goal, {}, runs)
+    was, now = cp.build(free, TODAY), cp.build(held, TODAY)
+    assert was[0].limit is None and max(s.minutes for s in was[0].sessions) == 70
+    assert now[0].limit == 45 == cp.session_limit(40), "the run of 45 days ago is outside the window"
+    assert [s.minutes for s in now[0].sessions] == [45, 45, 45] and now[0].minutes == 135 < now[0].target == 180
+    assert [s.kind for s in now[0].sessions] == [s.kind for s in was[0].sessions], "its quality session stays"
+    # then each week reads the sessions the plan wrote before it: 10 % at most, week after week, up to the plan's own
+    longest = [max(s.minutes for s in w.sessions) for w in now]
+    assert longest[:6] == [45, 50, 55, 60, 65, 70] == [w.limit for w in now[:6]], "5 min a week, here"
+    for i, w in enumerate(now[1:], 1):
+        before = [s.minutes for x in now[:i] for s in x.sessions if (w.monday - s.day).days <= cp.SPIKE_DAYS]
+        assert max(s.minutes for s in w.sessions) <= cp.session_limit(max(before))
+    assert all(a.target == b.target for a, b in zip(was, now)), "the weeks' targets are the plan's, untouched"
+    # a long run in the window: nothing to hold, the plan is the one without any run recorded
+    long = cp.Inputs(free.days, free.long_day, free.base, free.start_monday, free.goal, {},
+                     ((TODAY - timedelta(days=6), 95),))
+    assert [(s.kind, s.minutes) for s in cp.build(long, TODAY)[0].sessions] == [(s.kind, s.minutes) for s in was[0].sessions]
+    # a run dated after today is not a run yet
+    ahead = cp.Inputs(free.days, free.long_day, free.base, free.start_monday, free.goal, {},
+                      ((TODAY + timedelta(days=1), 20),))
+    assert cp.build(ahead, TODAY)[0].limit is None
+
+
+def test_mid_week_the_days_behind_are_the_real_runs_and_the_days_ahead_the_plans():
+    inp = _inputs((1, 3, 5, 6), 240, start=M0 - timedelta(weeks=3))
+    wednesday = M0 + timedelta(weeks=1, days=2)
+    runs = ((wednesday - timedelta(days=1), 50), (wednesday - timedelta(days=8), 62))
+    held = cp.Inputs(inp.days, inp.long_day, inp.base, inp.start_monday, inp.goal, {}, runs)
+    this, nxt = cp.build(held, wednesday)[:2]
+    assert this.limit == 65 == cp.session_limit(62)
+    left = [s for s in this.sessions if s.day >= wednesday]
+    assert left and max(s.minutes for s in left) == 65
+    assert nxt.limit == cp.session_limit(65) == 70, "next week reads what this week still plans"
 
 
 def test_the_starting_volume_is_the_median_of_the_complete_weeks():
