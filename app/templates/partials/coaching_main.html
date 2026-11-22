@@ -141,7 +141,7 @@
                 {% endif %}
                 {% if can_write %}
                 <details class="pf-coach-edit pf-coach-notefold" id="coach-notefold-{{ s.id }}">
-                    <summary class="pf-coach-quietbtn">{% if scope.coach %}{{ "Modifier mon commentaire" if own_text else "Commenter" }}{% else %}{{ "Modifier ma note" if own_text else "Ajouter une note" }}{% endif %}</summary>
+                    <summary class="pf-coach-quietbtn">{% if scope.coach %}Commenter{% else %}{{ "Modifier ma note" if own_text else "Ajouter une note" }}{% endif %}</summary>
                     <form class="pf-coach-note" method="post" action="{{ base }}/sessions/{{ s.id }}/note" hx-post="{{ base }}/sessions/{{ s.id }}/note" {{ swap|safe }}>
                         <input type="hidden" name="v" value="{{ p.view }}">
                         <label class="sr-only" for="coach-note-{{ s.id }}">{{ "Ton commentaire sur cette séance" if scope.coach else "Ta note sur cette séance" }}</label>
