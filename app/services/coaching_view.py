@@ -282,7 +282,8 @@ def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool, names
         "comment_by": follower or COMMENT,
         "activity": _activity(run, link=not coach, climb=climb_of(row)) if run else None,
         # a run that does not look like the session (co.FIT): said, with the way to take it back out of the plan
-        "misfit": f"{hm(int(round(run.minutes)))} au lieu de {hm(row.minutes)}" if co.misfit(row, run) else None,
+        "misfit": f"{hm(int(round(run.minutes)))} au lieu de {hm(row.minutes)}"
+        if run is not None and co.misfit(row, run) else None,
         "can_unlink": not coach and run is not None and row.status == co.DONE and row.kind != cp.RACE,
         "done_manual": hm(row.done_minutes) if row.status == co.DONE and run is None and row.done_minutes else None,
         "done_min": row.done_minutes, "ressenti": row.ressenti, "note": row.note, "coach_comment": row.coach_comment,
