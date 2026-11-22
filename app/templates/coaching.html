@@ -11,7 +11,7 @@
 
 {% block content %}
 <div class="pf-coach">
-    {% if scope.coach %}<a href="/coaching/athletes" class="pf-back">{{ icon("chev-l", "w-4 h-4") }}Mes athlètes</a>
+    {% if scope.coach %}<a href="/coaching/athletes" class="pf-back">{{ icon("chev-l", "w-4 h-4") }}Plans suivis</a>
     {% else %}<a href="/activities" class="pf-back pf-old-shell-only">{{ icon("chev-l", "w-4 h-4") }}Activités</a>{% endif %}
     <div class="pf-head pf-coach-head">
         <div>
@@ -31,7 +31,7 @@
             <ul>{% for line in method %}<li>{{ line }}</li>{% endfor %}</ul>
         </details>
         <details class="pf-coach-tool pf-coach-opts" id="coach-options"{% if open %} open{% endif %}>
-            <summary class="pf-tool" id="coach-options-toggle"><span>{{ icon("sliders") }}<span>Options du plan <small>Calendrier, agenda, coach, refaire le plan</small></span></span>{{ icon("chev-r", "pf-chev") }}</summary>
+            <summary class="pf-tool" id="coach-options-toggle"><span>{{ icon("sliders") }}<span>Options du plan <small>Calendrier, agenda, partage, refaire le plan</small></span></span>{{ icon("chev-r", "pf-chev") }}</summary>
             {% include "partials/coaching_tools.html" %}
         </details>
     </div>

@@ -197,7 +197,7 @@ async function theme(page, dark) {
       // the tools: one row, closed — the page ends two rows after the plan
       assert.equal(await page.locator('#coach-options').evaluate(el => el.open), false, key + ': the options are closed');
       assert.equal(await page.locator('#coach-tools').isVisible(), false, key);
-      assert.deepEqual(await seen(page, '.pf-coach-more summary'), ['Comment ça marche', 'Options du plan Calendrier, agenda, coach, refaire le plan'], key + ': two rows');
+      assert.deepEqual(await seen(page, '.pf-coach-more summary'), ['Comment ça marche', 'Options du plan Calendrier, agenda, partage, refaire le plan'], key + ': two rows');
       if (!app) assert.ok(await page.evaluate(() => document.documentElement.scrollHeight) < 1900, key + ': the page stays short');
       // inside the app the shell owns the header and the tabs; only an app older than its Coaching tab needs the
       // page's own way back to Activités
@@ -216,9 +216,11 @@ async function theme(page, dark) {
       const toggle = page.locator('#coach-form-switch');
       assert.equal(await toggle.getAttribute('aria-checked'), 'true', key);
       assert.ok((await toggle.boundingBox()).height >= 44, key + ': the switch is a 44 px target');
-      assert.match(await page.locator('#coach-form-note').innerText(), /^Activé le \S+ \d+ \S+\. Un matin où ta récupération de Santé est basse, ta séance dure devient un footing\. Ton coach ne voit jamais pourquoi\.$/, key);
-      assert.deepEqual((await page.locator('#coach-tools .pf-tool').allInnerTexts()).map(t => t.trim().split('\n')[0].trim()), ['Adapter mes séances à ma forme', 'Ajouter à mon calendrier', 'Mon agenda', 'Partager avec un coach', 'Suivre un athlète', 'Refaire le plan', 'Arrêter le coaching'], key + ': every option is still there');
+      assert.match(await page.locator('#coach-form-note').innerText(), /^Activé le \S+ \d+ \S+\. Un matin où ta récupération de Santé est basse, ta séance dure devient un footing\. La personne qui suit ton plan ne voit jamais pourquoi\.$/, key);
+      assert.deepEqual((await page.locator('#coach-tools .pf-tool').allInnerTexts()).map(t => t.trim().split('\n')[0].trim()), ['Adapter mes séances à ma forme', 'Ajouter à mon calendrier', 'Mon agenda', 'Partager mon plan', 'Suivre le plan de quelqu’un', 'Refaire le plan', 'Arrêter le coaching'], key + ': every option is still there');
       for (const box of await page.locator('#coach-tools .pf-tool').evaluateAll(all => all.map(el => el.getBoundingClientRect().height))) assert.ok(box >= 44, key + ': 44 px rows');
+      // the plan is automatic: nothing the athlete reads says « coach » (the feature keeps its name)
+      assert.doesNotMatch(await page.locator('#main-content').innerText(), /\bcoachs?\b/i, key + ': never « coach »');
       await noOverflow(page, key + ' options');
       if (width === 393 && !app) await shot(page, `athlete-393-options${dark ? '-dark' : ''}`);
       // the calendar: a browser and the updated app get the subscription button (the app hands webcal:// to the
@@ -366,6 +368,7 @@ async function theme(page, dark) {
       await page.locator('.pf-coach-note textarea').fill('Bonnes sensations en côte.');
       await swap(page, () => page.locator('.pf-coach-note button').click());
       assert.equal(await page.locator('.pf-coach-said.is-note').innerText(), 'Ta note\nBonnes sensations en côte.');
+      assert.match(await page.locator('.pf-coach-said:not(.is-note)').innerText(), /^Florent\nBien géré\./, 'the comment is signed with a first name');
       assert.equal(await page.locator('.pf-coach-notefold > summary').innerText(), 'Modifier ma note');
       assert.equal(await page.locator('.pf-coach-note textarea').isVisible(), false, 'closed again once saved');
       await noOverflow(page, 'done session');
@@ -684,6 +687,9 @@ async function theme(page, dark) {
       const card = page.locator('.pf-coach-athlete');
       assert.equal(await card.count(), 1);
       assert.match(await card.innerText(), /Stella/);
+      assert.match(await page.locator('h1').innerText(), /^Plans suivis\s+bêta$/i);
+      assert.equal(await page.locator('label[for="coach-code"]').innerText(), 'Suivre le plan de quelqu’un');
+      assert.doesNotMatch(await page.locator('#main-content').innerText(), /\bcoachs?\b|athlète/i, 'the follower’s list names people, not roles');
       assert.ok(await card.locator('.pf-coach-bar b').isVisible(), 'her week at a glance');
       assert.ok(await card.locator('.pf-coach-recent li').count() >= 3, 'her last sessions');
       assert.ok(await card.locator('.pf-coach-recent-feel').first().isVisible(), 'with their ressenti');
@@ -712,6 +718,8 @@ async function theme(page, dark) {
       assert.equal(await page.locator('[data-feel]').count(), 0, 'the ressenti is the athlete’s to say');
       assert.equal(await page.locator('#coach-tools').count(), 0);
       assert.equal(await page.locator('#coach-options').count(), 0, 'the options are the athlete’s');
+      assert.equal(await page.locator('a.pf-back').innerText(), 'Plans suivis');
+      assert.doesNotMatch(await page.locator('#main-content').innerText(), /\bcoachs?\b|athlète/i, 'never « coach » on a follower’s page');
       // the same layout, with what a coach may do: the day first, no tick, the quiet actions
       const [day, week] = [await page.locator('.pf-coach-daycard').boundingBox(), await page.locator('.pf-coach-cal').boundingBox()];
       assert.ok(day.y + day.height <= week.y, 'the day, then the week');

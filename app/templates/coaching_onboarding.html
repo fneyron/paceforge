@@ -74,7 +74,7 @@
         <button type="submit" id="coach-go" class="pf-btn pf-btn-primary pf-btn-block">{{ "Refaire mon plan" if redo else "Créer mon plan" }}</button>
         {% with part = "first" %}{% include "partials/coaching_preview.html" %}{% endwith %}
     </form>
-    {% if not redo %}<a class="pf-sum-link pf-coach-other" href="/coaching/athletes">Tu es coach&nbsp;? Suivre un athlète ›</a>{% endif %}
+    {% if not redo %}<a class="pf-sum-link pf-coach-other" href="/coaching/athletes">Suivre le plan de quelqu’un ›</a>{% endif %}
 </div>
 {% endblock content %}
 

@@ -77,10 +77,10 @@ telephone_jours.json    les valeurs du jour envoyées par ton téléphone (pas, 
 parcours.json           tes parcours et plans de course, avec leurs points de passage
 lactate.json            tes tests de lactate
 nutrition.json          tes produits de nutrition
-coaching.json           ton plan de coaching : objectif, jours, volume, ce que le ressenti a changé, tes coachs et
-                        les athlètes que tu suis (prénoms et dates), ton agenda (l’hôte de chaque adresse, jamais
+coaching.json           ton plan de coaching : objectif, jours, volume, ce que le ressenti a changé, les personnes qui
+                        suivent ton plan et celles dont tu suis le plan (prénoms et dates), ton agenda (l’hôte de chaque adresse, jamais
                         l’adresse, et tes heures occupées : début et fin)
-coaching_seances.json   tes séances de coaching : jour, type, durée, statut, ressenti, note, commentaire du coach
+coaching_seances.json   tes séances de coaching : jour, type, durée, statut, ressenti, note, commentaire de qui suit ton plan
 anciennes_fonctions/    s’il y en a, ce qu’avaient enregistré les fonctions retirées (analyses, messages,
                         bilans de la semaine, plans générés, simulations)
 """

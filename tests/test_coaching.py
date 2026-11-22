@@ -244,7 +244,9 @@ async def test_the_privacy_row_shows_only_while_coaching_is_on(on, client: Async
     monkeypatch.setattr(settings, "COACHING_BETA_USERS", on)
     page = (await client.get("/privacy")).text
     row = page[page.index("Coaching (bêta)"):page.index("Sécurité</th>")]
-    assert "ressenti" in row and "l’effort perçu, de 1 à 5" in row and "Contrat" in row and "coach que tu choisis" in row
+    assert "ressenti" in row and "l’effort perçu, de 1 à 5" in row and "Contrat" in row
+    # the role is named plainly, never « coach » (the feature's own name stays)
+    assert row.count("la personne avec qui tu partages ton plan") == 4 and not re.search(r"\bcoachs?\b", row, re.I)
     assert "suppression du compte" in row
     assert not re.search(r"douleur|blessure|maladie", row)
 
@@ -685,7 +687,7 @@ async def test_the_coach_sees_the_plan_and_edits_it_never_more(client, people, b
     assert (await client.post("/coaching/sessions", data={"day": target.isoformat(), "kind": "footing",
                                                           "minutes": "30"})).status_code == 404
     page = (await client.get(f"/coaching?d={past.day}")).text
-    assert "Ton coach" in page and "Bien joué" in page
+    assert '<p class="pf-coach-said"><b>Florent</b> Bien joué</p>' in page, "signed with the follower's first name"
 
 
 async def test_revoking_leaving_or_leaving_the_list_ends_the_access_at_once(client, people, beta, db_session,
