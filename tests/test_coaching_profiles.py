@@ -14,6 +14,7 @@ from app.services import coaching as co
 from app.services import coaching_plan as cp
 from app.services import coaching_view as cv
 from app.services import sante_training
+from app.services.race_prep import fr as rp_fr
 from tests.test_coaching import HTMX, _as, _rows, beta, people  # noqa: F401
 
 TODAY = date(2026, 11, 21)  # a Saturday
@@ -323,3 +324,186 @@ async def test_the_level_is_read_when_the_plan_is_made_shown_to_the_athlete_neve
     assert (await client.post("/coaching/plan", data={**data, "base": "135"})).status_code == 303
     await db_session.refresh(plan)
     assert (plan.level, plan.level_read["weeks"], plan.level_read["median"]) == (cp.REGULIER, 12, 135)
+
+
+# ── two days a week (docs/coaching.md › « Deux jours par semaine ») ──────────
+
+STORY_TODAY = date(2026, 11, 22)
+ANNECY = date(2027, 4, 24)
+
+
+def _annecy(level, base):
+    goal = co.custom_goal("10 km du lac d’Annecy", ANNECY, 10.0, None)
+    inp = cp.Inputs((1, 6), 6, base, cp.monday_of(STORY_TODAY), goal, {}, intent=cp.COURSE, level=level)
+    return inp, cp.build(inp, STORY_TODAY)
+
+
+def test_the_annecy_ten_km_at_two_days_a_week_regulier_week_by_week():
+    """The owner's story: « 10 km du lac d’Annecy », 24 April 2027, no GPX file, Tuesday and Sunday, a new account
+    (no history: 2 h a week, régulier). Checked against the review's § 4."""
+    inp, weeks = _annecy(cp.REGULIER, 120)
+    assert cp.rule_set(inp) == cp.ONE and cp.aim(inp.goal) == cp.FINIR, "no time aimed at: « pour finir »"
+    assert weeks[0].monday == cp.monday_of(STORY_TODAY) and weeks[-1].monday == cp.monday_of(ANNECY)
+    assert [w.phase for w in weeks].count("affutage") == 3 and weeks[-1].phase == "affutage"
+    longs, previous_reps, run, last = [], {}, 0, None
+    for w in weeks:
+        run, last = (run + 1 if w.phase == last else 0), w.phase  # weeks into the phase
+        training = [s for s in w.sessions if s.kind != cp.RACE]
+        assert {s.day.weekday() for s in training} <= {1, 6}, "only Tuesday and Sunday"
+        quality = _quality(w)
+        assert len(quality) == 1 and quality[0].day.weekday() == 1, "one session with rhythm, every week, on Tuesday"
+        q = quality[0]
+        key, reps = q.structure["key"], _reps(q)
+        if w.phase == "affutage":
+            assert key == "rappels" and reps == cp.TEMPLATES["rappels"][4], "the taper's reminders, at their fewest"
+        elif w.light:
+            assert reps == cp.TEMPLATES[key][4]
+        else:  # from the fewest, one more every 2 weeks of the phase, never past the week's hard budget
+            lo, hi = cp.TEMPLATES[key][4], cp.TEMPLATES[key][5]
+            assert lo <= reps <= min(hi, lo + run // cp.REP_EVERY) and reps >= previous_reps.get(key, lo)
+            previous_reps[key] = reps
+        if w.monday != cp.monday_of(ANNECY):
+            (long,) = [s for s in training if s.kind == cp.LONG]
+            assert long.day.weekday() == 6 and (w.limit is None or long.minutes <= w.limit)
+            longs.append(long.minutes)
+        assert w.minutes <= w.target
+        assert sum(cp.hard_minutes(s.structure) for s in training) <= cp.HARD_SHARE * w.minutes + 1e-9
+    # the long run grows a step at a time under the single-session rule, a light week every fourth, to its cap
+    assert longs[0] == 75 and max(longs) == cp.long_cap(inp.goal) == 120
+    assert all(b <= cp.session_limit(max(longs[:i + 1])) for i, b in enumerate(longs[1:]))
+    # the race week: the reminders three or four days before, then the race — the race counts as the second session
+    race_week = weeks[-1].sessions
+    assert [(s.day, s.kind) for s in race_week] == [(ANNECY - timedelta(days=4), cp.QUALITY), (ANNECY, cp.RACE)]
+    assert weeks[-1].minutes < weeks[-1].target, "it asks for less: the reminders keep their length"
+    hard = sorted(s.day for w in weeks for s in w.sessions if s.kind in cp.HARD)
+    assert all((b - a).days >= 2 for a, b in zip(hard, hard[1:])), "never two hard days in a row"
+
+
+def test_the_annecy_ten_km_at_two_days_a_week_debutant_starts_with_two_easy_runs():
+    inp, weeks = _annecy(cp.DEBUTANT, 60)
+    for w in weeks:
+        if w.index < cp.NOVICE_EASY_WEEKS:
+            assert not _quality(w) and {s.kind for s in w.sessions} <= {cp.FOOTING, cp.LONG, cp.RECUP}
+        elif w.monday != cp.monday_of(ANNECY) and w.minutes >= cp.QUALITY_MIN_WEEK:
+            assert len(_quality(w)) == 1 and _reps(_quality(w)[0]) == cp.TEMPLATES[_quality(w)[0].structure["key"]][4]
+    firsts = [s.minutes for w in weeks[:4] for s in w.sessions]
+    assert max(firsts) <= 45 and min(firsts) >= cp.MIN_SESSION
+
+
+def test_two_days_need_seventy_five_minutes_and_days_apart_and_a_plan_made_before_keeps_none():
+    def most(days, base, intent=cp.PROGRESSER, level=cp.REGULIER):
+        weeks = cp.build(cp.Inputs(days, cp.default_long_day(days), base, M0, cp.Goal(), {}, intent=intent,
+                                   level=level), TODAY)
+        return max(len(_quality(w)) for w in weeks), weeks
+    assert most((2, 6), 120)[0] == 1, "Wednesday and Sunday"
+    assert most((5, 6), 120)[0] == 0, "Saturday and Sunday: side by side"
+    assert most((0, 6), 120)[0] == 0, "Sunday and Monday are neighbours"
+    assert most((2, 6), 300, intent=None, level=None)[0] == 0, "a plan made before: from 3 days, as it was made"
+    # 75 min a week: under it, two easy runs
+    _n, weeks = most((2, 6), 60, intent=cp.ENTRETIEN)
+    assert [w.target for w in weeks][:4] == [60, 65, 75, 75]
+    # 60, 65 min: two easy runs; 75 min: a session with rhythm — but the « seuil » week (16 min of effort) needs 80
+    assert [len(_quality(w)) for w in weeks][:4] == [0, 0, 0, 1]
+    assert [cp._quality_keys(w.phase, w.index, False)[0] for w in weeks][2:4] == ["seuil", "fartlek"]
+
+
+@pytest.mark.parametrize("intent,level", [(i, lv) for i in cp.INTENTS for lv in (cp.DEBUTANT, cp.REGULIER, cp.ENTRAINE)])
+def test_every_profile_plan_keeps_the_rules(intent, level):
+    """Many generated plans, every profile: at most 20 % of hard time, never two hard days in a row as generated,
+    the single-session rule, the sessions on the days chosen (4 of them at most for a « débutant »), the quality
+    sessions each rule set allows, nothing longer than its cap."""
+    races = [None] if intent != cp.COURSE else [TODAY + timedelta(days=d) for d in (9, 33, 75, 150)]
+    count = 0
+    for i, days in enumerate(d for n in range(2, 7) for d in itertools.combinations(range(7), n)):
+        if i % 4:
+            continue
+        for j, race in enumerate(races):
+            base = (60, 95, 150, 240, 420)[(i + j) % 5]
+            objective = (i + j) % 2 == 0
+            goal = cp.Goal(race, (55, 240)[(i + j) % 2], (i + j) % 3 == 0, None, "Course",
+                           "objectif" if objective else "approx", 400.0 if (i + j) % 3 == 0 else None) if race else cp.Goal()
+            inp = cp.Inputs(days, cp.default_long_day(days), base, M0, goal, {}, intent=intent, level=level)
+            weeks = cp.build(inp, TODAY)
+            sessions = [s for w in weeks for s in w.sessions]
+            writable = cp.days_used(inp)
+            rules = cp.rule_set(inp)
+            for w in weeks:
+                training = [s for s in w.sessions if s.kind != cp.RACE]
+                assert {s.day.weekday() for s in training} <= set(writable) <= set(days)
+                assert len(writable) <= (cp.NOVICE_MAX_DAYS if level == cp.DEBUTANT else 6)
+                assert sum(cp.hard_minutes(s.structure) for s in training) <= cp.HARD_SHARE * w.minutes + 1e-9
+                if w.limit:
+                    assert all(s.minutes <= w.limit for s in training), (days, base, w.index)
+                assert all(s.minutes <= cp.long_cap_of(inp) for s in training if s.kind == cp.LONG)
+                assert all(s.minutes >= cp.MIN_SESSION and s.minutes % cp.STEP == 0 for s in training)
+                assert w.minutes <= w.target or not training
+                q = _quality(w)
+                most = 2 if rules == cp.TODAY and len(writable) >= cp.TWO_QUALITY[0] and base >= cp.TWO_QUALITY[1] else 1
+                if level == cp.DEBUTANT and w.index < cp.NOVICE_EASY_WEEKS:
+                    most = 0
+                if len(writable) == 2 and cp.circular(*writable) == 1:
+                    most = 0
+                assert len(q) <= most, (intent, level, days, base, w.index)
+                if rules == cp.HOLD or level == cp.DEBUTANT:
+                    assert all(_reps(s) == cp.TEMPLATES[s.structure["key"]][4] for s in q)
+            hard = sorted(s.day for s in sessions if s.kind in cp.HARD)
+            assert all((b - a).days >= 2 for a, b in zip(hard, hard[1:])), (intent, level, days, base, race)
+            count += 1
+    assert count >= 20
+
+
+def test_two_days_say_what_they_give_and_what_a_third_would_add():
+    pv = cv.first_week((1, 6), 6, 120, co.custom_goal("10 km", ANNECY, 10.0, None), STORY_TODAY, intent=cp.COURSE,
+                       level=cp.Level(cp.REGULIER, history=False, base=120))
+    assert pv["lines"][:3] == [cv.AIM_LINE[cp.FINIR], *cv.TWO_DAYS]
+    side = cv.first_week((5, 6), 6, 120, cp.Goal(), STORY_TODAY, intent=cp.PROGRESSER,
+                         level=cp.Level(cp.REGULIER, history=False, base=120))
+    assert rp_fr(cv.SIDE_BY_SIDE) in side["lines"]
+    three = cv.first_week((1, 3, 6), 6, 120, cp.Goal(), STORY_TODAY, intent=cp.PROGRESSER)
+    assert not set(cv.TWO_DAYS) & set(three["lines"])
+    assert all(line in " ".join(cv.METHOD) for line in cv.TWO_DAYS)
+    close = cv.first_week((1, 6), 6, 60, co.custom_goal("10 km", STORY_TODAY + timedelta(days=24), 10.0, None),
+                          STORY_TODAY, intent=cp.COURSE, level=cp.Level(cp.DEBUTANT, history=False, base=60))
+    assert any(line.startswith("Ta course arrive vite") for line in close["lines"]), close["lines"]
+
+
+async def test_a_session_moved_next_to_the_long_run_is_kept_and_the_week_says_so(client, people, beta, db_session,
+                                                                               clock):
+    """« Déplacer » takes any day: next to the long run, nothing is refused or rewritten — the week says « deux jours
+    durs de suite » and offers to run the session as a footing (the athlete's page only)."""
+    from app.models.coaching import CoachingLink
+
+    athlete, coach = people.athlete, people.coach
+    _as(client, athlete)
+    data = {"intent": cp.COURSE, "goal": "new", "race_name": "10 km du lac d’Annecy", "race_date": ANNECY.isoformat(),
+            "race_km": "10", "days": ["1", "6"], "long_day": "6", "base": "120"}
+    pv = await client.get("/coaching/apercu", params=data, headers=HTMX)
+    assert all(line.replace("’", "&#39;") in pv.text or line in pv.text for line in cv.TWO_DAYS)
+    assert (await client.post("/coaching/plan", data=data)).status_code == 303
+    rows = await _rows(db_session, athlete)
+    quality = next(r for r in rows if r.kind in (cp.QUALITY, cp.HILLS) and r.day > clock.day)
+    assert quality.day.weekday() == 1
+    saturday = quality.day + timedelta(days=4)
+    r = await client.post(f"/coaching/sessions/{quality.id}/move", data={"to": saturday.isoformat(),
+                                                                       "w": cp.monday_of(saturday).isoformat()},
+                          headers=HTMX)
+    assert r.status_code == 200
+    assert "Samedi et dimanche\u00a0: deux jours durs de suite. Tu peux courir la séance en footing." in r.text
+    moved = next(x for x in await _rows(db_session, athlete) if x.id == quality.id)
+    assert (moved.day, moved.kind, moved.pinned) == (saturday, quality.kind, True), "kept as she put it"
+    db_session.add(CoachingLink(athlete_id=athlete.id, coach_id=coach.id))
+    await db_session.flush()
+    _as(client, coach)
+    seen = (await client.get(f"/coaching/athletes/{athlete.id}?w={cp.monday_of(saturday).isoformat()}")).text
+    assert "deux jours durs de suite." in seen and "Tu peux courir la séance en footing" not in seen
+
+
+async def test_two_days_side_by_side_say_why_there_is_no_session_with_rhythm(client, people, beta, db_session, clock):
+    _as(client, people.athlete)
+    data = {"intent": cp.PROGRESSER, "goal": "none", "days": ["5", "6"], "long_day": "6", "base": "150"}
+    pv = await client.get("/coaching/apercu", params=data, headers=HTMX)
+    assert cv.SIDE_BY_SIDE.replace(" : ", "\u00a0: ") in pv.text or cv.SIDE_BY_SIDE in pv.text
+    assert (await client.post("/coaching/plan", data=data)).status_code == 303
+    rows = await _rows(db_session, people.athlete)
+    assert rows and not [r for r in rows if r.kind in (cp.QUALITY, cp.HILLS)]
+    assert rp_fr(cv.SIDE_BY_SIDE) in (await client.get("/coaching")).text

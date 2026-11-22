@@ -314,6 +314,69 @@ création (une montre reliée depuis trois semaines, des séances cochées à la
 d’un coup un plan qui se passe bien, alors que l’adaptation (semaine allégée au ressenti, reprise après deux semaines
 manquées) retire déjà la charge quand l’habitude se perd. choix pratique.
 
+### Deux jours par semaine
+
+Le cas du propriétaire : sa compagne veut s’entraîner **deux jours par semaine** pour un 10 km sur route,
+« quelquechose de bien et flexible ». Avant ce changement, deux jours donnaient un footing et une sortie longue, rien
+d’autre (`QUALITY_FROM_DAYS` valait 3). **Aucun essai « deux sorties par semaine vers un 10 km » n’a été trouvé**, ni
+d’essai publié des programmes à fréquence réduite : chaque règle ci-dessous est construite à partir d’études voisines,
+et marquée.
+
+| Qui | Séance A | Séance B | Source |
+|---|---|---|---|
+| Régulier, entraîné (une habitude) | **Une séance avec du rythme** : la séance de qualité de la phase, à son plus petit nombre de répétitions au départ (45 min environ : 15 min faciles, les efforts, 10 min faciles), une répétition de plus toutes les 2 semaines comme ailleurs (sauf « Garder la forme ») | **Une sortie plus longue et facile**, qui grandit d’un pas par semaine de charge | (H) chiffre `QUALITY_FROM_DAYS`, `QUALITY_MIN_WEEK`. Deux séances par semaine améliorent la VO2max des moins entraînés ; au-delà d’une VO2max de 50, il en faut trois (Wenger & Bell 1986, revue ancienne). À faible fréquence, c’est l’intensité qui porte l’effet : 4 × 4 min une, deux ou trois fois par semaine pendant 6 semaines améliorent VO2max et temps d’épuisement à chaque fréquence, le plus à deux et trois, sans bénéfice clair de la troisième (Lenk 2025, 26 adultes actifs, exploratoire, précision limitée selon les auteurs). 132 coureurs amateurs qui remplacent deux de leurs trois sorties par des intervalles courts gagnent 38 s sur 5 km en 8 semaines (Gliemann 2015) ; 18 coureurs modérément entraînés, volume −54 %, 48 s sur 5 km (Gunnarsson 2012) — aucun n’a mesuré un 10 km. La sortie longue reste : quand les séances sont raccourcies, la VO2max tient mais un effort de 2 h baisse de 10 % (Hickson 1982) ; chez des semi-marathoniens, une plus longue sortie au-delà de la distance va avec un meilleur temps (Fokkema 2020). Progresser en intensité n’a pas blessé plus que progresser en volume (Ramskov 2018). |
+| Débutant | Footing | Footing un peu plus long ; après 8 semaines, A devient la séance avec du rythme | Comme « Le niveau » : les peu entraînés progressent par l’endurance continue (Milanović 2015) ; les 8 semaines sont les nôtres. |
+
+**Les conditions de la séance avec du rythme**, en constantes : deux séances dans la semaine au moins (**la course
+compte pour une** la semaine où elle a lieu) ; une semaine de **75 min ou plus** (les minutes de la course comptent
+dans sa semaine) ; pas « débutant » dans ses 8 premières semaines ; et **jamais la veille ni le lendemain d’un autre
+jour dur** (la règle « Jours durs » ci-dessus, dimanche et lundi voisins : au moins 48 h après un effort intense,
+Stanley 2013). Les 20 % d’efforts durs tiennent d’eux-mêmes : le plus petit nombre de répétitions fait 6 à 16 min
+d’effort (la séance « seuil », 16 min, demande une semaine de 80 min ; les autres tiennent dans 75). Un plan fait
+avant les profils garde le seuil de 3 jours (`QUALITY_FROM_DAYS_BEFORE`).
+
+**Deux jours voisins** (samedi et dimanche, ou dimanche et lundi). Le générateur n’y met pas de séance avec du
+rythme : deux footings la semaine, et une ligne le dit, sur l’écran de départ et en haut de la page de l’athlète :
+« Deux jours de suite : la séance rythmée devient un footing. »
+
+**Quand elle déplace une séance à côté de l’autre** (« Déplacer » prend n’importe quel jour) : **rien n’est refusé
+ni réécrit** — ce qu’une personne décide reste. Comme pour tout jour dur : pendant le choix, un point marque les jours
+voisins d’une autre séance dure ; puis la semaine le dit, et quand l’une des deux est la séance avec du rythme, elle
+propose la sortie : « Mardi et mercredi : deux jours durs de suite. Tu peux courir la séance en footing. » (le
+second mot n’est pas montré à la personne qui suit le plan). Le générateur, lui, n’en fait jamais.
+
+**Le volume.** À deux séances, c’est la **règle « une séance »** qui commande (Frandsen 2025) : la sortie longue
+grandit d’un pas de 5 min par semaine de charge (de 30 à 65 min : 7 semaines de charge, 9 à 10 semaines avec la
+semaine légère) — l’arithmétique de la règle adoptée, pas le chiffre d’une étude. Quand la sortie longue atteint son
+plafond (« Sortie longue » ci-dessus), la semaine **demande moins que son objectif** plutôt que de retirer la séance
+avec du rythme. Une semaine manquée ne coûte rien : la fenêtre de 30 jours garde la dernière sortie longue. Quand la
+course est plus proche que ce que la sortie longue peut atteindre, l’écran de départ le dit : « Ta course arrive
+vite : ta plus longue sortie atteindra 50 min, moins que le temps de ta course (55 min). »
+
+**L’affûtage** est celui de tous (Bosquet 2007 ; Wang 2023 : des affûtages d’une semaine ou moins améliorent aussi le
+temps, davantage après une surcharge) : la semaine J-14 → J-8 garde ses deux séances, plus courtes (les rappels et
+une sortie facile) ; la semaine de la course garde **une** séance, les rappels, 3 ou 4 jours avant, et la course est
+la seconde : c’est ainsi que la fréquence est gardée. Elle demande alors moins que sa bande (les rappels gardent leur
+longueur). À moins de 2 h par semaine, **aucune étude ne mesure un affûtage** : on arrive frais, sans promettre de
+gain. (H).
+
+**Ce que le plan dit honnêtement**, une fois à la création (quand deux jours sont choisis) et dans « Comment ça
+marche » :
+
+- « Deux séances par semaine suffisent pour préparer un 10 km et progresser quand on court depuis peu. » (Wenger &
+  Bell 1986 ; Lenk 2025 ; Gliemann 2015 — (H))
+- « Pour aller plus loin, c’est une troisième séance, facile, qui aide le plus. » (l’ACSM recommande l’effort
+  intense 3 jours par semaine ou plus, Garber 2011 ; au-delà d’un certain niveau il faut trois séances, Wenger &
+  Bell 1986 ; les plus rapides sont ceux qui courent plus, surtout en facile : Muniz-Pumares 2025 ; Doherty 2020 —
+  observationnels)
+
+Et ce qu’il ne dit ni ne fait : pas « aussi bien que trois ou quatre » (aucun essai ne le montre pour un 10 km) ;
+jamais une seconde séance avec du rythme à deux jours (deux séances dures sans rien de facile n’est ce qu’aucun essai
+cité n’a fait vers un 10 km, et la sortie longue porte l’effort d’une heure). Pour la santé, rien ne manque : deux
+sorties par semaine en portent le bénéfice (Lee 2014 ; O’Donovan 2017). Le jour de la semaine ne compte pas, d’après
+ce qui a été lu (pour la santé, une activité en 1 ou 2 séances va avec la même mortalité plus basse : O’Donovan 2017 ;
+pour la performance, aucune étude).
+
 ### Les plans faits avant les profils
 
 Un plan créé avant le 22 novembre 2026 n’a ni intention ni niveau (`coaching_plans.intent`, `level` vides). **Il
@@ -339,7 +402,7 @@ Le plan est en **minutes** (arrondies à 5), jamais en kilomètres.
 | Plancher | Une semaine d’entraînement ne descend pas sous 1 h (hors affûtage). | choix pratique `WEEK_FLOOR` : deux séances de 30 min. |
 | Facile / dur | Au plus 20 % du temps de la semaine en efforts durs (les répétitions des séances) ; le reste en aisance. | Seiler 2010 (environ 80 % de séances faciles, 20 % dures, chez des athlètes de haut niveau) ; compté **en temps** par Muñoz 2014 `HARD_SHARE` : 30 coureurs amateurs, 10 semaines, un groupe à 77 % du temps en aisance et 20 % au-dessus du second seuil a progressé de 5,0 % sur 10 km (3,6 % pour le groupe « entre les seuils » ; écart non significatif). Une répartition polarisée fait mieux qu’une répartition au seuil (Rosenblat 2019, 3 essais). 20 % est ici un plafond, pas une cible. |
 | Sortie longue | Environ 35 % de la semaine (au moins autant que les autres séances), plafonnée à 55 % du temps de course attendu, ce plafond tenu entre 2 h et 3 h 30 ; sans course : 2 h 30. Aucune à partir de J-3. | (H) chiffre `LONG_SHARE`, `LONG_RACE_SHARE`, `LONG_CAP_RANGE`, `FREE_LONG_CAP`, `NO_LONG_BEFORE_RACE`. Le principe : plus la plus longue sortie de la préparation est longue, meilleur est le temps sur semi et marathon, sans plus de blessures (Fokkema 2020 ; Doherty 2020). **Aucune étude** ne fixe sa part de la semaine ni son plafond. J-3 : l’affûtage baisse le volume (Bosquet 2007) ; le jour est le nôtre. Sa progression suit « Progression d’une séance ». |
-| Séances de qualité | Une par semaine à partir de 3 jours disponibles ; deux à partir de 5 jours et d’une base de 4 h, hors semaine légère et hors affûtage. Jamais plus de deux. | Deux au plus : Seiler & Tønnessen 2009 (« environ deux séances par semaine suffisent pour progresser sans stress excessif »). Les seuils (3 jours ; 5 jours et 4 h) sont (H) chiffre `QUALITY_FROM_DAYS`, `TWO_QUALITY` : les essais cités font 2 séances d’intervalles parmi 4 à 5 séances par semaine (Esfarjani 2007 ; Seiler 2013). |
+| Séances de qualité | Une par semaine à partir de deux séances dans la semaine (la course comptant pour une) et de 75 min, jamais à côté d’un autre jour dur (voir « Deux jours par semaine » ; un plan fait avant les profils : à partir de 3 jours disponibles) ; deux à partir de 5 jours et d’une base de 4 h, hors semaine légère et hors affûtage, seulement pour une course « pour performer » ou « Progresser » entraîné (voir « Les profils »). Jamais plus de deux. | Deux au plus : Seiler & Tønnessen 2009 (« environ deux séances par semaine suffisent pour progresser sans stress excessif »). Les seuils (3 jours ; 5 jours et 4 h) sont (H) chiffre `QUALITY_FROM_DAYS`, `TWO_QUALITY` : les essais cités font 2 séances d’intervalles parmi 4 à 5 séances par semaine (Esfarjani 2007 ; Seiler 2013). |
 | Jours durs | Jamais deux de suite : une séance de qualité n’est jamais la veille ni le lendemain de la sortie longue, d’une autre séance ou de la course (dimanche et lundi sont voisins). | Stanley 2013 `place` : la récupération du système nerveux autonome demande au moins 48 h après un effort intense, 24 à 48 h après un effort au seuil, jusqu’à 24 h après un effort facile. Compter la sortie longue comme un jour dur est (H) chiffre : la même revue note, sur peu de données, que la durée pèse moins que l’intensité. |
 | Durée minimale | Aucune séance de moins de 30 min ; une semaine trop courte pour tous ses jours en garde moins. | Garber 2011 `MIN_SESSION` : la recommandation de l’ACSM, 30 min par jour ou plus à intensité modérée. Une recommandation de santé, pas un essai d’entraînement. |
 | Jours | Uniquement les jours disponibles ; le lendemain d’un jour dur, le footing devient une « Récup » (très facile). | Stanley 2013 (même constat : le lendemain d’un effort intense, la récupération n’est pas finie). |
@@ -887,6 +950,26 @@ DOI vérifiés sur Crossref)
   317–331. [10.1123/ijspp.2021-0451](https://doi.org/10.1123/ijspp.2021-0451). Résumé seul : les critères des six
   niveaux n’ont pas été lus et ne sont pas utilisés.
 
+- Lenk M., Matzka M., Lauber L. et al. (2025). Impact of weekly frequency of high-intensity interval training on
+  cardiorespiratory, metabolic, and performance measures in recreational runners – an exploratory study.
+  *Physiological Reports*, 13(18), e70573. [10.14814/phy2.70573](https://doi.org/10.14814/phy2.70573). 26 adultes
+  actifs, 6 semaines ; exploratoire.
+- Gliemann L., Gunnarsson T. P., Hellsten Y. et al. (2015). 10-20-30 training increases performance and lowers
+  blood pressure and VEGF in runners. *Scandinavian Journal of Medicine & Science in Sports*, 25(5).
+  [10.1111/sms.12356](https://doi.org/10.1111/sms.12356). 160 coureurs de clubs (132 + 28 témoins), 8 semaines.
+- Gunnarsson T. P., Bangsbo J. (2012). The 10-20-30 training concept improves performance and health profile in
+  moderately trained runners. *Journal of Applied Physiology*, 113(1), 16–24.
+  [10.1152/japplphysiol.00334.2012](https://doi.org/10.1152/japplphysiol.00334.2012). 18 coureurs modérément
+  entraînés, 7 semaines.
+- O’Donovan G., Lee I. M., Hamer M. et al. (2017). Association of “weekend warrior” and other leisure time physical
+  activity patterns with risks for all-cause, cardiovascular disease, and cancer mortality. *JAMA Internal
+  Medicine*, 177(3), 335. [10.1001/jamainternmed.2016.8014](https://doi.org/10.1001/jamainternmed.2016.8014).
+  63 591 adultes de 40 ans et plus, toutes activités.
+- Wang Z., Wang Y., Gao W. et al. (2023). Effects of tapering on performance in endurance athletes: a systematic
+  review and meta-analysis. *PLOS ONE*, 18(5), e0282838.
+  [10.1371/journal.pone.0282838](https://doi.org/10.1371/journal.pone.0282838). 14 études, athlètes d’endurance
+  entraînés.
+
 **La répartition, la récupération, la périodisation**
 
 - Seiler S. (2010). What is best practice for training intensity and duration distribution in endurance athletes?
@@ -1028,6 +1111,12 @@ Dit sans détour, pour que cette page reste vraie :
   séances de qualité (3 jours ; 5 jours et 4 h), le nombre de répétitions au départ, l’échauffement de 15 min, les
   bornes des zones de FC, les chiffres de l’adaptation au ressenti, la durée du footing et la règle des trois
   matins de la forme, le dénivelé à viser, le jour de repos obligatoire (l’étude citée en demanderait deux).
+- **Les profils** : aucune étude n’a comparé des profils ; les seuils des niveaux (`NOVICE`, `TRAINED`), le plancher
+  et la tenue du volume de « Garder la forme », ses 1 h 30, les 8 semaines faciles et les 4 jours d’un débutant, la
+  séance avec du rythme dès deux séances et 75 min sont (H) chiffre ; l’absence de semaine allégée de « Garder la
+  forme » et la séance de qualité unique « pour finir » n’ont **aucune étude**. Toutes ces règles enlèvent ou
+  retiennent de la charge par rapport aux règles d’avant, sauf la séance avec du rythme à deux jours, qui en
+  ajoute une : c’est la seule, et elle est la mieux appuyée de la revue pour un coureur qui a une habitude.
 - **Aucune étude du tout** : le plafond hebdomadaire, le rythme d’une répétition de plus toutes les 2 semaines, les
   deux séances manquées qui allègent la semaine suivante. Le retour au calme de 10 min n’a pas de bénéfice
   démontré. Ces règles ne font que limiter ou enlever de la charge ; elles restent marquées.

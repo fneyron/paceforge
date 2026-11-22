@@ -67,13 +67,21 @@ AIM_LINE = {cp.FINIR: "Sans temps visé, une seule séance de qualité par semai
 LEVEL_LEAD = {cp.DEBUTANT: "Tu débutes", cp.REGULIER: "Tu cours régulièrement", cp.ENTRAINE: "Tu t’entraînes beaucoup"}
 NOVICE_RULE = ("huit semaines en aisance d’abord, quatre jours de course au plus.",
                "une séance de qualité par semaine au plus, courte, et quatre jours de course au plus.")
+# two days a week (docs/coaching.md › « Deux jours par semaine »): what the plan honestly says, at creation and in
+# « Comment ça marche »
+TWO_DAYS = ("Deux séances par semaine suffisent pour préparer un 10 km et progresser quand on court depuis peu.",
+            "Pour aller plus loin, c’est une troisième séance, facile, qui aide le plus.")
+SIDE_BY_SIDE = "Deux jours de suite : la séance rythmée devient un footing."
+QUALITY_PAIR = "Tu peux courir la séance en footing."
 METHOD = (
     "Ton plan est en temps, pas en kilomètres. Il part de ton volume habituel et monte d’environ 10 % par semaine ; "
     "une semaine sur quatre est plus légère.",
     "Aucune séance ne dépasse de plus de 10 % ta plus longue sortie des 30 derniers jours : la semaine peut alors "
     "demander un peu moins que prévu.",
     "La semaine, c’est surtout du facile : au moins 80 % du temps en aisance, une sortie longue, et une séance "
-    "plus soutenue quand tu as trois jours ou plus.",
+    "plus soutenue dès deux séances par semaine, jamais la veille ou le lendemain d’un autre jour dur.",
+    "Deux jours par semaine : une séance avec du rythme, une sortie plus longue et facile. " + TWO_DAYS[0] + " "
+    + TWO_DAYS[1] + " Deux jours de suite : la séance rythmée devient un footing.",
     "Jamais deux jours durs de suite, pas de séance de moins de 30 minutes, et seulement tes jours disponibles.",
     "Avant une course : deux semaines d’affûtage, le volume baisse et quelques efforts courts restent.",
     "Garder la forme : le même volume chaque semaine (75 minutes au moins), sans semaine allégée, une séance "
@@ -309,6 +317,12 @@ def hard_neighbours(rows: list, today: date) -> list[tuple[date, date]]:
     The generator never makes one; a person moving a session may: the calendar says so, and lets them."""
     days = sorted({r.day for r in rows if r.status == co.PLANNED and r.kind in cp.HARD and r.day >= today})
     return [(x, y) for x, y in zip(days, days[1:], strict=False) if (y - x).days == 1]
+
+
+def quality_in(rows: list, days: tuple[date, date]) -> bool:
+    """Whether a quality session still to do is one of the two days side by side (« Tu peux courir la séance en
+    footing. »: a suggestion — what a person moved is never rewritten)."""
+    return any(r.day in days and r.kind in (cp.QUALITY, cp.HILLS) and r.status == co.PLANNED for r in rows)
 
 
 def _cell(day: date, rows: list, extra: float, state: co.State, selected: date, scale: float, *,
@@ -560,8 +574,9 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
         days = [{**_cell(day, by_day.get(day, []), extra_days.get(day, 0), state, selected, scale,
                          waiting=waiting_ids, moving=moving, free=frozenset(extra_days), hard=hard),
                  "out": month and day.month != start.month} for day in (m + timedelta(days=i) for i in range(7))]
-        said = [rp.fr(HARD_PAIR.format(a=JOURS_L[x.weekday()].capitalize(), b=JOURS_L[y.weekday()])) for x, y in pairs
-                if cp.monday_of(x) == m]
+        said = [rp.fr(HARD_PAIR.format(a=JOURS_L[x.weekday()].capitalize(), b=JOURS_L[y.weekday()])
+                      + (" " + QUALITY_PAIR if quality_in(live, (x, y)) and not coach else ""))
+                for x, y in pairs if cp.monday_of(x) == m]
         weeks.append({"monday": m.isoformat(), "name": week_name(m, today), "current": m == cp.monday_of(today),
                       "summary": week_summary(state, m, done), **week_note(state, m, coach),
                       "moves": week_moves(state, m, coach), "hard": " ".join(x for x in said if x) or None,
@@ -634,13 +649,43 @@ def level_line(level: cp.Level | None, week: int = 0) -> dict | None:
             "said": f"{LEVEL_LEAD[level.level]} : {text}" + (f" {why}" if why else "")}
 
 
-def profile_lines(inp: cp.Inputs) -> list[str]:
+def side_by_side(inp: cp.Inputs) -> bool:
+    """Two days only, and they are neighbours (Sunday and Monday too): the plan writes no session with rhythm."""
+    days = cp.days_used(inp)
+    return inp.intent is not None and len(days) == 2 and cp.circular(*days) == 1 and not cp.novice(inp)
+
+
+def short_race(inp: cp.Inputs, weeks: list) -> str | None:
+    """A race closer than the long run can grow (one step of 5 min a loading week: the single-session rule): said at
+    creation — « Ta course arrive vite : … »."""
+    if inp.intent is None or inp.goal.race_day is None or not inp.goal.race_minutes:
+        return None
+    longest = max((s.minutes for w in weeks if w.phase not in ("affutage", "apres") for s in w.sessions
+                   if s.kind == cp.LONG), default=0)
+    race = int(round(inp.goal.race_minutes))
+    if longest >= race - cp.STEP:
+        return None
+    if not longest:
+        return f"Ta course arrive vite : pas de sortie longue avant elle, seulement l’affûtage ({hm(race)} de course)."
+    return (f"Ta course arrive vite : ta plus longue sortie atteindra {hm(longest)}, moins que le temps de ta course "
+            f"({hm(race)}).")
+
+
+def profile_lines(inp: cp.Inputs, weeks: list | None = None) -> list[str]:
     """What the start screen says of the rules these answers bring, one short line each: a race « pour finir » or
-    « pour performer » (read from its time aimed at; a « débutant » always « pour finir »)."""
+    « pour performer » (read from its time aimed at; a « débutant » always « pour finir »); two days a week, what
+    they give and what a third would add; two days side by side; a race closer than the long run can grow."""
     lines = []
     aim = cp.aim(inp.goal)
     if inp.intent == cp.COURSE and aim:
         lines.append(AIM_LINE[cp.FINIR if cp.novice(inp) else aim])
+    if inp.intent is not None and len(cp.days_used(inp)) == 2:
+        lines.extend(TWO_DAYS)
+        if side_by_side(inp):
+            lines.append(rp.fr(SIDE_BY_SIDE) or SIDE_BY_SIDE)
+    short = short_race(inp, weeks or [])
+    if short:
+        lines.append(rp.fr(short) or short)
     return lines
 
 
@@ -689,7 +734,8 @@ def first_week(days: tuple[int, ...], long_day: int, base: int, goal: cp.Goal, t
             "legend": [(cls, word) for cls, word in LEGEND if cls in kinds],
             "aria": f"Semaine du {week_label(monday)}, {len(shown)} séance{'s' if len(shown) > 1 else ''}"
                     + (f", {hm_long(total)}" if total else "") + (" : " + " ; ".join(said) if said else "") + ".",
-            "first": {"when": when, "what": what} if first is not None else None, "lines": profile_lines(inp),
+            "first": {"when": when, "what": what} if first is not None else None,
+            "lines": profile_lines(inp, weeks),
             "level": level_line(level) if intent is not None else None}
 
 
@@ -702,6 +748,7 @@ def header(state: co.State, coach: bool = False) -> dict:
     week = (monday - state.plan.start_monday).days // 7
     return {"goal": countdown(state.goal, today, state.inputs.intent), "time": goal_time(state.goal, coach),
             "level": None if coach else level_line(co.level_of(state.plan), week),
+            "notes": [rp.fr(SIDE_BY_SIDE)] if not coach and side_by_side(state.inputs) else [],
             "phase": cp.PHASES.get(phase) if phase != "apres" else None, "ended": ended_line(state)}
 
 

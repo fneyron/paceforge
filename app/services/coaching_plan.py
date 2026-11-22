@@ -17,8 +17,9 @@ The plan is in TIME (minutes, to 5), week by week, Monday to Sunday on the athle
 - one session: never more than 10 % longer than the longest run of the 30 days before it (Frandsen 2025: the
   spike found with more overuse injuries is the single session's, not the week's);
 - mix: hard time (the efforts of the quality sessions) for 20 % of the week at most (Seiler 2010; in time: Muñoz
-  2014); the long run about 35 % of the week (H), capped; one quality session from 3 available days, two at most
-  (Seiler & Tønnessen 2009), from 5 days and 4 h a week (H); never two hard days (quality, long run, race) in a
+  2014); the long run about 35 % of the week (H), capped; one quality session from two sessions a week and 75 min
+  (from 3 available days for a plan made before the profiles), two at most (Seiler & Tønnessen 2009), from 5 days
+  and 4 h a week (H); never two hard days (quality, long run, race) in a
   row (Stanley 2013); no session under 30 min (Garber 2011); sessions on the available days only;
 - a trail race: the long run and the long-hill session carry a climb to aim at, the race's D+ per hour scaled to
   the session, growing across the plan and capped (H, `climb_target`; uphill running is its own ability: Balducci
@@ -32,7 +33,8 @@ The plan is in TIME (minutes, to 5), week by week, Monday to Sunday on the athle
 - the profiles (docs/coaching.md › « Les profils »): the intent chosen on the start screen — « Garder la forme »
   holds the volume (FORME_*), « Progresser » and a race « pour finir » keep one quality session a week, a race
   « pour performer » (a time aimed at) keeps today's rules; a plan made before the profiles (intent None) keeps
-  the rules it was made with (`rule_set`).
+  the rules it was made with (`rule_set`); a level read from the history (`read_level`): a « débutant » gets easy
+  weeks first and NOVICE_MAX_DAYS days at most (`novice`, `days_used`).
 tests/test_coaching_plan.py pins each value and its mark.
 """
 import math
@@ -72,8 +74,10 @@ LONG_RACE_SHARE = 0.55  # (H) never longer than 55 % of the expected race time�
 LONG_CAP_RANGE = (120, 210)  # (H) …that cap itself between 2 h and 3 h 30 (no study)
 FREE_LONG_CAP = 150  # (H) without a race: 2 h 30 (no study)
 NO_LONG_BEFORE_RACE = 3  # (H) no long run from J-3 on: the taper cuts the volume (Bosquet 2007), the day is ours
-QUALITY_FROM_DAYS = 3  # (H) one quality session from 3 available days
-TWO_QUALITY = (5, 240)  # (H) two — never more (Seiler & Tønnessen 2009) — from 5 available days and a base of 4 h
+QUALITY_FROM_DAYS = 2  # (H) one quality session from 2 sessions a week (the race counts as one), never on consecutive days: two sessions a week improve the less fit (Wenger & Bell 1986), intensity carries the effect at low frequency (Lenk 2025; Gliemann 2015), 48 h after a hard effort (Stanley 2013)
+QUALITY_MIN_WEEK = 75  # (H) …in a week of 75 min or more (a 45-min session and a 30-min run; the race's own minutes count in its week)
+QUALITY_FROM_DAYS_BEFORE = 3  # (H) a plan made before the profiles: one quality session from 3 available days, as it was made
+TWO_QUALITY = (5, 240)  # (H) two — never more (Seiler & Tønnessen 2009) — from 5 available days and a base of 4 h, a race « pour performer » or « Progresser » entraîné only
 WARM_UP, COOL_DOWN = 15, 10  # (H) around the efforts: a warm-up helps (Fradkin 2010); a cool-down, not shown to
 REP_EVERY = 2  # (H) one more repetition every 2 weeks of a phase (no study)
 ADAPT_FACTOR = 0.8  # (H) a lighter week after the ressenti: −20 % (the principle: Saw 2016; Meeusen 2013)
@@ -643,7 +647,13 @@ def week_sessions(monday: date, inp: Inputs, info: dict, phase: str, index: int,
                 and not (rd is not None and 0 < (rd - long_date).days <= NO_LONG_BEFORE_RACE))
     rules, beginner = rule_set(inp), novice(inp)
     wanted = 0
-    if len(writable) >= QUALITY_FROM_DAYS and n >= QUALITY_FROM_DAYS and not info.get("easy"):
+    if rules == BEFORE:  # a plan made before the profiles: as it was made
+        allowed = len(writable) >= QUALITY_FROM_DAYS_BEFORE and n >= QUALITY_FROM_DAYS_BEFORE
+    else:  # two sessions are enough, the race counting as one in its week, in a week of QUALITY_MIN_WEEK or more
+        race_minutes = int(round(goal.race_minutes or 0)) if race_week else 0
+        allowed = (len(writable) >= QUALITY_FROM_DAYS and n + (1 if race_week else 0) >= QUALITY_FROM_DAYS
+                   and volume + race_minutes >= QUALITY_MIN_WEEK)
+    if allowed and not info.get("easy"):
         wanted = 2 if (rules in (BEFORE, TODAY) and len(writable) >= TWO_QUALITY[0] and inp.base >= TWO_QUALITY[1]
                        and phase in ("base", "specifique", "progression") and not info.get("light")) else 1
     if beginner:  # easy only for the plan's first weeks, then one quality session at its fewest repetitions
@@ -674,6 +684,10 @@ def week_sessions(monday: date, inp: Inputs, info: dict, phase: str, index: int,
             basis = used + easy  # a shorter week than its target: fewer repetitions
         if len(quals) < q:
             continue
+        if slots == 0 and quals and race_week and rules != BEFORE and easy > 0:
+            # the race week at two sessions: the reminder session is the one before the race, at its own length —
+            # the week asks for less than its target (a taper's volume comes down: Bosquet 2007)
+            easy = 0
         if easy < 0 or (slots == 0 and easy != 0):
             continue
         found = None
@@ -691,6 +705,8 @@ def week_sessions(monday: date, inp: Inputs, info: dict, phase: str, index: int,
                 rest = easy - long_minutes
                 if k == 0 and rest >= 0 and long_minutes + rest <= cap:
                     found = (long_minutes + rest, 0)
+                elif k == 0 and rest > 0 and spots and rules != BEFORE and long_minutes >= MIN_SESSION:
+                    found = (long_minutes, 0)  # a quality session and a long run at its cap: the week asks for less
                 elif k > 0 and rest >= MIN_SESSION * k and long_minutes >= MIN_SESSION and fits(ceil5(rest / k)):
                     found = (long_minutes, k)
                 if found:
