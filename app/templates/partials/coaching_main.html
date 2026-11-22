@@ -88,7 +88,7 @@
             <article class="pf-coach-session is-{{ s.cls }}" aria-labelledby="coach-s-{{ s.id }}">
                 <header class="pf-coach-s-head">
                     <h4 id="coach-s-{{ s.id }}" class="pf-coach-s-title">{{ s.title }} <span class="pf-coach-s-dur">{{ s.duration }}</span></h4>
-                    {% if s.status == "done" %}<span class="pf-pill pf-pill-ok">{{ icon("check", "w-3.5 h-3.5", "2.4") }}Fait</span>{% elif s.status == "missed" %}<span class="pf-pill pf-pill-soft">Pas faite</span>{% endif %}
+                    {% if s.status == "done" and s.misfit %}<span class="pf-pill pf-pill-soft">Fait autrement</span>{% elif s.status == "done" %}<span class="pf-pill pf-pill-ok">{{ icon("check", "w-3.5 h-3.5", "2.4") }}Fait</span>{% elif s.status == "missed" %}<span class="pf-pill pf-pill-soft">Pas faite</span>{% endif %}
                 </header>
                 {#- the agenda: the time the session was given; the athlete may ask for another free one -#}
                 {% if s.slot or s.full %}
@@ -125,6 +125,7 @@
                 {% if s.activity %}
                 {% if s.activity.href %}<a class="pf-coach-activity" href="{{ s.activity.href }}"><span><b>{{ s.activity.name }}</b><small>{{ s.activity.line }}</small></span>{{ icon("chev-r", "pf-chev") }}</a>
                 {% else %}<p class="pf-coach-activity"><span><b>{{ s.activity.name }}</b><small>{{ s.activity.line }}</small></span></p>{% endif %}
+                {% if s.misfit %}<p class="pf-coach-s-guide pf-coach-misfit">{{ s.misfit }}</p>{% endif %}
                 {% elif s.done_manual %}
                 {% if scope.coach %}<p class="pf-coach-s-guide">Cochée sans montre · {{ s.done_manual }}</p>
                 {% else %}
@@ -173,10 +174,11 @@
                 {% set can_write = scope.coach or s.status == "done" %}
                 {% if not p.moving and (s.can_missed or s.undo or s.can_edit or can_write) %}
                 <div class="pf-coach-quiet">
-                    {% if s.can_missed or s.undo %}
+                    {% if s.can_missed or s.undo or s.can_unlink %}
                     <form method="post" action="{{ base }}/sessions/{{ s.id }}/status" hx-post="{{ base }}/sessions/{{ s.id }}/status" {{ swap|safe }}>
                         {{ keep() }}
                         {% if s.can_missed %}<button type="submit" name="value" value="missed" id="coach-missed-{{ s.id }}" class="pf-coach-quietbtn">Pas faite</button>{% endif %}
+                        {% if s.can_unlink %}<button type="submit" name="value" value="missed" id="coach-unlink-{{ s.id }}" class="pf-coach-quietbtn">Ce n’est pas cette séance</button>{% endif %}
                         {% if s.undo %}<button type="submit" name="value" value="reset" id="coach-undo-{{ s.id }}" class="pf-coach-quietbtn" aria-label="{{ s.undo }}">Annuler</button>{% endif %}
                     </form>
                     {% endif %}

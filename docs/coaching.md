@@ -639,6 +639,11 @@ occupées, ni qu’un jour est plein, ni « Journée chargée », ni les adresse
 
 - Une sortie de la famille « course » le jour local de la séance la marque **faite** et lui est liée ; plusieurs le
   même jour : la durée la plus proche d’abord. Les minutes faites sont celles de l’activité.
+- Une sortie liée dont la durée s’écarte de plus de 20 % de la durée prévue ne ressemble pas à la séance
+  (`coaching.FIT`, choix pratique, aucune étude) : elle reste liée — la sortie du jour est la charge du jour — mais la
+  séance dit « **Fait autrement** » et l’écart (« 3h17 au lieu de 45 min »), au lieu de « Fait ». Jamais pour la
+  course. Sous toute séance faite avec une sortie, « **Ce n’est pas cette séance** » la détache : la sortie redevient
+  « hors plan », la séance « Pas faite » (elle peut être reportée), et une lecture suivante ne la reprend pas.
 - Une sortie sans séance ce jour-là apparaît « hors plan » dans le calendrier et compte dans le temps fait de la
   semaine.
 - Sans montre : « C’est fait » (durée réelle modifiable) et « Pas faite ». Un « Pas faite » coché à la main n’est
