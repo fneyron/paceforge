@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {#- Coaching (beta): the athlete's plan, or the same screens seen by a coach (scope.coach), titled with the athlete's
     first name. « ‹ Activités » is the way back of an installed app older than the native Coaching tab only. The part
-    swapped in place on every tap is partials/coaching_main.html: the day first, then the week, then the plan. Under
-    it, two rows: the rules in one fold, and « Options du plan » — everything else (the form option, the calendar
-    feed, « Mon agenda », sharing, redo, stop), closed until asked for. `open`: what the options open on when the
+    swapped in place on every tap is partials/coaching_main.html: the page is the calendar — the debrief asked first,
+    the weeks, the day opened in them, the plan's chart behind a fold. Under it, two more rows: the rules in one fold,
+    and « Options du plan » — everything else (the form option, the calendar feed, « Mon agenda », sharing, redo,
+    stop), closed until asked for. `open`: what the options open on when the
     page comes back from one of their forms (?outil=…). -#}
 {% from "partials/_icons.html" import icon %}
 
@@ -75,13 +76,22 @@ document.addEventListener("click", function (event) {
     addEventListener("hashchange", reveal);
 })();
 {% endif %}
-// « Déplacer »: the days become the targets — the week comes into view, the instruction takes the focus.
+// « Déplacer »: the days become the targets — the calendar comes into view, the instruction takes the focus.
 document.addEventListener("htmx:afterSettle", function () {
     var moving = document.getElementById("coach-moving");
     if (!moving || moving.dataset.seen) return;
     moving.dataset.seen = "1";
-    moving.closest(".pf-coach-cal").scrollIntoView({ block: "nearest" });  // its scroll margins clear the bars
+    moving.closest(".pf-coach-cal-main").scrollIntoView({ block: "nearest" });  // its scroll margins clear the bars
     if (!document.activeElement || document.activeElement === document.body) moving.focus({ preventScroll: true });
 });
+// « Le plan » stays open across the taps that redraw the calendar (it is part of what they swap).
+(function () {
+    var open = false;
+    document.addEventListener("toggle", function (event) { if (event.target.id === "coach-plan") open = event.target.open; }, true);
+    document.addEventListener("htmx:afterSwap", function () {
+        var fold = document.getElementById("coach-plan");
+        if (fold && open) fold.open = true;
+    });
+})();
 </script>
 {% endblock scripts %}

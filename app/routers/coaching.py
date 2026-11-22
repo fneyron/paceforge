@@ -136,13 +136,18 @@ async def _main(request: Request, db: AsyncSession, scope: Scope, state: co.Stat
 async def _after(request: Request, db: AsyncSession, scope: Scope, *, d: date | None, v: str | None,
                  error: str | None = None) -> Response:
     """After a change: the plan read again (matching, adaptation, regeneration), then the calendar part in place, or
-    the page for a browser without JavaScript."""
+    the page for a browser without JavaScript. Every form of the calendar says which weeks it was showing (`w`); the
+    debrief asked at the top says which day was open (`back`): the calendar stays where it was."""
+    form = await request.form()
+    w, back = _day(str(form.get("w") or "")), _day(str(form.get("back") or ""))
+    d = back or d
     state = await _state(db, scope)
     await db.commit()
     if not _htmx(request):
-        query = "&".join(x for x in (f"d={d.isoformat()}" if d else "", "v=mois" if v == "mois" else "") if x)
+        query = "&".join(x for x in (f"d={d.isoformat()}" if d else "", f"w={w.isoformat()}" if w else "",
+                                     "v=mois" if v == "mois" else "") if x)
         return RedirectResponse(scope.base + (f"?{query}" if query else ""), status_code=303)
-    return await _main(request, db, scope, state, d=d, v=v, error=error)
+    return await _main(request, db, scope, state, d=d, w=w, v=v, error=error)
 
 
 async def _row(db: AsyncSession, scope: Scope, session_id: int) -> tuple[CoachingPlan, CoachingSession]:
@@ -625,13 +630,17 @@ def _session_routes(prefix: str, scope_of) -> APIRouter:
     @r.post(prefix + "/sessions/{session_id}/move", response_class=HTMLResponse)
     async def session_move(session_id: int, request: Request, to: str = Form(...), v: str = Form(default=""),
                            scope: Scope = Depends(scope_of), db: AsyncSession = Depends(get_db)):
+        """« Déplacer »: to any day from today on (services/coaching.move); an earlier day of this week when it
+        holds a run no session took. Never refused for two hard days side by side: the calendar warns."""
         plan, row = await _row(db, scope, session_id)
         c = await co.clock(db, scope.athlete)
         target, error = _day(to), None
         try:
             if target is None:
                 raise co.Invalid("Jour inconnu.")
-            co.move(await co.sessions_of(db, plan), row, target, c.today, c.now, scope.origin)
+            rows = await co.sessions_of(db, plan)
+            free = {run.day for run in co.hors_plan(await co.runs_of(db, scope.athlete.id, c), rows)}
+            co.move(rows, row, target, c.today, c.now, scope.origin, free)
         except co.Invalid as e:
             error = str(e)
         return await _after(request, db, scope, d=row.day, v=v, error=error)

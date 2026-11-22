@@ -9,6 +9,9 @@ today's quality session is a footing, the session itself moved to Friday — her
 matin », never why. She gave her work calendar's address in « Mon agenda » (shown masked): meetings from 9 to 12 and
 from 14 to 17:30 on working days, and next Tuesday full — every session of the next 21 days has a time, and next
 Tuesday's moved to Friday, which her coach had freed (« Mardi est plein : séance déplacée à vendredi. »).
+This Tuesday's run arrived and its ressenti is not said yet: the calendar asks about it first (« Ta sortie de mardi
+est arrivée — c’était comment ? »). Yesterday she also ran with a friend, outside the plan: a grey block on Wednesday,
+offered as the week's session it may have been.
 
 uvicorn tests.browser.coaching_preview:app --host 127.0.0.1 --port 8961
     PF_COACHING_AS=athlete (default) | coach | new   who is signed in: the athlete (Stella), her coach (Florent),
@@ -83,14 +86,20 @@ async def lifespan(app):
                                                   (4, "Footing du vendredi", 38, 6.2, 30),
                                                   (6, "Sortie longue en forêt", 78 - 2 * week, 12.4, 320)):
                     day = monday - timedelta(weeks=week) + timedelta(days=wd)
-                    if day >= today or (week == 1 and wd == 3) or (week == 0 and wd == 1):
-                        continue  # last Thursday's session and this Tuesday's were skipped: two « pas faite »
+                    if day >= today or (week == 1 and wd == 3):
+                        continue  # last Thursday's session was skipped: « pas faite »
                     n += 1
                     db.add(Activity(user_id=athlete.id, strava_activity_id=700000 + n, name=name, sport_type="TrailRun"
                                     if wd in (3, 6) else "Run", start_date=datetime.combine(day, time(7), timezone.utc),
                                     distance=km * 1000, moving_time=minutes * 60, elapsed_time=minutes * 60 + 90,
                                     total_elevation_gain=up, average_heartrate=141, max_heartrate=168,
                                     average_speed=km * 1000 / (minutes * 60), raw_data={"utc_offset": 0}))
+            # yesterday, a run outside the plan (Wednesday is not one of her days)
+            db.add(Activity(user_id=athlete.id, strava_activity_id=700900, name="Footing avec Léa", sport_type="Run",
+                            start_date=datetime.combine(monday + timedelta(days=2), time(18), timezone.utc),
+                            distance=5600, moving_time=35 * 60, elapsed_time=36 * 60, total_elevation_gain=25,
+                            average_heartrate=134, max_heartrate=151, average_speed=5600 / (35 * 60),
+                            raw_data={"utc_offset": 0}))
             route = (await db.execute(select(Route).where(Route.user_id == athlete.id))).scalars().first()
             route.name, route.race_date = "Trail des Crêtes", (today + timedelta(days=54)).isoformat()
             # an objective the athlete set on the race page (today's page marks its saves): « Objectif 5h00 »
@@ -111,10 +120,12 @@ async def lifespan(app):
             feel = {0: 3, 1: 2, 2: 3, 3: 4, 4: 3, 5: 2, 6: 3, 7: 4, 8: 3, 9: 3}
             done = [r for r in state.rows if r.status == co.DONE]
             for i, row in enumerate(done):
-                row.ressenti = feel.get(i, 3)
-            if done:
-                done[-1].note = "Jambes lourdes au début, mieux après 20 minutes."
-                done[-1].coach_comment = "Bien géré. Garde cette allure sur les côtes de jeudi."
+                # this week's run (Tuesday) waits for its debrief; the others have their ressenti
+                row.ressenti = None if row.day >= monday else feel.get(i, 3)
+            before = [r for r in done if r.day < monday]
+            if before:  # last Sunday's long run: her note, her coach's comment
+                before[-1].note = "Jambes lourdes au début, mieux après 20 minutes."
+                before[-1].coach_comment = "Bien géré. Garde cette allure sur les côtes de jeudi."
             db.add(CoachingLink(athlete_id=athlete.id, coach_id=coach.id))
             await co.sync(db, plan, athlete)
             # « Adapter mes séances à ma forme », turned on a week ago; this morning Santé's index reads low (the
