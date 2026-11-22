@@ -1927,6 +1927,19 @@ a.pf-coach-activity:hover b { color: rgb(var(--pf-accent)); }
 .pf-coach-option small { display: block; font-size: 0.8125rem; color: rgb(var(--pf-gray-500)); }
 .pf-coach-option input:checked + span { box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); background: rgb(var(--pf-soft)); }
 .pf-coach-option input:focus-visible + span, .pf-coach-chip input:focus-visible + span { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
+/* « Ajouter une course »: a name, a date, a distance, a time aimed at (optional) — under its option */
+.pf-coach-newrace { display: grid; gap: 10px; margin: -2px 0 2px; padding: 12px 14px 14px; border-radius: 0 0 16px 16px; background: rgb(var(--pf-soft)); }
+.pf-coach-newrace[hidden] { display: none; }
+.pf-coach-field { display: grid; gap: 4px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.pf-coach-field > label, .pf-coach-field > legend { padding: 0; font-size: 0.875rem; font-weight: 600; color: rgb(var(--pf-ink)); }
+.pf-coach-field > legend { float: left; width: 100%; margin-bottom: 4px; }
+.pf-coach-field > legend + * { clear: both; }
+.pf-coach-field legend small { font-weight: 500; color: rgb(var(--pf-gray-500)); }
+.pf-coach-field .pf-input { min-height: 44px; width: 100%; min-width: 0; }
+.pf-coach-field-pair { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 10px; }
+.pf-coach-unit { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pf-coach-unit > span { flex: none; font-size: 0.875rem; font-weight: 600; color: rgb(var(--pf-gray-600)); }
+.pf-coach-field-time .pf-coach-unit .pf-input { width: 4.25rem; flex: none; padding: 0 8px; text-align: center; font-variant-numeric: tabular-nums; }
 .pf-coach-chips { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .pf-coach-chip { position: relative; display: block; cursor: pointer; }
 .pf-coach-chip > span { display: grid; place-items: center; text-align: center; min-height: 46px; border-radius: 14px; box-shadow: inset 0 0 0 1px rgb(var(--pf-gray-300)); background: rgb(var(--pf-surface)); font-size: 0.8125rem; font-weight: 600; color: rgb(var(--pf-gray-600)); }

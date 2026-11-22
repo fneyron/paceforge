@@ -154,7 +154,8 @@ async def test_a_new_account_gets_a_plan_proposed_with_nothing_to_fill(client, p
     assert _checked(page, "days") == ["1", "3", "6"], "the default week: Tuesday, Thursday, Sunday"
     assert '<option value="6" selected>dimanche</option>' in page and page.count('name="long_day"') == 1
     assert _checked(page, "base") == ["120"] and page.count('type="radio" name="base"') == 5
-    assert '<input type="hidden" name="goal" value="none">' in page and "Progresser, sans course" in page
+    assert _checked(page, "goal") == ["none"] and "Progresser, sans course" in page
+    assert "Ajouter une course" in page, "a race without a file can be added from here"
     assert 'name="moments"' not in page and "Quand peux-tu courir" not in page, "asked in « Mon agenda », not here"
     # the week these answers make, drawn at once: the first complete week, one bar per session
     preview = page.split('id="coach-preview"')[1].split("</div>")[0]

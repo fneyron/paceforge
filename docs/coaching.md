@@ -79,7 +79,7 @@ suite ; l’athlète ajuste si elle veut.
 
 | Réponse | Ce qui est proposé | Comment elle se change |
 |---|---|---|
-| **Objectif** | La prochaine course à venir de l’athlète (un parcours à pied avec une date) ; sans course : « Progresser, sans course » (un bloc glissant de 12 semaines (H) qui se prolonge de lui-même), dit en une ligne, sans question à une seule réponse. | Une carte par course, plus « Progresser, sans course ». |
+| **Objectif** | La prochaine course à venir de l’athlète (un parcours à pied avec une date) ; sans course : « Progresser, sans course » (un bloc glissant de 12 semaines (H) qui se prolonge de lui-même). | Une carte par course, « Ajouter une course » (une course sans fichier GPX, voir plus bas), et « Progresser, sans course ». |
 | **Jours disponibles** (de 2 à 6) | Les jours où l’athlète court vraiment (voir plus bas) ; sans habitude : mardi, jeudi, dimanche (H, `DEFAULT_DAYS` : à 2 h par semaine, chaque jour porte une séance). | Sept pastilles, **sous les barres de la semaine** : un toucher ajoute ou enlève un jour. |
 | **Jour de la sortie longue** | Le jour qui porte le plus souvent sa plus longue sortie de la semaine, s’il est parmi les jours proposés ; sinon dimanche, sinon le dernier jour proposé. | Une liste, qui ne propose que les jours choisis. |
 | **Volume de départ** | La médiane des minutes de course des 4 dernières semaines complètes (famille « course » de `sante_training.load_family` : route, trail, tapis ; semaines du lundi au dimanche à l’horloge de l’athlète), arrondie à 5 min. Sans historique : 2 h (H). | Une liste (de 1 h à 15 h) ; sans historique, cinq choix : 1 h, 2 h, 3 h, 4 h, 5 h et plus (H). |
@@ -174,6 +174,34 @@ première semaine et monte par pas égaux jusqu’à 100 % la dernière semaine 
 ensuite. Arrondi à 50 m ; rien sous 100 m (`CLIMB_MIN`). Affiché « Vise +600 m » sur la carte de la séance, « Vise
 +600 m de dénivelé. » dans la description du flux calendrier, et, une fois la sortie enregistrée, contre son propre
 dénivelé (« +470 m sur +600 m visés »). Une course sur route, ou un plan sans course : aucun.
+
+**Une course sans fichier** (22 novembre 2026). Le propriétaire, pour sa compagne : « prépare aussi le plan pour
+stella qui veut s’entrainer deux jours par semaines … pour le 10km brook marathon annecy comme moi ». Elle n’a pas
+le tracé : l’écran de départ propose « Ajouter une course » — **un nom, une date, une distance en km, et, si elle
+veut, un temps visé** (heures et minutes) ; rien d’autre. Les champs s’ouvrent sous l’option une fois choisie
+(toujours visibles sans JavaScript) ; le bouton attend un nom, une date et une distance ; un refus répond 200, les
+champs remplis à nouveau. Une date passée, à plus de deux ans (une faute de frappe sur l’année), une distance hors
+de 1 à 400 km ou un temps visé de moins de 10 min sont refusés, chacun avec sa phrase.
+
+| Ce que la course a | Le temps sur lequel le plan se règle | L’en-tête dit |
+|---|---|---|
+| Un temps visé | Ce temps | « Objectif 52 min » |
+| Pas de temps visé | L’approximation de `race_prep.expected_s` — la même que pour un parcours sans prédiction : 11 km/h sur route (10 km : 55 min) | « Environ 55 min » |
+
+- **Aucun second estimateur** : c’est le repli qu’un parcours sans prédiction avait déjà (`coaching.custom_goal`
+  appelle `race_prep.expected_s`).
+- **Aucun dénivelé n’est connu** : une course sans fichier est une course sur route pour le plan, sans dénivelé à
+  viser.
+- **Partout comme un parcours** : l’en-tête (le nom, le compte à rebours, le temps, **sans lien** : il n’y a pas de
+  page de course), la séance « Course » le jour J (sans « Voir le plan de course »), le flux calendrier
+  (« Course 55 min », le nom dans la description), la page de la personne qui suit le plan et sa liste.
+- **Passée**, elle laisse le plan « Progresser, sans course » dès le lundi suivant, comme un parcours (ci-dessous) ;
+  ses champs sont vidés.
+- **Le tracé importé plus tard** : « Refaire le plan » propose la course sans fichier (cochée) et, à côté, le
+  parcours importé ; choisir le parcours vide les champs de la course sans fichier. La page du parcours propose
+  aussi « Préparer cette course avec Coaching ».
+- Stockée sur le plan (`coaching_plans.race_name`, `race_date`, `race_km`, `race_target_s`), elle sort dans l’export
+  (`coaching.json`) et part avec « Arrêter le coaching » ou le compte.
 
 **La course supprimée, ou passée.** Quand la course du plan est supprimée (ou perd sa date), ou que son jour est
 derrière, le plan devient « Progresser, sans course » **à partir de la semaine suivante** : le lundi après la
@@ -602,7 +630,8 @@ champs sortent dans l’export de leur propriétaire et partent avec l’option,
 Migration `p7e8f9a0b1c2` : `coaching_calendars` (les adresses, chiffrées), `coaching_busy` (les heures occupées),
 `coaching_plans.moments`, `coaching_sessions.slot_min`, `slot_chosen`, `slot_flag`. L’export donne l’hôte de chaque
 adresse (jamais l’adresse : c’est le secret d’un autre service) et les heures occupées ; « Arrêter le coaching » et
-la suppression du compte retirent adresses et heures occupées. Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
+la suppression du compte retirent adresses et heures occupées. Migration `q8f9a0b1c2d3` :
+`coaching_plans.race_name`, `race_date`, `race_km`, `race_target_s` (une course sans fichier), dans l’export. Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
 (`coaching.json`, `coaching_seances.json` : jamais le jeton du flux ni un code).
 
 Politique de confidentialité, ligne affichée tant que la fonction n’est pas éteinte : « Coaching (bêta) » —

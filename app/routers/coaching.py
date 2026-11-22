@@ -11,7 +11,7 @@ to the page.
 """
 import logging
 from dataclasses import dataclass
-from datetime import date, timezone
+from datetime import date, timedelta, timezone
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -198,13 +198,48 @@ WEEKDAYS = ("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim.")
 WEEKDAYS_L = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 
 
-async def _preview(db: AsyncSession, user: User, c: co.Clock, *, goal: str | None, days, long_day, base) -> dict:
+NEW_RACE, OWN_RACE = "new", "race"  # the goal's values beside a Route's id and « none »
+RACE_FIELDS = ("race_name", "race_date", "race_km", "race_h", "race_min")
+
+
+def _race_fields(values) -> dict:
+    """What « Ajouter une course » typed, as the form sends it (kept to fill the form again)."""
+    return {k: str(values.get(k) or "").strip()[:80] for k in RACE_FIELDS}
+
+
+def _own_race(plan: CoachingPlan | None, today: date) -> tuple | None:
+    """The plan's race without a course, still to come: (name, day, km, target_s)."""
+    if plan is None or plan.race_date is None or plan.race_date < today:
+        return None
+    return plan.race_name or "", plan.race_date, plan.race_km, plan.race_target_s
+
+
+def _custom_race(goal: str | None, fields: dict, plan: CoachingPlan | None, today: date) -> tuple | None:
+    """The race without a course the answers aim at — typed now (« Ajouter une course »), or the plan's own —, else
+    None (a Route, or no race). Invalid says what is missing."""
+    if goal == NEW_RACE:
+        return co.clean_race(fields.get("race_name"), fields.get("race_date"), fields.get("race_km"),
+                             fields.get("race_h"), fields.get("race_min"), today)
+    if goal == OWN_RACE:
+        own = _own_race(plan, today)
+        if own is None:
+            raise co.Invalid("Cette course n’est plus disponible.")
+        return own
+    return None
+
+
+async def _preview(db: AsyncSession, user: User, c: co.Clock, *, goal: str | None, days, long_day, base,
+                   fields: dict | None = None, plan: CoachingPlan | None = None) -> dict:
     """The onboarding's week, drawn from the answers as they stand (coaching_view.first_week: the generator's own
     sessions). Reads only. Answers that cannot make a plan give {"error"}: the screen says what is missing where
     the week would be."""
     try:
         clean_days, clean_long, clean_base = co.clean_answers(days, long_day, base)
-        target = await co.first_goal(db, user, int(goal) if goal and goal.isdigit() else None, c.today)
+        custom = _custom_race(goal, fields or {}, plan, c.today)
+        if custom is not None:
+            target = co.custom_goal(*custom)
+        else:
+            target = await co.first_goal(db, user, int(goal) if goal and goal.isdigit() else None, c.today)
     except co.Invalid as e:
         picked = co.clean_days(days)
         # days out of range are said by the line under the days (`silent`: not twice)
@@ -233,11 +268,13 @@ async def _onboarding(request: Request, db: AsyncSession, user: User, *, plan: C
     else:
         proposed = cst.proposal(runs, c.today)
         days, long_day = proposed.days, proposed.long_day
+    own = _own_race(plan, c.today)
     chosen: dict[str, Any] = {
-        "goal": str(plan.route_id) if plan and plan.route_id else ("none" if plan or not races else None),
+        "goal": str(plan.route_id) if plan and plan.route_id else OWN_RACE if own else (
+            "none" if plan or not races else None),
         "days": list(days), "long_day": long_day,
         # the starting volume is computed again when the plan is made again (the plan's own without a history)
-        "base": computed or (plan.base_minutes if plan else None)}
+        "base": computed or (plan.base_minutes if plan else None), "race": _race_fields({})}
     if form:
         chosen.update(form)
     if chosen["goal"] is None and races:
@@ -246,11 +283,17 @@ async def _onboarding(request: Request, db: AsyncSession, user: User, *, plan: C
         chosen["base"] = cp.START_CHOICES[1]  # no history: 2 h a week, until the athlete says otherwise
     base = chosen["base"]
     volumes = sorted({*range(60, 901, 15), base})
-    pv = await _preview(db, user, c, goal=chosen["goal"], days=chosen["days"], long_day=chosen["long_day"], base=base)
+    pv = await _preview(db, user, c, goal=chosen["goal"], days=chosen["days"], long_day=chosen["long_day"], base=base,
+                        fields=chosen["race"], plan=plan)
+    options = [{"id": str(r.id), "name": r.name, "when": d_short(day), "j": rp.j_label(-(day - c.today).days)}
+               for r, day in ((r, rp.race_day(r)) for r in races) if day is not None]
+    if own is not None:  # the plan's race without a course, offered again beside the courses imported since
+        options.append({"id": OWN_RACE, "name": own[0], "when": d_short(own[1]),
+                        "j": rp.j_label(-(own[1] - c.today).days)})
     return templates.TemplateResponse(request, "coaching_onboarding.html", status_code=status_code, context={
         "user": user, "redo": plan is not None, "error": error, "chosen": chosen, "computed": computed, "pv": pv,
-        "races": [{"id": r.id, "name": r.name, "when": d_short(day), "j": rp.j_label(-(day - c.today).days)}
-                  for r, day in ((r, rp.race_day(r)) for r in races) if day is not None],
+        "races": options, "today": c.today.isoformat(),
+        "race_max": (c.today + timedelta(days=co.RACE_AHEAD_DAYS)).isoformat(),
         "weekdays": list(enumerate(zip(WEEKDAYS, WEEKDAYS_L, strict=True))),
         "volumes": [(m, hm(m)) for m in volumes],
         "choices": [(m, f"{m // 60}\u00a0h" + (" et +" if m == cp.START_CHOICES[-1] else ""))
@@ -338,7 +381,8 @@ async def coaching_preview(request: Request, scope: Scope = Depends(own_scope), 
     q = request.query_params
     user = scope.viewer
     pv = await _preview(db, user, await co.clock(db, user), goal=q.get("goal"), days=q.getlist("days"),
-                        long_day=q.get("long_day"), base=q.get("base"))
+                        long_day=q.get("long_day"), base=q.get("base"), fields=_race_fields(q),
+                        plan=await co.get_plan(db, user.id))
     return templates.TemplateResponse(request, "partials/coaching_preview.html", context={"pv": pv, "part": "swap"})
 
 
@@ -349,15 +393,17 @@ async def coaching_save_plan(request: Request, scope: Scope = Depends(own_scope)
     goal, days = str(form.get("goal") or "none"), form.getlist("days")
     user = scope.viewer
     c = await co.clock(db, user)
+    fields = _race_fields(form)
     try:
+        race = _custom_race(goal, fields, await co.get_plan(db, user.id), c.today)
         plan = await co.save_plan(db, user, c, route_id=int(goal) if goal.isdigit() else None, days=days,
-                                  long_day=form.get("long_day"), base=form.get("base"),
+                                  long_day=form.get("long_day"), base=form.get("base"), race=race,
                                   # no longer asked here (« Mon agenda » asks it); a screen opened before still sends it
                                   moments=form.getlist("moments") if "moments_asked" in form else None)
     except co.Invalid as e:  # nothing was written: the answers are checked first. Answered 200: the app's shell
         # replaces any document answered 4xx by « Écran indisponible », hiding the message the form shows
         return await _onboarding(request, db, user, plan=await co.get_plan(db, user.id), error=str(e), status_code=200,
-                                 form={"goal": goal, "days": list(co.clean_days(days)),
+                                 form={"goal": goal, "days": list(co.clean_days(days)), "race": fields,
                                        "long_day": _int(form.get("long_day")), "base": _int(form.get("base"))})
     await co.sync(db, plan, user)
     await db.commit()

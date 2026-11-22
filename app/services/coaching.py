@@ -11,6 +11,7 @@ import logging
 import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone, tzinfo
+from types import SimpleNamespace
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -123,6 +124,68 @@ def goal_of(route, objective_s: int | None = None, estimate_s: int | None = None
         kind = OBJECTIVE if getattr(route, "target_time_s", None) else ROUGH
     rate = up / (seconds / 3600) if trail and up > 0 else None
     return cp.Goal(rd, seconds / 60, trail, route.id, route.name or "", kind, rate)
+
+
+RACE_NAME_MAX = 80
+RACE_KM = (1.0, 400.0)  # what a typed distance is held to
+RACE_TARGET = (10 * 60, 100 * 3600)  # what a typed time aimed at is held to
+RACE_AHEAD_DAYS = 2 * 366  # a race further than two years is refused (a typo in the year)
+
+
+def custom_goal(name: str | None, day: date | None, km: float | None, target_s: int | None) -> cp.Goal:
+    """A race without a course (« Ajouter une course »: no GPX file). Its expected time: the time aimed at when one
+    is given (« Objectif »), else race_prep.expected_s's rough guess from the distance (« Environ »: the same
+    fallback a Route without a prediction gets; no second estimator). No D+ is known: a road race for the plan, no
+    climb target."""
+    if day is None or not km or km <= 0:
+        return cp.Goal()
+    stub = SimpleNamespace(target_time_s=target_s or None, total_distance_km=float(km), total_elevation_gain=0,
+                           sport_type="road")
+    seconds = rp.expected_s(stub) or 3600
+    return cp.Goal(day, seconds / 60, False, None, (name or "").strip() or "Ta course",
+                   OBJECTIVE if target_s else ROUGH, None)
+
+
+def plan_custom(plan: CoachingPlan) -> SimpleNamespace | None:
+    """The plan's race without a course, read as a race (its name and day), or None."""
+    if plan.race_date is None:
+        return None
+    return SimpleNamespace(id=None, name=plan.race_name or "", race_date=plan.race_date.isoformat())
+
+
+def custom_goal_of(plan: CoachingPlan) -> cp.Goal:
+    return custom_goal(plan.race_name, plan.race_date, plan.race_km, plan.race_target_s)
+
+
+def clean_race(name, day, km, hours, minutes, today: date) -> tuple[str, date, float, int | None]:
+    """« Ajouter une course »: a name, a day still to come, a distance in km and, optionally, a time aimed at (hours
+    and minutes, both blank: none). Invalid says what is missing, as the form shows it."""
+    name = " ".join(str(name or "").split())[:RACE_NAME_MAX]
+    if not name:
+        raise Invalid("Donne un nom à ta course.")
+    try:
+        day = day if isinstance(day, date) else date.fromisoformat(str(day or "").strip())
+    except ValueError as e:
+        raise Invalid("Indique la date de ta course.") from e
+    if day < today:
+        raise Invalid("Choisis une date à venir pour ta course.")
+    if day > today + timedelta(days=RACE_AHEAD_DAYS):
+        raise Invalid("Ta course est à plus de deux ans : vérifie l’année.")
+    try:
+        km = round(float(str(km or "").replace(",", ".").strip()), 1)
+    except ValueError as e:
+        raise Invalid("Indique la distance de ta course, en km.") from e
+    if not RACE_KM[0] <= km <= RACE_KM[1]:
+        raise Invalid("Indique une distance entre 1 et 400 km.")
+    h, m = str(hours or "").strip(), str(minutes or "").strip()
+    target = None
+    if h or m:
+        if not (h or "0").isdigit() or not (m or "0").isdigit() or int(m or 0) > 59:
+            raise Invalid("Indique le temps visé en heures et minutes.")
+        target = (int(h or 0) * 60 + int(m or 0)) * 60
+        if not RACE_TARGET[0] <= target <= RACE_TARGET[1]:
+            raise Invalid("Indique un temps visé de 10 minutes au moins.")
+    return name, day, km, target
 
 
 async def plan_route(db: AsyncSession, plan: CoachingPlan):
@@ -259,8 +322,13 @@ async def follow_goal(db: AsyncSession, plan: CoachingPlan, route, rows: list, t
         rows = [x for x in rows if x is not r]
         await db.delete(r)
     plan.route_id, plan.start_monday = None, start
+    clear_custom(plan)
     plan.goal_state = {"ended": kind, "name": name, "from": start.isoformat()}
     return None, rows
+
+
+def clear_custom(plan: CoachingPlan) -> None:
+    plan.race_name = plan.race_date = plan.race_km = plan.race_target_s = None
 
 
 def recent_runs(runs: list[st.Session], rows: list[CoachingSession], day: date) -> tuple[tuple[date, int], ...]:
@@ -328,11 +396,15 @@ def clean_answers(days, long_day, base) -> tuple[tuple[int, ...], int, int]:
 
 
 async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | None, days, long_day,
-                    base, moments=None) -> CoachingPlan:
+                    base, moments=None, race: tuple | None = None) -> CoachingPlan:
     """The onboarding's answers kept: a new plan, or the same one made again (« Refaire le plan »: week 0 is this
-    week again, what the ressenti changed is forgotten; the sessions done, past or edited by a person stay)."""
+    week again, what the ressenti changed is forgotten; the sessions done, past or edited by a person stay).
+    `race`: a race without a course, (name, day, km, target_s) as clean_race reads it — the plan's goal instead of
+    a Route."""
     days, long_day, base = clean_answers(days, long_day, base)
-    if route_id is not None and route_id not in {r.id for r in await goal_options(db, user.id, c.today)}:
+    if race is not None:
+        route_id = None
+    elif route_id is not None and route_id not in {r.id for r in await goal_options(db, user.id, c.today)}:
         raise Invalid("Cette course n’est plus disponible.")
     plan = await get_plan(db, user.id)
     if plan is None:
@@ -340,6 +412,9 @@ async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | N
         db.add(plan)
         new_feed_token(plan)
     plan.route_id, plan.days, plan.long_day, plan.base_minutes = route_id, ",".join(map(str, days)), long_day, base
+    clear_custom(plan)
+    if race is not None:
+        plan.race_name, plan.race_date, plan.race_km, plan.race_target_s = race
     plan.start_monday, plan.adaptations, plan.generated_at = cp.monday_of(c.today), None, c.now
     plan.goal_state = None  # the race's times are read again; a lost race's line goes
     if moments is not None:  # when the athlete can run (the onboarding's chips; None: left as it was)
@@ -509,8 +584,15 @@ async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime |
     await db.execute(select(CoachingPlan.id).where(CoachingPlan.id == plan.id).with_for_update())
     rows = await sessions_of(db, plan)
     match(rows, runs, c.today)
-    route, rows = await follow_goal(db, plan, await plan_route(db, plan), rows, c.today)
-    goal = goal_of(route, *(await race_times(db, plan, route, c.today) if route is not None else ()))
+    custom = plan_custom(plan)  # a race without a course: no page, no prediction, its own expected time
+    route, rows = await follow_goal(db, plan, custom if custom is not None else await plan_route(db, plan), rows,
+                                    c.today)
+    if route is None:
+        goal = cp.Goal()
+    elif custom is not None:
+        goal = custom_goal_of(plan)
+    else:
+        goal = goal_of(route, *await race_times(db, plan, route, c.today))
     fresh = cp.starting_minutes(weekly_minutes(runs, c.today))
     had_form = plan.form_on_at is not None
     low = await read_form(db, plan, user, c)  # nothing is read of Santé unless the athlete turned the option on
