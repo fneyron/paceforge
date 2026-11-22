@@ -1,4 +1,5 @@
-{#- Coaching: the athlete's tools under the calendar — the calendar feed, the sharing with a coach, « Refaire le
+{#- Coaching: the athlete's tools under the calendar — the calendar feed, the sharing of the plan (the pages never
+    say « coach »: the plan is automatic, the person who follows it is named by what they do), « Refaire le
     plan », « Arrêter le coaching ». Swapped in place after a new code, a revoked coach or a regenerated link (`open`
     then says which fold stays open). Expects `tools` = {feed: {https, webcal} | None, coaches: [{id, name}], code}. -#}
 {% from "partials/_icons.html" import icon %}
@@ -13,7 +14,7 @@
             <span>{{ icon("chart") }}<span>Adapter mes séances à ma forme <small>VFC, sommeil, FC de repos</small></span></span>
             <span class="pf-coach-switch-track" aria-hidden="true"><i></i></span>
         </button>
-        <p id="coach-form-note" class="pf-label">{% if tools.form.on %}Activé le {{ tools.form.since }}. {% endif %}Un matin où ta récupération de Santé est basse, ta séance dure devient un footing. Ton coach ne voit jamais pourquoi.</p>
+        <p id="coach-form-note" class="pf-label">{% if tools.form.on %}Activé le {{ tools.form.since }}. {% endif %}Un matin où ta récupération de Santé est basse, ta séance dure devient un footing. La personne qui suit ton plan ne voit jamais pourquoi.</p>
     </form>
     {% endif %}
     <details class="pf-coach-tool" id="coach-tool-feed"{% if open == "feed" %} open{% endif %}>
@@ -79,8 +80,9 @@
         </div>
     </details>
     <details class="pf-coach-tool" id="coach-tool-share"{% if open == "share" or tools.code %} open{% endif %}>
-        <summary class="pf-tool"><span>{{ icon("share") }}<span>Partager avec un coach</span></span>{{ icon("chev-r", "pf-chev") }}</summary>
+        <summary class="pf-tool"><span>{{ icon("share") }}<span>Partager mon plan</span></span>{{ icon("chev-r", "pf-chev") }}</summary>
         <div class="pf-coach-tool-body">
+            <p class="pf-label">La personne à qui tu donnes le code voit ton plan et peut l’ajuster&nbsp;; jamais tes données de santé.</p>
             {% for c in tools.coaches %}
             <form class="pf-coach-coachrow" method="post" action="/coaching/coaches/{{ c.id }}/revoke" hx-post="/coaching/coaches/{{ c.id }}/revoke" {{ swap|safe }} hx-confirm="Retirer l’accès de {{ c.name }} ?">
                 <span><b>{{ c.name }}</b> suit ton plan</span>
@@ -89,16 +91,16 @@
             {% endfor %}
             {% if tools.code %}
             <p class="pf-coach-code" aria-label="Ton code">{{ tools.code }}</p>
-            <p class="pf-label">À donner à ton coach. Valable 7 jours, une seule fois.</p>
+            <p class="pf-label">Valable 7 jours, une seule fois.</p>
             {% endif %}
             <form method="post" action="/coaching/share" hx-post="/coaching/share" {{ swap|safe }}>
                 <button type="submit" id="coach-share-new" class="pf-btn pf-btn-secondary pf-btn-sm">{{ "Nouveau code" if tools.code else "Créer un code" }}</button>
             </form>
         </div>
     </details>
-    <a class="pf-tool" href="/coaching/athletes"><span>{{ icon("heart") }}<span>Suivre un athlète</span></span>{{ icon("chev-r", "pf-chev") }}</a>
+    <a class="pf-tool" href="/coaching/athletes"><span>{{ icon("heart") }}<span>Suivre le plan de quelqu’un</span></span>{{ icon("chev-r", "pf-chev") }}</a>
     <a class="pf-tool" href="/coaching?refaire=1"><span>{{ icon("pencil") }}<span>Refaire le plan</span></span>{{ icon("chev-r", "pf-chev") }}</a>
-    <form method="post" action="/coaching/stop" onsubmit="event.preventDefault(); var f = this; var msg = 'Arrêter le coaching ? Ton plan et tes séances seront supprimés, et tes coachs n’y auront plus accès.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Arrêter'); } else if (confirm(msg)) { f.submit(); }">
+    <form method="post" action="/coaching/stop" onsubmit="event.preventDefault(); var f = this; var msg = 'Arrêter le coaching ? Ton plan et tes séances seront supprimés, et les personnes qui le suivent n’y auront plus accès.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Arrêter'); } else if (confirm(msg)) { f.submit(); }">
         <button type="submit" class="pf-tool pf-coach-stop"><span>{{ icon("close") }}<span>Arrêter le coaching</span></span></button>
     </form>
 </div>

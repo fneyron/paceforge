@@ -394,7 +394,7 @@ async def test_the_tools_sit_behind_one_row_and_open_where_a_link_lands(client, 
     assert tail.count("<details") >= 5 and "Options du plan" in tail
     assert re.search(r'<details class="pf-coach-tool pf-coach-opts" id="coach-options">', tail), "closed by default"
     inside = tail[tail.index('id="coach-options"'):]
-    for option in ("Ajouter à mon calendrier", "Mon agenda", "Partager avec un coach", "Suivre un athlète",
+    for option in ("Ajouter à mon calendrier", "Mon agenda", "Partager mon plan", "Suivre le plan de quelqu’un",
                    "Refaire le plan", "Arrêter le coaching"):
         assert option in inside, option
     assert tail.index("Comment ça marche") < tail.index("Options du plan")
@@ -412,3 +412,62 @@ async def test_the_tools_sit_behind_one_row_and_open_where_a_link_lands(client, 
     theirs = (await _as(client, people.coach).get(f"/coaching/athletes/{athlete.id}")).text
     assert "coach-options" not in theirs and "Options du plan" not in theirs and "C’est fait" not in theirs
     assert "pf-coach-daycard" in theirs and "pf-coach-strip" in theirs
+
+
+# ── the words: the plan is automatic, nobody needs a coach to have one ───────
+
+def _read(page: str) -> str:
+    """What a person reads of a page: its text, the labels a screen reader says, the placeholders, the questions a
+    button asks before it acts — never a class, an id or an address."""
+    body = page[page.index('id="main-content"'):]
+    said = re.findall(r'(?:aria-label|placeholder|title|hx-confirm)="([^"]*)"', body)
+    said += re.findall(r"var msg = '([^']*)'", body)
+    body = re.sub(r"<(script|style)\b.*?</\1>", " ", body, flags=re.S)
+    return " ".join([re.sub(r"<[^>]+>", " ", body), *said])
+
+
+async def test_the_pages_never_say_coach(client, people, db_session, clock):
+    """Owner, 2026-11-22 (« décide ce qui est le mieux »): the feature stays « Coaching »; inside it, the word
+    « coach » made a human coach look required. The person who follows a plan is named by what they do, or by their
+    first name."""
+    athlete, follower = people.athlete, people.coach
+    _as(client, athlete)
+    pages = [(await client.get("/coaching")).text]  # the onboarding
+    plan = await _plan(client, db_session, athlete, days=("0", "3", "6"))
+    today = next(r for r in await _rows(db_session, athlete) if r.day == MONDAY)
+    today.coach_comment, today.origin, today.pinned = "Bien joué", "coach", True
+    db_session.add(co.CoachingLink(athlete_id=athlete.id, coach_id=follower.id))
+    await db_session.flush()
+    page = (await client.get("/coaching?outil=options")).text
+    assert "Partager mon plan" in page and "Suivre le plan de quelqu’un" in page
+    assert "La personne à qui tu donnes le code voit ton plan et peut l’ajuster" in page
+    assert "<b>Florent</b> suit ton plan" in page
+    # one person follows the plan: a comment and a change are signed with that first name
+    assert '<p class="pf-coach-said"><b>Florent</b> Bien joué</p>' in page
+    assert '<p class="pf-coach-edited">Modifiée par Florent</p>' in page
+    pages += [page, 'id="main-content"' + (await client.post("/coaching/share", headers=HTMX)).text]  # the code's fold
+    # two people follow it: the author of a comment is not kept, no name is guessed
+    db_session.add(co.CoachingLink(athlete_id=athlete.id, coach_id=people.outsider.id))
+    await db_session.flush()
+    page = (await client.get("/coaching")).text
+    assert '<p class="pf-coach-said"><b>Commentaire</b> Bien joué</p>' in page
+    assert '<p class="pf-coach-edited">Modifiée par la personne qui suit ton plan</p>' in page
+    pages.append(page)
+    # the follower's side: « Plans suivis », the athlete by her first name
+    _as(client, follower)
+    listing = (await client.get("/coaching/athletes")).text
+    assert "Plans suivis" in listing and "Suivre le plan de quelqu’un" in listing and "Stella" in listing
+    r = await client.post(f"/coaching/athletes/{athlete.id}/sessions/{today.id}/edit",
+                          data={"kind": "footing", "minutes": "40"}, headers=HTMX)
+    assert r.status_code == 200 and "Modifiée par toi" in r.text
+    await _as(client, athlete).post(f"/coaching/sessions/{today.id}/edit", data={"kind": "footing", "minutes": "45"},
+                                    headers=HTMX)
+    theirs = (await _as(client, follower).get(f"/coaching/athletes/{athlete.id}")).text
+    assert '<p class="pf-coach-edited">Modifiée par Stella</p>' in theirs and "Plans suivis" in theirs
+    assert "Ton commentaire" in theirs
+    pages += [listing, theirs, (await client.post("/coaching/athletes/join", data={"code": "ZZZZ-ZZZZ"})).text]
+    for html in pages:
+        read = _read(html)
+        assert not re.search(r"\bcoachs?\b", read, re.I), re.search(r".{40}\bcoachs?\b.{40}", read, re.I | re.S).group(0)
+        assert "athlète" not in read.replace("Athlète", ""), "the follower's pages name the person, not a role"
+    assert plan.id and "Coaching" in _read(pages[1]), "the feature keeps its name"

@@ -478,7 +478,8 @@ une action principale par séance, le reste discret, les outils repliés.
      faite », « Déplacer », « Modifier ». Une séance à venir n’a pas d’action principale ;
    - une fois faite : l’activité liée, le **ressenti** — une échelle de cinq marches, un toucher l’enregistre —, la
      note derrière « Ajouter une note » (aucun champ ni bouton « Enregistrer » tant qu’on ne l’ouvre pas), le
-     commentaire du coach ; « Annuler » défait une coche faite à la main ;
+     commentaire de la personne qui suit le plan, signé de son prénom ; « Annuler » défait une coche faite à la
+     main ;
    - **un jour sans séance** dit « Repos » et nomme la prochaine séance (« Prochaine séance · demain », un toucher
      y mène) ; un autre jour qu’aujourd’hui a « Aujourd’hui » pour y revenir.
 3. **La semaine** : sept colonnes, une barre par séance, haute comme sa durée (contre la plus longue séance de la
@@ -491,26 +492,39 @@ une action principale par séance, le reste discret, les outils repliés.
 4. **« Le plan »** : le graphique des semaines (prévu en contour, fait en plein, phases, semaine en cours).
 5. **Deux lignes** : « Comment ça marche » (les règles, en un pli) et **« Options du plan »**, fermé par défaut, qui
    contient tout le reste, inchangé : « Adapter mes séances à ma forme » (si l’option est proposée, avec son texte
-   d’accord), « Ajouter à mon calendrier », « Mon agenda », « Partager avec un coach », « Suivre un athlète »,
+   d’accord), « Ajouter à mon calendrier », « Mon agenda », « Partager mon plan », « Suivre le plan de quelqu’un »,
    « Refaire le plan », « Arrêter le coaching ». Un formulaire des options revient sur les options ouvertes
    (`/coaching?outil=agenda#coach-tool-agenda`, `?outil=forme#coach-form`) ; une adresse qui ne porte que le
    fragment (`/coaching#coach-form`) les ouvre aussi, par script.
 
 Sur un écran large, la carte du jour est à gauche, la semaine et le plan à droite.
 
+**Les mots.** La fonction et son onglet s’appellent « Coaching » ; l’onglet « Courses » garde son nom. **À
+l’intérieur, les écrans ne disent jamais « coach »** (propriétaire, 22 novembre 2026 : « décide ce qui est le
+mieux » — le plan est automatique, et le mot laissait croire qu’il fallait un coach humain). Ce document, le code,
+les routes et les tables gardent « coach » pour le rôle : la personne qui suit le plan de quelqu’un d’autre.
+
+| Ce que dit l’écran | À qui |
+|---|---|
+| « Partager mon plan », avec une ligne : « La personne à qui tu donnes le code voit ton plan et peut l’ajuster ; jamais tes données de santé. » | L’athlète |
+| « Suivre le plan de quelqu’un » (la ligne des options, le lien de l’écran de départ, le champ du code) ; la liste s’appelle « Plans suivis » | Qui suit un plan |
+| Un commentaire et « Modifiée par … » sont signés d’un **prénom** : « Florent », « Modifiée par Florent » ; côté coach, « Modifiée par Stella ». L’auteur d’un commentaire n’est pas enregistré : le prénom n’est écrit que si une seule personne suit le plan ; sinon « Commentaire », « Modifiée par la personne qui suit ton plan ». | Les deux |
+| « La personne qui suit ton plan ne voit jamais pourquoi. » (l’option « forme ») | L’athlète |
+| « la personne avec qui tu partages ton plan » : le rôle, dit en toutes lettres | La politique de confidentialité |
+
 - « Déplacer » : on touche le bouton puis un jour (à partir d’aujourd’hui) ; la semaine vient à l’écran, la carte du
   jour n’a plus d’action tant qu’on choisit. Un jour qui porte déjà une séance prévue l’échange. Tout se fait au
   clavier (ce sont des boutons). Pas de glisser-déposer.
 - Chaque toucher remplace la partie du milieu sur place (htmx), sans recharger la page ; le focus reste sur
   l’élément touché. Sans JavaScript, les mêmes liens et formulaires renvoient à la page.
-- `/coaching/athletes` : la liste du coach (la barre de la semaine, les dernières séances avec statut et ressenti) et
+- `/coaching/athletes` (« Plans suivis ») : la liste du coach (la barre de la semaine, les dernières séances avec statut et ressenti) et
   le champ du code. `/coaching/athletes/<id>` : **la même mise en page**, au prénom de l’athlète — la carte du jour,
   la semaine, le plan — avec ce qu’un coach peut faire : il ajoute, déplace, modifie, supprime des séances
   (épinglées, origine « coach ») et écrit un commentaire (« Commenter »). Il ne coche jamais une séance et n’a pas
   les options. Il voit le plan, les statuts, le ressenti (la même échelle, en lecture), les notes et le résumé de
   l’activité liée ; **jamais les données de Santé**, ni le détail d’une activité. Une séance allégée par la forme
   lui dit « Séance adaptée ce matin », sans la cause.
-- Le lien : l’athlète touche « Partager avec un coach » → un code de 8 caractères affiché une fois, valable 7 jours et
+- Le lien : l’athlète touche « Partager mon plan » → un code de 8 caractères affiché une fois, valable 7 jours et
   une seule fois, stocké par son empreinte → le coach le saisit. L’athlète retire l’accès, le coach arrête de
   suivre : immédiat dans les deux sens. « Arrêter le coaching » supprime le plan, ses séances, les liens et les codes.
 
@@ -563,7 +577,8 @@ la suppression du compte retirent adresses et heures occupées. Tout part avec l
 
 Politique de confidentialité, ligne affichée tant que la fonction n’est pas éteinte : « Coaching (bêta) » —
 le plan, les séances et leur statut, le ressenti (l’effort perçu, de 1 à 5), les notes, les commentaires du coach ;
-base « Contrat » ; partagé avec le coach que l’athlète choisit ; gardé jusqu’à l’arrêt du coaching ou la suppression
+base « Contrat » ; partagé avec le coach que l’athlète choisit (la page le nomme par son rôle : « la personne avec
+qui tu partages ton plan ») ; gardé jusqu’à l’arrêt du coaching ou la suppression
 du compte. Une seconde ligne, « Coaching (bêta) · ta forme » : seulement si l’option est activée — la date
 d’activation, les matins où l’indice de récupération de Santé est bas (leur date, jamais l’indice ni une mesure),
 les séances allégées ces matins-là ; base « Consentement explicite, donné à part dans Coaching » ; jamais partagé
@@ -579,7 +594,8 @@ séances, jamais l’agenda) ; gardé jusqu’au retrait de l’adresse, l’arr
 1. Rien à régler : sans `COACHING_BETA_USERS`, chaque compte a Coaching dès le déploiement (web et workers lisent la
    même variable).
 2. L’athlète ouvre l’onglet Coaching : un plan est proposé, elle l’ajuste si elle veut et touche « Créer mon plan ».
-3. Elle touche « Partager avec un coach », donne le code ; le coach le saisit dans Coaching › Suivre un athlète.
+3. Elle touche « Partager mon plan », donne le code ; le coach le saisit dans Coaching › Suivre le plan de
+   quelqu’un.
 4. L’onglet natif arrive avec la version 1.1.0 de l’app, publiée sur TestFlight par un commit sur `main` dont le
    message contient `[testflight]` (docs/testflight-without-expo-build-quota.md). En attendant, l’app installée
    garde la carte en haut d’Activités.

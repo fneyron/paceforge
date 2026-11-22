@@ -206,8 +206,18 @@ def _form(row, state: co.State, coach: bool) -> dict | None:
     return None
 
 
-def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool) -> dict:
+# what the pages call the person who follows a plan when no first name can sign for them (the word « coach » is
+# never shown: the plan is automatic, nobody needs a coach to have one)
+FOLLOWER = "la personne qui suit ton plan"
+COMMENT = "Commentaire"
+
+
+def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool, names: dict | None = None) -> dict:
+    """`names`: {"athlete": first name, "follower": the first name of the one person who follows the plan, None
+    when there are several or none} — a session someone else changed, or a comment, is signed with a first name."""
     today = state.clock.today
+    names = names or {}
+    follower, athlete = names.get("follower"), names.get("athlete") or "l’athlète"
     run = runs_by_id.get(row.activity_id) if row.activity_id else None
     planned = row.status == co.PLANNED
     # the structure in words, then the climb to aim at while the session is still to do (once done, the activity's
@@ -229,8 +239,9 @@ def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool) -> di
         "gauge": {"level": level, "aria": f"Effort {cp.LEVELS.get(level, '')} : niveau {level} sur 4"} if steady
         else None,
         "guidance": feel_and_range(row.kind, row.structure, rows_hr),
-        "edited": {"coach": "Modifiée par ton coach", "athlete": "Modifiée par toi"}.get(row.origin) if not coach
-        else {"coach": "Modifiée par toi", "athlete": "Modifiée par l’athlète"}.get(row.origin),
+        "edited": {"coach": f"Modifiée par {follower or FOLLOWER}", "athlete": "Modifiée par toi"}.get(row.origin)
+        if not coach else {"coach": "Modifiée par toi", "athlete": f"Modifiée par {athlete}"}.get(row.origin),
+        "comment_by": follower or COMMENT,
         "activity": _activity(run, link=not coach, climb=climb_of(row)) if run else None,
         "done_manual": hm(row.done_minutes) if row.status == co.DONE and run is None and row.done_minutes else None,
         "done_min": row.done_minutes, "ressenti": row.ressenti, "note": row.note, "coach_comment": row.coach_comment,
@@ -391,8 +402,10 @@ def chart(state: co.State, done: dict[date, float]) -> dict | None:
 
 
 def page(state: co.State, *, d: date | None = None, w: date | None = None, month: bool = False,
-         move: int | None = None, coach: bool = False, hr_reference: float | None = None) -> dict:
-    """Everything the calendar part draws for one selected day."""
+         move: int | None = None, coach: bool = False, hr_reference: float | None = None,
+         names: dict | None = None) -> dict:
+    """Everything the calendar part draws for one selected day. `names`: the first names a change or a comment is
+    signed with (see _session)."""
     today = state.clock.today
     selected = pick_day(state, d, w, month)
     monday = cp.monday_of(selected)
@@ -432,7 +445,7 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
                  "next": (monday + timedelta(weeks=1)).isoformat() if monday < last else None,
                  "summary": week_summary(state, monday, done), **week_note(state, monday, coach),
                  "moves": week_moves(state, monday, coach)},
-        "sessions": [_session(r, state, rows_hr, runs_by_id, coach) for r in by_day.get(selected, [])],
+        "sessions": [_session(r, state, rows_hr, runs_by_id, coach, names) for r in by_day.get(selected, [])],
         "extras": [_activity(s, link=not coach) for s in extras if s.day == selected],
         "moving": {"id": moving.id, "title": cp.KINDS.get(moving.kind, moving.kind)} if moving else None,
         "can_add": coach and selected >= today,

@@ -97,9 +97,10 @@
             </div>
             {% endif %}
 
-            {#- what was said: the athlete's note, the coach's comment (each writes their own, behind a fold) -#}
+            {#- what was said: the athlete's note, the follower's comment, signed with their first name (each writes their
+                own, behind a fold) -#}
             {% if s.note %}<p class="pf-coach-said is-note"><b>{{ "Sa note" if scope.coach else "Ta note" }}</b> {{ s.note }}</p>{% endif %}
-            {% if s.coach_comment %}<p class="pf-coach-said"><b>{{ "Ton commentaire" if scope.coach else "Ton coach" }}</b> {{ s.coach_comment }}</p>{% endif %}
+            {% if s.coach_comment %}<p class="pf-coach-said"><b>{{ "Ton commentaire" if scope.coach else s.comment_by }}</b> {{ s.coach_comment }}</p>{% endif %}
 
             {% if s.can_done and not p.moving %}
             <form class="pf-coach-do" method="post" action="{{ base }}/sessions/{{ s.id }}/status" hx-post="{{ base }}/sessions/{{ s.id }}/status" {{ swap|safe }}>
@@ -143,7 +144,7 @@
                     <summary class="pf-coach-quietbtn">{% if scope.coach %}{{ "Modifier mon commentaire" if own_text else "Commenter" }}{% else %}{{ "Modifier ma note" if own_text else "Ajouter une note" }}{% endif %}</summary>
                     <form class="pf-coach-note" method="post" action="{{ base }}/sessions/{{ s.id }}/note" hx-post="{{ base }}/sessions/{{ s.id }}/note" {{ swap|safe }}>
                         <input type="hidden" name="v" value="{{ p.view }}">
-                        <label class="sr-only" for="coach-note-{{ s.id }}">{{ "Ton commentaire de coach" if scope.coach else "Ta note sur cette séance" }}</label>
+                        <label class="sr-only" for="coach-note-{{ s.id }}">{{ "Ton commentaire sur cette séance" if scope.coach else "Ta note sur cette séance" }}</label>
                         <textarea id="coach-note-{{ s.id }}" name="note" class="pf-input" rows="2" maxlength="280" placeholder="{{ 'Ton commentaire' if scope.coach else 'Ta note' }}">{{ own_text or '' }}</textarea>
                         <button type="submit" id="coach-note-ok-{{ s.id }}" class="pf-btn pf-btn-secondary pf-btn-sm">Enregistrer</button>
                     </form>

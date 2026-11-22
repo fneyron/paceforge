@@ -115,12 +115,20 @@ async def _state(db: AsyncSession, scope: Scope) -> co.State:
     return await co.sync(db, plan, scope.athlete)
 
 
+async def _names(db: AsyncSession, scope: Scope) -> dict:
+    """The first names the pages sign with: the athlete's, and — for the athlete's own page — the one person who
+    follows the plan (several, or none left: no name, a comment's author is not kept)."""
+    followers = [] if scope.coach else await co.coaches_of(db, scope.athlete.id)
+    return {"athlete": scope.athlete.firstname or None,
+            "follower": followers[0].firstname or None if len(followers) == 1 else None}
+
+
 async def _main(request: Request, db: AsyncSession, scope: Scope, state: co.State, *, d: date | None = None,
                 w: date | None = None, v: str | None = None, move: int | None = None, error: str | None = None,
                 status_code: int = 200) -> Response:
     """The calendar part (partials/coaching_main.html), for an htmx swap."""
     p = cv.page(state, d=d, w=w, month=v == "mois", move=move, coach=scope.coach,
-                hr_reference=await _hr_reference(db, scope.athlete, state.clock))
+                hr_reference=await _hr_reference(db, scope.athlete, state.clock), names=await _names(db, scope))
     return templates.TemplateResponse(request, "partials/coaching_main.html", status_code=status_code, context={
         "p": p, "scope": scope, "error": error})
 
@@ -251,7 +259,7 @@ async def _tools(db: AsyncSession, scope: Scope, plan: CoachingPlan, code: str |
     if offer is not None and offer["since"] is not None:
         since = offer["since"] if offer["since"].tzinfo else offer["since"].replace(tzinfo=timezone.utc)
         offer = {**offer, "since": d_long(since.astimezone(c.zone).date())}
-    return {"feed": feed_urls(plan), "coaches": [{"id": u.id, "name": u.firstname or "Coach"}
+    return {"feed": feed_urls(plan), "coaches": [{"id": u.id, "name": u.firstname or "Quelqu’un"}
                                                  for u in await co.coaches_of(db, scope.athlete.id)], "code": code,
             "form": offer, "agenda": await _agenda(db, plan, c)}
 
@@ -294,7 +302,7 @@ async def _page(request: Request, db: AsyncSession, scope: Scope, d: str | None,
     state = await _state(db, scope)
     await db.commit()
     p = cv.page(state, d=_day(d), w=_day(w), month=v == "mois", coach=scope.coach,
-                hr_reference=await _hr_reference(db, scope.athlete, state.clock))
+                hr_reference=await _hr_reference(db, scope.athlete, state.clock), names=await _names(db, scope))
     return templates.TemplateResponse(request, "coaching.html", context={
         "user": scope.viewer, "scope": scope, "head": cv.header(state, scope.coach), "p": p, "method": cv.METHOD,
         "athlete_name": scope.athlete.firstname or "Athlète", "error": None, "open": tool,
@@ -460,7 +468,7 @@ async def coaching_agenda_remove(calendar_id: int, scope: Scope = Depends(own_sc
 
 @router.post("/coaching/share", response_class=HTMLResponse)
 async def coaching_share(request: Request, scope: Scope = Depends(own_scope), db: AsyncSession = Depends(get_db)):
-    """« Partager avec un coach »: a code shown once, good for 7 days and one coach."""
+    """« Partager mon plan »: a code shown once, good for 7 days and one person."""
     state = await _state(db, scope)
     code = await co.new_invite(db, scope.athlete.id, state.clock.now)
     await db.commit()

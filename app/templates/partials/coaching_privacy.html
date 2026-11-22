@@ -3,20 +3,20 @@
 {% if coaching_active is defined and coaching_active() %}
 <tr>
     <th scope="row">Coaching (bêta)</th>
-    <td data-label="Données">Ton plan (objectif, jours disponibles, volume de départ), tes séances et leur statut, ton ressenti après une séance (l’effort perçu, de 1 à 5), tes notes, les commentaires de ton coach</td>
-    <td data-label="Base légale">Contrat. Partagé avec le coach que tu choisis, et lui seul, jusqu’à ce que tu lui retires l’accès.</td>
+    <td data-label="Données">Ton plan (objectif, jours disponibles, volume de départ), tes séances et leur statut, ton ressenti après une séance (l’effort perçu, de 1 à 5), tes notes, les commentaires de la personne avec qui tu partages ton plan</td>
+    <td data-label="Base légale">Contrat. Partagé avec la personne avec qui tu partages ton plan (celle à qui tu donnes ton code), et elle seule, jusqu’à ce que tu lui retires l’accès.</td>
     <td data-label="Durée">Jusqu’à l’arrêt du coaching (le plan est supprimé) ou la suppression du compte</td>
 </tr>
 <tr>
     <th scope="row">Coaching (bêta) · ton agenda</th>
     <td data-label="Données">Seulement si tu ajoutes une adresse dans «&nbsp;Mon agenda&nbsp;»&nbsp;: cette adresse (chiffrée), tes heures occupées des 21 prochains jours — un début et une fin, jamais un titre, une description, un lieu ni un participant —, les moments où tu peux courir, l’heure donnée à chaque séance</td>
-    <td data-label="Base légale">Contrat (une option que tu actives en collant l’adresse). Jamais partagé&nbsp;: ton coach voit l’heure de tes séances, jamais ton agenda.</td>
+    <td data-label="Base légale">Contrat (une option que tu actives en collant l’adresse). Jamais partagé&nbsp;: la personne avec qui tu partages ton plan voit l’heure de tes séances, jamais ton agenda.</td>
     <td data-label="Durée">Jusqu’au retrait de l’adresse, l’arrêt du coaching ou la suppression du compte&nbsp;; les heures occupées sont remplacées à chaque lecture</td>
 </tr>
 <tr>
     <th scope="row">Coaching (bêta) · ta forme</th>
     <td data-label="Données">Seulement si tu actives «&nbsp;Adapter mes séances à ma forme&nbsp;»&nbsp;: la date d’activation, les matins où ton indice de récupération de Santé (VFC, sommeil, FC de repos) est bas — leur date, jamais l’indice ni une mesure —, et les séances allégées ces matins-là</td>
-    <td data-label="Base légale">Consentement explicite, donné à part dans Coaching (données de santé). Jamais partagé&nbsp;: ton coach voit qu’une séance a été adaptée, jamais pourquoi.</td>
+    <td data-label="Base légale">Consentement explicite, donné à part dans Coaching (données de santé). Jamais partagé&nbsp;: la personne avec qui tu partages ton plan voit qu’une séance a été adaptée, jamais pourquoi.</td>
     <td data-label="Durée">Jusqu’à la désactivation de l’option, le retrait de ton accord sur les données de santé, l’arrêt du coaching ou la suppression du compte</td>
 </tr>
 {% endif %}

@@ -1,15 +1,15 @@
 {% extends "base.html" %}
-{#- Coaching (beta), the coach's list: each athlete followed at a glance — this week's bar « fait / prévu », the last
+{#- Coaching (beta), the follower's list (« Plans suivis »: the pages never say « coach »): each athlete followed at a glance — this week's bar « fait / prévu », the last
     sessions with their status and ressenti — and the field where an athlete's code is typed. Never Santé data. -#}
 {% from "partials/_icons.html" import icon %}
 
-{% block title %}Mes athlètes — PaceForge{% endblock title %}
+{% block title %}Plans suivis — PaceForge{% endblock title %}
 
 {% block content %}
 <div class="pf-coach">
     <a href="{{ '/coaching' if has_plan else '/activities' }}" class="pf-back{% if not has_plan %} pf-old-shell-only{% endif %}">{{ icon("chev-l", "w-4 h-4") }}{{ "Coaching" if has_plan else "Activités" }}</a>
     <div class="pf-head pf-coach-head">
-        <div><h1 class="pf-h1">Mes athlètes <span class="pf-tag">bêta</span></h1></div>
+        <div><h1 class="pf-h1">Plans suivis <span class="pf-tag">bêta</span></h1></div>
     </div>
     <div class="pf-coach-main">
     {% for a in athletes %}
@@ -33,11 +33,11 @@
         {% endif %}
     </article>
     {% else %}
-    <p class="pf-coach-rest">Aucun athlète pour l’instant.</p>
+    <p class="pf-coach-rest">Tu ne suis aucun plan pour l’instant.</p>
     {% endfor %}
 
     <form method="post" action="/coaching/athletes/join" class="pf-coach-card pf-coach-join">
-        <label for="coach-code" class="pf-coach-h">Suivre un athlète</label>
+        <label for="coach-code" class="pf-coach-h">Suivre le plan de quelqu’un</label>
         <div class="pf-coach-joinrow">
             <input id="coach-code" name="code" class="pf-input" placeholder="Son code : ABCD-EFGH" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" required{% if error %} aria-invalid="true" aria-describedby="coach-code-error"{% endif %}>
             <button type="submit" class="pf-btn pf-btn-primary">Suivre</button>
