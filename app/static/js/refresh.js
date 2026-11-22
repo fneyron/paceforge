@@ -12,6 +12,12 @@
   document.addEventListener('visibilitychange', function () { if (document.hidden) released(); });
   window.addEventListener('scroll', function () { movedAt = Date.now(); }, { passive: true });
   function pause(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+  // What a request that did not reach an answer says. None of them is about a connection (a watch, Strava): the app
+  // drops such a notice once the server answers it again, and keeps a provider's error until the next refresh.
+  var REACH = { session: 'Session expirée. Reconnecte-toi dans Réglages.',
+    server: 'Actualisation indisponible. Les dernières données restent affichées.',
+    network: 'Connexion interrompue. Les dernières données restent affichées.' };
+  function reach(message) { return Object.keys(REACH).some(function (k) { return REACH[k] === message; }); }
   function nativeState(active) {
     window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'refresh-state', active: active }));
   }
@@ -26,7 +32,7 @@
     // Recent native builds own the single progress/error surface. Older builds
     // and browsers retain this inline fallback, never a floating overlay.
     if (window.paceforgeNativeRefresh >= 2 && window.ReactNativeWebView) {
-      if (retry) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'refresh-notice', message: message }));
+      if (retry) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'refresh-notice', message: message, reach: reach(message) }));
       return;
     }
     if (!liveRegion()) return;
@@ -57,11 +63,11 @@
     var controller = new AbortController(), timer = setTimeout(function () { controller.abort(); }, 30000);
     try {
       var response = await fetch(url, Object.assign({ credentials: 'same-origin', cache: 'no-store' }, options, { signal: controller.signal }));
-      if (response.redirected || response.status === 401 || response.status === 403) throw new Error('Session expirée. Reconnecte-toi dans Réglages.');
-      if (!response.ok) throw new Error('Actualisation indisponible. Les dernières données restent affichées.');
+      if (response.redirected || response.status === 401 || response.status === 403) throw new Error(REACH.session);
+      if (!response.ok) throw new Error(REACH.server);
       return await (format === 'json' ? response.json() : response.text());
     } catch (error) {
-      if (error instanceof TypeError || error.name === 'AbortError') throw new Error('Connexion interrompue. Les dernières données restent affichées.');
+      if (error instanceof TypeError || error.name === 'AbortError') throw new Error(REACH.network);
       throw error;
     } finally { clearTimeout(timer); }
   }

@@ -42,6 +42,7 @@ function Companion() {
   const [pageLoading, setPageLoading] = useState(true);
   const [userRefreshing, setUserRefreshing] = useState(false);
   const [refreshIssue, setRefreshIssue] = useState('');
+  const refreshUnreached = useRef(false);  // the notice says a refresh did not reach the server, not a provider's error
   const [healthIssue, setHealthIssue] = useState('');
   const [dark, setDark] = useState(systemDark);
   const [showWeb, setShowWeb] = useState(false);
@@ -499,7 +500,7 @@ function Companion() {
           return;
         }
         if (data?.type === 'refresh-notice' && typeof data.message === 'string') {
-          setRefreshIssue(data.message); return;
+          setRefreshIssue(data.message); refreshUnreached.current = data.reach === true && !!data.message; return;
         }
       } catch { /* The nonce-bound account bridge validates its own messages. */ }
     }
@@ -526,9 +527,9 @@ function Companion() {
       if (reply.kind === 'connections') {
         setConnections(reply.snapshot); setShowWeb(false); setStatus(reply.result || afterRefresh.current);
         afterRefresh.current = '';
-        // The server has just answered with every connection's own state: a notice kept from an earlier page
-        // refresh (« Connexion interrompue », a provider's error) is stale here and would contradict it.
-        setRefreshIssue('');
+        // The server has just answered: a notice that an earlier page refresh did not reach it (« Connexion
+        // interrompue ») is stale and would contradict this answer. A provider's error stays (« Détails › »).
+        if (refreshUnreached.current) { refreshUnreached.current = false; setRefreshIssue(''); }
         if (pair) confirmAccount(reply.snapshot.user_id === pair.user_id);
         if (reply.task.pageUrl && offline.library.userId !== reply.snapshot.user_id) {
           // A session may have changed while Settings covered the document.

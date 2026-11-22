@@ -103,6 +103,17 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   await partial.evaluate(()=>webMessage({type:'appearance',dark:true}));
   assert.equal(await partial.getByText('PaceForge',{exact:true}).evaluate(el=>getComputedStyle(el).color),'rgb(244, 244, 246)');
   await partial.close();
+  // A refresh that did not reach the server leaves « Connexion interrompue »: once the server answers about the
+  // connections, that notice is stale and goes (a provider's error, above, stays for « Détails › »).
+  const stale=await page();await stale.waitForFunction(()=>window.nonce);await stale.evaluate(()=>reply());
+  await stale.waitForFunction(()=>refreshes.length===1);
+  await stale.evaluate(()=>webMessage({type:'refresh-notice',message:'Connexion interrompue. Les dernières données restent affichées.',reach:true}));
+  const cut=stale.getByRole('button',{name:/Connexion interrompue/});await cut.waitFor();await cut.click();
+  await stale.waitForFunction(()=>window.connectionNonce);
+  await stale.evaluate(()=>reply({type:'connections',name:'Athlete',providers:{coros:'disconnected',garmin:'disconnected',strava:'connected'}}));
+  await stale.getByText(/Connexion interrompue/).first().waitFor({state:'detached'});
+  assert.equal(await stale.getByRole('alert').count(),0,'a reached server must not leave the unreached notice in red');
+  await stale.close();
   const delayed=await page();await delayed.waitForFunction(()=>window.nonce);
   await delayed.evaluate(()=>{window.partialHealth=true;return reply();});
   await delayed.waitForFunction(()=>refreshes.length===1);
