@@ -1,8 +1,8 @@
 """Synthetic Coaching preview (beta): an athlete mid-plan with done, missed and ressenti data, and her coach;
 temporary database, localhost only. Coaching is left at its default: every account has it.
 
-The preview's « today » is the latest Thursday (the athlete's day is patched to it: the same screens whatever the
-day the suite runs). The athlete trains on Tuesday, Thursday, Friday and Sunday for a trail race in 54 days (an
+The preview's « today » is the latest Thursday, at 8:30 (the athlete's day and Coaching's clock are patched to it:
+the same screens whatever the day and the hour the suite runs). The athlete trains on Tuesday, Thursday, Friday and Sunday for a trail race in 54 days (an
 objective set on its page: « Objectif 5h00 »; her long runs carry a climb target). She turned « Adapter mes séances
 à ma forme » on, and this Thursday morning Santé's index reads low (the last 7 nights' HRV under its usual values):
 today's quality session is a footing, the session itself moved to Friday — her coach reads « Séance adaptée ce
@@ -61,6 +61,13 @@ async def lifespan(app):
             return today
         sante_training.athlete_today = athlete_today  # every page of this preview reads that Thursday
         noon = datetime.combine(today, time(8, 30), timezone.utc)
+        real_clock = co.clock
+
+        async def morning_clock(db, user, now=None):
+            return await real_clock(db, user, now or noon)
+        # … at 8:30 in the morning, whatever the hour the suite runs: « Autre créneau » asks for a free time later
+        # today, which a run after 20:00 would never find
+        co.clock = morning_clock
         async with preview.factory() as db:
             athlete = await db.get(User, app.state.user_id)
             athlete.firstname, athlete.max_heart_rate, athlete.timezone = "Stella", 186, "UTC"
