@@ -1,6 +1,7 @@
-// Coaching (beta, every account): the athlete's page (the day first, then the week, then the plan), the coach's pages
-// and the onboarding (a plan already proposed), in a browser — at 320 and 393 px (the web site; inside the phone app
-// that has the native Coaching tab; inside an installed app older than that tab), at 1280 px, light and dark. Local
+// Coaching (beta, every account): the athlete's page (the calendar: the debrief first, two weeks, the day opened under
+// them, the plan behind a fold), the follower's pages and the onboarding (a plan already proposed), in a browser — at
+// 320 and 393 px (the web site; inside the phone app that has the native Coaching tab; inside an installed app older
+// than that tab), at 1280 px, light and dark. Local
 // synthetic preview only.
 // Start three fixtures (tests/browser/coaching_preview.py), each its own temporary database:
 //   PF_COACHING_AS=athlete uvicorn tests.browser.coaching_preview:app --host 127.0.0.1 --port 8861
@@ -158,47 +159,82 @@ async function theme(page, dark) {
       assert.doesNotMatch(await page.locator('.pf-coach-daycard').innerText(), /\d\s?%/, key + ': the index is Santé’s to print');
       // the agenda: today's session has its time, in a free slot of her work calendar
       assert.match(await page.locator('.pf-coach-slot-time').innerText(), /^12\sh\s00 – 12\sh\s30$/, key + ': the slot');
-      // the page opens on today: the day's card first, then the week, then the plan
+      // the page IS the calendar: the debrief asked first, then the weeks, the day opened under them, the plan's
+      // chart behind a fold
       assert.match(await page.locator('.pf-coach-date').innerText(), /^Aujourd’hui · jeudi \d+ \S+$/, key);
       const boxes = {};
-      for (const part of ['daycard', 'cal', 'plan']) boxes[part] = await page.locator('.pf-coach-' + part).boundingBox();
-      assert.ok(boxes.daycard.y + boxes.daycard.height <= boxes.cal.y && boxes.cal.y + boxes.cal.height <= boxes.plan.y, key + ': day, week, plan');
-      assert.ok(boxes.daycard.y < 400, key + ': the day’s card starts within the first screen ' + Math.round(boxes.daycard.y));
+      for (const part of ['debrief', 'calendar', 'grid', 'daycard', 'planfold']) boxes[part] = await page.locator('.pf-coach-' + part).boundingBox();
+      assert.ok(boxes.debrief.y + boxes.debrief.height <= boxes.calendar.y && boxes.grid.y + boxes.grid.height <= boxes.daycard.y
+        && boxes.calendar.y + boxes.calendar.height <= boxes.planfold.y, key + ': debrief, weeks, day, plan');
+      // this week and the next, whole, within the first phone screen (clear of the tab bar on the site)
+      const weekBottoms = await page.locator('.pf-coach-week').evaluateAll(all => all.map(w => w.getBoundingClientRect().bottom));
+      const screenEnd = app ? 852 : (await page.locator('.pf-tabbar').boundingBox()).y;
+      assert.equal(weekBottoms.length, 2, key + ': two weeks');
+      assert.ok(weekBottoms[1] <= screenEnd, key + ': both weeks within the first screen ' + JSON.stringify([weekBottoms, screenEnd]));
       // how hard, at a glance: a steady session shows a gauge of four (the words say it too), never a flat block
       const gauge = page.locator('.pf-coach-session .pf-coach-gauge');
       assert.equal(await gauge.getAttribute('aria-label'), 'Effort facile : niveau 2 sur 4', key);
       assert.deepEqual(await gauge.locator('i').evaluateAll(all => all.map(i => getComputedStyle(i).backgroundColor)).then(c => [c[0] === c[1], c[1] === c[2], c[2] === c[3]]), [true, false, true], key + ': two steps of four are filled');
       assert.equal(await page.locator('.pf-coach-session svg.pf-effort').count(), 0, key + ': no profile for a steady session');
       assert.match(await page.locator('.pf-coach-s-guide').innerText(), /^Facile\s: tu peux tenir une conversation\. 112–148\sbpm$/, key);
-      // ONE main action; the others are quiet (smaller, no fill)
+      // ONE main action; « Déplacer » beside it, secondary; the others quiet (smaller, no fill)
       assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), ['C’est fait'], key + ': one main action');
       const main = await page.locator('[id^="coach-done-"]').boundingBox();
-      assert.ok(main.height >= 48 && main.width > boxes.daycard.width * 0.8, key + ': « C’est fait » spans the card');
-      assert.deepEqual(await seen(page, '.pf-coach-daycard .pf-coach-quietbtn'), ['Autre créneau', 'Pas faite', 'Déplacer', 'Modifier'], key + ': the quiet actions');
+      const move = await page.locator('[id^="coach-move-"]').boundingBox();
+      assert.ok(main.height >= 48 && main.width > boxes.daycard.width * 0.5, key + ': « C’est fait » takes most of the row');
+      assert.ok(move.height >= 44 && Math.abs(move.y - main.y) < 2 && move.x > main.x, key + ': « Déplacer » beside it');
+      assert.equal(await page.locator('[id^="coach-move-"]').innerText(), 'Déplacer', key);
+      assert.deepEqual(await seen(page, '.pf-coach-daycard .pf-coach-quietbtn'), ['Autre créneau', 'Pas faite', 'Modifier'], key + ': the quiet actions');
       assert.deepEqual(await page.locator('.pf-coach-daycard .pf-coach-quietbtn').evaluateAll(all => [...new Set(all.map(el => getComputedStyle(el).backgroundColor))]), ['rgba(0, 0, 0, 0)'], key + ': no fill');
-      // the week: seven columns, a bar per session as tall as it is long; planned outlined, missed dashed
-      assert.equal(await page.locator('.pf-coach-day').count(), 7, key + ': seven days');
+      // the days: fourteen, each its sessions as blocks (kind, status, height), a word, the time given — no legend
+      assert.equal(await page.locator('.pf-coach-day').count(), 14, key + ': fourteen days');
       assert.equal(await page.locator('.pf-coach-day.is-today').count(), 1, key + ': today is highlighted');
       assert.equal(await page.locator(`#coach-day-${fixture.day}.is-selected`).count(), 1, key + ': today by default');
       const names = await page.locator('.pf-coach-day').evaluateAll(all => all.map(a => a.getAttribute('aria-label')));
-      for (const name of names) assert.match(name, /^(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche) \d+ \S+ : (repos|.+ \d.*, (prévue|faite|pas faite))/, key + ': a full name, ' + name);
-      assert.match(names[3], /^jeudi \d+ \S+ : Footing 30 minutes, prévue \(aujourd’hui\)$/, key);
-      const bars = await page.locator('.pf-coach-strip .pf-coach-bar-s').evaluateAll(all => all.map(b => ({
-        cls: b.className.replace('pf-coach-bar-s ', ''), h: b.getBoundingClientRect().height, fill: getComputedStyle(b).backgroundColor, edge: getComputedStyle(b).borderTopStyle })));
-      assert.deepEqual(bars.map(b => b.cls), ['is-easy is-missed', 'is-easy is-planned', 'is-hard is-planned', 'is-long is-planned'], key + ': the week’s sessions');
-      assert.ok(bars[1].h < bars[2].h && bars[2].h < bars[3].h, key + ': taller with the duration ' + JSON.stringify(bars.map(b => b.h)));
-      assert.equal(bars[0].edge, 'dashed', key + ': a missed session is dashed');
-      assert.equal(bars[0].fill, 'rgba(0, 0, 0, 0)', key + ': … and hollow');
-      assert.equal(await page.locator('#coach-main .pf-coach-legend').count(), 0, key + ': no legend, the day’s card names the kind');
-      assert.match(await page.locator('.pf-coach-total b').innerText(), /^\d.* \/ \d/, key + ': the week’s total, fait / prévu');
-      assert.equal(await page.locator('.pf-coach-total .pf-coach-phase').innerText(), 'Spécifique', key);
-      assert.ok(await page.locator('#coach-main svg.pf-viz-svg').isVisible(), key + ': the plan chart');
-      assert.equal(await page.locator('.pf-coach-plan .pf-plan-phase').count(), 3, key + ': the phases are marked');
+      for (const name of names) assert.match(name, /^(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche) \d+ \S+ : (repos|une sortie hors plan|.+ \d.*, (prévue|faite|pas faite))/, key + ': a full name, ' + name);
+      assert.match(names[3], /^jeudi \d+ \S+ : Footing 30 minutes, prévue à 12\sh\s00 \(aujourd’hui\)$/, key);
+      const week = page.locator('.pf-coach-week.is-current');
+      const bars = await week.locator('.pf-coach-bar-s').evaluateAll(all => all.map(b => ({
+        cls: b.className.replace('pf-coach-bar-s ', ''), h: b.getBoundingClientRect().height, fill: getComputedStyle(b).backgroundColor })));
+      assert.deepEqual(bars.map(b => b.cls), ['is-easy is-done', 'is-extra is-done', 'is-easy is-planned', 'is-hard is-planned', 'is-long is-planned'], key + ': the week’s sessions, and the run outside the plan');
+      assert.ok(bars[2].h < bars[3].h && bars[3].h < bars[4].h, key + ': taller with the duration ' + JSON.stringify(bars.map(b => b.h)));
+      assert.notEqual(bars[0].fill, bars[2].fill, key + ': done is full, planned is outlined');
+      assert.deepEqual(await week.locator('.pf-coach-word').allInnerTexts(), ['Footing', 'Sortie', 'Footing', 'Côtes', 'Longue'], key + ': a word under each');
+      assert.match(await page.locator(`#coach-day-${fixture.day} .pf-coach-when`).innerText(), /^12\sh\s00$/, key + ': the time given');
+      assert.equal(await page.locator('#coach-main .pf-coach-legend').count(), 0, key + ': no legend');
+      assert.match(await week.locator('.pf-coach-week-h').innerText(), /^Cette semaine\n\d\S* \/ \d\S*\n\d.* faites sur .* prévues\nSpécifique$/, key + ': the week’s line, fait / prévu, its phase');
+      // a run outside the plan: a grey block on its day, « Sortie »
+      const wednesday = page.locator('.pf-coach-week.is-current .pf-coach-day').nth(2);
+      assert.match(await wednesday.getAttribute('aria-label'), /^mercredi \d+ \S+ : une sortie hors plan$/, key);
+      assert.equal(await wednesday.locator('.pf-coach-bar-s.is-extra').count(), 1, key + ': a grey block');
+      // the debrief: Tuesday's run arrived, its ressenti not said — one question at the top, five levels, a mark on its day
+      assert.equal(await page.locator('#debrief.pf-coach-debrief h2').innerText(), 'Ta sortie de mardi est arrivée\u00a0— c’était comment\u00a0?', key);
+      assert.deepEqual(await page.locator('#debrief [data-feel]').allInnerTexts(), ['Très facile', 'Facile', 'Bien', 'Dur', 'Très dur'], key);
+      for (const h of await page.locator('#debrief [data-feel]').evaluateAll(all => all.map(b => b.getBoundingClientRect().height))) assert.ok(h >= 44, key + ': 44 px levels');
+      const tuesday = page.locator('.pf-coach-week.is-current .pf-coach-day').nth(1);
+      assert.equal(await tuesday.locator('.pf-coach-todo').count(), 1, key + ': a mark on Tuesday');
+      assert.match(await tuesday.getAttribute('aria-label'), /, faite, à débriefer$/, key);
+      assert.equal(await page.locator('.pf-coach-todo').count(), 1, key + ': one mark');
+      // « Le plan »: behind its fold, closed; opened, the chart and its phases
+      assert.equal(await page.locator('#coach-plan').evaluate(el => el.open), false, key + ': the plan’s chart waits');
+      assert.equal(await page.locator('#coach-main svg.pf-viz-svg').isVisible(), false, key);
+      assert.ok((await page.locator('#coach-plan-toggle').boundingBox()).height >= 44, key + ': a 44 px row');
       // the tools: one row, closed — the page ends two rows after the plan
       assert.equal(await page.locator('#coach-options').evaluate(el => el.open), false, key + ': the options are closed');
       assert.equal(await page.locator('#coach-tools').isVisible(), false, key);
       assert.deepEqual(await seen(page, '.pf-coach-more summary'), ['Comment ça marche', 'Options du plan Calendrier, agenda, partage, refaire le plan'], key + ': two rows');
       if (!app) assert.ok(await page.evaluate(() => document.documentElement.scrollHeight) < 1900, key + ': the page stays short');
+      // opened, the plan's chart (it stays open across the taps that redraw the calendar)
+      if (!dark && !app) {
+        await page.locator('#coach-plan-toggle').click();
+        assert.ok(await page.locator('#coach-main svg.pf-viz-svg').isVisible(), key + ': the plan chart');
+        assert.equal(await page.locator('.pf-coach-plan .pf-plan-phase').count(), 3, key + ': the phases are marked');
+        await swap(page, () => page.locator(`#coach-day-${fixture.day}`).click());
+        assert.equal(await page.locator('#coach-plan').evaluate(el => el.open), true, key + ': still open after a tap');
+        await targets(page, key + ' plan');
+        if (width === 393) await shot(page, 'athlete-393-plan');
+        await page.locator('#coach-plan-toggle').click();
+      }
       // inside the app the shell owns the header and the tabs; only an app older than its Coaching tab needs the
       // page's own way back to Activités
       assert.equal(await page.locator('.pf-top').isVisible(), !app, key);
@@ -209,8 +245,9 @@ async function theme(page, dark) {
       if (!app) assert.equal(await page.locator('.pf-tabbar a[aria-current="page"]').innerText(), 'Coaching', key);
       await noOverflow(page, key);
       await targets(page, key);
-      if (width === 393) await shot(page, `athlete-393-week${dark ? '-dark' : ''}${suffix(app)}`);
-      if (width === 320 && !app) await shot(page, `athlete-320-week${dark ? '-dark' : ''}`);
+      if (width === 393) await shot(page, `athlete-393-calendar${dark ? '-dark' : ''}${suffix(app)}`);
+      if (width === 320 && !app) await shot(page, `athlete-320-calendar${dark ? '-dark' : ''}`);
+      if (width === 393 && !app) await page.screenshot({ path: `${out}/athlete-393-first-screen${dark ? '-dark' : ''}.png` });
       // « Options du plan »: the form option is a switch, on, with its wording; then the calendar
       await page.locator('#coach-options-toggle').click();
       const toggle = page.locator('#coach-form-switch');
@@ -229,7 +266,7 @@ async function theme(page, dark) {
       assert.equal(await page.locator('#coach-tool-feed a[href^="webcal://"]').isVisible(), app !== 'old', key + ': « S’abonner au calendrier »');
       assert.ok(await page.locator('#coach-feed-url').isVisible() && await page.locator('[data-copy="coach-feed-url"]').isVisible(), key + ': the address to copy');
       await noOverflow(page, key + ' calendar');
-      if (width === 393 && !dark && app) await shot(page, `athlete-393-calendar${suffix(app)}`);
+      if (width === 393 && !dark && app) await shot(page, `athlete-393-feed${suffix(app)}`);
       assert.deepEqual(page.errors, [], key + ': browser errors');
       await page.close();
     }
@@ -267,7 +304,7 @@ async function theme(page, dark) {
       const iso = friday.toISOString().slice(0, 10);
       await page.goto(`${athlete}/coaching?d=${iso}&outil=agenda`, { waitUntil: 'networkidle' });
       assert.equal(await page.locator('.pf-coach-moves').innerText(), 'Mardi est plein\u00a0: séance déplacée à vendredi.');
-      assert.equal(await page.locator('.pf-coach-day .pf-coach-bar-s').count(), 3, 'Tuesday no longer holds a session');
+      assert.equal(await page.locator('.pf-coach-week').nth(1).locator('.pf-coach-bar-s').count(), 3, 'Tuesday no longer holds a session');
       assert.equal(await page.locator(`#coach-day-${iso} .pf-coach-bar-s`).count(), 1, 'Friday does');
       assert.equal(await page.locator('#coach-today').innerText(), 'Aujourd’hui', 'another day has the way back to today');
       const slot = page.locator('.pf-coach-slot-time');
@@ -319,26 +356,50 @@ async function theme(page, dark) {
       await wide.close();
     }
 
-    // ── taps: no full reload, instant feedback, keyboard ──
+    // ── desktop (before the taps below answer the debrief) ──
+    for (const dark of [false, true]) {
+      const page = await open(browser, { width: 1280, height: 900, dark });
+      await page.goto(athlete + '/coaching', { waitUntil: 'networkidle' });
+      assert.deepEqual(await page.locator('.pf-nav a').allInnerTexts(), ['Courses', 'Activités', 'Santé', 'Coaching']);
+      assert.equal(await page.locator('.pf-nav a[aria-current="page"]').innerText(), 'Coaching');
+      // the debrief above; the weeks, and the day opened beside them
+      const [ask, cal, day] = [await page.locator('.pf-coach-debrief').boundingBox(), await page.locator('.pf-coach-cal-main').boundingBox(), await page.locator('.pf-coach-daycard').boundingBox()];
+      assert.ok(ask.y + ask.height <= cal.y, 'the debrief, then the calendar');
+      assert.ok(day.x > cal.x + cal.width - 1 && Math.abs(day.y - cal.y) < 8, 'the calendar, the day beside it ' + JSON.stringify([cal, day]));
+      assert.equal(await page.locator('.pf-coach-day').count(), 14);
+      await noOverflow(page, 'desktop');
+      await shot(page, `athlete-1280${dark ? '-dark' : ''}`);
+      assert.deepEqual(page.errors, []);
+      await page.close();
+    }
+
+    // ── taps: no full reload, instant feedback, keyboard; the debrief, a run outside the plan, « Déplacer » ──
     {
       const page = await open(browser, { width: 393 });
+      const at = days => { const d = new Date(fixture.day + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
+      // the preview's day is a Thursday
+      const [lastThu, lastSun, tue, wed, fri, sat] = [at(-7), at(-4), at(-2), at(-1), at(1), at(2)];
       await page.goto(athlete + '/coaching', { waitUntil: 'networkidle' });
       await page.evaluate(() => { window.__same_document = true; });
-      const week = await page.locator('.pf-coach-period').innerText();
+      const period = await page.locator('.pf-coach-period').innerText();
       await swap(page, () => page.locator('#coach-prev').click());
-      assert.notEqual(await page.locator('.pf-coach-period').innerText(), week, 'the week changed');
+      assert.notEqual(await page.locator('.pf-coach-period').innerText(), period, 'the weeks slid');
       assert.equal(await page.evaluate(() => window.__same_document), true, 'in place: no full reload');
+      assert.equal(await page.locator('.pf-coach-week-h b').first().innerText(), 'Semaine dernière', 'past weeks are one tap away');
+      // last Thursday's session was skipped: hollow and dashed
+      const missed = await page.locator(`#coach-day-${lastThu} .pf-coach-bar-s`).evaluate(b => [b.className, getComputedStyle(b).borderTopStyle, getComputedStyle(b).backgroundColor]);
+      assert.deepEqual(missed, ['pf-coach-bar-s is-hard is-missed', 'dashed', 'rgba(0, 0, 0, 0)'], 'a missed session is dashed and hollow');
       // a done session of last week: the activity's summary, the ressenti, the note
-      const doneDay = page.locator('.pf-coach-day:has(.pf-coach-bar-s.is-done)').last();
+      const doneDay = page.locator(`#coach-day-${lastSun}`);
       await swap(page, () => doneDay.click());
-      const full = await doneDay.locator('.pf-coach-bar-s').evaluate(b => [getComputedStyle(b).backgroundColor, getComputedStyle(b).getPropertyValue('--c').trim()]);
-      assert.notEqual(full[0], 'rgba(0, 0, 0, 0)', 'a done session is a full bar');
+      const full = await doneDay.locator('.pf-coach-bar-s').evaluate(b => getComputedStyle(b).backgroundColor);
+      assert.notEqual(full, 'rgba(0, 0, 0, 0)', 'a done session is a full block');
       assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), [], 'done: no main action left');
       assert.ok(await page.locator('.pf-coach-activity').first().isVisible());
       assert.match(await page.locator('.pf-coach-activity small').first().innerText(), /km · .*(min|h\d\d) · \+/);
       assert.match(await page.locator('.pf-coach-activity').first().getAttribute('href'), /^\/activity\/\d+$/);
       // the ressenti: a scale of five steps, each a 44 px target with its word, growing with the effort
-      const feel = page.locator('[data-feel]');
+      const feel = page.locator('.pf-coach-daycard [data-feel]');
       assert.equal(await feel.count(), 5);
       assert.deepEqual(await feel.allInnerTexts(), ['Très facile', 'Facile', 'Bien', 'Dur', 'Très dur']);
       const steps = await feel.evaluateAll(all => all.map(b => [b.getBoundingClientRect().height, b.querySelector('i').getBoundingClientRect().height]));
@@ -354,10 +415,10 @@ async function theme(page, dark) {
       await answered;
       await page.waitForFunction(() => !document.querySelector('.htmx-request, .htmx-swapping, .htmx-settling'));
       await page.unroute('**/ressenti');
-      assert.equal(await page.locator('[data-feel]').nth(pick).getAttribute('aria-pressed'), 'true', 'saved on the tap');
-      assert.equal(await page.locator('[data-feel][aria-pressed="true"]').count(), 1);
+      assert.equal(await feel.nth(pick).getAttribute('aria-pressed'), 'true', 'saved on the tap');
+      assert.equal(await page.locator('.pf-coach-daycard [data-feel][aria-pressed="true"]').count(), 1);
       // the steps up to the one chosen are filled, the others are not
-      const filled = await page.locator('[data-feel] i').evaluateAll(all => all.map(i => getComputedStyle(i).backgroundColor));
+      const filled = await page.locator('.pf-coach-daycard [data-feel] i').evaluateAll(all => all.map(i => getComputedStyle(i).backgroundColor));
       assert.equal(new Set(filled.slice(0, pick + 1)).size, 1);
       assert.ok(pick === 4 || (filled[pick + 1] !== filled[pick] && new Set(filled.slice(pick + 1)).size === 1), 'filled up to the level ' + JSON.stringify(filled));
       // the note: behind « Ajouter une note » — no field, no « Enregistrer » until asked
@@ -375,42 +436,118 @@ async function theme(page, dark) {
       await targets(page, 'done session');
       await shot(page, 'athlete-393-done-ressenti');
       await theme(page, true); await shot(page, 'athlete-393-done-ressenti-dark'); await theme(page, false);
-      // the month
+      // the month: one tap; the same days, more weeks
       await swap(page, () => page.locator('#coach-view').click());
       assert.equal(await page.locator('#coach-view').getAttribute('aria-pressed'), 'true');
-      assert.ok(await page.locator('.pf-coach-mday').count() >= 28, 'a month of days');
-      assert.ok(await page.locator('.pf-coach-mday .pf-coach-pill.is-done').count() >= 3);
-      assert.ok(await page.locator('.pf-coach-mday .pf-coach-pill.is-missed').count() >= 1, 'a missed session is marked');
-      assert.equal(await page.locator('.pf-coach-mday.is-selected').count(), 1);
+      assert.equal(await page.locator('.pf-coach-calendar.is-month').count(), 1);
+      assert.ok(await page.locator('.pf-coach-day').count() >= 28, 'a month of days');
+      assert.ok(await page.locator('.pf-coach-day .pf-coach-bar-s.is-done').count() >= 3);
+      assert.ok(await page.locator('.pf-coach-day .pf-coach-bar-s.is-missed').count() >= 1, 'a missed session is marked');
+      assert.equal(await page.locator('.pf-coach-day.is-selected').count(), 1);
       await noOverflow(page, 'month');
       await targets(page, 'month');
       await shot(page, 'athlete-393-month');
       await theme(page, true); await shot(page, 'athlete-393-month-dark'); await theme(page, false);
       await swap(page, () => page.locator('#coach-view').click());
-      assert.equal(await page.locator('.pf-coach-day').count(), 7, 'back to the week');
-      // next week by the keyboard: a planned session, moved to a free day, then edited
+      assert.equal(await page.locator('.pf-coach-day').count(), 14, 'back to the two weeks');
+
+      // the debrief, by its link (what a notification will open): the calendar on Tuesday, the question at the top
+      await page.goto(`${athlete}/coaching?d=${tue}#debrief`, { waitUntil: 'networkidle' });
+      const ask = page.locator('#debrief');
+      assert.equal(await ask.getAttribute('class').then(c => c.includes('pf-coach-debrief')), true, 'the link lands on the question');
+      assert.ok(await ask.evaluate(el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.top < innerHeight; }), 'in view');
+      assert.match(await ask.locator('h2').innerText(), /^Ta sortie de mardi est arrivée/);
+      assert.match(await ask.locator('.pf-coach-debrief-line').innerText(), /^Footing \d+ min · [\d,]+\skm · /, 'what it was, the run’s own figures');
+      assert.equal(await page.locator(`#coach-day-${tue}.is-selected`).count(), 1, 'its day is open under the weeks');
+      assert.equal(await page.locator('.pf-coach-daycard .pf-coach-feel-block').count(), 0, 'asked once, at the top');
+      await noOverflow(page, 'debrief');
+      await targets(page, 'debrief');
+      await shot(page, 'athlete-393-debrief');
+      await theme(page, true); await shot(page, 'athlete-393-debrief-dark'); await theme(page, false);
+      // one tap answers it, in place: the question goes, the mark on its day too, the day shows what was said
+      await swap(page, () => page.locator('#coach-ask-3').click());
+      assert.equal(await page.locator('.pf-coach-debrief').count(), 0, 'answered: the question is gone');
+      assert.equal(await page.locator(`#coach-day-${tue} .pf-coach-todo`).count(), 0, 'its mark too');
+      assert.doesNotMatch(await page.locator(`#coach-day-${tue}`).getAttribute('aria-label'), /débriefer/);
+      assert.equal(await page.locator(`#coach-day-${tue}.is-selected`).count(), 1, 'the calendar stays on its day');
+      assert.equal(await page.locator('.pf-coach-daycard [data-feel][aria-pressed="true"]').innerText(), 'Bien', 'the day says what was answered');
+      await shot(page, 'athlete-393-debrief-answered');
+      // the same link once answered: the day itself
+      await page.goto(`${athlete}/coaching?d=${tue}#debrief`, { waitUntil: 'networkidle' });
+      assert.equal(await page.locator('#debrief').getAttribute('class'), 'pf-coach-daycard', 'nothing waits: the link lands on the day');
+      await page.waitForFunction(() => { const r = document.getElementById('debrief').getBoundingClientRect(); return r.top >= 0 && r.top < innerHeight; });
+
+      // a run outside the plan: on its day, « Hors plan », nothing to answer
+      await swap(page, () => page.locator(`#coach-day-${wed}`).click());
+      assert.match(await page.locator('.pf-coach-activity.is-extra').innerText(), /^Hors plan · Footing avec Léa\n[\d,]+\skm/);
+      assert.equal(await page.locator('.pf-coach-rest').innerText(), 'Rien de prévu');
+      assert.equal(await page.locator('#coach-main [data-feel]').count(), 0, 'nothing to answer');
+      assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), [], 'no main action');
+      await noOverflow(page, 'off plan');
+      await targets(page, 'off plan');
+      await shot(page, 'athlete-393-offplan');
+
+      // a structured session keeps its profile, in its kind's colour; a day without a session says so and names the
+      // next one, a tap away
+      await page.goto(`${athlete}/coaching?d=${fri}`, { waitUntil: 'networkidle' });
+      assert.match(await page.locator('.pf-coach-s-title').innerText(), /^Côtes\s+45 min$/);
+      assert.ok(await page.locator('.pf-coach-session svg.pf-effort').isVisible(), 'the intensity profile is drawn');
+      assert.equal(await page.locator('.pf-coach-gauge').count(), 0, 'no gauge beside a profile');
+      assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), [], 'a session to come has no main action');
+      assert.deepEqual(await seen(page, '.pf-coach-do .pf-btn'), ['Déplacer'], '« Déplacer », alone on its row');
+      await shot(page, 'athlete-393-structured');
+      await swap(page, () => page.locator(`#coach-day-${sat}`).click());
+      assert.equal(await page.locator('.pf-coach-rest').innerText(), 'Repos');
+      const next = page.locator('#coach-next-session');
+      assert.match(await next.innerText(), /^Prochaine séance · dimanche \d+ \S+\nSortie longue (\d+ min|\dh\d\d)$/);
+      assert.ok((await next.boundingBox()).height >= 44);
+      await noOverflow(page, 'rest day');
+      await shot(page, 'athlete-393-rest');
+      await theme(page, true); await shot(page, 'athlete-393-rest-dark'); await theme(page, false);
+      await swap(page, () => next.click());
+      assert.match(await page.locator('.pf-coach-s-title').innerText(), /^Sortie longue\s+(\d+ min|\dh\d\d)$/);
+      assert.match(await page.locator('.pf-coach-date').innerText(), /^Dimanche \d+ \S+$/);
+
+      // « Déplacer », by the keyboard: Friday's hill session to Saturday — not one of her days, and next to Sunday's
+      // long run: the day says so, and takes it
       await page.goto(athlete + '/coaching', { waitUntil: 'networkidle' });
-      await page.locator('#coach-next').focus();
+      await page.locator(`#coach-day-${fri}`).focus();
       await swap(page, () => page.keyboard.press('Enter'));
-      const planned = page.locator('.pf-coach-day:has(.pf-coach-bar-s.is-planned)').first();
-      const from = await planned.getAttribute('id');
-      await planned.focus();
-      await swap(page, () => page.keyboard.press('Enter'));
-      assert.equal(await page.evaluate(() => document.activeElement.id), from, 'the focus stays on the day chosen');
+      assert.equal(await page.evaluate(() => document.activeElement.id), `coach-day-${fri}`, 'the focus stays on the day chosen');
       assert.ok(await page.locator('.pf-coach-s-guide').isVisible(), 'the guidance line');
-      await swap(page, () => page.locator('[id^="coach-move-"]:not(#coach-move-cancel)').first().click());
-      assert.match(await page.locator('.pf-coach-moving').innerText(), /Choisis le nouveau jour/);
-      // the days are the targets now: the week is in view, the day's card keeps no action
-      const [weekBox, tabs] = [await page.locator('.pf-coach-cal').boundingBox(), await page.locator('.pf-tabbar').boundingBox()];
-      assert.ok(weekBox.y >= 0 && weekBox.y + weekBox.height <= tabs.y, 'the week came into view, clear of the tab bar ' + JSON.stringify([weekBox, tabs]));
+      await page.locator('[id^="coach-move-"]:not(#coach-move-cancel)').focus();
+      await swap(page, () => page.keyboard.press('Enter'));
+      assert.match(await page.locator('.pf-coach-moving').innerText(), /^Où placer «\s?Côtes 45 min\s?»\s?\? Touche un jour\.\s+Annuler$/);
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'coach-moving', 'the instruction takes the focus');
+      // the days are the targets now: the calendar is in view, the day keeps no action
+      const [calBox, tabs] = [await page.locator('.pf-coach-cal-main').boundingBox(), await page.locator('.pf-tabbar').boundingBox()];
+      assert.ok(calBox.y >= 0 && calBox.y + calBox.height <= tabs.y, 'the calendar came into view, clear of the tab bar ' + JSON.stringify([calBox, tabs]));
       assert.deepEqual(await seen(page, '.pf-coach-daycard :is(.pf-btn, .pf-coach-quietbtn):not(#coach-today)'), [], 'while moving: no other action');
-      const free = page.locator('button.pf-coach-day:not(:has(.pf-coach-bar-s)):not([disabled])').first();
-      const to = await free.getAttribute('id');
-      await free.focus();
+      const target = page.locator(`button#coach-day-${sat}`);
+      assert.equal(await target.isDisabled(), false, 'any day: Saturday was never one of hers');
+      assert.match(await target.getAttribute('class'), /\bis-warn\b/, 'next to another hard day: marked');
+      assert.match(await target.getAttribute('aria-label'), /^Déplacer au samedi \d+ \S+ : repos — deux jours durs de suite$/);
+      assert.match(await page.locator('.pf-coach-move-hint').innerText(), /tu peux le choisir quand même\.$/, 'a warning, never a refusal');
+      assert.equal(await page.locator(`button#coach-day-${fri}`).isDisabled(), true, 'its own day');
+      assert.equal(await page.locator(`button#coach-day-${tue}`).isDisabled(), true, 'a day behind');
+      assert.equal(await page.locator(`button#coach-day-${wed}`).isDisabled(), false, 'a day behind that holds a run no session took');
+      assert.equal(await page.locator('button.pf-coach-day[disabled]').count(), 3, 'Monday, Tuesday and its own day only: every other day takes it, next week too');
+      await targets(page, 'moving');
+      await noOverflow(page, 'moving');
+      await shot(page, 'athlete-393-moving');
+      await theme(page, true); await shot(page, 'athlete-393-moving-dark'); await theme(page, false);
+      await target.focus();
       await swap(page, () => page.keyboard.press('Enter'));
       assert.equal(await page.locator('.pf-coach-moving').count(), 0);
-      assert.equal(await page.locator(`#${from} .pf-coach-bar-s`).count(), 0, 'its old day is free');
-      assert.equal(await page.locator(`#${to}.is-selected .pf-coach-bar-s`).count(), 1, 'it is on the day chosen');
+      assert.equal(await page.locator('#coach-main .pf-coach-error').count(), 0, 'accepted');
+      assert.equal(await page.evaluate(() => document.activeElement.id), `coach-day-${sat}`, 'the focus on its new day');
+      assert.equal(await page.locator(`#coach-day-${fri} .pf-coach-bar-s`).count(), 0, 'its old day is free');
+      assert.equal(await page.locator(`#coach-day-${sat}.is-selected .pf-coach-bar-s.is-hard`).count(), 1, 'it is on the day chosen');
+      assert.match(await page.locator('.pf-coach-hardpair').innerText(), /^Samedi et dimanche\s:\sdeux jours durs de suite\.$/, 'said on its week');
+      await shot(page, 'athlete-393-moved');
+      // pinned: read again, it stays where it was put
+      await page.goto(`${athlete}/coaching?d=${sat}`, { waitUntil: 'networkidle' });
+      assert.equal(await page.locator(`#coach-day-${sat} .pf-coach-bar-s.is-hard`).count(), 1, 'a moved session stays');
       await page.locator('[id^="coach-edit-"] > summary').first().click();
       const duration = page.locator('.pf-coach-form select[name="minutes"]').first();
       const minutes = (await duration.inputValue()) === '40' ? '50' : '40';
@@ -420,6 +557,7 @@ async function theme(page, dark) {
       assert.match(await page.locator('.pf-coach-s-dur').first().innerText(), new RegExp('^' + minutes + ' min$'));
       assert.match(await page.locator('.pf-coach-edited').innerText(), /Modifiée par toi/);
       // the chart: a week chosen says its planned and done time
+      await page.locator('#coach-plan-toggle').click();
       const chart = page.locator('.pf-coach-plan figure');
       const read = await chart.evaluate(fig => {
         const data = JSON.parse(fig.querySelector('.pf-viz-data').textContent);
@@ -439,29 +577,6 @@ async function theme(page, dark) {
       assert.match(feed[2], /^BEGIN:VCALENDAR\r\n/);
       assert.ok(feed[2].includes('DTSTART;VALUE=DATE:') && feed[2].includes('SUMMARY:Footing'));
       await noOverflow(page, 'tools');
-      // a structured session keeps its profile, in its kind's colour; a day without a session says so and names the
-      // next one, a tap away
-      const hardDay = new Date(fixture.day + 'T00:00:00Z');
-      hardDay.setUTCDate(hardDay.getUTCDate() + 1);
-      await page.goto(`${athlete}/coaching?d=${hardDay.toISOString().slice(0, 10)}`, { waitUntil: 'networkidle' });
-      assert.match(await page.locator('.pf-coach-s-title').innerText(), /^Côtes\s+45 min$/);
-      assert.ok(await page.locator('.pf-coach-session svg.pf-effort').isVisible(), 'the intensity profile is drawn');
-      assert.equal(await page.locator('.pf-coach-gauge').count(), 0, 'no gauge beside a profile');
-      assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), [], 'a session to come has no main action');
-      await shot(page, 'athlete-393-structured');
-      const restDay = new Date(hardDay);
-      restDay.setUTCDate(restDay.getUTCDate() + 1);
-      await swap(page, () => page.locator(`#coach-day-${restDay.toISOString().slice(0, 10)}`).click());
-      assert.equal(await page.locator('.pf-coach-rest').innerText(), 'Repos');
-      const next = page.locator('#coach-next-session');
-      assert.match(await next.innerText(), /^Prochaine séance · dimanche \d+ \S+\nSortie longue (\d+ min|\dh\d\d)$/);
-      assert.ok((await next.boundingBox()).height >= 44);
-      await noOverflow(page, 'rest day');
-      await shot(page, 'athlete-393-rest');
-      await theme(page, true); await shot(page, 'athlete-393-rest-dark'); await theme(page, false);
-      await swap(page, () => next.click());
-      assert.match(await page.locator('.pf-coach-s-title').innerText(), /^Sortie longue\s+(\d+ min|\dh\d\d)$/);
-      assert.match(await page.locator('.pf-coach-date').innerText(), /^Dimanche \d+ \S+$/);
       // a link to an option lands on it, opened (the address a form of the options comes back to, and the older one)
       for (const address of ['/coaching?outil=forme#coach-form', '/coaching#coach-form', '/coaching#coach-tool-agenda']) {
         await page.goto(athlete + address, { waitUntil: 'networkidle' });
@@ -472,20 +587,6 @@ async function theme(page, dark) {
         if (address.endsWith('agenda')) assert.equal(await target.evaluate(el => el.open), true, address + ': its fold too');
       }
       assert.deepEqual(page.errors, [], 'taps: browser errors');
-      await page.close();
-    }
-
-    // ── desktop ──
-    for (const dark of [false, true]) {
-      const page = await open(browser, { width: 1280, height: 900, dark });
-      await page.goto(athlete + '/coaching', { waitUntil: 'networkidle' });
-      assert.deepEqual(await page.locator('.pf-nav a').allInnerTexts(), ['Courses', 'Activités', 'Santé', 'Coaching']);
-      assert.equal(await page.locator('.pf-nav a[aria-current="page"]').innerText(), 'Coaching');
-      const [cal, day] = [await page.locator('.pf-coach-cal').boundingBox(), await page.locator('.pf-coach-daycard').boundingBox()];
-      assert.ok(cal.x > day.x + day.width - 1 && Math.abs(day.y - cal.y) < 2, 'the day first, the week beside it');
-      await noOverflow(page, 'desktop');
-      await shot(page, `athlete-1280${dark ? '-dark' : ''}`);
-      assert.deepEqual(page.errors, []);
       await page.close();
     }
 
@@ -634,17 +735,20 @@ async function theme(page, dark) {
       await noOverflow(page, 'new onboarding');
       await page.getByRole('button', { name: 'Créer mon plan' }).click();
       await page.waitForURL('**/coaching');
-      assert.equal(await page.locator('.pf-coach-day').count(), 7);
+      assert.equal(await page.locator('.pf-coach-day').count(), 14);
       assert.match(await page.locator('.pf-coach-goal').innerText(), /Progresser, sans course/);
       assert.match(await page.locator('.pf-coach-date').innerText(), /^Aujourd’hui · /);
       assert.equal((await page.locator('.pf-coach-s-title').innerText()).replace(/\s+/g, ' '), announced, 'the first session announced');
       assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), ['C’est fait']);
-      assert.equal(await page.locator('.pf-coach-strip .pf-coach-bar-s').count(), 2, 'this week: today and Sunday');
+      assert.equal(await page.locator('.pf-coach-week.is-current .pf-coach-bar-s').count(), 2, 'this week: today and Sunday');
+      assert.equal(await page.locator('.pf-coach-debrief').count(), 0, 'nothing to debrief yet');
       await noOverflow(page, 'new plan');
       await shot(page, 'new-393-plan-app-old');
       // « C’est fait »: one tap, in place; the ressenti is asked at once
       await swap(page, () => page.locator('[id^="coach-done-"]').click());
       assert.equal(await page.locator('[data-feel]').count(), 5);
+      assert.match(await page.locator('#debrief.pf-coach-debrief h2').innerText(), /^Ta séance d’aujourd’hui est faite\u00a0— c’était comment/, 'asked at the top, once');
+      assert.equal(await page.locator('.pf-coach-daycard [data-feel]').count(), 0);
       assert.equal(await page.locator('.pf-coach-s-head .pf-pill').innerText(), 'Fait');
       assert.deepEqual(await seen(page, '.pf-coach-daycard .pf-coach-quietbtn'), ['Annuler', 'Ajouter une note']);
       assert.equal(await page.locator('[id^="coach-undo-"]').getAttribute('aria-label'), 'Annuler « fait »');
@@ -720,14 +824,22 @@ async function theme(page, dark) {
       assert.equal(await page.locator('#coach-options').count(), 0, 'the options are the athlete’s');
       assert.equal(await page.locator('a.pf-back').innerText(), 'Plans suivis');
       assert.doesNotMatch(await page.locator('#main-content').innerText(), /\bcoachs?\b|athlète/i, 'never « coach » on a follower’s page');
-      // the same layout, with what a coach may do: the day first, no tick, the quiet actions
-      const [day, week] = [await page.locator('.pf-coach-daycard').boundingBox(), await page.locator('.pf-coach-cal').boundingBox()];
-      assert.ok(day.y + day.height <= week.y, 'the day, then the week');
-      assert.equal(await page.locator('[id^="coach-done-"], [id^="coach-missed-"]').count(), 0, 'a coach never ticks');
+      // the same layout, with what a follower may do: the calendar, the day opened under it, no tick, « Déplacer »
+      const [grid, day] = [await page.locator('.pf-coach-grid').boundingBox(), await page.locator('.pf-coach-daycard').boundingBox()];
+      assert.ok(grid.y + grid.height <= day.y, 'the weeks, then the day');
+      assert.equal(await page.locator('.pf-coach-day').count(), 14, 'this week and the next');
+      assert.equal(await page.locator(`#coach-day-${fixture.day}.is-today.is-selected`).count(), 1);
+      assert.equal(await page.locator('[id^="coach-done-"], [id^="coach-missed-"]').count(), 0, 'a follower never ticks');
       assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), []);
-      assert.deepEqual(await seen(page, '.pf-coach-daycard .pf-coach-quietbtn'), ['Déplacer', 'Modifier', 'Commenter', 'Ajouter une séance']);
+      assert.deepEqual(await seen(page, '.pf-coach-do .pf-btn'), ['Déplacer']);
+      assert.deepEqual(await seen(page, '.pf-coach-daycard .pf-coach-quietbtn'), ['Modifier', 'Commenter', 'Ajouter une séance']);
       assert.equal(await page.locator('.pf-coach-gauge').getAttribute('aria-label'), 'Effort facile : niveau 2 sur 4');
-      assert.equal(await page.locator('.pf-coach-strip .pf-coach-bar-s').count(), 4);
+      assert.deepEqual(await page.locator('.pf-coach-week.is-current .pf-coach-bar-s').evaluateAll(all => all.map(b => b.className.replace('pf-coach-bar-s ', ''))),
+        ['is-easy is-done', 'is-extra is-done', 'is-easy is-planned', 'is-hard is-planned', 'is-long is-planned'], 'her week, the run outside the plan too');
+      // the debrief is hers: no question, no mark
+      assert.equal(await page.locator('.pf-coach-debrief, .pf-coach-todo').count(), 0, 'never asked for a ressenti');
+      assert.doesNotMatch(await page.locator('#coach-main').innerText(), /débriefer|c’était comment/i);
+      assert.equal(await page.locator('#debrief').count(), 0);
       await targets(page, 'coach athlete');
       // a comment on today's session (behind its fold), then a session added two days on
       await page.locator('.pf-coach-notefold > summary').click();
@@ -740,6 +852,15 @@ async function theme(page, dark) {
       await noOverflow(page, 'coach athlete');
       await shot(page, 'coach-athlete-393');
       await theme(page, true); await shot(page, 'coach-athlete-393-dark'); await theme(page, false);
+      // her run outside the plan: on its day, its summary only — never the activity, nothing to answer or attach
+      const wed = new Date(fixture.day + 'T00:00:00Z');
+      wed.setUTCDate(wed.getUTCDate() - 1);
+      await swap(page, () => page.locator(`#coach-day-${wed.toISOString().slice(0, 10)}`).click());
+      assert.match(await page.locator('.pf-coach-activity.is-extra').innerText(), /^Hors plan · Footing avec Léa\n/);
+      assert.equal(await page.locator('#main-content a[href^="/activity/"]').count(), 0, 'never the activity itself');
+      assert.equal(await page.locator('.pf-coach-attach, #coach-main [data-feel]').count(), 0);
+      await shot(page, 'coach-athlete-393-offplan');
+      await swap(page, () => page.locator(`#coach-day-${fixture.day}`).click());
       await swap(page, () => page.locator('#coach-next').click());
       const empty = page.locator('a.pf-coach-day:not(:has(.pf-coach-bar-s))').first();
       await swap(page, () => empty.click());

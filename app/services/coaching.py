@@ -863,25 +863,53 @@ def edit(row: CoachingSession, now: datetime, *, kind: str, minutes, origin: str
     row.pinned, row.origin = True, origin
 
 
+def movable(row: CoachingSession, today: date) -> bool:
+    """What « Déplacer » takes: a session still to do — planned, from today on — or one missed earlier this week
+    (the week is the plan's unit: « two sessions this week, on the days that suit me »). Never the race."""
+    if row.kind == cp.RACE:
+        return False
+    if row.status == PLANNED:
+        return row.day >= today
+    return row.status == MISSED and cp.monday_of(row.day) == cp.monday_of(today)
+
+
 def move(rows: list[CoachingSession], row: CoachingSession, target: date, today: date, now: datetime,
-         origin: str) -> None:
-    """« Déplacer »: a planned session to another day from today on; a planned session already there takes its day
-    (they swap). Both are pinned."""
-    if row.status != PLANNED or row.kind == cp.RACE:
+         origin: str, free: frozenset[date] | set[date] = frozenset()) -> None:
+    """« Déplacer »: a session still to do (`movable`) goes to **any** day from today on — whatever the days given
+    when the plan was made — and is pinned there (a regeneration never rewrites it).
+    - A session missed earlier this week is planned again on its new day.
+    - `free`: the days that hold a run no session took. An earlier day of this week is accepted when it is one of
+      them: the next reading links the run and the session (« c'était ma séance de mardi »).
+    - A planned session already on the day chosen takes the day left (they swap), when that day is still to come.
+    Two hard days side by side are never refused here: the calendar warns (coaching_view), the person decides."""
+    if not movable(row, today):
         raise Invalid("Cette séance ne se déplace pas.")
-    if target < today or row.day < today:
+    if target < today and not (target in free and cp.monday_of(target) == cp.monday_of(today)):
         raise Invalid("Choisis un jour à partir d’aujourd’hui.")
     if target == row.day:
         return
     other = next((r for r in rows if r is not row and r.day == target and r.status == PLANNED
                   and r.kind != cp.RACE), None)
-    if other is not None:
+    if other is not None and row.day >= today:
         other.day, other.pinned = row.day, True
         other.slot_min, other.slot_chosen, other.slot_flag = None, False, None  # its time is found again
         touch(other, now)
     row.day, row.pinned, row.origin = target, True, origin
+    if row.status == MISSED:  # planned again: the next reading takes the day's run, or waits for the day
+        row.status, row.manual = PLANNED, False
     row.slot_min, row.slot_chosen, row.slot_flag = None, False, None
     touch(row, now)
+
+
+DEBRIEF_DAYS = 7  # (H) a session done waits for its ressenti for a week; older ones are no longer asked
+
+
+def awaiting_debrief(rows: list[CoachingSession], today: date) -> list[CoachingSession]:
+    """The sessions done in the last DEBRIEF_DAYS days whose ressenti is not said yet, the most recent first: what
+    the calendar asks about first, and what a notification may count (nothing is sent from here)."""
+    since = today - timedelta(days=DEBRIEF_DAYS)
+    waiting = [r for r in rows if r.status == DONE and r.ressenti is None and since <= r.day <= today]
+    return sorted(waiting, key=lambda r: (r.day, r.id or 0), reverse=True)
 
 
 def choose_slot(state: "State", row: CoachingSession) -> None:

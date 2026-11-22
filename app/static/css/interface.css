@@ -1604,11 +1604,12 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-help.is-tip-dismissed .pf-help-tip, .pf-phase-segment.is-tip-dismissed .pf-phase-tip { display: none; }
 
 /* ── Coaching (beta) ──────────────────────────────────────────────────────
-   The day first, then the week, then the plan. A session's kind is a colour AND a word (the day's title, every
-   cell's label); its status is a shape: outlined while planned, full once done, hollow and dashed when missed. In
-   the week each session is a bar as tall as it is long. A steady session shows its effort on a gauge of four; a
-   structured one keeps its profile, taller and darker with the effort. One main action per session, the rest quiet.
-   44 px targets; 320 px wide at least. */
+   The page is a calendar: this week and the next (or a month), the day chosen opened under the weeks in the same
+   card. A session's kind is a colour AND a word (in its day, in the day's title, in every day's label); its duration
+   is its block's height; its status is a shape: outlined while planned, full once done, hollow and dashed when
+   missed. A run outside the plan is a grey block. A steady session shows its effort on a gauge of four; a structured
+   one keeps its profile. One main action per session, « Déplacer » beside it, the rest quiet. 44 px targets; 320 px
+   wide at least. */
 .pf-tabbar.is-four { grid-template-columns: repeat(4, 1fr); }
 .pf-coach { --pf-coach-easy: var(--pf-accent); --pf-coach-long: var(--pf-sleep); --pf-coach-hard: var(--pf-warn-mark); --pf-coach-race: var(--pf-ink); --pf-viz-mark: var(--pf-accent); max-width: 1040px; }
 .pf-coach :is(.is-easy, .is-recup) { --c: var(--pf-coach-easy); }
@@ -1616,7 +1617,7 @@ a.pf-health-status { min-height: 44px; display: inline-flex; align-items: center
 .pf-coach .is-hard { --c: var(--pf-coach-hard); }
 .pf-coach .is-race { --c: var(--pf-coach-race); }
 .pf-coach .is-extra { --c: var(--pf-gray-400); }
-.pf-coach-head { padding-bottom: 16px; }
+.pf-coach-head { padding-bottom: 12px; }
 .pf-coach-head .pf-tag, .pf-coach-entry .pf-tag { vertical-align: middle; margin-left: 6px; font-family: var(--pf-font-text); letter-spacing: .02em; }
 .pf-coach-goal { display: flex; align-items: center; flex-wrap: wrap; gap: 0 10px; margin-top: 4px; min-height: 44px; font-size: 1rem; color: rgb(var(--pf-ink)); }
 .pf-coach-goal b { font-weight: 650; letter-spacing: -.01em; }
@@ -1631,18 +1632,15 @@ fieldset.pf-coach-card { margin: 0; }
 .pf-coach-h { font-family: var(--pf-font-display); font-size: 1.0625rem; font-weight: 650; letter-spacing: -.015em; color: rgb(var(--pf-ink)); }
 .pf-coach-error { margin: 0; padding: 10px 14px; border-radius: 14px; background: rgb(var(--pf-danger-soft)); color: rgb(var(--pf-danger)); font-size: 0.875rem; font-weight: 600; }
 
-/* the week card: ‹ period and its total ›, Mois, the seven days as bars (or the month's grid) */
-/* « Déplacer » brings the week into view: clear of the sticky header and of the tab bar */
-.pf-coach-cal { scroll-margin: 76px 0 96px; }
+/* the calendar: ‹ dates ›, Mois; the weekdays once; then each week — its line (name, fait / prévu, phase) and its
+   seven days. « Déplacer » brings it into view, clear of the sticky header and of the tab bar */
+.pf-coach-calendar { padding-bottom: 14px; }
+.pf-coach-cal-main { scroll-margin: 76px 0 96px; }
 .pf-coach-cal-top { display: flex; align-items: center; gap: 8px; }
 .pf-coach-nav { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
 .pf-coach-nav .pf-viz-step { flex: none; width: 40px; height: 40px; text-decoration: none; }
 .pf-coach-period { flex: 1; min-width: 0; padding: 0 4px; text-align: center; font-family: var(--pf-font-display); font-size: 1rem; font-weight: 650; letter-spacing: -.015em; white-space: nowrap; color: rgb(var(--pf-ink)); }
 .pf-coach-period::first-letter { text-transform: uppercase; }
-.pf-coach-period-box { flex: 1; min-width: 0; text-align: center; }
-.pf-coach-total { display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: 0 8px; margin-top: 1px; font-size: 0.8125rem; color: rgb(var(--pf-gray-600)); }
-.pf-coach-total b { font-weight: 650; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); white-space: nowrap; }
-.pf-coach-phase { white-space: nowrap; }
 /* « Mois »: one toggle (pressed: the month grid), the range toggles' look */
 .pf-coach-view { flex: none; display: grid; place-items: center; min-height: 40px; padding: 0 16px; border-radius: 999px; background: rgb(var(--pf-soft)); font-size: 0.875rem; font-weight: 600; color: rgb(var(--pf-gray-600)); text-decoration: none; }
 .pf-coach-view[aria-pressed="true"] { background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }
@@ -1650,21 +1648,60 @@ fieldset.pf-coach-card { margin: 0; }
 .pf-coach-moving { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 0; padding-bottom: 0; }
 .pf-coach-moving:focus { outline: none; }
 .pf-coach-moving a { flex: none; display: inline-block; min-width: 44px; padding: 11px 6px; text-decoration: underline; font-weight: 700; }
-/* the week: each day a column, its sessions bars standing on the day's name — as tall as they are long */
-.pf-coach-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 10px; }
-.pf-coach-day { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 0 6px; border-radius: 16px; border: 0; background: none; color: rgb(var(--pf-ink)); text-decoration: none; cursor: pointer; font: inherit; }
+.pf-coach-move-hint { margin-top: 8px; }
+.pf-coach-heads { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 10px; text-align: center; font-size: 0.6875rem; font-weight: 600; color: rgb(var(--pf-gray-500)); }
+.pf-coach-week { margin-top: 8px; }
+.pf-coach-week-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 8px; padding: 0 2px; font-size: 0.8125rem; line-height: 1.5; color: rgb(var(--pf-gray-600)); }
+.pf-coach-week-h b { font-weight: 650; color: rgb(var(--pf-ink)); }
+.pf-coach-week-h b::first-letter { text-transform: uppercase; }
+.pf-coach-total { font-weight: 600; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); white-space: nowrap; }
+.pf-coach-phase { margin-left: auto; white-space: nowrap; }
+/* what a week says of itself (lighter, a session the agenda moved, two hard days in a row): one small line */
+.pf-coach-week .pf-coach-reason { margin-top: 0; padding: 0 2px 2px; border-radius: 0; background: none; font-size: 0.75rem; line-height: 1.35; }
+.dark .pf-coach-week .pf-coach-reason { color: rgb(var(--pf-accent)); }
+.pf-coach-week .pf-coach-hardpair, .dark .pf-coach-week .pf-coach-hardpair { color: rgb(var(--pf-warn)); }
+/* a day: its number, its sessions as blocks standing on their word — as tall as they are long — and the time given */
+.pf-coach-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 2px; }
+.pf-coach-day { position: relative; display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; padding: 4px 0 6px; border-radius: 14px; border: 0; background: none; color: rgb(var(--pf-ink)); text-decoration: none; cursor: pointer; font: inherit; }
 .pf-coach-day:hover { background: rgb(var(--pf-soft)); }
 .pf-coach-day.is-selected { background: rgb(var(--pf-soft)); box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }
-.pf-coach-bars { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; width: 100%; height: 64px; margin-bottom: 3px; }
-.pf-coach-bars:empty::after { content: ""; width: 12px; height: 2px; border-radius: 2px; background: rgb(var(--pf-gray-300)); }
+.pf-coach-num { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; font-family: var(--pf-font-display); font-size: 0.9375rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.pf-coach-day.is-past .pf-coach-num, .pf-coach-day.is-out .pf-coach-num { color: rgb(var(--pf-gray-500)); }
+.pf-coach-day.is-today > .pf-coach-num { background: rgb(var(--pf-ink)); color: rgb(var(--pf-bg)); }
+.pf-coach-blocks { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; width: 100%; height: 44px; margin: 2px 0 3px; }
+.pf-coach-blocks:empty::after { content: ""; width: 10px; height: 2px; border-radius: 2px; background: rgb(var(--pf-gray-300)); }
+.pf-coach-word, .pf-coach-when { max-width: 100%; overflow: hidden; font-size: 0.625rem; line-height: 1.25; letter-spacing: -.01em; white-space: nowrap; }
+.pf-coach-word { font-weight: 650; color: rgb(var(--pf-gray-700)); }
+.pf-coach-when { font-variant-numeric: tabular-nums; color: rgb(var(--pf-gray-600)); }
+.pf-coach-day.is-out :is(.pf-coach-blocks, .pf-coach-word, .pf-coach-when) { opacity: .55; }
+/* a session done that waits for its ressenti: a dot on its day */
+.pf-coach-todo { position: absolute; top: 3px; left: calc(50% + 8px); width: 9px; height: 9px; border-radius: 50%; background: rgb(var(--pf-warn-mark)); box-shadow: 0 0 0 2px rgb(var(--pf-surface)); }
+/* « Déplacer »: the days that can take the session are marked; one next to another hard session carries a dot */
+.pf-coach-day:disabled { opacity: .38; cursor: default; }
+button.pf-coach-day.is-target { box-shadow: inset 0 0 0 1.5px rgb(var(--pf-accent) / .55); }
+button.pf-coach-day.is-target.is-selected { box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }
+.pf-coach-main.is-moving .pf-coach-todo { display: none; }
+button.pf-coach-day.is-warn::after { content: ""; position: absolute; top: 3px; left: calc(50% + 8px); width: 9px; height: 9px; border-radius: 50%; background: rgb(var(--pf-warn-mark)); }
+/* the month: the same days, shorter */
+.pf-coach-calendar.is-month .pf-coach-blocks { height: 22px; }
+.pf-coach-calendar.is-month .pf-coach-week { margin-top: 4px; }
+.pf-coach-calendar.is-month .pf-coach-week .pf-coach-reason, .pf-coach-calendar.is-month .pf-coach-when { display: none; }
+/* the debrief: the one question, asked first */
+.pf-coach-debrief { padding-bottom: 10px; border-color: transparent; background: rgb(var(--pf-accent-soft)); scroll-margin-top: 76px; }
+.pf-coach-debrief-h { font-family: var(--pf-font-display); font-size: 1.125rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; color: rgb(var(--pf-ink)); }
+.pf-coach-debrief-line { margin: 2px 0 8px; font-size: 0.875rem; font-variant-numeric: tabular-nums; color: rgb(var(--pf-gray-700)); }
+.pf-coach-debrief .pf-coach-feel > button { min-height: 58px; padding-top: 2px; padding-bottom: 6px; }
+.pf-coach-debrief .pf-coach-feel i { width: 20px; }
+.pf-coach-debrief .pf-coach-feel > :nth-of-type(1) i { height: 8px; }
+.pf-coach-debrief .pf-coach-feel > :nth-of-type(2) i { height: 13px; }
+.pf-coach-debrief .pf-coach-feel > :nth-of-type(3) i { height: 18px; }
+.pf-coach-debrief .pf-coach-feel > :nth-of-type(4) i { height: 23px; }
+.pf-coach-debrief .pf-coach-feel > :nth-of-type(5) i { height: 28px; }
+.pf-coach-debrief .pf-coach-feel > button:hover { background: rgb(var(--pf-surface)); }
+.pf-coach-debrief-more { margin-top: 8px; }
 .pf-coach-bar-s { display: block; flex: none; box-sizing: border-box; width: 62%; max-width: 30px; height: calc(var(--h, 100) * 1%); min-height: 8px; border-radius: 8px; background: rgb(var(--c) / .18); box-shadow: inset 0 0 0 1.5px rgb(var(--c)); }
 .pf-coach-bar-s.is-done { background: rgb(var(--c)); }
 .pf-coach-bar-s.is-missed { background: none; box-shadow: none; border: 1.5px dashed rgb(var(--pf-gray-400)); }
-.pf-coach-wd { font-size: 0.6875rem; font-weight: 600; color: rgb(var(--pf-gray-500)); }
-.pf-coach-num { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; font-family: var(--pf-font-display); font-size: 1rem; font-weight: 650; font-variant-numeric: tabular-nums; }
-.is-today > .pf-coach-num { background: rgb(var(--pf-ink)); color: rgb(var(--pf-bg)); }
-.pf-coach-day:disabled, .pf-coach-mday:disabled { opacity: .38; cursor: default; }
-.pf-coach-marks { display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 14px; }
 .pf-coach-pill { --c: var(--pf-coach-easy); display: grid; place-items: center; flex: none; width: 28px; height: 14px; border-radius: 999px; background: rgb(var(--c) / .32); box-shadow: inset 0 0 0 1.5px rgb(var(--c)); color: rgb(var(--pf-bg)); }
 .pf-coach-pill.is-recup { --c: var(--pf-coach-easy); }
 .pf-coach-pill.is-long { --c: var(--pf-coach-long); }
@@ -1681,21 +1718,9 @@ fieldset.pf-coach-card { margin: 0; }
 .pf-coach-bar-track { flex: 1; height: 10px; border-radius: 999px; background: rgb(var(--pf-soft)); box-shadow: inset 0 0 0 1px rgb(var(--pf-line)); overflow: hidden; }
 .pf-coach-bar-fill { display: block; height: 100%; border-radius: 999px; background: rgb(var(--pf-accent)); }
 .pf-coach-bar b { flex: none; font-family: var(--pf-font-display); font-size: 0.9375rem; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: rgb(var(--pf-ink)); }
-/* the month: the same marks, smaller */
-.pf-coach-month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 10px; }
-.pf-coach-month-h { padding: 4px 0; text-align: center; font-size: 0.6875rem; font-weight: 600; color: rgb(var(--pf-gray-500)); }
-.pf-coach-mday { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 48px; padding: 4px 0; border-radius: 12px; border: 0; background: none; color: rgb(var(--pf-ink)); text-decoration: none; cursor: pointer; font: inherit; }
-.pf-coach-mday:hover { background: rgb(var(--pf-soft)); }
-.pf-coach-mday .pf-coach-wd { display: none; }
-.pf-coach-mday .pf-coach-num { width: 26px; height: 26px; font-size: 0.8125rem; }
-.pf-coach-mday.is-out .pf-coach-num { color: rgb(var(--pf-gray-400)); }
-.pf-coach-mday.is-selected { background: rgb(var(--pf-soft)); box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }
-.pf-coach-mday .pf-coach-marks { flex-direction: row; gap: 2px; min-height: 8px; }
-.pf-coach-mday .pf-coach-pill { width: 12px; height: 8px; }
-.pf-coach-mday .pf-coach-pill.is-extra { width: 5px; height: 5px; align-self: center; }
-.pf-coach-mday .pf-coach-pill svg { display: none; }
 
-/* the day's card: the date, the session (its kind's colour on the title), how hard, one main action */
+/* the day opened under the weeks: the date, the session (its kind's colour on the title), how hard, one main action */
+.pf-coach-daycard { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgb(var(--pf-line)); scroll-margin: 76px 0 96px; }
 .pf-coach-day-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; }
 .pf-coach-day-top .pf-coach-quietbtn { margin: -8px -10px -8px 0; }
 .pf-coach-date { font-size: 0.875rem; font-weight: 600; color: rgb(var(--pf-gray-600)); }
@@ -1731,8 +1756,15 @@ fieldset.pf-coach-card { margin: 0; }
 .pf-coach-nextrow b { display: block; font-family: var(--pf-font-display); font-size: 1.125rem; font-weight: 650; letter-spacing: -.02em; }
 .pf-coach-nextrow:hover b { color: rgb(var(--pf-accent)); }
 /* the one main action, then the quiet ones */
-.pf-coach-do { margin-top: 16px; }
+.pf-coach-do { display: flex; align-items: stretch; gap: 8px; margin-top: 16px; }
+.pf-coach-do > form { flex: 1; min-width: 0; }
 .pf-coach-do .pf-btn { min-height: 52px; font-size: 1rem; }
+.pf-coach-do > a.pf-btn { flex: none; padding: 0 20px; }
+.pf-coach-do > a.pf-btn:only-child { flex: 1; }
+.pf-coach-attach { margin: 2px -10px 0; }
+.pf-coach-attach .pf-coach-quietbtn { white-space: normal; text-align: left; }
+.pf-coach-attach .pf-coach-quietbtn { display: inline; padding-top: 12px; padding-bottom: 12px; line-height: 1.5; }
+.pf-coach-attach .pf-coach-quietbtn span { font-weight: 500; }
 .pf-coach-quiet { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 2px; margin: 6px -10px -6px; }
 .pf-coach-quiet > form { display: contents; }
 .pf-coach-quietbtn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 12px; background: none; font: inherit; font-size: 0.875rem; font-weight: 600; line-height: 1.2; color: rgb(var(--pf-gray-600)); text-decoration: underline; text-decoration-color: rgb(var(--pf-gray-300)); text-underline-offset: 4px; cursor: pointer; white-space: nowrap; }
@@ -1793,7 +1825,10 @@ a.pf-coach-activity:hover b { color: rgb(var(--pf-accent)); }
 .pf-coach-select:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 1px; }
 .pf-coach-manual { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .pf-coach-manual .pf-coach-select { width: auto; }
-/* the plan's chart */
+/* the plan's chart, behind a fold: the calendar carries the plan */
+.pf-coach-planfold { border-top: 1px solid rgb(var(--pf-line)); }
+.pf-coach-planfold > summary { min-height: 56px; }
+.pf-coach-plan { padding: 0 0 16px; }
 .pf-coach-plan .pf-viz { margin-top: 4px; }
 /* planned: a pale box with a thin edge; done: the solid bar in front of it */
 .pf-coach-plan .pf-viz-plan { fill: rgb(var(--pf-accent) / .1); stroke-width: 1; stroke-dasharray: none; }
@@ -1806,7 +1841,8 @@ a.pf-coach-activity:hover b { color: rgb(var(--pf-accent)); }
 .pf-plan-phase.is-progression { fill: rgb(var(--pf-accent) / .5); }
 .pf-lg.is-plan { background: rgb(var(--pf-accent) / .1); box-shadow: inset 0 0 0 1px rgb(var(--pf-viz-mark)); }
 /* under the plan: the rules, and « Options du plan » — every tool behind one row */
-.pf-coach-more { margin-top: 18px; border-bottom: 1px solid rgb(var(--pf-line)); }
+.pf-coach-more { border-bottom: 1px solid rgb(var(--pf-line)); }
+.pf-coach-main > .pf-coach-card:last-child { margin-bottom: 14px; }
 .pf-coach-more > details { border-top: 1px solid rgb(var(--pf-line)); }
 .pf-coach-more > details > summary { min-height: 56px; }
 .pf-coach-how ul { padding: 0 0 18px 50px; }
@@ -1920,9 +1956,12 @@ a.pf-coach-activity:hover b { color: rgb(var(--pf-accent)); }
 .pf-coach-joinrow .pf-input::placeholder { text-transform: none; letter-spacing: 0; }
 @media (max-width: 359px) {
     .pf-coach-card { padding: 14px 10px; }
-    /* seven days across 280 px: the calendar card gives its own padding to the cells (38 px wide) */
-    .pf-coach-cal { padding-left: 7px; padding-right: 7px; }
-    .pf-coach-strip, .pf-coach-month { gap: 0; }
+    /* seven days across 280 px: the calendar gives its own padding to the days (39 px wide) */
+    .pf-coach-calendar { padding-left: 6px; padding-right: 6px; }
+    .pf-coach-strip, .pf-coach-heads { gap: 0; }
+    .pf-coach-daycard, .pf-coach-cal-top, .pf-coach-week-h, .pf-coach-week .pf-coach-reason, .pf-coach-moving, .pf-coach-move-hint { margin-left: 4px; margin-right: 4px; }
+    .pf-coach-word, .pf-coach-when { font-size: 0.5625rem; letter-spacing: -.02em; }
+    .pf-coach-do > a.pf-btn { padding: 0 14px; }
     .pf-coach-period { font-size: 0.9375rem; padding: 0 2px; }
     .pf-coach-view { padding: 0 12px; }
     .pf-coach-s-title, .pf-coach-rest { font-size: 1.625rem; }
@@ -1933,24 +1972,26 @@ a.pf-coach-activity:hover b { color: rgb(var(--pf-accent)); }
     .pf-coach-recent li { grid-template-columns: 24px 5.6rem minmax(0, 1fr) auto; gap: 6px; }
 }
 @media (min-width: 900px) {
-    .pf-coach-main { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 18px; }
-    .pf-coach-main > .pf-coach-error { grid-column: 1 / -1; }
-    .pf-coach-daycard { grid-column: 1; grid-row: span 2; }
-    .pf-coach-cal, .pf-coach-plan { grid-column: 2; }
-    .pf-coach-bars { height: 76px; }
+    .pf-coach-calendar { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; gap: 0 28px; }
+    .pf-coach-daycard { margin-top: 0; padding: 4px 0 0 28px; border-top: 0; border-left: 1px solid rgb(var(--pf-line)); min-height: 100%; }
+    .pf-coach-blocks { height: 56px; }
+    .pf-coach-word, .pf-coach-when { font-size: 0.6875rem; }
+    .pf-coach-debrief { max-width: 620px; }
     .pf-coach-card { padding: 20px; }
     .pf-coach-athlete, .pf-coach-join { grid-column: 1 / -1; max-width: 620px; }
 }
 @media (forced-colors: active) {
     .pf-coach-pill { forced-color-adjust: none; background: Canvas; box-shadow: inset 0 0 0 1.5px CanvasText; }
     .pf-coach-pill.is-done { background: CanvasText; color: Canvas; }
+    .pf-coach-day.is-selected, .pf-coach-feel > :is([aria-pressed="true"], [aria-current]) { outline: 2px solid Highlight; outline-offset: -2px; }
+    .pf-coach-todo, button.pf-coach-day.is-warn::after { forced-color-adjust: none; background: Highlight; }
+    button.pf-coach-day.is-target { outline: 1px dashed CanvasText; outline-offset: -3px; }
     .pf-coach-bar-s { forced-color-adjust: none; background: Canvas; box-shadow: inset 0 0 0 1.5px CanvasText; }
     .pf-coach-bar-s.is-done { background: CanvasText; }
     .pf-coach-bar-s.is-missed { box-shadow: none; border: 1.5px dashed CanvasText; }
     .pf-coach-gauge i, .pf-coach-feel i { forced-color-adjust: none; background: Canvas; box-shadow: inset 0 0 0 1px CanvasText; }
     .pf-coach-gauge.is-l1 i:nth-child(-n+1), .pf-coach-gauge.is-l2 i:nth-child(-n+2), .pf-coach-gauge.is-l3 i:nth-child(-n+3), .pf-coach-gauge.is-l4 i { background: CanvasText; }
     .pf-coach-feel > :is([aria-pressed="true"], [aria-current]) i, .pf-coach-feel > :has(~ :is([aria-pressed="true"], [aria-current])) i { background: Highlight; }
-    .pf-coach-day.is-selected, .pf-coach-mday.is-selected, .pf-coach-feel > :is([aria-pressed="true"], [aria-current]) { outline: 2px solid Highlight; outline-offset: -2px; }
     .pf-coach-bar-fill { background: Highlight; }
     .pf-effort .pf-effort-b:is(.pf-effort-b, .is-l2, .is-l3, .is-l4) { fill: CanvasText; }
 }

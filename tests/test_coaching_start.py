@@ -1,7 +1,8 @@
 """Coaching, the screens (docs/coaching.md › « Les réponses de départ », « Les écrans »): the onboarding proposes a
 plan before the athlete touches anything — the days they usually run (coaching_start, pure), the week these answers
 make drawn by the generator itself (GET /coaching/apercu: truthful, writes nothing, answered 200) — and the page
-opens on the day: one main action, the week as bars, the tools behind « Options du plan »."""
+is a calendar (tests/test_coaching_calendar.py) whose day opens with one main action; the tools sit behind « Options
+du plan »; nothing the pages say names a « coach »."""
 import re
 from datetime import date, timedelta
 from types import SimpleNamespace
@@ -20,7 +21,7 @@ from tests.test_coaching import HTMX, _as, _past_session, _plan, _rows, _run, be
 from tests.test_coaching_goal import _race
 
 MONDAY = date(2026, 11, 16)
-NNBSP = " "
+NNBSP = "\u202f"
 
 
 @pytest.fixture
@@ -158,7 +159,7 @@ async def test_a_new_account_gets_a_plan_proposed_with_nothing_to_fill(client, p
     # the week these answers make, drawn at once: the first complete week, one bar per session
     preview = page.split('id="coach-preview"')[1].split("</div>")[0]
     pv = cv.first_week((1, 3, 6), 6, 120, cp.Goal(), clock.day)
-    assert preview.count("pf-coach-bar-s") == 3 == len(_bars(pv)) and "23–29 nov." in page
+    assert preview.count("pf-coach-bar-s") == 3 == len(_bars(pv)) and "23–29\u00a0nov." in page
     for _i, _cls, duration in _bars(pv):
         assert f"<small>{duration}</small>" in preview
     assert f"Première séance {pv['first']['when']}" in page and pv["first"]["what"] in page
@@ -296,61 +297,10 @@ async def test_the_preview_is_the_account_s_own_and_needs_coaching(client, peopl
     assert (await client.get("/coaching/apercu?days=1&days=3&base=180", headers=HTMX)).status_code == 404
 
 
-# ── the page opens on the day ───────────────────────────────────────────────
+# ── the day opened in the calendar (the calendar itself: tests/test_coaching_calendar.py) ──
 
 def _main(page: str) -> str:
     return page[page.index('id="coach-main"'):page.index('class="pf-coach-more"')]
-
-
-async def test_the_page_opens_on_today_with_one_main_action(client, people, db_session, clock):
-    athlete = people.athlete
-    athlete.max_heart_rate = 186
-    clock.day = MONDAY + timedelta(days=1)  # Tuesday, an available day
-    plan = await _plan(client, db_session, athlete, days=("1", "3", "6"), base="180")
-    today = next(r for r in await _rows(db_session, athlete) if r.day == clock.day)
-    page = (await client.get("/coaching")).text
-    main = _main(page)
-    # the day's card first, then the week, then the plan
-    assert main.index("pf-coach-daycard") < main.index("pf-coach-cal") < main.index("pf-coach-plan")
-    assert "Aujourd’hui · mardi 17 novembre" in main and 'id="coach-today"' not in main
-    assert f'<article class="pf-coach-session is-{cv.KIND_CLASS[today.kind]}"' in main
-    # ONE main action; the others are quiet
-    assert main.count("pf-btn-primary") == 2, "« C’est fait », and the save of the closed « Modifier » fold"
-    done = re.search(rf'<button[^>]*id="coach-done-{today.id}"[^>]*>', main).group(0)
-    assert 'value="done"' in done and "pf-btn-primary" in done and "pf-btn-block" in done and "C’est fait" in main
-    for quiet in (rf'<button[^>]*id="coach-missed-{today.id}"[^>]*class="pf-coach-quietbtn">Pas faite<',
-                  rf'<a id="coach-move-{today.id}" class="pf-coach-quietbtn"[^>]*>Déplacer<',
-                  r'<summary class="pf-coach-quietbtn">Modifier<'):
-        assert re.search(quiet, main), quiet
-    # the week: seven columns of bars, each day's full name on its link, the total said once
-    strip = main.split('class="pf-coach-strip"')[1].split("</div>")[0]
-    assert strip.count('class="pf-coach-bars"') == 7 and strip.count("pf-coach-bar-s") == 3
-    assert f'aria-label="mardi 17 novembre : {cp.KINDS[today.kind]} {viz_long(today.minutes)}, prévue (aujourd’hui)"' in strip
-    assert "pf-coach-legend" not in main, "the day's card names the kind: no legend under the week"
-    summary = cv.week_summary(await co.sync(db_session, plan, athlete), MONDAY, {})
-    assert main.count(f">{summary['label']}<") == 1 and '<span class="pf-coach-phase">Progression</span>' in main
-    # done by hand: no main action left, the ressenti on a scale of five, the note behind a fold
-    r = await client.post(f"/coaching/sessions/{today.id}/status", data={"value": "done"}, headers=HTMX)
-    assert r.status_code == 200 and "pf-btn-primary" not in r.text and "C’est fait" not in r.text
-    assert r.text.count("data-feel") == 5 and "C’était comment" in r.text
-    assert re.search(rf'id="coach-undo-{today.id}" class="pf-coach-quietbtn" aria-label="Annuler « fait »">Annuler<', r.text)
-    assert '<summary class="pf-coach-quietbtn">Ajouter une note</summary>' in r.text
-    assert f'is-{cv.KIND_CLASS[today.kind]} is-done' in r.text
-    r = await client.post(f"/coaching/sessions/{today.id}/note", data={"note": "Bonnes jambes."}, headers=HTMX)
-    assert '<p class="pf-coach-said is-note"><b>Ta note</b> Bonnes jambes.</p>' in r.text
-    assert '<summary class="pf-coach-quietbtn">Modifier ma note</summary>' in r.text
-    r = await client.post(f"/coaching/sessions/{today.id}/status", data={"value": "reset"}, headers=HTMX)
-    assert "C’est fait" in r.text and (await db_session.get(CoachingSession, today.id)).status == "planned"
-    # « Pas faite », by hand: the way back, and « C’est fait » no longer the main action
-    r = await client.post(f"/coaching/sessions/{today.id}/status", data={"value": "missed"}, headers=HTMX)
-    assert 'aria-label="Annuler « pas faite »"' in r.text and "pf-btn-primary" not in r.text.split("pf-coach-quiet")[0]
-    assert "pf-btn-secondary" in re.search(rf'<button[^>]*id="coach-done-{today.id}"[^>]*>', r.text).group(0)
-
-
-def viz_long(minutes: int) -> str:
-    from app.services.viz import hm_long
-
-    return hm_long(minutes)
 
 
 async def test_a_steady_session_shows_a_gauge_and_a_structured_one_its_profile(client, people, db_session, clock):
@@ -376,7 +326,7 @@ async def test_a_day_without_a_session_names_the_next_one(client, people, db_ses
     nxt = next(r for r in await _rows(db_session, athlete))
     page = _main((await client.get("/coaching?d=2026-11-16")).text)  # today, a Monday without a session
     assert '<p class="pf-coach-rest">Repos</p>' in page and "Prochaine séance · jeudi 19 novembre" in page
-    assert f'href="/coaching?d={nxt.day}"' in page and f'hx-get="/coaching/calendar?d={nxt.day}"' in page
+    assert f'href="/coaching?d={nxt.day}&amp;w=2026-11-16"' in page and f'hx-get="/coaching/calendar?d={nxt.day}&amp;w=2026-11-16"' in page
     assert f"{cp.KINDS[nxt.kind]} " in page.split('id="coach-next-session"')[1]
     clock.day = MONDAY + timedelta(days=2)
     assert "Prochaine séance · demain" in _main((await client.get("/coaching")).text)
@@ -411,7 +361,7 @@ async def test_the_tools_sit_behind_one_row_and_open_where_a_link_lands(client, 
     await db_session.flush()
     theirs = (await _as(client, people.coach).get(f"/coaching/athletes/{athlete.id}")).text
     assert "coach-options" not in theirs and "Options du plan" not in theirs and "C’est fait" not in theirs
-    assert "pf-coach-daycard" in theirs and "pf-coach-strip" in theirs
+    assert "pf-coach-daycard" in theirs and "pf-coach-calendar" in theirs
 
 
 # ── the words: the plan is automatic, nobody needs a coach to have one ───────
