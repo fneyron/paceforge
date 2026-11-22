@@ -368,8 +368,18 @@ def test_the_annecy_ten_km_at_two_days_a_week_regulier_week_by_week():
             longs.append(long.minutes)
         assert w.minutes <= w.target
         assert sum(cp.hard_minutes(s.structure) for s in training) <= cp.HARD_SHARE * w.minutes + 1e-9
-    # the long run grows a step at a time under the single-session rule, a light week every fourth, to its cap
-    assert longs[0] == 75 and max(longs) == cp.long_cap(inp.goal) == 120
+    # the long run grows a step at a time under the single-session rule, a light week every fourth, to its cap: a
+    # short race's (1.5 × the expected hour, not the 2 h of a long race)
+    assert longs[0] == 75 and max(longs) == cp.long_cap_of(inp) == 90 < cp.long_cap(inp.goal) == 120
+    # the week tops out at what its two sessions hold, so that a light week and the taper are lighter
+    assert max(w.target for w in weeks) == cp.ceiling_of(inp, inp.base) == 90 + cp.TWO_DAYS_QUALITY
+    loading = [w for w in weeks if w.phase != "affutage"]
+    for before, w in zip(loading, loading[1:]):
+        if w.light:
+            (a,), (b,) = ([s.minutes for s in x.sessions if s.kind == cp.LONG] for x in (before, w))
+            assert b < a and w.minutes < before.minutes, "a light week is lighter"
+    last_long = [s for s in weeks[-2].sessions if s.kind == cp.LONG]
+    assert [(ANNECY - s.day).days for s in last_long] == [6] and last_long[0].minutes <= 55, "J-6: under the race time"
     assert all(b <= cp.session_limit(max(longs[:i + 1])) for i, b in enumerate(longs[1:]))
     # the race week: the reminders three or four days before, then the race — the race counts as the second session
     race_week = weeks[-1].sessions
@@ -507,3 +517,15 @@ async def test_two_days_side_by_side_say_why_there_is_no_session_with_rhythm(cli
     rows = await _rows(db_session, people.athlete)
     assert rows and not [r for r in rows if r.kind in (cp.QUALITY, cp.HILLS)]
     assert rp_fr(cv.SIDE_BY_SIDE) in (await client.get("/coaching")).text
+
+
+def test_the_short_race_cap_is_for_plans_made_with_the_profiles_and_leaves_long_races_alone():
+    ten, half, ultra = (cp.Goal(ANNECY, m, False, None, "Course", "approx") for m in (55, 120, 600))
+    def inp(goal, intent, days=(1, 3, 6)):
+        return cp.Inputs(days, 6, 120, cp.monday_of(STORY_TODAY), goal, {}, intent=intent, level=cp.REGULIER)
+    assert [cp.long_cap_of(inp(g, cp.COURSE)) for g in (ten, half, ultra)] == [90, 120, 210]
+    assert cp.long_cap_of(inp(cp.Goal(ANNECY, 25, False, None, "5 km", "approx"), cp.COURSE)) == 60, "never under 1 h"
+    assert cp.long_cap_of(inp(ten, None)) == 120, "a plan made before the profiles keeps its cap"
+    # the two-day ceiling: two days only, and never for a plan made before the profiles
+    assert cp.ceiling_of(inp(ten, cp.COURSE, (1, 6)), 120) == 145
+    assert cp.ceiling_of(inp(ten, cp.COURSE), 120) == cp.ceiling(ten, 120) == cp.ceiling_of(inp(ten, None, (1, 6)), 120)

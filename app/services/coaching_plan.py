@@ -73,6 +73,8 @@ LONG_SHARE = 0.35  # (H) the long run: about 35 % of the week (no study fixes th
 LONG_RACE_SHARE = 0.55  # (H) never longer than 55 % of the expected race time… (no study)
 LONG_CAP_RANGE = (120, 210)  # (H) …that cap itself between 2 h and 3 h 30 (no study)
 FREE_LONG_CAP = 150  # (H) without a race: 2 h 30 (no study)
+SHORT_RACE_LONG = (1.5, 60)  # (H) a plan made with the profiles: the long run stops at 1.5 × the expected race time (the race distance and a little more at an easy pace: Fokkema 2020, half-marathon), never under 1 h; a race of 1 h 20 or more keeps LONG_CAP_RANGE
+TWO_DAYS_QUALITY = 55  # (H) at two days a week the week tops out at the long run's cap plus a 55-min session: what its two sessions can hold (no study), so that a light week and the taper are lighter than the weeks around them
 NO_LONG_BEFORE_RACE = 3  # (H) no long run from J-3 on: the taper cuts the volume (Bosquet 2007), the day is ours
 QUALITY_FROM_DAYS = 2  # (H) one quality session from 2 sessions a week (the race counts as one), never on consecutive days: two sessions a week improve the less fit (Wenger & Bell 1986), intensity carries the effect at low frequency (Lenk 2025; Gliemann 2015), 48 h after a hard effort (Stanley 2013)
 QUALITY_MIN_WEEK = 75  # (H) …in a week of 75 min or more (a 45-min session and a 30-min run; the race's own minutes count in its week)
@@ -377,9 +379,24 @@ def long_cap(goal: Goal) -> int:
     return FREE_LONG_CAP
 
 
+def ceiling_of(inp: Inputs, base: int) -> int:
+    """The weekly ceiling for this plan: `ceiling`, and for a plan made with the profiles that writes on two days,
+    no more than its two sessions can hold (the long run at its cap and a session of TWO_DAYS_QUALITY)."""
+    top = ceiling(inp.goal, base)
+    if inp.intent is not None and rule_set(inp) != HOLD and len(days_used(inp)) == 2:
+        top = min(top, long_cap_of(inp) + TWO_DAYS_QUALITY)
+    return top
+
+
 def long_cap_of(inp: Inputs) -> int:
-    """The long run's cap for this plan: « Garder la forme » holds it at FORME_LONG_CAP."""
-    return FORME_LONG_CAP if rule_set(inp) == HOLD else long_cap(inp.goal)
+    """The long run's cap for this plan: « Garder la forme » holds it at FORME_LONG_CAP; a plan made with the
+    profiles stops it at SHORT_RACE_LONG × the expected race time when that is under the usual cap (a short race)."""
+    if rule_set(inp) == HOLD:
+        return FORME_LONG_CAP
+    cap, goal = long_cap(inp.goal), inp.goal
+    if inp.intent is not None and goal.race_day is not None and goal.race_minutes:
+        cap = min(cap, max(SHORT_RACE_LONG[1], int(round5(SHORT_RACE_LONG[0] * rule_minutes(goal)))))
+    return cap
 
 
 # ── one session against the longest run of the last 30 days ─────────────────
@@ -482,14 +499,14 @@ def week_targets(inp: Inputs, until: date) -> dict[date, dict]:
     first_taper = taper_start(rd) if rd else None
     hold = rule_set(inp) == HOLD  # « Garder la forme »: the base held (raised to FORME_FLOOR first), no lighter week
     out: dict[date, dict] = {}
-    base, anchor, shift, top = inp.base, 0, 0, ceiling(inp.goal, inp.base)
+    base, anchor, shift, top = inp.base, 0, 0, ceiling_of(inp, inp.base)
     k, m = 0, inp.start_monday
     while m <= until:
         a = (inp.adaptations or {}).get(m.isoformat()) or {}
         reason = a.get("reason")
         if reason == "reprise" and a.get("base"):
             base, anchor, shift = int(a["base"]), k, 0
-            top = ceiling(inp.goal, base)
+            top = ceiling_of(inp, base)
         elif reason == "semaine_manquee":
             shift += 1
         rel = k - anchor
@@ -679,6 +696,8 @@ def week_sessions(monday: date, inp: Inputs, info: dict, phase: str, index: int,
             easy = volume - used  # what is left for the long run and the footings, on `slots` days
             if limit is not None:
                 easy = min(easy, slots * limit)
+            if has_long and slots == 1 and rules != BEFORE:
+                easy = min(easy, cap)  # the long run alone beside the quality sessions: the week holds its cap at most
             if len(quals) < q or sum(hard_minutes(x[3]) for x in quals) <= HARD_SHARE * (used + easy) + 1e-9:
                 break
             basis = used + easy  # a shorter week than its target: fewer repetitions
