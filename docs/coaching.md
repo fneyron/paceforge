@@ -282,6 +282,8 @@ fixes), et jamais pendant une requête web :
   enveloppée dans une IPv6 étant lue comme son IPv4, et 6to4, Teredo et NAT64 refusés ;
 - la connexion va à **l’adresse vérifiée** : l’URL demandée porte l’IP, l’en-tête `Host` et le nom TLS (SNI) portent
   le nom, le certificat reste vérifié sur le nom ; une seconde réponse DNS ne peut pas la déplacer ;
+  une adresse vérifiée qui ne prend pas la connexion (une IPv6 sur une machine sans IPv6) passe la main à la
+  suivante, 3 au plus, 3 s chacune ;
 - les redirections sont suivies à la main, 3 au plus, chacune revérifiée depuis le début (schéma, hôte,
   résolution) ; aucun proxy de l’environnement ;
 - 10 s pour tout l’échange, 2 Mo au plus, lus en flux et coupés à la limite (après décompression) ;

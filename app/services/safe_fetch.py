@@ -7,6 +7,7 @@ surface, held tight. No other code fetches a user-supplied URL.
   (100.64/10), multicast, reserved and unspecified ranges are refused, IPv4-mapped IPv6 read as its IPv4, 6to4, Teredo
   and NAT64 refused; the connection then goes to that very address (the URL carries the IP, the Host header and the
   TLS SNI carry the name: the certificate is still checked against the name), so a second DNS answer cannot move it;
+  an address that does not answer the connection (an IPv6 one on a host without IPv6) hands over to the next one;
 - redirects are followed by hand, 3 at most, each one checked again from the start (scheme, host, resolution);
 - no proxy from the environment, 10 s for the whole exchange, 2 MB at most, read as a stream and cut at the limit
   (after decompression);
@@ -20,6 +21,8 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 TIMEOUT_S = 10
+CONNECT_S = 3
+MAX_ADDRESSES = 3
 MAX_BYTES = 2 * 1024 * 1024
 MAX_REDIRECTS = 3
 MAX_URL = 1024
@@ -93,8 +96,8 @@ async def _resolve(host: str) -> list[str]:
     return list(dict.fromkeys(str(info[4][0]) for info in infos))
 
 
-async def pinned_address(host: str) -> str:
-    """The address the connection will go to: the host's first one, once ALL of them are public."""
+async def pinned_addresses(host: str) -> list[str]:
+    """The addresses the connection may go to, in the resolver's order, once ALL of them are public."""
     try:
         addresses = await _resolve(host)
     except (OSError, UnicodeError) as e:
@@ -103,21 +106,32 @@ async def pinned_address(host: str) -> str:
         raise Refused("dns")
     if not all(is_public(a) for a in addresses):
         raise Refused("host")
-    return addresses[0]
+    return addresses[:MAX_ADDRESSES]
+
+
+async def _open(client: httpx.AsyncClient, url: str) -> httpx.Response:
+    """The response's head from `url`'s host at one of its checked addresses: the first that takes the connection."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    addresses = await pinned_addresses(host)
+    for i, address in enumerate(addresses):
+        literal = f"[{address}]" if ":" in address else address
+        target = f"https://{literal}{parts.path or '/'}" + (f"?{parts.query}" if parts.query else "")
+        request = client.build_request("GET", target, headers={
+            "Host": host, "Accept": "text/calendar, text/plain;q=0.5", "User-Agent": AGENT},
+            extensions={"sni_hostname": host})
+        try:
+            return await client.send(request, stream=True)
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            if i == len(addresses) - 1:
+                raise
+    raise Refused("dns")
 
 
 async def _read(client: httpx.AsyncClient, url: str) -> tuple[int, str | None, bytes]:
-    """One request to `url`'s host at its pinned address: (status, Location, body); the body only for a 200, read
+    """One request to `url`'s host at a pinned address: (status, Location, body); the body only for a 200, read
     as a stream and refused past MAX_BYTES."""
-    parts = urlsplit(url)
-    host = parts.hostname or ""
-    address = await pinned_address(host)
-    literal = f"[{address}]" if ":" in address else address
-    target = f"https://{literal}{parts.path or '/'}" + (f"?{parts.query}" if parts.query else "")
-    request = client.build_request("GET", target, headers={
-        "Host": host, "Accept": "text/calendar, text/plain;q=0.5", "User-Agent": AGENT},
-        extensions={"sni_hostname": host})
-    response = await client.send(request, stream=True)
+    response = await _open(client, url)
     try:
         if response.status_code in REDIRECTS:
             return response.status_code, response.headers.get("location"), b""
@@ -142,7 +156,8 @@ async def fetch(raw_url: str, own_host: str | None = None) -> bytes:
     url = clean_url(raw_url, own_host)
     try:
         async with asyncio.timeout(TIMEOUT_S):
-            async with httpx.AsyncClient(transport=_transport, timeout=TIMEOUT_S, follow_redirects=False,
+            async with httpx.AsyncClient(transport=_transport, timeout=httpx.Timeout(TIMEOUT_S, connect=CONNECT_S),
+                                         follow_redirects=False,
                                          trust_env=False) as client:
                 for _hop in range(MAX_REDIRECTS + 1):
                     status, location, body = await _read(client, url)
