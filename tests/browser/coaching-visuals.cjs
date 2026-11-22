@@ -423,7 +423,8 @@ async function theme(page, dark) {
       assert.ok(pick === 4 || (filled[pick + 1] !== filled[pick] && new Set(filled.slice(pick + 1)).size === 1), 'filled up to the level ' + JSON.stringify(filled));
       // the note: behind « Ajouter une note » — no field, no « Enregistrer » until asked
       assert.equal(await page.locator('.pf-coach-note textarea').isVisible(), false, 'the note’s field waits behind its fold');
-      assert.deepEqual(await seen(page, '.pf-coach-daycard button:not([data-feel])'), [], 'no button but the scale');
+      // done with a run: the scale, and the quiet way to take the run back out of the plan
+      assert.deepEqual(await seen(page, '.pf-coach-daycard button:not([data-feel])'), ['Ce n’est pas cette séance'], 'no button but the scale and the unlink');
       await page.locator('.pf-coach-notefold > summary').click();
       assert.match(await page.locator('.pf-coach-notefold > summary').innerText(), /^(Ajouter une note|Modifier ma note)$/);
       await page.locator('.pf-coach-note textarea').fill('Bonnes sensations en côte.');
