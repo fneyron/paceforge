@@ -483,6 +483,28 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   assert.equal(await unavailable.evaluate(()=>reloads),1);
   assert.equal(await unavailable.evaluate(()=>pull()),true,'offline retry must reload the document, not refresh an unavailable page');
   await unavailable.close();
+  // A deployment: the proxy answers 503 then 502 in the server's place. The shell asks for the page again behind its
+  // loading screen (after 1 s, then 1.5 s) and never says « Écran indisponible »; the app's own 404 is said at once.
+  const away=await page(true);
+  const awayHeading=away.getByRole('heading',{name:'Écran indisponible'});
+  await away.evaluate(()=>{window.reloads=0;httpFail(503);});
+  await away.getByLabel('Chargement de PaceForge').waitFor();
+  assert.equal(await away.evaluate(()=>reloads),0,'the retry waits before it asks again');
+  await away.waitForFunction(()=>reloads===1,null,{timeout:3000});
+  assert.equal(await away.evaluate(()=>pull()),true,'the retry must reload the document, not refresh the proxy\'s page');
+  await away.evaluate(()=>reloaded(502));
+  assert.equal(await awayHeading.count(),0,'a second answer of the proxy is still waited out');
+  await away.waitForFunction(()=>reloads===2,null,{timeout:4000});
+  await away.evaluate(()=>{pull();reloaded();});
+  await away.getByLabel('Chargement de PaceForge').waitFor({state:'detached'});
+  await away.waitForTimeout(3500);
+  assert.equal(await away.evaluate(()=>reloads),2,'no retry is left once the page is there');
+  assert.equal(await awayHeading.count(),0);
+  await away.evaluate(()=>httpFail(404));
+  await awayHeading.waitFor();
+  await away.getByText('PaceForge ne répond pas pour le moment (404). Réessaie dans quelques instants.').waitFor();
+  assert.equal(await away.evaluate(()=>reloads),2,'the app\'s own error is never retried');
+  await away.close();
   console.log('Actual App: cold start, pull-only UI, error details, account safety, inline Settings/reentry/cancellation/login/account change, offline, process recovery, late bridge recovery, delayed dashboard loading, connection screens, the consent refusal and the Coaching tab (order, full load, pull, saved screen, calendar link) passed (native APIs mocked).');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

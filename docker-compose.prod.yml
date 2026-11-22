@@ -90,11 +90,15 @@ services:
     stop_grace_period: 30s  # uvicorn finishes the requests in flight (Dockerfile) before Docker kills it
     mem_limit: 3g
     logging: *logging
+    # Traefik routes to this container from the moment it is healthy, and Coolify stops every container before it
+    # starts the new ones (docs/ops-runbook.md, « Déployer »): the site is back when this probe first succeeds. So
+    # the probe waits for the app instead of failing once and coming back an interval later: it asks every second,
+    # up to 8 times. One line of the access log every 10 s once the app is up.
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      start_period: 15s
+      test: ["CMD-SHELL", "for i in 1 2 3 4 5 6 7 8; do curl -fsS -m 1 -o /dev/null http://localhost:8000/health && exit 0; sleep 1; done; exit 1"]
+      interval: 10s
+      timeout: 15s
+      start_period: 60s
       retries: 3
     expose:
       - "8000"
@@ -157,11 +161,12 @@ services:
       POSTGRES_DB: paceforge
       POSTGRES_USER: paceforge
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD, the database password}
+    # every 2 s: `app` starts when this first succeeds, and the site is down until then at every deploy
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U paceforge"]
-      interval: 5s
+      interval: 2s
       timeout: 5s
-      retries: 5
+      retries: 15
     restart: unless-stopped
     stop_grace_period: 1m  # a clean shutdown (checkpoint) rather than a crash recovery at the next start
     mem_limit: 1536m
@@ -204,11 +209,11 @@ services:
     volumes:
       - redisdata:/data
     command: redis-server --appendonly yes
-    healthcheck:
+    healthcheck:  # every 2 s, as db's: `app` waits for both
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 2s
       timeout: 5s
-      retries: 5
+      retries: 15
     restart: unless-stopped
     mem_limit: 256m
     logging: *logging

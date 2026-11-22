@@ -363,6 +363,7 @@ npm install --prefix /tmp/pf-browser playwright@1.64.0 esbuild@0.28.2 react@19.2
 export NODE_PATH=/tmp/pf-browser/node_modules
 node /tmp/pf-browser/node_modules/playwright/cli.js install chromium
 node tests/browser/refresh.cjs
+node tests/browser/deploy-retry.cjs   # sans serveur de prévisualisation : il joue l’app et le proxy
 node tests/browser/native/build.cjs
 node tests/browser/native/check.cjs
 node tests/browser/native/offline.cjs

@@ -15,6 +15,7 @@ import { backgroundBlock, backgroundPending, blockBackgroundSync, cancelBackgrou
 import type { Block } from './src/background-engine';
 import { appShellScript, calendarFeedUrl, calendarOrigin, destinations, isBridgeUrl, messagePageUrl, prepareNavigationScript, presentationScript, refreshable, reloadable, sameScreen, screenUrl, Tab, tabForUrl, tabNavigationScript, tabs } from './src/navigation';
 import { ConnectionAction, Connections, Provider, providerNames, signInResult } from './src/connections';
+import { retryDelay } from './src/retry';
 import { acknowledge, inlineConnectionsScript, inlineSessionScript, Pending, retryBridgeScript, takeReply } from './src/bridge';
 import { DeviceDetail, DevicesScreen } from './src/DevicesScreen';
 import { Button, DeviceTheme } from './src/device-ui';
@@ -80,6 +81,8 @@ function Companion() {
   const inlineSync = useRef(false);
   const refreshSources = useRef(false);
   const recoveringProcess = useRef(false);
+  // A page the proxy answered in the server's place (a deployment): asked for again behind the loading screen.
+  const away = useRef<{ url: string; since: number; tries: number; timer?: ReturnType<typeof setTimeout> } | null>(null);
   const cloudRefresh = useRef(false);
   const deferredRefresh = useRef<boolean | null>(null);
   const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -721,7 +724,19 @@ function Companion() {
       setTab('devices'); setShowWeb(false); setDetail('health'); setStatus(''); setError('');
     } else openTab('devices');
   }
+  /** True when the failed page will be asked for again by itself: the server is away for a moment (src/retry.ts). */
+  function waitForServer(failed: string, status: number) {
+    const now = Date.now();
+    if (away.current?.url !== failed) away.current = { url: failed, since: now, tries: 0 };
+    const wait = retryDelay(status, now - away.current.since, away.current.tries);
+    if (wait === null) return false;
+    away.current.tries += 1;
+    pageLoadFailed.current = true; documentReady.current = false; setPageLoading(true);
+    away.current.timer = setTimeout(() => { recoveringProcess.current = true; web.current?.reload(); }, wait);
+    return true;
+  }
   function pageFailed(message: string) {
+    away.current = null;
     pageLoadFailed.current = true; setPageLoading(false);
     documentReady.current = false;
     if (pending.current) fail(new Error(message));
@@ -776,15 +791,18 @@ function Companion() {
         originWhitelist={['https://*', 'paceforge://*', calendarOrigin]} mixedContentMode="never" allowFileAccess={false} setSupportMultipleWindows
         onMessage={message} onError={() => pageFailed('Cet écran nécessite une connexion. Tes données déjà enregistrées restent conservées. Réessaie lorsque le réseau revient.')}
         onLoadStart={() => {
+          clearTimeout(away.current?.timer);  // this load is the retry, or another page: no retry is left waiting
           frameLoading.current = true; cancelledReadingContext.current = null; softNavigation.current = null; setPageLoading(true); documentReady.current = false; pageLoadFailed.current = false; setLoadError('');
           if (nextNavigation.current) { clearTimeout(nextNavigation.current.timer); nextNavigation.current = null; setLeaving(false); }
           if (retryNavigation.current) { retryNavigation.current = null; setError(''); }
         }}
         onLoadEnd={event => {
           if (suppressReadingNavigation.current && refreshable(event.nativeEvent.url)) return;
+          if (pageLoadFailed.current && away.current) { frameLoading.current = false; return; }  // the proxy's page: the loading screen stays until the retry
           setPageLoading(false);
           if (frameLoading.current) { frameUrl.current = event.nativeEvent.url; frameLoading.current = false; }
           if (pageLoadFailed.current) return;
+          away.current = null;
           if (!isBridgeUrl(event.nativeEvent.url)) offline.loaded(event.nativeEvent.url);
           if (isBridgeUrl(event.nativeEvent.url)) {
             documentUrl.current = event.nativeEvent.url; documentReady.current = false; setBridgeDocument(true);
@@ -805,7 +823,11 @@ function Companion() {
           if (pending.current) fail(new Error('La vérification a été interrompue. Réessaie la synchronisation.'));
           else { recoveringProcess.current = true; web.current?.reload(); }
         }}
-        onHttpError={event => { if ([url, documentUrl.current].includes(event.nativeEvent.url)) pageFailed(`PaceForge ne répond pas pour le moment (${event.nativeEvent.statusCode}). Réessaie dans quelques instants.`); }}
+        onHttpError={event => {
+          if (![url, documentUrl.current].includes(event.nativeEvent.url)) return;
+          if (!pending.current && waitForServer(event.nativeEvent.url, event.nativeEvent.statusCode)) return;
+          pageFailed(`PaceForge ne répond pas pour le moment (${event.nativeEvent.statusCode}). Réessaie dans quelques instants.`);
+        }}
         onShouldStartLoadWithRequest={request => {
           if (trusted(request.url)) {
             // A real top-level request can intentionally leave Settings. A

@@ -118,5 +118,9 @@ export const WebView=forwardRef((props:any,ref:any)=>{
  w.pull=()=>current.current.onShouldStartLoadWithRequest({url:w.actual,navigationType:'reload',isTopFrame:true});
  w.terminate=()=>current.current.onContentProcessDidTerminate();
  w.pageFail=()=>{current.current.onError();current.current.onLoadEnd({nativeEvent:{url:actual}});};
+ // The proxy's answer in the server's place, as WKWebView reports it: the HTTP error, then the end of the load of the
+ // proxy's own page. `reloaded` is what a reload of that document then gives: the same again, or the page (no status).
+ w.httpFail=(statusCode:number)=>{current.current.onHttpError({nativeEvent:{url:w.actual,statusCode}});current.current.onLoadEnd({nativeEvent:{url:w.actual}});};
+ w.reloaded=(statusCode?:number)=>{current.current.onLoadStart?.({nativeEvent:{url:w.actual}});if(statusCode)w.httpFail(statusCode);else commit(w.actual);};
  return <View testID="mock-webview" style={[props.style,{backgroundColor:'#fff'}]}><span id="document-text">{actual.includes('/mobile/session')?'Compte vérifié':actual.includes('/auth')?'Connexion au compte':'Tableau de bord Santé'}</span></View>;
 });

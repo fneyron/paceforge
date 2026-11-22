@@ -13,16 +13,66 @@ toutes.
    construit par les migrations), la répétition sauvegarde/restauration, puis le job `deploy` appelle le
    webhook Coolify et attend que `https://paceforge.fr/health` serve l’empreinte du commit (`build`, calculée
    par `app/build.py` sur `app/`, `alembic/`, `pyproject.toml` et les verrous). Rouge après 10 min : le build
-   Coolify a échoué ou l’app redémarre en boucle — ouvrir le journal de déploiement dans Coolify. Le Dockerfile
+   Coolify a échoué ou l’app redémarre en boucle — ouvrir le journal de déploiement dans Coolify ; rouge avec
+   le bon build servi : l’interruption a dépassé 45 s (ci-dessous). Le Dockerfile
    et le compose n’entrent pas dans l’empreinte (Coolify les réécrit au build) : un déploiement qui ne change
    qu’eux se vérifie dans le journal Coolify.
 2. Coolify reconstruit les images (les dépendances viennent de `requirements.lock`, une couche gardée en cache
-   tant que le verrou ne change pas) et remplace les conteneurs. `app` exécute `alembic upgrade head` au
-   démarrage, puis uvicorn ; l’ancien conteneur reçoit SIGTERM et finit ses requêtes (20 s) ; un worker a
-   12 min pour finir la synchro en cours.
+   tant que le verrou ne change pas), puis **arrête et supprime tous les conteneurs de l’application — `db` et
+   `redis` compris — avant de lancer les nouveaux** (`docker compose up -d`) : c’est ce que fait son build pack
+   Docker Compose, quelle que soit la commande de démarrage. `app` reçoit SIGTERM et finit ses requêtes (20 s) ;
+   un worker a 12 min pour finir la synchro en cours. Au redémarrage, `app` attend `db` et `redis`, exécute
+   `alembic upgrade head`, puis uvicorn ; Traefik lui envoie le trafic dès que sa sonde réussit.
 3. Une pull request lance les mêmes tests sans déployer.
 
 Pas d’environnement de préproduction : les tests et la vérification de `/health` sont le filet.
+
+### L’interruption à chaque déploiement
+
+Entre l’arrêt de l’ancien `app` et la première sonde réussie du nouveau, le proxy répond à la place de l’app :
+502 un instant, puis 503. Ce n’est pas une panne et cela ne se supprime pas avec ce build pack ; c’est raccourci,
+couvert et mesuré.
+
+- **Mesuré** : 16 à 47 s sur les cinq déploiements du 21 et du 22 novembre 2026 (journal du job `deploy`, une
+  question toutes les 15 s). Sur la même séquence rejouée en local derrière Traefik (arrêt de tout, puis
+  `up -d`) : 18 s avec les sondes d’alors, 10 s avec celles d’aujourd’hui. L’app elle-même démarre en 3 s
+  (migrations sans rien à faire : 0,7 s ; uvicorn : 2,3 s) : le reste est l’arrêt des conteneurs, le démarrage
+  de `db` et l’attente des sondes.
+- **Raccourci** : la sonde de `app` interroge `/health` chaque seconde jusqu’à la réponse, au lieu d’échouer une
+  fois et de revenir un intervalle plus tard ; celles de `db` et de `redis` passent toutes les 2 s
+  (`docker-compose.prod.yml`). Pas de `start_interval` : il demande Docker 25, et un moteur plus ancien refuse
+  le fichier entier, après l’arrêt des conteneurs.
+- **Couvert** : une page demandée pendant l’interruption est redemandée jusqu’à ce que l’app réponde, 60 s au
+  plus — l’écran charge, puis s’affiche. Dans l’app, avant « Écran indisponible » (`mobile/src/retry.ts`) ; dans
+  un navigateur, par le service worker (`app/static/sw.js`, servi à `/sw.js`) ; l’actualisation de Santé et
+  d’Activités fait de même (`app/static/js/refresh.js`). Seule une lecture est redemandée : un formulaire envoyé
+  pendant l’interruption reçoit l’erreur du proxy, une fois. Une réponse de l’app elle-même (son 404, son 503)
+  n’est jamais redemandée : elle porte son en-tête `Content-Security-Policy`, pas celles du proxy. Le premier
+  passage d’un navigateur n’a pas encore le service worker ; une requête HTMX affiche « Impossible de
+  charger. Réessaie. ».
+- **Surveillé** : le job `deploy` interroge `/health` chaque seconde (`scripts/deploy/watch.py`), écrit dans son
+  résumé la durée de l’interruption et les réponses reçues, et passe au rouge au-delà de 45 s — la marge sous
+  les 60 s couvertes. Rouge pour cette raison : le déploiement est fait, mais une page a pu afficher une erreur ;
+  chercher ce qui a ralenti le démarrage (une migration longue, `db` lent à s’arrêter) dans le journal Coolify.
+
+**Supprimer l’interruption** demande de sortir `app` du build pack Compose : une application Coolify « Dockerfile »
+(mise à jour progressive : le nouveau conteneur démarre, sa sonde réussit, puis l’ancien s’arrête), `db` et
+`redis` en ressources séparées, les workers dans leur propre application. C’est un changement de la
+configuration de production et un déplacement du volume de la base : à décider et à préparer à part.
+
+### Migrations : ce que le déploiement exige
+
+Aujourd’hui l’ancien `app` est arrêté avant que le nouveau n’exécute les migrations : deux versions du code ne
+tournent jamais ensemble. Les migrations restent pourtant **additives** (« Revenir en arrière », ci-dessous), pour
+deux raisons : un retour au commit précédent doit trouver un schéma qu’il comprend, et une migration longue
+allonge d’autant l’interruption — elle s’exécute avant qu’uvicorn n’écoute. Une migration qui réécrit une grosse
+table se fait donc en deux déploiements (ajouter et remplir par lots dans une tâche, puis contraindre).
+
+Avec une mise à jour progressive, la règle deviendrait stricte : pendant le recouvrement, **l’ancien code tourne
+sur le nouveau schéma**. Chaque migration devrait alors être compatible avec la version précédente du code — pas
+de colonne ou de table supprimée ou renommée tant qu’un déploiement antérieur l’utilise, pas de `NOT NULL` sans
+valeur par défaut sur une colonne que l’ancien code n’écrit pas, pas de verrou long sur une table lue à chaque
+page — et tout retrait se ferait un déploiement après le code qui cesse de s’en servir.
 
 ## Revenir en arrière
 

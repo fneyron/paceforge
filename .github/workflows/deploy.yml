@@ -176,20 +176,11 @@ jobs:
 
       # The smoke test: the site must serve this commit. /health reports the deployed code's fingerprint
       # (app/build.py), computed here on the checked-out tree; a failed Coolify build or a crash loop shows up
-      # as a red run instead of a silent miss.
-      - name: Wait for paceforge.fr to serve this commit
+      # as a red run instead of a silent miss. Asked every second, so the run also measures how long the site
+      # was away while Coolify replaced the containers (the job's summary), and fails past the 45 s that leave a
+      # margin under what the app and the service worker cover by asking again (60 s — docs/ops-runbook.md).
+      - name: Wait for paceforge.fr to serve this commit, and measure the outage
         run: |
           expected=$(python -c "from app.build import BUILD_ID; print(BUILD_ID)")
           echo "expected build $expected"
-          for _ in $(seq 1 40); do  # every 15 s, 10 min at most
-            build=$(curl -fsS --max-time 10 https://paceforge.fr/health \
-              | python -c 'import json, sys; print(json.load(sys.stdin)["build"])' 2>/dev/null || true)
-            if [ "$build" = "$expected" ]; then
-              echo "deployed: /health serves build $build"
-              exit 0
-            fi
-            echo "live build: ${build:-unreachable}, waiting"
-            sleep 15
-          done
-          echo "::error::paceforge.fr did not serve build $expected within 10 min: see Coolify's deployment log (docs/ops-runbook.md)"
-          exit 1
+          python scripts/deploy/watch.py --url https://paceforge.fr/health --expect "$expected" --max-outage 45 --limit 600

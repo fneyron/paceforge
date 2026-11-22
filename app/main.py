@@ -282,6 +282,13 @@ def create_app() -> FastAPI:
 
     app.include_router(coaching.router)
 
+    # The service worker, at the root: its scope is the directory it is served from, and it must hold the pages
+    # (app/static/sw.js: it asks again for a page the proxy answered during a deployment). Never kept by a cache.
+    @app.get("/sw.js", include_in_schema=False)
+    async def service_worker():
+        from fastapi.responses import FileResponse
+        return FileResponse("app/static/sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
     # Browsers ask for /favicon.ico at the root, whatever the page links to
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon():

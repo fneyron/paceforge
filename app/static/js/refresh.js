@@ -59,17 +59,35 @@
     return toast;
   }
   liveRegion();
-  async function request(url, options, format) {
+  // One try. `away`: the proxy answered in the app's place (502, 503, 504) or the connection was cut, which is what
+  // a deployment does for some seconds (docs/ops-runbook.md, « Déployer ») — worth asking again, unlike a try that
+  // already waited its 30 s or a phone without network.
+  async function attempt(url, options, format) {
     var controller = new AbortController(), timer = setTimeout(function () { controller.abort(); }, 30000);
     try {
       var response = await fetch(url, Object.assign({ credentials: 'same-origin', cache: 'no-store' }, options, { signal: controller.signal }));
       if (response.redirected || response.status === 401 || response.status === 403) throw new Error(REACH.session);
-      if (!response.ok) throw new Error(REACH.server);
+      if (!response.ok) throw Object.assign(new Error(REACH.server), { away: [502, 503, 504].includes(response.status) });
       return await (format === 'json' ? response.json() : response.text());
     } catch (error) {
-      if (error instanceof TypeError || error.name === 'AbortError') throw new Error(REACH.network);
+      if (error.name === 'AbortError') throw new Error(REACH.network);
+      if (error instanceof TypeError) throw Object.assign(new Error(REACH.network), { away: navigator.onLine !== false });
       throw error;
     } finally { clearTimeout(timer); }
+  }
+  // Every request of a refresh can be sent again: the page and the statuses are reads, and the two that start a
+  // sync find it claimed when the first one did arrive. So a server away is waited for, up to PATIENCE, before
+  // anything is said.
+  var PATIENCE = 60000;
+  async function request(url, options, format) {
+    var until = Date.now() + PATIENCE, wait = 1000;
+    for (;;) {
+      try { return await attempt(url, options, format); }
+      catch (error) {
+        if (!error.away || Date.now() + wait > until) throw error;
+        await pause(wait); wait = Math.min(wait * 1.5, 3000);
+      }
+    }
   }
   async function json(url, method) {
     return request(url, { method: method || 'GET', headers: { Accept: 'application/json', 'X-PaceForge-Refresh': '1' } }, 'json');

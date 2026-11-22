@@ -77,6 +77,6 @@ def test_the_service_worker_precaches_nothing_stale():
     sw = _read("app/static/sw.js")
     assert "interface.css?v=2" not in sw and "addAll" not in sw and "STATIC_ASSETS" not in sw
     base = _read("app/templates/base.html")
-    # registered (a new install retires the old caches), never asked to update on every page: one request less per
-    # navigation, for a worker whose scope (/static/) holds no page
-    assert "navigator.serviceWorker.register('/static/sw.js').catch(" in base and ".update()" not in base
+    # registered at the root (tests/test_deploy_watch.py: it repeats a page asked for during a deployment), never
+    # asked to update on every page: one request less per navigation
+    assert "navigator.serviceWorker.register('/sw.js').catch(" in base and ".update()" not in base

@@ -33,8 +33,9 @@ USER app
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+# The same probe as docker-compose.prod.yml's, which explains it: it waits for the app, asking every second.
+HEALTHCHECK --interval=10s --timeout=15s --start-period=60s --retries=3 \
+    CMD for i in 1 2 3 4 5 6 7 8; do curl -fsS -m 1 -o /dev/null http://localhost:8000/health && exit 0; sleep 1; done; exit 1
 
 # The migrations first, then uvicorn replaces the shell (exec) as PID 1: Docker's SIGTERM reaches it and the
 # requests in flight get 20 s to finish instead of being dropped at every deploy. Keep-alive 75 s: longer than
