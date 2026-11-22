@@ -1,5 +1,5 @@
 // Coaching (beta, every account): the athlete's page (the calendar: the debrief first, two weeks, the day opened under
-// them, the plan behind a fold), the follower's pages and the onboarding (a plan already proposed), in a browser — at
+// them, the plan behind a fold; a session held and dropped on another day, a swipe between the weeks), the follower's pages and the onboarding (a plan already proposed), in a browser — at
 // 320 and 393 px (the web site; inside the phone app that has the native Coaching tab; inside an installed app older
 // than that tab), at 1280 px, light and dark. Local
 // synthetic preview only.
@@ -131,6 +131,48 @@ async function shot(page, name) {
 
 async function theme(page, dark) {
   await page.evaluate(d => document.documentElement.classList.toggle('dark', d), dark);
+}
+
+// A finger, as the phone sends it (Chromium's own touch events, through the compositor: a stroke really scrolls the
+// page, a hold really waits). `stroke`: a quick move, the page's scroll or a swipe; `hold`: still for 350 ms (the
+// calendar lifts a session after 250), then moved — the finger stays down when `end` is false.
+async function fingerOf(page) {
+  const cdp = await page.context().newCDPSession(page);
+  const send = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+  const path = async (from, to, steps) => {
+    for (let i = 1; i <= steps; i++) {
+      await send('touchMove', [{ x: from.x + (to.x - from.x) * i / steps, y: from.y + (to.y - from.y) * i / steps }]);
+      await page.waitForTimeout(16);
+    }
+  };
+  return {
+    stroke: async (from, to) => { await send('touchStart', [from]); await path(from, to, 6); await send('touchEnd', []); },
+    hold: async (from, to, end = true) => {
+      await send('touchStart', [from]); await page.waitForTimeout(350); await path(from, to, 12);
+      if (end) await send('touchEnd', []);
+    },
+    move: (from, to) => path(from, to, 8),
+    up: () => send('touchEnd', []),
+  };
+}
+
+async function centre(page, selector) {
+  const b = await page.locator(selector).boundingBox();
+  return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+}
+
+// What the calendar shows while a session is held: the classes of the days, the ghost's box, the page's width.
+async function held(page) {
+  return page.evaluate(() => {
+    const ghost = document.querySelector('.pf-coach-ghost');
+    const days = [...document.querySelectorAll('#coach-main .pf-coach-day')];
+    return { dragging: document.querySelector('#coach-main.is-dragging') !== null, ghost: ghost && ghost.getBoundingClientRect().toJSON(),
+      label: ghost && ghost.textContent, drops: days.filter(d => d.classList.contains('is-drop')).map(d => d.id),
+      warn: days.filter(d => d.classList.contains('is-drop-warn')).map(d => d.id),
+      over: days.filter(d => d.classList.contains('is-over')).map(d => d.id),
+      faded: days.filter(d => !d.matches('.is-drop, .is-home')).map(d => getComputedStyle(d).opacity),
+      wide: document.documentElement.scrollWidth > innerWidth + 1 };
+  });
 }
 
 (async () => {
@@ -591,6 +633,156 @@ async function theme(page, dark) {
       await page.close();
     }
 
+    // ── by hand (coaching-calendar.js): a session held, then dropped on another day — the move « Déplacer » posts;
+    //    a swipe on the weeks is ‹ ›; the page's scroll stays the page's ──
+    {
+      const at = days => { const d = new Date(fixture.day + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
+      const [wed, thu, sat, sun, nextTue] = [at(-1), fixture.day, at(2), at(3), at(5)];
+      const moves = [], watch = p => p.on('request', r => { if (r.method() === 'POST' && r.url().endsWith('/move')) moves.push(r.postData()); });
+      const page = await open(browser, { width: 393 });
+      watch(page);
+      const finger = await fingerOf(page);
+      await page.goto(athlete + '/coaching', { waitUntil: 'networkidle' });
+      // whether anything was ever lifted (the ghost is added to the page while a session is held)
+      await page.evaluate(() => {
+        window.__lifted = false;
+        new MutationObserver(() => { if (document.querySelector('.pf-coach-ghost')) window.__lifted = true; })
+          .observe(document.querySelector('.pf-coach'), { childList: true, subtree: true });
+      });
+      assert.equal(await page.locator('#coach-drag-hint').innerText(), 'Maintiens une séance pour la déplacer.', 'one line says it, the first time');
+      const hills = await page.locator(`#coach-day-${sat} [data-move]`).getAttribute('data-what');
+      assert.match(hills, /^Côtes \d+ min$/, 'Saturday holds the hill session moved there');
+      // a vertical stroke that starts on a session scrolls the page: nothing is lifted, nothing is sent
+      const satAt = await centre(page, `#coach-day-${sat}`);
+      await finger.stroke(satAt, { x: satAt.x, y: satAt.y - 260 });
+      await page.waitForTimeout(400);
+      assert.ok(await page.evaluate(() => scrollY) > 40, 'the page scrolled');
+      assert.equal(await page.evaluate(() => window.__lifted), false, 'a scroll lifts nothing');
+      await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
+      // a horizontal swipe on the weeks: the next two, then back — the same addresses as › and ‹
+      const period = await page.locator('.pf-coach-period').innerText();
+      const row = await centre(page, `#coach-day-${thu}`);
+      await swap(page, () => finger.stroke({ x: row.x + 90, y: row.y }, { x: row.x - 90, y: row.y + 6 }));
+      assert.equal(await page.locator('.pf-coach-week-h b').first().innerText(), 'Semaine prochaine', 'a swipe to the left: the next weeks');
+      assert.notEqual(await page.locator('.pf-coach-period').innerText(), period);
+      await swap(page, () => finger.stroke({ x: row.x - 90, y: row.y }, { x: row.x + 90, y: row.y - 6 }));
+      assert.equal(await page.locator('.pf-coach-period').innerText(), period, 'to the right: back');
+      assert.equal(await page.evaluate(() => window.__lifted), false, 'a swipe lifts nothing');
+      // held, then let go outside any day, or Escape: back in place, no request
+      await finger.hold(satAt, await centre(page, '.pf-coach-period'));
+      await finger.hold(satAt, await centre(page, `#coach-day-${nextTue}`), false);
+      assert.equal((await held(page)).dragging, true, 'held');
+      await page.keyboard.press('Escape');
+      await finger.up();
+      await page.waitForTimeout(300);
+      assert.deepEqual(moves, [], 'let go outside, or Escape: nothing sent');
+      assert.equal(await page.locator(`#coach-day-${sat} .pf-coach-bar-s.is-hard`).count(), 1, 'the session is back on its day');
+      assert.deepEqual(await held(page).then(h => [h.dragging, h.ghost]), [false, null]);
+      // held over a day next to another hard session: the days that take it are marked, the others fade, that one
+      // has the hard-days warning's colour; the block floats above the finger, never under it
+      await finger.hold(satAt, { x: satAt.x, y: satAt.y + 40 }, false);
+      let state = await held(page);
+      assert.ok(state.drops.length >= 9 && !state.drops.includes(`coach-day-${sat}`), 'every day still to come takes it ' + state.drops);
+      assert.ok(state.faded.every(o => o === '0.38'), 'the days that cannot take it fade');
+      assert.equal(state.label, hills);
+      const warnDay = state.warn.find(id => id !== `coach-day-${sun}`);
+      assert.ok(warnDay, 'a day next to another hard session is marked ' + state.warn);
+      const warnAt = await centre(page, '#' + warnDay);
+      await finger.move({ x: satAt.x, y: satAt.y + 40 }, warnAt);
+      state = await held(page);
+      assert.deepEqual(state.over, [warnDay], 'the day under the finger');
+      assert.ok(state.ghost.bottom < warnAt.y - 20 && state.ghost.top >= 0, 'above the finger ' + JSON.stringify(state.ghost));
+      assert.equal(await page.locator('#' + warnDay).evaluate(d => getComputedStyle(d).boxShadow.includes('rgb(199, 106, 0)')), true, 'the warning’s colour');
+      await page.screenshot({ path: `${out}/byhand-393-held.png` });
+      await theme(page, true); await page.screenshot({ path: `${out}/byhand-393-held-dark.png` }); await theme(page, false);
+      await finger.move(warnAt, await centre(page, '.pf-coach-period'));
+      await finger.up();
+      await page.waitForTimeout(300);
+      assert.deepEqual(moves, [], 'let go outside: nothing sent');
+      // held, then let go on next Tuesday: shown there at once, sent as « Déplacer » sends it, the calendar redrawn
+      // on the server's answer — the day opened follows the session
+      await page.route('**/move', async route => { await new Promise(r => setTimeout(r, 400)); await route.continue(); });
+      await swap(page, async () => {
+        await finger.hold(satAt, await centre(page, `#coach-day-${nextTue}`));
+        assert.equal(await page.locator(`#coach-day-${nextTue} .pf-coach-bar-s.is-pending`).count(), 1, 'in its new day before the answer');
+      });
+      await page.unroute('**/move');
+      assert.equal(moves.length, 1);
+      assert.match(moves[0], new RegExp(`^to=${nextTue}&v=semaine&w=\\d{4}-\\d\\d-\\d\\d$`), 'the same fields as the form');
+      assert.equal(await page.locator('#coach-main .pf-coach-error').count(), 0, 'accepted');
+      assert.equal(await page.locator(`#coach-day-${sat} .pf-coach-bar-s`).count(), 0, 'its old day is free');
+      assert.equal(await page.locator(`#coach-day-${nextTue}.is-selected .pf-coach-bar-s.is-hard`).count(), 1, 'on the day chosen, opened');
+      assert.equal((await page.locator('.pf-coach-s-title').innerText()).replace(/\s+/g, ' '), hills);
+      assert.equal(await page.locator('#coach-drag-hint').isVisible(), false, 'the hint, once it is done');
+      // the run outside the plan, dropped on Thursday's session: « C’est ma séance de jeudi », by hand
+      const wedAt = await centre(page, `#coach-day-${wed}`);
+      await finger.hold(wedAt, { x: wedAt.x + 20, y: wedAt.y }, false);
+      state = await held(page);
+      assert.equal(state.label, 'Sortie');
+      assert.ok(state.drops.includes(`coach-day-${thu}`) && state.drops.every(id => id <= `coach-day-${sun}`), 'the sessions of its week ' + state.drops);
+      await swap(page, async () => { await finger.move({ x: wedAt.x + 20, y: wedAt.y }, await centre(page, `#coach-day-${thu}`)); await finger.up(); });
+      assert.match(moves[1], new RegExp(`^to=${wed}&`), 'Thursday’s session moves to the run’s day');
+      assert.equal(await page.locator(`#coach-day-${wed} .pf-coach-bar-s.is-extra`).count(), 0, 'the run is the session now');
+      assert.equal(await page.locator(`#coach-day-${wed} .pf-coach-bar-s.is-done`).count(), 1);
+      assert.equal(await page.locator(`#coach-day-${thu} .pf-coach-bar-s`).count(), 0);
+      await shot(page, 'byhand-393-run-taken');
+      assert.deepEqual(page.errors, [], 'by hand: browser errors');
+      await page.close();
+
+      // 320 px: the same, held over a day next to a hard session (Sunday's long run, the next days)
+      const small = await open(browser, { width: 320 });
+      watch(small);
+      const smallFinger = await fingerOf(small);
+      await small.goto(athlete + '/coaching', { waitUntil: 'networkidle' });
+      const sunAt = await centre(small, `#coach-day-${sun}`);
+      await smallFinger.hold(sunAt, { x: sunAt.x, y: sunAt.y + 30 }, false);
+      state = await held(small);
+      assert.ok(state.warn.length >= 1, '320: a warning day');
+      const smallWarn = await centre(small, '#' + state.warn[state.warn.length - 1]);
+      await smallFinger.move({ x: sunAt.x, y: sunAt.y + 30 }, smallWarn);
+      state = await held(small);
+      assert.equal(state.wide, false, '320: no horizontal overflow while held');
+      assert.ok(state.ghost.left >= 0 && state.ghost.right <= 320 && state.ghost.bottom < smallWarn.y, '320: the ghost in the screen, above the finger');
+      await small.screenshot({ path: `${out}/byhand-320-held.png` });
+      await smallFinger.move(smallWarn, await centre(small, '.pf-coach-period'));
+      await smallFinger.up();
+      await small.waitForTimeout(300);
+      assert.equal(moves.length, 2, '320: let go outside, nothing sent');
+      assert.deepEqual(small.errors, [], '320 by hand: browser errors');
+      await small.close();
+
+      // a mouse: a few pixels and the session follows; let go on Saturday, next to Sunday's long run — the server
+      // says it on the week, in its own words; Escape puts a session back
+      const wide = await open(browser, { width: 1280, height: 900 });
+      watch(wide);
+      await wide.goto(`${athlete}/coaching?d=${nextTue}`, { waitUntil: 'networkidle' });
+      const from = await centre(wide, `#coach-day-${nextTue}`), to = await centre(wide, `#coach-day-${sat}`);
+      await wide.mouse.move(from.x, from.y);
+      await wide.mouse.down();
+      await wide.mouse.move(from.x + 4, from.y - 4, { steps: 2 });
+      await wide.mouse.move(to.x, to.y, { steps: 12 });
+      state = await held(wide);
+      assert.deepEqual(state.over, [`coach-day-${sat}`]);
+      assert.ok(state.warn.includes(`coach-day-${sat}`), 'Saturday is next to Sunday’s long run');
+      await wide.screenshot({ path: `${out}/byhand-1280-held.png` });
+      await swap(wide, () => wide.mouse.up());
+      assert.match(moves[moves.length - 1], new RegExp(`^to=${sat}&`));
+      assert.equal(await wide.locator(`#coach-day-${sat}.is-selected .pf-coach-bar-s.is-hard`).count(), 1, 'moved, and opened (the click that ends a drag opens no other day)');
+      assert.match(await wide.locator('.pf-coach-hardpair').innerText(), /^Samedi et dimanche\s:\sdeux jours durs de suite\./, 'the server says the warning');
+      const count = moves.length, back = await centre(wide, `#coach-day-${sat}`);
+      await wide.mouse.move(back.x, back.y);
+      await wide.mouse.down();
+      await wide.mouse.move(back.x + 60, back.y + 80, { steps: 6 });
+      assert.equal((await held(wide)).dragging, true);
+      await wide.keyboard.press('Escape');
+      await wide.mouse.up();
+      await wide.waitForTimeout(300);
+      assert.equal(moves.length, count, 'Escape: nothing sent');
+      assert.equal((await held(wide)).ghost, null);
+      assert.deepEqual(wide.errors, [], 'mouse by hand: browser errors');
+      await wide.close();
+    }
+
     // ── the onboarding: the athlete's own (a race, a computed volume), then a new account end to end ──
     for (const dark of [false, true]) {
       const page = await open(browser, { width: 393, dark });
@@ -947,6 +1139,11 @@ async function theme(page, dark) {
       assert.doesNotMatch(await page.locator('#main-content').innerText(), /récupération basse|VFC|sommeil|forme|Santé/i, 'no health word on a coach’s page');
       await noOverflow(page, 'coach done');
       await shot(page, 'coach-athlete-393-done');
+      // by hand, what « Déplacer » gives a follower: the sessions still to do, never the run outside the plan
+      await page.goto(`${coach}/coaching/athletes/${fixture.ids.athlete}`, { waitUntil: 'networkidle' });
+      assert.ok(await page.locator('#coach-main [data-move]').count() >= 4, 'the sessions still to do can be picked up');
+      assert.equal(await page.locator('#coach-main [data-run]').count(), 0, 'the run outside the plan stays the athlete’s');
+      assert.equal(await page.locator('#coach-main .is-done[data-move], #coach-main .is-race[data-move]').count(), 0);
       assert.deepEqual(page.errors, [], 'coach: browser errors');
       await page.close();
       const wide = await open(browser, { width: 1280, height: 900 });
