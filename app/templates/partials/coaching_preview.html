@@ -1,0 +1,28 @@
+{#- Coaching › the onboarding's week, as the answers stand (`pv` = routers.coaching._preview: coaching_view.first_week,
+    the generator's own sessions; nothing is written). Three parts, each with its id: the drawing (seven columns, a
+    bar per session, as tall as it is long, coloured by its kind), the legend with the long run's day, and the first
+    session to come. `part`: "chart", "more" or "first" where the screen places them; "swap" for the htmx answer —
+    the drawing is the request's target, the two others follow out of band. -#}
+{% set oob = ' hx-swap-oob="true"' if part == "swap" else "" %}
+{% if part in ("chart", "swap") %}
+<div id="coach-preview" class="pf-coach-pv{% if pv.error or pv.empty %} is-empty{% endif %}" role="img" aria-label="{{ pv.aria }}">
+    {% for c in pv.cols %}<span class="pf-coach-pv-col" aria-hidden="true">{% for b in c.bars %}<small>{{ b.duration }}</small><i class="pf-coach-bar-s is-{{ b.cls }}" style="--h: {{ b.h }}"></i>{% endfor %}</span>{% endfor %}
+    {#- days out of range: the line under the days says it (and the button waits) -#}
+    {% if (pv.error and not pv.silent) or pv.empty %}<p class="pf-coach-pv-msg{% if pv.error %} is-error{% endif %}" aria-hidden="true">{{ pv.error or pv.empty }}</p>{% endif %}
+</div>
+{% endif %}
+{% if part in ("more", "swap") %}
+<div id="coach-preview-more" class="pf-coach-pv-more"{{ oob|safe }}>
+    {% if pv.note %}<p class="pf-label pf-coach-pv-note">{{ pv.note }}</p>{% endif %}
+    {% if pv.legend %}<p class="pf-viz-legend pf-coach-legend" aria-hidden="true">{% for cls, word in pv.legend %}<span><i class="pf-coach-pill is-{{ cls }}"></i>{{ word }}</span>{% endfor %}</p>{% endif %}
+    {% if pv.long_days %}
+    <div class="pf-coach-row">
+        <label for="coach-long">Sortie longue</label>
+        <select id="coach-long" name="long_day" class="pf-coach-select">{% for d, word in pv.long_days %}<option value="{{ d }}"{% if d == pv.long_day %} selected{% endif %}>{{ word }}</option>{% endfor %}</select>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+{% if part in ("first", "swap") %}
+<p id="coach-preview-first" class="pf-coach-pv-first"{{ oob|safe }}>{% if pv.first %}Première séance {{ pv.first.when }}&nbsp;: <b>{{ pv.first.what }}</b>{% endif %}</p>
+{% endif %}

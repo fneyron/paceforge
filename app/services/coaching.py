@@ -183,6 +183,43 @@ async def race_times(db: AsyncSession, plan: CoachingPlan, route, today: date) -
     return objective, estimate
 
 
+_PEEKED: dict[tuple, tuple[int | None, int | None]] = {}  # this worker's readings for the onboarding's preview
+_PEEKED_MAX = 256
+
+
+async def first_goal(db: AsyncSession, user: User, route_id: int | None, today: date) -> cp.Goal:
+    """The goal a plan made now would run on, for the onboarding's preview: the same race, the same times as sync
+    reads (race_times), **without writing anything**. A prediction reads the whole course: the one the athlete's
+    plan already kept for the day is taken, else it is computed once per worker, race and day (a chip tapped again
+    costs nothing). Invalid for a race that is no longer the athlete's to choose."""
+    if route_id is None:
+        return cp.Goal()
+    if route_id not in {r.id for r in await goal_options(db, user.id, today)}:
+        raise Invalid("Cette course n’est plus disponible.")
+    route = (await db.execute(select(Route).options(load_only(*GOAL_COLUMNS)).where(
+        Route.id == route_id, Route.user_id == user.id))).scalar_one_or_none()
+    if route is None:
+        raise Invalid("Cette course n’est plus disponible.")
+    sig, day = signature(route), today.isoformat()
+    plan = await get_plan(db, user.id)
+    kept = (plan.goal_state or {}) if plan is not None else {}
+    if kept.get("sig") == sig and kept.get("day") == day:
+        return goal_of(route, kept.get("objective_s"), kept.get("estimate_s"))
+    key = (user.id, sig, day)
+    if key not in _PEEKED:
+        times = None
+        try:
+            from app.routers import simulator
+
+            times = await simulator.race_times(db, user.id, route.id)  # reads only
+        except Exception:
+            logger.exception("Coaching: the race's prediction failed for user %d (preview)", user.id)
+        if len(_PEEKED) >= _PEEKED_MAX:
+            _PEEKED.clear()
+        _PEEKED[key] = times or (None, None)
+    return goal_of(route, *_PEEKED[key])
+
+
 def goal_ended(plan: CoachingPlan) -> dict | None:
     """{ended, name, from (date)} while the plan says it lost its race, else None."""
     kept = plan.goal_state or {}
@@ -269,10 +306,9 @@ class Invalid(ValueError):
     """What the athlete typed cannot make a plan; its message is shown as is."""
 
 
-async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | None, days, long_day,
-                    base, moments=None) -> CoachingPlan:
-    """The onboarding's answers kept: a new plan, or the same one made again (« Refaire le plan »: week 0 is this
-    week again, what the ressenti changed is forgotten; the sessions done, past or edited by a person stay)."""
+def clean_answers(days, long_day, base) -> tuple[tuple[int, ...], int, int]:
+    """The onboarding's days, long-run day and starting volume as the plan keeps them; Invalid says what is missing.
+    One reading for the plan that is saved and for the week the screen previews (first_goal, coaching_view)."""
     days = clean_days(days)
     # 2 to 6 days, so one rest day at least — (H): rest days go with fewer overuse injuries in endurance athletes
     # (Ristolainen 2014, whose own threshold is two); the least, 2 days, is a practical choice (docs/coaching.md)
@@ -288,6 +324,14 @@ async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | N
         base = int(cp.clamp(cp.round5(float(base)), *cp.BASE_RANGE))
     except (TypeError, ValueError) as e:
         raise Invalid("Indique ton volume de départ.") from e
+    return days, long_day, base
+
+
+async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | None, days, long_day,
+                    base, moments=None) -> CoachingPlan:
+    """The onboarding's answers kept: a new plan, or the same one made again (« Refaire le plan »: week 0 is this
+    week again, what the ressenti changed is forgotten; the sessions done, past or edited by a person stay)."""
+    days, long_day, base = clean_answers(days, long_day, base)
     if route_id is not None and route_id not in {r.id for r in await goal_options(db, user.id, c.today)}:
         raise Invalid("Cette course n’est plus disponible.")
     plan = await get_plan(db, user.id)

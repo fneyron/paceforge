@@ -97,7 +97,7 @@
         </div>
     </details>
     <a class="pf-tool" href="/coaching/athletes"><span>{{ icon("heart") }}<span>Suivre un athlète</span></span>{{ icon("chev-r", "pf-chev") }}</a>
-    <a class="pf-tool" href="/coaching?refaire=1"><span>{{ icon("sliders") }}<span>Refaire le plan</span></span>{{ icon("chev-r", "pf-chev") }}</a>
+    <a class="pf-tool" href="/coaching?refaire=1"><span>{{ icon("pencil") }}<span>Refaire le plan</span></span>{{ icon("chev-r", "pf-chev") }}</a>
     <form method="post" action="/coaching/stop" onsubmit="event.preventDefault(); var f = this; var msg = 'Arrêter le coaching ? Ton plan et tes séances seront supprimés, et tes coachs n’y auront plus accès.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Arrêter'); } else if (confirm(msg)) { f.submit(); }">
         <button type="submit" class="pf-tool pf-coach-stop"><span>{{ icon("close") }}<span>Arrêter le coaching</span></span></button>
     </form>
