@@ -329,15 +329,44 @@ def quality_in(rows: list, days: tuple[date, date]) -> bool:
     return any(r.day in days and r.kind in (cp.QUALITY, cp.HILLS) and r.status == co.PLANNED for r in rows)
 
 
+def hard_days(live: list, moving) -> frozenset[date]:
+    """The days that hold a hard session other than the one being moved (planned or done): its neighbours there
+    would make two hard days side by side."""
+    return frozenset(r.day for r in live if r is not moving and r.kind in cp.HARD and r.status in (co.PLANNED, co.DONE))
+
+
+def drop(day: date, moving, today: date, free: frozenset, hard: frozenset) -> tuple[bool, bool]:
+    """Whether `day` takes the session being moved (services/coaching.move: from today on, or an earlier day of
+    this week that holds a run no session took), and whether it would sit next to another hard session — a
+    warning on the day, never a refusal."""
+    this_week = cp.monday_of(day) == cp.monday_of(today)
+    target = day != moving.day and (day >= today or (day in free and this_week))
+    return target, bool(target and moving.kind in cp.HARD and any(day + timedelta(days=k) in hard for k in (-1, 1)))
+
+
+def drops(row, shown: list[date], live: list, today: date, free: frozenset) -> dict:
+    """What the calendar needs to let a session be picked up and dropped on a day by hand (coaching-calendar.js):
+    the days shown that take it, those of them that would put two hard days side by side — the same answers as
+    « Déplacer » (`drop`) — and the words its block carries while it is held."""
+    hard = hard_days(live, row)
+    said = [(day, *drop(day, row, today, free, hard)) for day in shown]
+    return {"to": " ".join(d.isoformat() for d, ok, _ in said if ok),
+            "warn": " ".join(d.isoformat() for d, _, warn in said if warn),
+            "what": f"{KIND_SHORT.get(row.kind, row.kind)} {hm(row.minutes)}"}
+
+
 def _cell(day: date, rows: list, extra: float, state: co.State, selected: date, scale: float, *,
-          waiting: frozenset = frozenset(), moving=None, free: frozenset = frozenset(), hard: frozenset = frozenset()
-          ) -> dict:
+          waiting: frozenset = frozenset(), moving=None, free: frozenset = frozenset(), hard: frozenset = frozenset(),
+          by_hand: dict | None = None, run_by_hand: bool = False) -> dict:
     """One day of the calendar: its sessions as blocks (kind, status, height), the run done outside the plan as a
     grey one, one word, the time given, and what a screen reader says of it all. `extra`: the minutes run outside
     the plan; `scale`: the minutes a full-height block stands for; `waiting`: the ids of the sessions that wait for
     a debrief; `moving`: the session being moved (the day then says whether it can take it, and whether that would
-    put two hard days side by side — `hard`: the days that hold another hard session to do)."""
+    put two hard days side by side — `hard`: the days that hold another hard session to do). `by_hand`: {session
+    id: drops(...)} for the sessions that can be picked up and dropped on another day; `run_by_hand`: the grey
+    block may be dropped on a session of the week (« C’est ma séance de … », by hand)."""
     today = state.clock.today
+    by_hand = by_hand or {}
     said, blocks, time = [], [], None
     for r in rows:
         slot = clock_time(r.slot_min) if r.status == co.PLANNED and r.slot_min is not None else None
@@ -345,10 +374,12 @@ def _cell(day: date, rows: list, extra: float, state: co.State, selected: date, 
         said.append(f"{cp.KINDS.get(r.kind, r.kind)} {hm_long(r.minutes)}, {STATUS_WORD.get(r.status, '')}"
                     + (f" à {slot}" if slot else "") + (", à débriefer" if r.id in waiting else ""))
         blocks.append({"cls": KIND_CLASS.get(r.kind, "easy"), "status": r.status,
-                       "h": 100 if r.kind == cp.RACE else bar_height(r.minutes, scale)})
+                       "h": 100 if r.kind == cp.RACE else bar_height(r.minutes, scale), "id": r.id,
+                       "hand": by_hand.get(r.id) if by_hand.get(r.id, {}).get("to") else None})
     if extra:
         said.append("une sortie hors plan")
-        blocks.append({"cls": "extra", "status": co.DONE, "h": bar_height(extra, scale)})
+        blocks.append({"cls": "extra", "status": co.DONE, "h": bar_height(extra, scale),
+                       "run": day.isoformat() if run_by_hand else None, "what": EXTRA_WORD})
     if len(blocks) > 1:  # several the same day share the cell's room
         for block in blocks:
             block["h"] = max(BAR_MIN // 2, block["h"] // len(blocks))
@@ -359,11 +390,7 @@ def _cell(day: date, rows: list, extra: float, state: co.State, selected: date, 
            "todo": any(r.id in waiting for r in rows),
            "aria": f"{JOURS_L[day.weekday()]} {day.day} {MOIS_L[day.month - 1]} : " + (" ; ".join(said) or "repos")}
     if moving is not None:
-        this_week = cp.monday_of(day) == cp.monday_of(today)
-        out["target"] = day != moving.day and (day >= today or (day in free and this_week))
-        # a hard session next to another one: a warning on the day, never a refusal
-        out["warn"] = bool(out["target"] and moving.kind in cp.HARD
-                           and any(day + timedelta(days=k) in hard for k in (-1, 1)))
+        out["target"], out["warn"] = drop(day, moving, today, free, hard)
     return out
 
 
@@ -570,13 +597,18 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
     # the blocks: each as tall as its session is long, against the longest shown (the race fills its cell)
     scale = max([BAR_SCALE_MIN] + [r.minutes for day in shown for r in by_day.get(day, []) if r.kind != cp.RACE]
                 + [extra_days.get(day, 0) for day in shown])
-    hard = frozenset(r.day for r in live if moving is not None and r is not moving and r.kind in cp.HARD
-                     and r.status in (co.PLANNED, co.DONE))
+    hard = hard_days(live, moving) if moving is not None else frozenset()
+    free = frozenset(extra_days)
+    # by hand (the calendar's own gestures, coaching-calendar.js): what « Déplacer » takes, the same rights for the
+    # person who follows the plan; none while « Déplacer » has turned the days into targets
+    by_hand = {} if moving is not None else {
+        r.id: drops(r, shown, live, today, free) for day in shown for r in by_day.get(day, []) if co.movable(r, today)}
     pairs = hard_neighbours(live, today)
     weeks = []
     for m in mondays:
         days = [{**_cell(day, by_day.get(day, []), extra_days.get(day, 0), state, selected, scale,
-                         waiting=waiting_ids, moving=moving, free=frozenset(extra_days), hard=hard),
+                         waiting=waiting_ids, moving=moving, free=free, hard=hard, by_hand=by_hand,
+                         run_by_hand=not coach and moving is None),
                  "out": month and day.month != start.month} for day in (m + timedelta(days=i) for i in range(7))]
         said = [rp.fr(HARD_PAIR.format(a=JOURS_L[x.weekday()].capitalize(), b=JOURS_L[y.weekday()])
                       + (" " + QUALITY_PAIR if quality_in(live, (x, y)) and not coach else ""))
@@ -610,7 +642,7 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
         "today": today.isoformat(), "selected": selected.isoformat(), "view": "mois" if month else "semaine",
         "is_today": selected == today,
         "day_label": ("Aujourd’hui · " if selected == today else "") + viz.d_long(selected),
-        "cal": {**nav, "heads": JOURS, "weeks": weeks,
+        "cal": {**nav, "heads": JOURS, "weeks": weeks, "by_hand": any(x["to"] for x in by_hand.values()),
                 "has_today": mondays[0] <= today <= mondays[-1] + timedelta(days=6)},
         "debrief": ask, "waiting": len(waiting),
         "next": {"iso": coming.day.isoformat(), "title": cp.KINDS.get(coming.kind, coming.kind),
