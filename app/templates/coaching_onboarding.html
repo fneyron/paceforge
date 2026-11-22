@@ -34,7 +34,7 @@
             <div class="pf-coach-chips" data-days>
                 {% for i, word in weekdays %}<label class="pf-coach-chip"><input type="checkbox" name="days" value="{{ i }}"{% if i in chosen.days %} checked{% endif %}><span>{{ word }}</span></label>{% endfor %}
             </div>
-            <p class="pf-label" id="coach-days-hint">De 2 à 6 jours.</p>
+            <p class="pf-label" id="coach-days-hint" role="status">De 2 à 6 jours.</p>
         </fieldset>
 
         <fieldset class="pf-coach-card pf-coach-q-card">
@@ -101,6 +101,13 @@
         // the plan needs 2 to 6 days: the button waits for them (the server checks again)
         var go = form.querySelector("button[type=submit]");
         if (go) go.disabled = on.length < 2 || on.length > 6;
+        // … and with the seven days chosen, the line under them says why, in the error's colour (too few days is
+        // where everyone starts: the line stays as it is)
+        var hint = document.getElementById("coach-days-hint");
+        if (hint) {
+            hint.textContent = on.length > 6 ? "Garde un jour de repos : 6 jours au plus." : "De 2 à 6 jours.";
+            hint.classList.toggle("pf-coach-error", on.length > 6);
+        }
     }
     days.forEach(function (d) { d.addEventListener("change", sync); });
     longs.forEach(function (l) { l.addEventListener("change", function () { own = true; }); });
