@@ -1,12 +1,14 @@
 """Coaching: the plan as a calendar feed (RFC 5545), read by Apple Calendar, Google Calendar, Outlook…
 
-One all-day event per session (DTSTART;VALUE=DATE, DTEND the day after), from 30 days back to the end of the plan.
+One event per session, from 30 days back to the end of the plan: a timed one (DTSTART/DTEND in UTC, shown as busy)
+when the session was given a time (« Mon agenda »), else an all-day one (DTSTART;VALUE=DATE, DTEND the day after,
+shown as free). The UID does not change when a session gets or loses its time: the calendar updates it in place.
 UID is the session's id (stable: a regeneration rewrites a row in place), SEQUENCE its count of changes, DTSTAMP and
 LAST-MODIFIED its last change: an edit, a move or a new duration reaches the subscribed calendar at its next refresh.
 A session removed (deleted, or cancelled by a coach) is simply no longer in the feed: a subscription drops it.
 Lines are CRLF, folded at 75 octets (never inside a UTF-8 character); TEXT values escape « \\ ; , » and newlines.
 """
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from app.services import coaching_plan as cp
 from app.services.viz import dplus, hm
@@ -66,8 +68,21 @@ def description(row, guidance: str) -> str:
     return "\n".join(parts)
 
 
-def render(rows: list, today: date, *, host: str, guidance=lambda row: "") -> str:
-    """The feed's text. `rows`: the plan's sessions; `guidance(row)`: its line of advice."""
+def when(row, zone) -> list[str]:
+    """The event's time: DTSTART/DTEND in UTC for a session with a time (`zone`: the athlete's clock, on which that
+    time is written), else the whole day, shown as free."""
+    slot = getattr(row, "slot_min", None)
+    if slot is not None and zone is not None and row.kind != cp.RACE and 0 <= slot < 24 * 60:
+        start = datetime.combine(row.day, time(slot // 60, slot % 60)).replace(tzinfo=zone).astimezone(timezone.utc)
+        end = start + timedelta(minutes=int(row.minutes))
+        return [f"DTSTART:{start.strftime('%Y%m%dT%H%M%SZ')}", f"DTEND:{end.strftime('%Y%m%dT%H%M%SZ')}"]
+    return [f"DTSTART;VALUE=DATE:{row.day.strftime('%Y%m%d')}",
+            f"DTEND;VALUE=DATE:{(row.day + timedelta(days=1)).strftime('%Y%m%d')}", "TRANSP:TRANSPARENT"]
+
+
+def render(rows: list, today: date, *, host: str, guidance=lambda row: "", zone=None) -> str:
+    """The feed's text. `rows`: the plan's sessions; `guidance(row)`: its line of advice; `zone`: the athlete's
+    clock (None: every session is an all-day event)."""
     since = today - timedelta(days=PAST_DAYS)
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", f"PRODID:{PRODID}", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
              f"X-WR-CALNAME:{escape(NAME)}", f"NAME:{escape(NAME)}",
@@ -82,13 +97,12 @@ def render(rows: list, today: date, *, host: str, guidance=lambda row: "") -> st
             f"DTSTAMP:{changed}",
             f"LAST-MODIFIED:{changed}",
             f"SEQUENCE:{int(row.seq or 0)}",
-            f"DTSTART;VALUE=DATE:{row.day.strftime('%Y%m%d')}",
-            f"DTEND;VALUE=DATE:{(row.day + timedelta(days=1)).strftime('%Y%m%d')}",
+            *when(row, zone),
             f"SUMMARY:{escape(summary(row))}",
         ]
         text = description(row, guidance(row))
         if text:
             lines.append(f"DESCRIPTION:{escape(text)}")
-        lines += ["TRANSP:TRANSPARENT", "END:VEVENT"]
+        lines.append("END:VEVENT")
     lines.append("END:VCALENDAR")
     return "\r\n".join(fold(line) for line in lines) + "\r\n"

@@ -6,7 +6,9 @@ day the suite runs). The athlete trains on Tuesday, Thursday, Friday and Sunday 
 objective set on its page: « Objectif 5h00 »; her long runs carry a climb target). She turned « Adapter mes séances
 à ma forme » on, and this Thursday morning Santé's index reads low (the last 7 nights' HRV under its usual values):
 today's quality session is a footing, the session itself moved to Friday — her coach reads « Séance adaptée ce
-matin », never why.
+matin », never why. She gave her work calendar's address in « Mon agenda » (shown masked): meetings from 9 to 12 and
+from 14 to 17:30 on working days, and next Tuesday full — every session of the next 21 days has a time, and next
+Tuesday's moved to Friday, which her coach had freed (« Mardi est plein : séance déplacée à vendredi. »).
 
 uvicorn tests.browser.coaching_preview:app --host 127.0.0.1 --port 8961
     PF_COACHING_AS=athlete (default) | coach | new   who is signed in: the athlete (Stella), her coach (Florent),
@@ -20,7 +22,7 @@ from sqlalchemy import delete, select
 
 from app.config import settings
 from app.models.activity import Activity
-from app.models.coaching import CoachingLink, CoachingSession
+from app.models.coaching import CoachingBusy, CoachingCalendar, CoachingLink, CoachingSession
 from app.models.health import HealthMetric
 from app.models.route import Route
 from app.models.user import User
@@ -105,6 +107,27 @@ async def lifespan(app):
                     HealthMetric.date > today - timedelta(days=7), HealthMetric.date <= today))).scalars():
                 row.value = 40
             plan.form_on_at = noon - timedelta(days=7)
+            await db.flush()
+            state = await co.sync(db, plan, athlete, noon)
+            # her coach removed next Friday's session: an available day without a session
+            friday = monday + timedelta(days=11)
+            await co.remove(db, next(r for r in state.rows if r.day == friday), today, noon)
+            # « Mon agenda »: her work calendar, read this morning (the preview has no worker: the busy time a
+            # reading would keep is written here) — meetings 9–12 and 14–17:30 on working days, next Tuesday full
+            calendar = CoachingCalendar(
+                user_id=athlete.id, status="ok", fetched_at=noon, checked_at=noon,
+                url="https://calendar.google.com/calendar/ical/stella%40example.org/private-preview/basic.ics")
+            db.add(calendar)
+            await db.flush()
+            for k in range(21):
+                day = today + timedelta(days=k)
+                if day.weekday() >= 5:
+                    continue
+                spans = [(6, 0, 21, 30)] if day == monday + timedelta(days=8) else [(9, 0, 12, 0), (14, 0, 17, 30)]
+                for h1, m1, h2, m2 in spans:
+                    db.add(CoachingBusy(user_id=athlete.id, calendar_id=calendar.id,
+                                        start_at=datetime.combine(day, time(h1, m1), timezone.utc),
+                                        end_at=datetime.combine(day, time(h2, m2), timezone.utc)))
             await db.flush()
             await co.sync(db, plan, athlete, noon)
             await db.commit()

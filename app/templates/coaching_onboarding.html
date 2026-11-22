@@ -13,7 +13,7 @@
     <div class="pf-head pf-coach-head">
         <div>
             <h1 class="pf-h1">Coaching <span class="pf-tag">bêta</span></h1>
-            <p class="pf-lead">{{ "Refais ton plan : tes séances faites restent." if redo else "Trois réponses, et ton plan est prêt." }}</p>
+            <p class="pf-lead">{{ "Refais ton plan : tes séances faites restent." if redo else "Quelques réponses, et ton plan est prêt." }}</p>
         </div>
     </div>
     <form method="post" action="/coaching/plan" class="pf-coach-onb-form" id="coach-onb">
@@ -42,6 +42,15 @@
             <div class="pf-coach-chips" data-long>
                 {% for i, word in weekdays %}<label class="pf-coach-chip"><input type="radio" name="long_day" value="{{ i }}"{% if chosen.long_day == i %} checked{% endif %}><span>{{ word }}</span></label>{% endfor %}
             </div>
+        </fieldset>
+
+        <fieldset class="pf-coach-card pf-coach-q-card">
+            <legend class="pf-coach-h">Quand peux-tu courir&nbsp;?</legend>
+            <div class="pf-coach-chips is-three">
+                {% for key, word in moments %}<label class="pf-coach-chip"><input type="checkbox" name="moments" value="{{ key }}"{% if key in chosen.moments %} checked{% endif %}><span>{{ word }}</span></label>{% endfor %}
+            </div>
+            <input type="hidden" name="moments_asked" value="1">
+            <p class="pf-label">Sert à placer tes séances dans la journée, si tu relies ton agenda.</p>
         </fieldset>
 
         <fieldset class="pf-coach-card pf-coach-q-card">

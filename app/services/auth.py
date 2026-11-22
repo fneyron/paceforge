@@ -117,6 +117,11 @@ QUOTAS = {  # action: (window in seconds, {scope: allowed in the window})
     # feed's requests per address (each a guess at its token, or a calendar app's refresh)
     "coaching_code": (60 * 60, {"user": 10}),
     "coaching_feed": (10 * 60, {"ip": 120}),
+    # Coaching › Mon agenda: « Actualiser » once a minute per account, the addresses added per hour, and every
+    # outbound read of a user-typed calendar address (the worker counts each: saves, refreshes, the 3-hourly round)
+    "coaching_agenda": (60, {"user": 1}),
+    "coaching_agenda_save": (60 * 60, {"user": 20}),
+    "coaching_agenda_fetch": (60 * 60, {"user": 30}),
 }
 RETRY_AFTER = "3600"
 

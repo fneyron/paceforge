@@ -20,6 +20,8 @@ from app.dependencies import get_current_user
 from app.models import (
     Activity,
     ApiToken,
+    CoachingBusy,
+    CoachingCalendar,
     CoachingInvite,
     CoachingLink,
     CoachingPlan,
@@ -104,6 +106,13 @@ async def _seed(db, user: User) -> None:
                         minutes=45, status="done", activity_id=rows[0].id, ressenti=3),
         CoachingInvite(athlete_id=user.id, code_hash=f"{user.id:064d}", expires_at=NOW + timedelta(days=7)),
     ])
+    await db.flush()
+    # Coaching › Mon agenda: a calendar address and a busy interval read from it
+    calendar = CoachingCalendar(user_id=user.id, url="https://calendar.example.org/secret.ics", status="ok",
+                                fetched_at=NOW)
+    db.add(calendar)
+    await db.flush()
+    db.add(CoachingBusy(user_id=user.id, calendar_id=calendar.id, start_at=NOW, end_at=NOW + timedelta(hours=1)))
     await db.flush()
 
 

@@ -6,7 +6,9 @@ import calendar
 from datetime import date, timedelta
 
 from app.services import coaching as co
+from app.services import coaching_agenda as ag
 from app.services import coaching_plan as cp
+from app.services import coaching_slots as cs
 from app.services import race_prep as rp
 from app.services import viz
 from app.services.heart_rate_zones import running_zones
@@ -29,6 +31,10 @@ FORM_COACH = "Séance adaptée ce matin"
 FORM_MOVED = "Séance reportée de {day}"
 FORM_SUGGEST = "Récupération basse ce matin."
 COACH_WEEK = "Semaine allégée."  # a week the form lightened, as a coach reads it
+# the agenda (docs/coaching.md › « Mon agenda »): the athlete reads why a session changed day; a coach reads the
+# times and that it moved, never that a day is full (nothing of the athlete's calendar reaches a coach)
+MOVED = "{home} est plein : séance déplacée à {day}."
+MOVED_COACH = "Séance déplacée de {home} à {day}."
 ENDED = {co.PASSED: "{name} est derrière toi : {when}le plan continue sans course.",
          co.GONE: "{name} n’est plus dans tes courses : {when}le plan continue sans course."}
 METHOD = (
@@ -45,6 +51,8 @@ METHOD = (
     "Si tu l’actives, le plan lit ta récupération de Santé chaque matin : basse, ta séance dure devient un footing "
     "et se décale. Une bonne récupération n’ajoute jamais rien.",
     "Tes sorties enregistrées cochent les séances du jour. Sans montre, coche « Fait ».",
+    "Si tu relies ton agenda, chaque séance prend un créneau libre, hors réunions et rendez-vous ; un jour plein "
+    "décale sa séance. PaceForge n’en garde que tes heures occupées.",
     "Ce que tu modifies ou déplaces reste tel quel ; le reste du plan se recalcule autour.",
 )
 
@@ -137,6 +145,41 @@ def _activity(run, link: bool, climb: int | None = None) -> dict:
             "href": f"/activity/{run.id}" if link else None}
 
 
+def clock_time(minutes: int) -> str:
+    """A time of day: 735 → « 12 h 15 » (a duration is « 1h05 »: the two never read alike)."""
+    minutes %= 24 * 60
+    return f"{minutes // 60}{NNBSP}h{NNBSP}{minutes % 60:02d}"
+
+
+def slot_label(row) -> str | None:
+    """« 12 h 15 – 13 h 20 »: the time a session was given, its start to its end."""
+    if row.slot_min is None:
+        return None
+    return f"{clock_time(row.slot_min)} – {clock_time(row.slot_min + row.minutes)}"
+
+
+def _other_slot(row, state: co.State) -> bool:
+    """Whether « Autre créneau » has another free time to offer for this session."""
+    if state.agenda is None or row.status != co.PLANNED or row.day < state.clock.today or row.kind == cp.RACE:
+        return False
+    local = state.clock.now.astimezone(state.clock.zone)
+    return ag.next_slot(row, state.agenda, state.plan, state.clock.today, local.hour * 60 + local.minute,
+                        state.usual) is not None
+
+
+def week_moves(state: co.State, monday: date, coach: bool = False) -> str | None:
+    """« Mardi est plein : séance déplacée à mercredi. » for each session of the week the agenda sent to another
+    day (still to do); a coach reads only that it moved."""
+    out = []
+    for r in state.rows:
+        if (r.status == co.PLANNED and cp.monday_of(r.day) == monday and r.auto_day is not None
+                and r.auto_day != r.day and not r.pinned and r.origin == "auto" and not r.form):
+            home, day = JOURS_L[r.auto_day.weekday()], JOURS_L[r.day.weekday()]
+            text = (MOVED_COACH if coach else MOVED).format(home=home, day=day)
+            out.append(rp.fr(text[:1].upper() + text[1:]) or text)
+    return " ".join(out) or None
+
+
 def _form(row, state: co.State, coach: bool) -> dict | None:
     """What a session the form touched says: lightened on a low morning — to the athlete why, with the way to Santé
     and where the session went; to a coach only that it was adapted — or moved here from that morning."""
@@ -178,6 +221,11 @@ def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool) -> di
         "activity": _activity(run, link=not coach, climb=climb_of(row)) if run else None,
         "done_manual": hm(row.done_minutes) if row.status == co.DONE and run is None and row.done_minutes else None,
         "done_min": row.done_minutes, "ressenti": row.ressenti, "note": row.note, "coach_comment": row.coach_comment,
+        # the agenda: the time the session was given (a coach reads it too); for the athlete, a day with no room
+        # and the way to another free time
+        "slot": slot_label(row) if planned else None,
+        "full": planned and not coach and row.slot_flag == cs.FULL and row.slot_min is None,
+        "can_slot": not coach and _other_slot(row, state),
         "form": _form(row, state, coach),
         # a low morning and a hard session the plan does not change by itself (pinned, or a coach's): the athlete
         # is offered to lighten it — never shown to a coach
@@ -338,7 +386,8 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
         "week": {"monday": monday.isoformat(), "label": week_label(monday), "strip": strip,
                  "prev": (monday - timedelta(weeks=1)).isoformat() if monday > first else None,
                  "next": (monday + timedelta(weeks=1)).isoformat() if monday < last else None,
-                 "summary": week_summary(state, monday, done), **week_note(state, monday, coach)},
+                 "summary": week_summary(state, monday, done), **week_note(state, monday, coach),
+                 "moves": week_moves(state, monday, coach)},
         "sessions": [_session(r, state, rows_hr, runs_by_id, coach) for r in by_day.get(selected, [])],
         "extras": [_activity(s, link=not coach) for s in extras if s.day == selected],
         "moving": {"id": moving.id, "title": cp.KINDS.get(moving.kind, moving.kind)} if moving else None,

@@ -15,6 +15,11 @@
   `form_state` keeps the mornings Santé's index read low (their dates, 14 days; never the index, a measurement or a
   reason) and the day last read; a session lightened on such a morning carries `form`. All of it is cleared when
   the option is turned off, the health consent withdrawn or the plan deleted.
+- the agenda (docs/coaching.md › « Mon agenda »): coaching_calendars holds the private iCalendar addresses the
+  athlete pasted (3 at most, encrypted), coaching_busy the busy time read from them — a start, an end, « away » or
+  not, for the next 21 days; never a title, a description, a place or an attendee. `moments` on the plan: when the
+  athlete can run (matin, midi, soir). A session's `slot_min` is the time it was given (minutes after midnight on
+  the athlete's clock), `slot_chosen` that the athlete picked it, `slot_flag` that its day has no room.
 No pain, injury or illness field anywhere: the ressenti is how hard the session felt (1–5), nothing else.
 """
 from datetime import date, datetime
@@ -48,6 +53,8 @@ class CoachingPlan(Base):
     form_on_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # {"low": [day ISO, …], "day": the day last read, "seen": an index was read that day, "checked": when}
     form_state: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+    # when the athlete can run: « matin,midi,soir » (None: all three)
+    moments: Mapped[str | None] = mapped_column(String(24), nullable=True)
     feed_token: Mapped[str | None] = mapped_column(EncryptedString(255), nullable=True)
     feed_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -89,6 +96,12 @@ class CoachingSession(Base):
     # the form's doing: « allegee » (a hard session turned into a footing on a low morning), « reportee » (the hard
     # session moved here from that morning); a regeneration leaves both as they are
     form: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    # the agenda's doing: the time the session was given (minutes after midnight on the athlete's clock; None: no
+    # time), whether the athlete chose it (« Autre créneau »: kept whatever the calendar says), and « chargee » when
+    # its day has no room and no other day would take it
+    slot_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    slot_chosen: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    slot_flag: Mapped[str | None] = mapped_column(String(12), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     # the last change a calendar must see (its day, kind, duration or structure: services/coaching.touch), never a
     # status or a ressenti: the feed's LAST-MODIFIED, written by hand with `seq`
@@ -119,3 +132,35 @@ class CoachingInvite(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CoachingCalendar(Base):
+    """A private iCalendar address the athlete pasted in « Mon agenda » (Google's secret address, an iCloud public
+    link, an Outlook published calendar): encrypted, shown masked, removable. `status`: None (not read yet), « ok »,
+    or why the last reading was refused (safe_fetch.Refused.code, « format », « own », « rate »)."""
+
+    __tablename__ = "coaching_calendars"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+                                         index=True)
+    url: Mapped[str] = mapped_column(EncryptedString(4096), nullable=False)
+    status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # last good reading
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # last attempt
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CoachingBusy(Base):
+    """One busy interval read from a calendar: when, and nothing else. `away`: an all-day absence of several days."""
+
+    __tablename__ = "coaching_busy"
+    __table_args__ = (Index("ix_coaching_busy_user_start", "user_id", "start_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    calendar_id: Mapped[int] = mapped_column(Integer, ForeignKey("coaching_calendars.id", ondelete="CASCADE"),
+                                             nullable=False, index=True)
+    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    away: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
