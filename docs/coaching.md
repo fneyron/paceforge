@@ -711,7 +711,11 @@ quand tu vois de nouvelle séance une notif pour débrief du ressenti etc. » **
      « Sortie » ; aujourd’hui a son numéro en pastille pleine ; chaque jour porte un nom complet pour un lecteur
      d’écran (« mardi 17 novembre : Footing 35 minutes, faite, à débriefer ») ;
    - ‹ › font glisser d’une semaine (les semaines passées restent à un toucher), « Mois » montre le mois entier, les
-     mêmes jours en plus court.
+     mêmes jours en plus court ;
+   - **le calendrier se manipule à la main** (propriétaire, 22 novembre 2026 : « On ne peut pas avoir un calendrier
+     super interactif pour les séances ? ») : on **maintient une séance** et on la pose sur un autre jour, un balayage
+     horizontal sur les semaines vaut ‹ ou › (voir « Déplacer » ci-dessous). Une ligne le dit sous les semaines tant
+     qu’on ne l’a pas fait une fois : « Maintiens une séance pour la déplacer. »
 4. **Le jour choisi s’ouvre sous les semaines**, dans la même carte, sans changer de page — aujourd’hui à
    l’ouverture, même un jour sans séance :
    - le type en grand, avec sa couleur, et la durée ; le créneau (« Autre créneau », discret) ;
@@ -759,7 +763,33 @@ les routes et les tables gardent « coach » pour le rôle : la personne qui sui
   **Deux jours durs de suite ne sont jamais refusés** : pendant le choix, un point marque les jours voisins d’une
   autre séance dure (« tu peux le choisir quand même »), puis la semaine le dit (« Samedi et dimanche : deux jours
   durs de suite. »). Le générateur, lui, n’en fait toujours jamais (« Jours durs » ci-dessus). Tout se fait au
-  clavier (ce sont des boutons) ; pas de glisser-déposer. La course ne se déplace pas.
+  clavier (ce sont des boutons). La course ne se déplace pas.
+- **À la main, le même déplacement** (`static/js/coaching-calendar.js`, chargé par la page Coaching seule ; ses
+  seuils sont des choix pratiques, des gestes et non des règles d’entraînement) :
+  - **un doigt maintenu 250 ms** sur un jour (sans bouger de plus de 8 px : avant, c’est le défilement de la page ou un
+    balayage) soulève sa séance ; **une souris** la soulève après 5 px. Le bloc suit le doigt **au-dessus de lui** et
+    au-dessus du numéro du jour visé ; les jours qui la prennent sont entourés, les autres pâlissent, un jour voisin
+    d’une autre séance dure prend la couleur et le point de l’avertissement ; le jour sous le doigt se remplit ;
+  - **lâchée sur un jour qui la prend**, elle y est montrée aussitôt et part par la même adresse que le bouton
+    (`POST …/sessions/<id>/move`, `to`, avec la vue et les semaines affichées) : la réponse redessine le calendrier
+    et ouvre son nouveau jour ; c’est le serveur qui décide et qui dit l’avertissement ensuite. Une réponse qui
+    n’arrive pas la remet à sa place (le message habituel : « Impossible de charger. Réessaie. »). Lâchée ailleurs,
+    ou Échap : elle revient, rien n’est envoyé. Un doigt maintenu puis relâché sans bouger reste un toucher : le jour
+    s’ouvre ;
+  - **le serveur dit tout** : chaque bloc déplaçable porte les jours affichés qui le prennent et ceux qui
+    avertissent (`coaching_view.drops`, les réponses mêmes du mode « Déplacer », `drop`) ; le script ne fait que les
+    lire. Seules les séances que « Déplacer » prend se soulèvent ; rien pendant que « Déplacer » a fait des jours des
+    cibles ;
+  - **une sortie hors plan** de cette semaine (le bloc gris) se pose sur une séance de sa semaine : c’est « C’est ma
+    séance de … », à la main — cette séance va au jour de la sortie, que la lecture suivante lui lie ;
+  - **la personne qui suit le plan** a les droits de son bouton « Déplacer » : les mêmes séances ; jamais la sortie
+    hors plan (le bouton « C’est ma séance de … » est à l’athlète) ;
+  - **un balayage horizontal** (48 px au moins, deux fois plus large que haut, en moins de 0,8 s, pas à moins de
+    24 px d’un bord de l’écran, gardés aux gestes du système) suit le lien ‹ ou › ; les semaines glissent de côté
+    (moins de 300 ms, rien quand le système demande moins d’animations) ;
+  - **le défilement reste celui de la page** : rien n’est retenu tant qu’une séance n’est pas soulevée ; seul le
+    jour soulevé coupe les gestes du navigateur. Pas de menu du lien ni de sélection sur un jour (iOS : un appui
+    long est le geste). Vérifié dans Chromium (vrais événements tactiles), pas sur un iPhone.
 - Chaque toucher remplace la partie du milieu sur place (htmx), sans recharger la page ; le focus reste sur
   l’élément touché. Sans JavaScript, les mêmes liens et formulaires renvoient à la page.
 - `/coaching/athletes` (« Plans suivis ») : la liste du coach (la barre de la semaine, les dernières séances avec statut et ressenti) et
