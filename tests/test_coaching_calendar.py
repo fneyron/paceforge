@@ -269,6 +269,50 @@ async def test_moving_is_one_tap_on_any_day_and_two_hard_days_are_said(client, p
     assert not [x for x in rows if x.day == THU], "Thursday stays free"
 
 
+async def test_by_hand_the_calendar_carries_what_moving_answers(client, people, db_session, clock):
+    """A session held and dropped on another day (coaching-calendar.js) posts the move « Déplacer » posts: its block
+    carries the days that take it and those that warn, the very answers of the moving mode; the follower picks up
+    what « Déplacer » gives them, never the run outside the plan."""
+    athlete = people.athlete
+    _as(client, athlete)
+    await _plan(client, db_session, athlete, days=("1", "3", "6"), base="180")  # Tuesday, Thursday, Sunday
+    clock.day = WED
+    db_session.add(_run(athlete, WED, 38, 1, name="Footing avec Léa"))
+    await db_session.flush()
+    main = _main((await client.get("/coaching")).text)
+    rows = await _rows(db_session, athlete)
+    hard = next(r for r in rows if r.kind == cp.HILLS)  # next Thursday's
+    block = re.search(rf'<i class="pf-coach-bar-s [^"]*" style="--h: \d+" data-move="/coaching/sessions/{hard.id}/move"'
+                      r' data-to="([\d -]*)" data-warn="([\d -]*)" data-what="([^"]+)"></i>', main)
+    assert block and block.group(3) == f"{cv.KIND_SHORT[hard.kind]} {hm(hard.minutes)}"
+    moving = (await client.get(f"/coaching/calendar?d=2026-11-18&w=2026-11-16&move={hard.id}", headers=HTMX)).text
+    assert 'is-target' in moving
+    cells = {re.search(r'id="coach-day-([\d-]+)"', c).group(1): c for c in _cells(moving)}
+    assert block.group(1).split() == [d for d, c in cells.items() if "is-target" in c], "the same days as « Déplacer »"
+    assert block.group(2).split() == [d for d, c in cells.items() if "is-warn" in c] and "2026-11-23" in block.group(2)
+    assert "data-move" not in moving and 'id="coach-drag-hint"' not in moving, "none while the days are targets"
+    # only what « Déplacer » takes (a session done is never held); the run of this week may be dropped on a session
+    # (« C’est ma séance de … »); each day says its date to the script
+    tue = next(r for r in rows if r.day == TUE)
+    assert tue.status == co.MISSED and f"/sessions/{tue.id}/move" in main, "missed this week: « Reporter », by hand too"
+    done = _row(MONDAY, status=co.DONE, plan_id=tue.plan_id, user_id=athlete.id, manual=True, done_minutes=45)
+    db_session.add(done)
+    await db_session.flush()
+    main = _main((await client.get("/coaching")).text)
+    assert f"/sessions/{done.id}/move" not in main
+    assert '<i class="pf-coach-bar-s is-extra is-done" style="--h: ' in main
+    assert 'data-run="2026-11-18" data-what="Sortie"' in main
+    assert 'id="coach-day-2026-11-19" data-day="2026-11-19" hx-get=' in main
+    assert ('<p class="pf-label pf-coach-drag-hint" id="coach-drag-hint" aria-hidden="true" hidden>'
+            'Maintiens une séance pour la déplacer.</p>') in main
+    assert 'data-v="semaine" data-w="2026-11-16"' in main
+    # the follower: the same sessions, never the run outside the plan
+    db_session.add(CoachingLink(athlete_id=athlete.id, coach_id=people.coach.id))
+    await db_session.flush()
+    theirs = (await _as(client, people.coach).get(f"/coaching/athletes/{athlete.id}")).text
+    assert f'data-move="/coaching/athletes/{athlete.id}/sessions/{hard.id}/move" data-to="{block.group(1)}"' in theirs
+    assert "data-run" not in theirs
+
 async def test_a_missed_session_is_reported_or_was_the_run_of_another_day(client, people, db_session, clock):
     athlete = people.athlete
     _as(client, athlete)

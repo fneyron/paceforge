@@ -15,12 +15,12 @@
 {#- what every form of the calendar sends back: the view and the weeks shown (the calendar stays where it was) -#}
 {% macro keep() %}<input type="hidden" name="v" value="{{ p.view }}"><input type="hidden" name="w" value="{{ p.cal.anchor }}">{% endmacro %}
 {% macro cell(c) %}
-{% set inner %}<span class="pf-coach-num" aria-hidden="true">{{ c.num }}</span><span class="pf-coach-blocks" aria-hidden="true">{% for b in c.blocks %}<i class="pf-coach-bar-s is-{{ b.cls }} is-{{ b.status }}" style="--h: {{ b.h }}"></i>{% endfor %}</span>{% if c.word %}<span class="pf-coach-word" aria-hidden="true">{{ c.word }}</span>{% endif %}{% if c.time %}<span class="pf-coach-when" aria-hidden="true">{{ c.time }}</span>{% endif %}{% if c.todo %}<span class="pf-coach-todo" aria-hidden="true"></span>{% endif %}{% endset %}
+{% set inner %}<span class="pf-coach-num" aria-hidden="true">{{ c.num }}</span><span class="pf-coach-blocks" aria-hidden="true">{% for b in c.blocks %}<i class="pf-coach-bar-s is-{{ b.cls }} is-{{ b.status }}" style="--h: {{ b.h }}"{% if b.hand %} data-move="{{ base }}/sessions/{{ b.id }}/move" data-to="{{ b.hand.to }}" data-warn="{{ b.hand.warn }}" data-what="{{ b.hand.what }}"{% elif b.run %} data-run="{{ b.run }}" data-what="{{ b.what }}"{% endif %}></i>{% endfor %}</span>{% if c.word %}<span class="pf-coach-word" aria-hidden="true">{{ c.word }}</span>{% endif %}{% if c.time %}<span class="pf-coach-when" aria-hidden="true">{{ c.time }}</span>{% endif %}{% if c.todo %}<span class="pf-coach-todo" aria-hidden="true"></span>{% endif %}{% endset %}
 {% set cls %}pf-coach-day{% if c.today %} is-today{% endif %}{% if c.selected %} is-selected{% endif %}{% if c.out %} is-out{% endif %}{% if c.past %} is-past{% endif %}{% if c.target %} is-target{% endif %}{% if c.warn %} is-warn{% endif %}{% endset %}
 {% if p.moving %}
 <button type="submit" name="to" value="{{ c.iso }}" id="coach-day-{{ c.iso }}" class="{{ cls }}"{% if not c.target %} disabled{% endif %} aria-label="Déplacer au {{ c.aria }}{% if c.warn %} — deux jours durs de suite{% endif %}">{{ inner }}</button>
 {% else %}
-<a href="{{ base }}?d={{ c.iso }}{{ wq }}{{ vq }}" id="coach-day-{{ c.iso }}" hx-get="{{ base }}/calendar?d={{ c.iso }}{{ wq }}{{ vq }}" {{ swap|safe }} class="{{ cls }}"{% if c.selected %} aria-current="true"{% endif %} aria-label="{{ c.aria }}{% if c.today %} (aujourd’hui){% endif %}">{{ inner }}</a>
+<a href="{{ base }}?d={{ c.iso }}{{ wq }}{{ vq }}" id="coach-day-{{ c.iso }}" data-day="{{ c.iso }}" hx-get="{{ base }}/calendar?d={{ c.iso }}{{ wq }}{{ vq }}" {{ swap|safe }} class="{{ cls }}"{% if c.selected %} aria-current="true"{% endif %} aria-label="{{ c.aria }}{% if c.today %} (aujourd’hui){% endif %}">{{ inner }}</a>
 {% endif %}
 {% endmacro %}
 {% macro durations(first, chosen) %}{% for m in range(first, 365, 5) %}<option value="{{ m }}"{% if m == chosen %} selected{% endif %}>{% if m >= 60 %}{{ "%dh%02d"|format(m // 60, m % 60) }}{% else %}{{ m }} min{% endif %}</option>{% endfor %}{% endmacro %}
@@ -58,7 +58,10 @@
         <form method="post" action="{{ base }}/sessions/{{ p.moving.id }}/move" hx-post="{{ base }}/sessions/{{ p.moving.id }}/move" {{ swap|safe }}>
         {{ keep() }}
         {% endif %}
-        <div class="pf-coach-grid" role="group" aria-label="Calendrier, {{ p.cal.label }}">
+        {#- by hand (coaching-calendar.js): a session held, then dropped on another day — the move « Déplacer » posts;
+            a horizontal swipe is ‹ or ›. The keyboard, a screen reader and a browser without JavaScript keep the
+            buttons. -#}
+        <div class="pf-coach-grid" role="group" aria-label="Calendrier, {{ p.cal.label }}"{% if not p.moving %} data-v="{{ p.view }}" data-w="{{ p.cal.anchor }}"{% endif %}>
             <div class="pf-coach-heads" aria-hidden="true">{% for h in p.cal.heads %}<span>{{ h }}</span>{% endfor %}</div>
             {% for wk in p.cal.weeks %}
             <div class="pf-coach-week{% if wk.current %} is-current{% endif %}">
@@ -71,6 +74,7 @@
             </div>
             {% endfor %}
         </div>
+        {% if p.cal.by_hand %}<p class="pf-label pf-coach-drag-hint" id="coach-drag-hint" aria-hidden="true" hidden>Maintiens une séance pour la déplacer.</p>{% endif %}
         {% if p.moving %}
         {% if p.moving.hard %}<p class="pf-label pf-coach-move-hint">Un point marque un jour voisin d’une autre séance dure&nbsp;: tu peux le choisir quand même.</p>{% endif %}
         </form>
