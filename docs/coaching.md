@@ -300,7 +300,7 @@ critères n’ont pas pu être lus (texte intégral inaccessible) : il n’est p
 **Ce que voit l’athlète.** Une ligne sous l’objectif, sur l’écran de départ (elle suit les réponses, comme la
 semaine dessinée) et en haut de sa page : « **Tu débutes** : huit semaines en aisance d’abord, quatre jours de course
 au plus. » et dessous ce qui a été lu (« Lu sur tes 12 dernières semaines : 5 avec une sortie, 40 min par
-semaine. » ; « Aucune sortie enregistrée : lu sur ton volume, 1h00 par semaine. ») ; après les 8 semaines : « une
+semaine. » ; « Aucune sortie enregistrée ; lu sur ton volume, 1h00 par semaine. ») ; après les 8 semaines : « une
 séance de qualité par semaine au plus, courte, et quatre jours de course au plus. ». « **Tu cours régulièrement** : lu
 sur tes 12 dernières semaines : 11 avec une sortie, 2h10 par semaine. » ; « **Tu t’entraînes beaucoup** : … 11 avec 3
 sorties ou plus … ». **La personne qui suit le plan ne voit jamais cette ligne** : elle voit le plan lui-même.

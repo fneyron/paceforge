@@ -639,7 +639,7 @@ def level_line(level: cp.Level | None, week: int = 0) -> dict | None:
             why += f", {level.busy} avec 3 sorties ou plus"
         why += f", {hm(level.median)} par semaine." if level.median else "."
     else:
-        why = f"Aucune sortie enregistrée : lu sur ton volume, {hm(level.base)} par semaine."
+        why = f"Aucune sortie enregistrée\u202f; lu sur ton volume, {hm(level.base)} par semaine."
     if level.level == cp.DEBUTANT:
         text = NOVICE_RULE[0 if week < cp.NOVICE_EASY_WEEKS else 1]
     else:

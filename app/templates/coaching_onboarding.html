@@ -113,6 +113,16 @@
         hint.classList.toggle("pf-coach-error", n < 2 || n > 6);
     }
     days.forEach(function (d) { d.addEventListener("change", sync); });
+    // « Préparer une course » chosen: its first race (else « Ajouter une course ») is chosen with it, before the week
+    // is drawn again (this listener runs on the input itself, before the form's)
+    [].forEach.call(form.querySelectorAll('input[name="intent"]'), function (i) {
+        i.addEventListener("change", function () {
+            if (i.value === "course" && !form.querySelector('input[name="goal"]:checked')) {
+                var first = form.querySelector('input[name="goal"]');
+                if (first) first.checked = true;
+            }
+        });
+    });
     form.addEventListener("change", sync);
     form.addEventListener("input", sync);
     if (block && fresh) block.addEventListener("focusin", function () { if (!fresh.checked) { fresh.checked = true; sync(); } });

@@ -2000,6 +2000,9 @@ a.pf-coach-activity:hover b { color: rgb(var(--pf-accent)); }
     .pf-coach-feel > :is(button, span) { font-size: 0.6875rem; }
     .pf-coach-row .pf-coach-select { min-width: 7.5rem; }
     .pf-coach-chip > span { font-size: 0.75rem; }
+    .pf-coach-field-pair { grid-template-columns: minmax(0, 1fr); }
+    .pf-coach-field-pair .pf-coach-unit .pf-input { max-width: 8rem; }
+    .pf-coach-newrace { padding-left: 10px; padding-right: 10px; }
     .pf-coach-recent li { grid-template-columns: 24px 5.6rem minmax(0, 1fr) auto; gap: 6px; }
 }
 @media (min-width: 900px) {

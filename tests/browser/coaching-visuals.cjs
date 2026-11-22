@@ -543,7 +543,7 @@ async function theme(page, dark) {
       assert.equal(await page.evaluate(() => document.activeElement.id), `coach-day-${sat}`, 'the focus on its new day');
       assert.equal(await page.locator(`#coach-day-${fri} .pf-coach-bar-s`).count(), 0, 'its old day is free');
       assert.equal(await page.locator(`#coach-day-${sat}.is-selected .pf-coach-bar-s.is-hard`).count(), 1, 'it is on the day chosen');
-      assert.match(await page.locator('.pf-coach-hardpair').innerText(), /^Samedi et dimanche\s:\sdeux jours durs de suite\.$/, 'said on its week');
+      assert.match(await page.locator('.pf-coach-hardpair').innerText(), /^Samedi et dimanche\s:\sdeux jours durs de suite\. Tu peux courir la séance en footing\.$/, 'said on its week, with the way out');
       await shot(page, 'athlete-393-moved');
       // pinned: read again, it stays where it was put
       await page.goto(`${athlete}/coaching?d=${sat}`, { waitUntil: 'networkidle' });
@@ -625,11 +625,15 @@ async function theme(page, dark) {
       await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
       assert.match(await page.locator('h1').innerText(), /^Coaching\s+bêta$/i, key);
       assert.equal(await page.locator('a.pf-back[href="/activities"]').isVisible(), app === 'old', key + ': « ‹ Activités »');
-      // out of the box: every answer is filled in and the plan is drawn — no race: one goal, said, not asked; no
-      // history: five coarse volumes, 2 h chosen; the default week (Tuesday, Thursday, Sunday), the long run on Sunday
-      assert.equal(await page.locator('.pf-coach-option').count(), 0, key + ': no question with one answer');
-      assert.match(await page.locator('.pf-coach-nogoal').innerText(), /^Objectif\s: Progresser, sans course\s/, key);
-      assert.equal(await page.locator('input[name="goal"]').getAttribute('value'), 'none', key);
+      // out of the box: every answer is filled in and the plan is drawn — no race: « Progresser » chosen among the
+      // three intents, its line under them, the races folded away; no history: five coarse volumes, 2 h chosen; the
+      // default week (Tuesday, Thursday, Sunday), the long run on Sunday
+      assert.deepEqual((await page.locator('.pf-coach-intent b').allInnerTexts()).map(t => t.trim()), ['Garder la forme', 'Progresser', 'Préparer une course'], key);
+      assert.equal(await page.locator('input[name="intent"]:checked').getAttribute('value'), 'progresser', key);
+      assert.match(await page.locator('#coach-intent-line').innerText(), /^Ton volume monte peu à peu/, key);
+      assert.equal(await page.locator('#coach-races').isVisible(), false, key + ': no race to choose for « Progresser »');
+      assert.equal(await page.locator('input[name="goal"]:checked').count(), 0, key);
+      assert.match(await page.locator('.pf-coach-pv-more .pf-coach-level').innerText(), /^Tu cours régulièrement\s: aucune sortie enregistrée/, key + ': the level, read');
       assert.deepEqual((await page.locator('.pf-coach-chip.is-wide').allInnerTexts()).map(t => t.replace(/\s+/g, ' ').trim()),
         ['1 h', '2 h', '3 h', '4 h', '5 h et +'], key);
       assert.equal(await page.locator('input[name="base"]:checked').getAttribute('value'), '120', key);
@@ -650,7 +654,7 @@ async function theme(page, dark) {
       assert.ok(columns.every((x, i) => Math.abs(x - under[i]) < 1.5), key + ': each day sits under its bar');
       assert.deepEqual((await page.locator('.pf-coach-pv-more .pf-coach-legend span').allInnerTexts()).map(t => t.trim()), ['Footing', 'Sortie longue', 'Séance'], key);
       assert.match(await page.locator('#coach-preview-first').innerText(), /^Première séance aujourd’hui\s: Séance \d+ min$/, key);
-      const chips = await page.locator('.pf-coach-chip, .pf-coach-option').evaluateAll(all => all.map(el => {
+      const chips = await page.locator('.pf-coach-chip, .pf-coach-option, .pf-coach-intent').evaluateAll(all => all.filter(el => el.getClientRects().length).map(el => {
         const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), Math.round(r.top)]; }));
       // 44 px tall; seven days side by side leave 33 px each at 320 px, 43 px at 393 px
       assert.deepEqual(chips.filter(([w, h]) => w < (width < 393 ? 32 : 40) || h < 44), [], key + ': 44 px choices');
@@ -781,6 +785,65 @@ async function theme(page, dark) {
       await noOverflow(wide, 'habit onboarding desktop');
       await shot(wide, 'habit-1280-onboarding');
       await wide.close();
+      await as('new');
+    }
+    {
+      // the owner's story: a new account opens Coaching, adds « 10 km du lac d’Annecy » on 24 April 2027 — 10 km, no
+      // GPX file —, keeps two days (Tuesday and Sunday) and gets a plan in the calendar
+      const as = who => fetch(`${fresh}/__preview/coaching/as/${who}`, { method: 'POST' }).then(r => r.json());
+      assert.deepEqual(await as('story'), { synthetic: true, as: 'story' });
+      // (the plan is made at the last one: 393 px, light)
+      for (const [width, dark] of [[320, false], [320, true], [393, true], [393, false]]) {
+        const key = `story ${width}${dark ? ' dark' : ''}`;
+        const page = await open(browser, { width, dark });
+        await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
+        await redrawn(page, () => page.locator('input[name="intent"][value="course"]').check({ force: true }));
+        assert.equal(await page.locator('#coach-races').isVisible(), true, key);
+        assert.equal(await page.locator('#coach-goal-new').isChecked(), true, key + ': no race yet: « Ajouter une course », open');
+        assert.equal(await page.locator('#coach-newrace').isVisible(), true, key);
+        assert.equal(await page.getByRole('button', { name: 'Créer mon plan' }).isDisabled(), true, key + ': waits for the race');
+        await page.locator('#race-name').fill('10 km du lac d’Annecy');
+        await page.locator('#race-date').fill('2027-04-24');
+        await redrawn(page, async () => { await page.locator('#race-km').fill('10'); await page.locator('#race-km').blur(); });
+        await redrawn(page, () => page.locator('[data-days] input[value="3"]').uncheck({ force: true }));
+        assert.deepEqual(await page.locator('[data-days] input:checked').evaluateAll(all => all.map(i => i.value)), ['1', '6'], key);
+        assert.deepEqual((await previewBars(page)).map(([day, kind]) => [day, kind]), [[1, 'hard'], [6, 'long']], key + ': a session with rhythm and a long run');
+        const lines = await page.locator('.pf-coach-pv-lines li').allInnerTexts();
+        assert.ok(lines.some(l => /^Sans temps visé, une seule séance de qualité/.test(l)), key + ' ' + lines);
+        assert.ok(lines.some(l => /^Deux séances par semaine suffisent/.test(l)), key + ' ' + lines);
+        assert.ok(lines.some(l => /^Pour aller plus loin, c’est une troisième séance/.test(l)), key + ' ' + lines);
+        assert.equal(await page.getByRole('button', { name: 'Créer mon plan' }).isDisabled(), false, key);
+        const chips = await page.locator('.pf-coach-chip, .pf-coach-option, .pf-coach-intent, #coach-newrace .pf-input').evaluateAll(all => all.filter(el => el.getClientRects().length).map(el => {
+          const r = el.getBoundingClientRect(); return [el.id || el.className, Math.round(r.width), Math.round(r.height)]; }));
+        assert.deepEqual(chips.filter(([, w, h]) => w < (width < 393 ? 32 : 40) || h < 44), [], key + ': 44 px choices');
+        await noOverflow(page, key);
+        await shot(page, `story-${width}-onboarding${dark ? '-dark' : ''}`);
+        if (width === 393 && !dark) {
+          await page.getByRole('button', { name: 'Créer mon plan' }).click();
+          await page.waitForURL('**/coaching');
+          assert.match(await page.locator('.pf-coach-goal').innerText(), /10 km du lac d’Annecy/);
+          assert.match(await page.locator('.pf-coach-goal-time').innerText(), /^Environ\s55 min$/);
+          assert.equal(await page.locator('a.pf-coach-goal-time').count(), 0, 'no race page to link to');
+          assert.match(await page.locator('.pf-coach-head .pf-coach-level').first().innerText(), /^Tu cours régulièrement/);
+          await noOverflow(page, 'story plan');
+          await shot(page, 'story-393-plan');
+          await theme(page, true); await shot(page, 'story-393-plan-dark'); await theme(page, false);
+          await page.goto(fresh + '/coaching?d=2027-04-24', { waitUntil: 'networkidle' });
+          assert.match(await page.locator('.pf-coach-s-title').first().innerText(), /Course/);
+          await shot(page, 'story-393-race-day');
+          await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
+          await page.locator('details.pf-coach-how > summary').click();
+          assert.match(await page.locator('details.pf-coach-how').innerText(), /Deux jours par semaine : une séance avec du rythme/);
+          await shot(page, 'story-393-how');
+          await page.goto(fresh + '/coaching?v=mois&w=2027-04-01', { waitUntil: 'networkidle' });
+          await shot(page, 'story-393-april');
+          await page.goto(fresh + '/coaching?refaire=1', { waitUntil: 'networkidle' });
+          assert.equal(await page.locator('input[name="goal"][value="race"]').isChecked(), true, 'its race, chosen again');
+          await shot(page, 'story-393-redo');
+        }
+        assert.deepEqual(page.errors, [], key + ': browser errors');
+        await page.close();
+      }
       await as('new');
     }
 
