@@ -526,6 +526,9 @@ function Companion() {
       if (reply.kind === 'connections') {
         setConnections(reply.snapshot); setShowWeb(false); setStatus(reply.result || afterRefresh.current);
         afterRefresh.current = '';
+        // The server has just answered with every connection's own state: a notice kept from an earlier page
+        // refresh (« Connexion interrompue », a provider's error) is stale here and would contradict it.
+        setRefreshIssue('');
         if (pair) confirmAccount(reply.snapshot.user_id === pair.user_id);
         if (reply.task.pageUrl && offline.library.userId !== reply.snapshot.user_id) {
           // A session may have changed while Settings covered the document.
