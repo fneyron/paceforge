@@ -20,7 +20,9 @@ from app import features
 from app.models.coaching import CoachingInvite, CoachingLink, CoachingPlan, CoachingSession
 from app.models.route import Route
 from app.models.user import User
+from app.services import coaching_agenda as ag
 from app.services import coaching_plan as cp
+from app.services import coaching_slots as cs
 from app.services import health_consent
 from app.services import race_prep as rp
 from app.services import sante_training as st
@@ -257,7 +259,7 @@ class Invalid(ValueError):
 
 
 async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | None, days, long_day,
-                    base) -> CoachingPlan:
+                    base, moments=None) -> CoachingPlan:
     """The onboarding's answers kept: a new plan, or the same one made again (« Refaire le plan »: week 0 is this
     week again, what the ressenti changed is forgotten; the sessions done, past or edited by a person stay)."""
     days = clean_days(days)
@@ -283,6 +285,8 @@ async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | N
     plan.route_id, plan.days, plan.long_day, plan.base_minutes = route_id, ",".join(map(str, days)), long_day, base
     plan.start_monday, plan.adaptations, plan.generated_at = cp.monday_of(c.today), None, c.now
     plan.goal_state = None  # the race's times are read again; a lost race's line goes
+    if moments is not None:  # when the athlete can run (the onboarding's chips; None: left as it was)
+        ag.set_moments(plan, moments)
     await db.flush()
     return plan
 
@@ -292,6 +296,7 @@ async def delete_plan(db: AsyncSession, user_id: int) -> None:
     links and the codes not used yet."""
     await db.execute(delete(CoachingSession).where(CoachingSession.user_id == user_id))
     await db.execute(delete(CoachingPlan).where(CoachingPlan.user_id == user_id))
+    await ag.clear(db, user_id)  # « Mon agenda »: the addresses and the busy time read from them
     await db.execute(delete(CoachingLink).where(CoachingLink.athlete_id == user_id))
     await db.execute(delete(CoachingInvite).where(CoachingInvite.athlete_id == user_id))
 
@@ -432,6 +437,8 @@ class State:
     weeks: list[cp.Week]
     inputs: cp.Inputs
     low: tuple[date, ...] = ()  # the low mornings, only for an athlete who turned the form option on
+    agenda: cs.Agenda | None = None  # the busy time of an athlete who gave a calendar address, once it is read
+    usual: str | None = None  # the moment they really train most often (their runs' start times)
 
 
 async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime | None = None) -> State:
@@ -460,9 +467,25 @@ async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime |
     rows = await apply(db, plan, rows, weeks, since, c.now)
     if c.today in low:
         rows = lighten_today(db, plan, rows, inp, c)
+    # « Mon agenda »: each session's time in a free slot, a full day's session sent to another day; without an
+    # address, nothing (and what a removed address had placed is undone)
+    agenda, has_address = await ag.agenda_of(db, plan.user_id, c.zone, c.today)
+    usual = ag.usual_moment(runs, c.today) if agenda is not None else None
+    local = c.now.astimezone(c.zone)
+
+    def movable(row: CoachingSession) -> bool:
+        return replaceable(row, c.today)
+
+    def changed(row: CoachingSession) -> None:
+        touch(row, c.now)
+    if agenda is not None:
+        ag.place(rows, agenda, plan, c.today, local.hour * 60 + local.minute, usual, movable, changed)
+    elif not has_address:
+        ag.unplace(rows, c.today, movable, changed)
+    rows = sorted(rows, key=lambda r: (r.day, r.id or 0))
     match(rows, runs, c.today)  # a session made just now for today takes today's run at once
     await db.flush()
-    return State(plan, c, goal, rows, runs, weeks, inp, tuple(low))
+    return State(plan, c, goal, rows, runs, weeks, inp, tuple(low), agenda, usual)
 
 
 # ── the form: Santé's index, for an athlete who turned the option on ────────
@@ -797,9 +820,25 @@ def move(rows: list[CoachingSession], row: CoachingSession, target: date, today:
                   and r.kind != cp.RACE), None)
     if other is not None:
         other.day, other.pinned = row.day, True
+        other.slot_min, other.slot_chosen, other.slot_flag = None, False, None  # its time is found again
         touch(other, now)
     row.day, row.pinned, row.origin = target, True, origin
+    row.slot_min, row.slot_chosen, row.slot_flag = None, False, None
     touch(row, now)
+
+
+def choose_slot(state: "State", row: CoachingSession) -> None:
+    """« Autre créneau »: the athlete's tap — the next free time of the session's day; that time is then theirs
+    (kept whatever the calendar says later)."""
+    c = state.clock
+    if state.agenda is None or row.status != PLANNED or row.day < c.today or row.kind == cp.RACE:
+        raise Invalid("Pas d’autre créneau pour cette séance.")
+    local = c.now.astimezone(c.zone)
+    start = ag.next_slot(row, state.agenda, state.plan, c.today, local.hour * 60 + local.minute, state.usual)
+    if start is None:
+        raise Invalid("Pas d’autre créneau libre ce jour-là.")
+    row.slot_min, row.slot_chosen, row.slot_flag = start, True, None
+    touch(row, c.now)
 
 
 def add(db: AsyncSession, plan: CoachingPlan, day: date, today: date, now: datetime, *, kind: str, minutes,

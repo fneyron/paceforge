@@ -34,6 +34,50 @@
             </form>
         </div>
     </details>
+    {#- « Mon agenda »: the athlete's private calendar addresses (masked), when they can run, how to find the
+        address. Plain forms: the page comes back with the times found again. -#}
+    {% set a = tools.agenda %}
+    <details class="pf-coach-tool" id="coach-tool-agenda"{% if open == "agenda" %} open{% endif %}>
+        <summary class="pf-tool"><span>{{ icon("watch") }}<span>Mon agenda <small>Des séances hors réunions et rendez-vous</small></span></span>{{ icon("chev-r", "pf-chev") }}</summary>
+        <div class="pf-coach-tool-body pf-coach-agenda">
+            {% if agenda_error %}<p class="pf-coach-error" role="alert">{{ agenda_error }}</p>{% endif %}
+            {% if agenda_note %}<p class="pf-label" role="status">{{ agenda_note }}</p>{% endif %}
+            {% for c in a.calendars %}
+            <form class="pf-coach-calrow" method="post" action="/coaching/agenda/{{ c.id }}/remove" onsubmit="event.preventDefault(); var f = this; var msg = 'Retirer cette adresse ? Tes séances n’en tiendront plus compte.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Retirer'); } else if (confirm(msg)) { f.submit(); }">
+                <span><b>{{ c.masked }}</b><small{% if not c.ok %} class="text-danger"{% endif %}>{{ c.word }}</small></span>
+                <button type="submit" id="coach-cal-remove-{{ c.id }}" class="pf-coach-textbtn text-danger">Retirer</button>
+            </form>
+            {% endfor %}
+            {% if a.room %}
+            <form class="pf-coach-copy" method="post" action="/coaching/agenda">
+                <label class="sr-only" for="coach-cal-url">Adresse privée de ton agenda (iCal)</label>
+                <input id="coach-cal-url" name="url" type="url" inputmode="url" class="pf-input" placeholder="Adresse iCal privée (https://…)" maxlength="1024" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+                <button type="submit" id="coach-cal-add" class="pf-btn pf-btn-secondary pf-btn-sm">Ajouter</button>
+            </form>
+            {% endif %}
+            {% if a.calendars %}
+            <form method="post" action="/coaching/agenda/refresh">
+                <button type="submit" id="coach-cal-refresh" class="pf-coach-textbtn">Actualiser</button>
+            </form>
+            {% endif %}
+            <form class="pf-coach-moments" method="post" action="/coaching/agenda/moments">
+                <p class="pf-coach-q" id="coach-moments-h">Quand peux-tu courir&nbsp;?</p>
+                <div class="pf-coach-chips is-three" role="group" aria-labelledby="coach-moments-h">
+                    {% for key, word, on in a.moments %}<label class="pf-coach-chip"><input type="checkbox" name="moments" value="{{ key }}"{% if on %} checked{% endif %} onchange="this.form.submit()"><span>{{ word }}</span></label>{% endfor %}
+                </div>
+                <noscript><button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm">Enregistrer</button></noscript>
+            </form>
+            <details class="pf-fold pf-method pf-coach-calhelp">
+                <summary>Où trouver l’adresse</summary>
+                <ul>
+                    <li><b>Google Agenda</b> (sur ordinateur)&nbsp;: Paramètres › ton agenda › «&nbsp;Adresse secrète au format iCal&nbsp;».</li>
+                    <li><b>Apple</b>&nbsp;: Calendrier › le «&nbsp;i&nbsp;» de ton agenda › Calendrier public › copie le lien.</li>
+                    <li><b>Outlook</b>&nbsp;: Paramètres › Calendrier › Calendriers partagés › Publier un calendrier › lien ICS.</li>
+                    <li>PaceForge n’en garde que tes heures occupées&nbsp;: jamais un titre, un lieu ni un participant.</li>
+                </ul>
+            </details>
+        </div>
+    </details>
     <details class="pf-coach-tool" id="coach-tool-share"{% if open == "share" or tools.code %} open{% endif %}>
         <summary class="pf-tool"><span>{{ icon("share") }}<span>Partager avec un coach</span></span>{{ icon("chev-r", "pf-chev") }}</summary>
         <div class="pf-coach-tool-body">

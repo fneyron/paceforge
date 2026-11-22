@@ -81,5 +81,8 @@ def coaching_beat_schedule() -> dict:
 
     # and, every hour at :12, the form's round: the plans whose athlete turned « Adapter mes séances à ma forme » on,
     # in their own morning, until this morning's index is read (none has the option: one small query, nothing more)
+    # and, every 3 hours at :47, the calendars of the athletes who gave an address in « Mon agenda » are read again
     return {"coaching-daily": {"task": "paceforge.coaching_daily", "schedule": crontab(hour=3, minute=27)},
-            "coaching-morning": {"task": "paceforge.coaching_morning", "schedule": crontab(minute=12)}}
+            "coaching-morning": {"task": "paceforge.coaching_morning", "schedule": crontab(minute=12)},
+            "coaching-agenda": {"task": "paceforge.coaching_agenda_round",
+                                "schedule": crontab(minute=47, hour="*/3")}}

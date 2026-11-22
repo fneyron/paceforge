@@ -130,6 +130,8 @@ async function theme(page, dark) {
       assert.equal(await page.locator('.pf-coach-formline a[href="/sante"]').innerText(), 'Séance allégée\u00a0: récupération basse ce matin', key);
       assert.equal(await page.locator('.pf-coach-formline span').innerText(), 'La séance prévue passe à vendredi.', key);
       assert.doesNotMatch(await page.locator('.pf-coach-daycard').innerText(), /\d\s?%/, key + ': the index is Santé’s to print');
+      // the agenda: today's session has its time, in a free slot of her work calendar
+      assert.match(await page.locator('.pf-coach-slot-time').innerText(), /^12\sh\s00 – 12\sh\s30$/, key + ': the slot');
       const toggle = page.locator('#coach-form-switch');
       assert.equal(await toggle.getAttribute('aria-checked'), 'true', key);
       assert.ok((await toggle.boundingBox()).height >= 44, key + ': the switch is a 44 px target');
@@ -187,6 +189,64 @@ async function theme(page, dark) {
       }
       assert.deepEqual(page.errors.filter(e => !/maplibre|WebGL/i.test(e)), [], 'race and plan: browser errors');
       await page.close();
+    }
+
+    // ── the agenda: next week's times, Tuesday's session sent to Friday, another slot, « Mon agenda » ──
+    for (const dark of [true, false]) {  // the light pass ends on a tap that changes the time
+      const page = await open(browser, { width: 393, dark });
+      const friday = new Date(fixture.day + 'T00:00:00Z');
+      friday.setUTCDate(friday.getUTCDate() + 8);  // the preview's day is a Thursday
+      const iso = friday.toISOString().slice(0, 10);
+      await page.goto(`${athlete}/coaching?d=${iso}&outil=agenda`, { waitUntil: 'networkidle' });
+      assert.equal(await page.locator('.pf-coach-moves').innerText(), 'Mardi est plein\u00a0: séance déplacée à vendredi.');
+      assert.equal(await page.locator('.pf-coach-day .pf-coach-pill').count(), 3, 'Tuesday no longer holds a session');
+      assert.equal(await page.locator(`#coach-day-${iso} .pf-coach-pill`).count(), 1, 'Friday does');
+      const slot = page.locator('.pf-coach-slot-time');
+      assert.match(await slot.innerText(), /^6\sh\s00 – \d+\sh\s\d\d$/, 'the first free time of the day');
+      // « Mon agenda »: the address masked, how its reading went, the three moments, the way to find the address
+      const agenda = page.locator('#coach-tool-agenda');
+      assert.equal(await agenda.getAttribute('open'), '');
+      assert.equal(await agenda.locator('.pf-coach-calrow b').innerText(), 'calendar.google.com/….ics');
+      assert.match(await agenda.locator('.pf-coach-calrow small').innerText(), /^Lu aujourd’hui à 8\sh\s30$/);
+      assert.doesNotMatch(await page.content(), /private-preview|stella%40example/, 'never the address itself');
+      assert.equal(await agenda.locator('.pf-coach-moments input:checked').count(), 3);
+      assert.ok(await agenda.locator('#coach-cal-url').isVisible() && await agenda.locator('#coach-cal-refresh').isVisible());
+      for (const id of ['#coach-cal-add', '#coach-cal-refresh', `#coach-tool-agenda [id^="coach-cal-remove-"]`]) {
+        assert.ok((await page.locator(id).boundingBox()).height >= 44, id + ': a 44 px target');
+      }
+      await noOverflow(page, 'agenda');
+      await targets(page, 'agenda');
+      await shot(page, `athlete-393-agenda${dark ? '-dark' : ''}`);
+      if (!dark) {
+        // another slot: the next free time, in place; it is then hers
+        const before = await slot.innerText();
+        await swap(page, () => page.locator('[id^="coach-slot-"]').click());
+        assert.match(await page.locator('.pf-coach-slot-time').innerText(), /^6\sh\s30 – /);
+        assert.notEqual(await page.locator('.pf-coach-slot-time').innerText(), before);
+        await agenda.locator('.pf-coach-calhelp > summary').click();
+        assert.match(await agenda.locator('.pf-coach-calhelp').innerText(), /Adresse secrète au format iCal/);
+        await noOverflow(page, 'agenda help');
+        await shot(page, 'athlete-393-agenda-help');
+        // a refused address says why, in the fold, and nothing is fetched
+        await page.locator('#coach-cal-url').fill('https://127.0.0.1/calendar.ics');
+        const posted = page.waitForResponse(r => r.url().endsWith('/coaching/agenda') && r.request().method() === 'POST');
+        await page.locator('#coach-cal-add').click();
+        assert.equal((await posted).status(), 200);
+        await page.locator('#coach-tool-agenda .pf-coach-error').waitFor();
+        assert.match(await page.locator('#coach-tool-agenda .pf-coach-error').innerText(), /n’est pas acceptée/);
+        assert.equal(await page.locator('.pf-coach-calrow').count(), 1);
+      }
+      assert.deepEqual(page.errors, [], 'agenda: browser errors');
+      await page.close();
+    }
+    {
+      const wide = await open(browser, { width: 1280, height: 900 });
+      const friday = new Date(fixture.day + 'T00:00:00Z');
+      friday.setUTCDate(friday.getUTCDate() + 8);
+      await wide.goto(`${athlete}/coaching?d=${friday.toISOString().slice(0, 10)}&outil=agenda`, { waitUntil: 'networkidle' });
+      await noOverflow(wide, 'agenda desktop');
+      await shot(wide, 'athlete-1280-agenda');
+      await wide.close();
     }
 
     // ── taps: no full reload, instant feedback, keyboard ──
@@ -428,6 +488,10 @@ async function theme(page, dark) {
       assert.equal(await page.locator('.pf-coach-formline').innerText(), 'Séance adaptée ce matin');
       assert.doesNotMatch(await page.locator('#main-content').innerText(), /récupération basse|VFC|sommeil|forme|Santé/i, 'no health word on a coach’s page');
       assert.equal(await page.locator('#coach-form-switch').count(), 0);
+      // the times of the sessions, nothing of the calendar behind them
+      assert.match(await page.locator('.pf-coach-slot-time').innerText(), /^12\sh\s00 – 12\sh\s30$/);
+      assert.equal(await page.locator('[id^="coach-slot-"]').count(), 0, 'no « Autre créneau » for a coach');
+      assert.doesNotMatch(await page.content(), /calendar\.google|Mon agenda|Journée chargée|est plein/);
       assert.equal(await page.locator('[data-feel]').count(), 0, 'the ressenti is the athlete’s to say');
       assert.equal(await page.locator('#coach-tools').count(), 0);
       // a comment on today's session, then a session added two days on

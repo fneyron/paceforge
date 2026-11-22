@@ -94,3 +94,67 @@ async def run(db) -> int:
             await db.rollback()
             logger.exception("Coaching: the daily round failed for user %d", user_id)
     return done
+
+
+# ── « Mon agenda »: the athletes' calendars, read here and nowhere else ─────
+
+@celery_app.task(name="paceforge.coaching_agenda", ignore_result=True)
+def coaching_agenda(user_id: int) -> int:
+    """One athlete's calendars read (an address just saved, « Actualiser »)."""
+    return asyncio.run(_agenda(user_id))
+
+
+@celery_app.task(name="paceforge.coaching_agenda_round", ignore_result=True)
+def coaching_agenda_round() -> int:
+    """Every 3 hours: the calendars of every athlete with a plan and an address."""
+    return asyncio.run(_agenda(None))
+
+
+async def _agenda(user_id: int | None) -> int:
+    from app import features
+    from app.database import get_task_session
+
+    if not features.coaching_enabled():
+        return 0
+    async with get_task_session() as db:
+        return await (read_agenda(db, user_id) if user_id is not None else run_agenda(db))
+
+
+async def read_agenda(db, user_id: int, now=None) -> int:
+    """The athlete's calendar addresses fetched (services/safe_fetch: the one place a user-typed address is
+    requested) and read for their busy time (coaching_ical), then the plan read again: each session finds its time.
+    How many calendars were read well. Nothing without a plan or without Coaching."""
+    from app import features
+    from app.models.user import User
+    from app.services import coaching, coaching_agenda
+
+    user = await db.get(User, user_id)
+    plan = await coaching.get_plan(db, user_id) if user is not None else None
+    if user is None or plan is None or not features.coaching_for(user):
+        return 0
+    c = await coaching.clock(db, user, now)
+    statuses = await coaching_agenda.read_all(db, user_id, c.zone, c.now)
+    if statuses:
+        await coaching.sync(db, plan, user, now)
+    await db.commit()
+    return sum(1 for s in statuses.values() if s == coaching_agenda.OK)
+
+
+async def run_agenda(db, now=None) -> int:
+    """The 3-hourly round: one commit per athlete, a failure never stops the others; how many athletes."""
+    from sqlalchemy import select
+
+    from app.models.coaching import CoachingCalendar, CoachingPlan
+
+    done = 0
+    ids = (await db.execute(select(CoachingCalendar.user_id).join(
+        CoachingPlan, CoachingPlan.user_id == CoachingCalendar.user_id).distinct().order_by(
+        CoachingCalendar.user_id))).scalars().all()
+    for user_id in ids:
+        try:
+            await read_agenda(db, user_id, now)
+            done += 1
+        except Exception:
+            await db.rollback()
+            logger.exception("Coaching: the calendars' round failed for user %d", user_id)
+    return done

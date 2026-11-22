@@ -29,6 +29,7 @@
             {% else %}<a id="coach-view" class="pf-coach-view" href="{{ base }}?d={{ p.selected }}&v=mois" hx-get="{{ base }}/calendar?d={{ p.selected }}&v=mois{{ mv }}" {{ swap|safe }} role="button" aria-pressed="false">Mois</a>{% endif %}
         </div>
         {% if p.view != "mois" and (p.week.reason or p.week.light) %}<p class="pf-coach-reason">{{ p.week.reason or "Semaine plus légère, pour assimiler." }}</p>{% endif %}
+        {% if p.view != "mois" and p.week.moves %}<p class="pf-coach-reason pf-coach-moves">{{ p.week.moves }}</p>{% endif %}
         {% if p.moving %}
         <p class="pf-coach-moving" role="status">Choisis le nouveau jour de «&nbsp;{{ p.moving.title }}&nbsp;». <a id="coach-move-cancel" href="{{ base }}?d={{ p.selected }}{{ vq }}" hx-get="{{ base }}/calendar?d={{ p.selected }}{{ vq }}" {{ swap|safe }}>Annuler</a></p>
         <form method="post" action="{{ base }}/sessions/{{ p.moving.id }}/move" hx-post="{{ base }}/sessions/{{ p.moving.id }}/move" {{ swap|safe }}>
@@ -62,6 +63,18 @@
                 <h3 id="coach-s-{{ s.id }}" class="pf-coach-s-title"><i class="pf-coach-pill is-{{ s.cls }}" aria-hidden="true"></i>{{ s.title }} <span class="pf-coach-s-dur">{{ s.duration }}</span></h3>
                 {% if s.status == "done" %}<span class="pf-pill pf-pill-ok">{{ icon("check", "w-3.5 h-3.5", "2.4") }}Fait</span>{% elif s.status == "missed" %}<span class="pf-pill pf-pill-soft">Pas faite</span>{% endif %}
             </header>
+            {#- the agenda: the time the session was given; the athlete may ask for another free one -#}
+            {% if s.slot or s.full %}
+            <div class="pf-coach-slot">
+                {% if s.slot %}<p class="pf-coach-slot-time">{{ s.slot }}</p>{% else %}<p class="pf-pill pf-pill-soft">Journée chargée</p>{% endif %}
+                {% if s.can_slot %}
+                <form method="post" action="{{ base }}/sessions/{{ s.id }}/slot" hx-post="{{ base }}/sessions/{{ s.id }}/slot" {{ swap|safe }}>
+                    <input type="hidden" name="v" value="{{ p.view }}">
+                    <button type="submit" id="coach-slot-{{ s.id }}" class="pf-coach-textbtn">Autre créneau</button>
+                </form>
+                {% endif %}
+            </div>
+            {% endif %}
             {% if s.profile %}{{ vz.viz_profile(s.profile) }}{% endif %}
             {% if s.text %}<p class="pf-coach-s-text">{{ s.text }}</p>{% endif %}
             {% if s.status == "planned" %}<p class="pf-coach-s-guide">{{ s.guidance[0] }}{% if s.guidance[1] %} <span class="pf-coach-hr">{{ s.guidance[1] }}</span>{% endif %}</p>{% endif %}

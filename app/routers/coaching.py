@@ -25,8 +25,10 @@ from app.dependencies import get_current_user, get_db
 from app.models.coaching import CoachingPlan, CoachingSession
 from app.models.user import User
 from app.services import coaching as co
+from app.services import coaching_agenda as ag
 from app.services import coaching_ics as ics
 from app.services import coaching_plan as cp
+from app.services import coaching_slots as cs
 from app.services import coaching_view as cv
 from app.services import race_prep as rp
 from app.services.viz import d_long, d_short, fr_int, fr_num, hm
@@ -169,7 +171,7 @@ async def calendar_feed(token: str, request: Request, db: AsyncSession = Depends
     rows = await co.sessions_of(db, plan)
     zones = cv.hr_rows(owner.max_heart_rate)  # the confirmed maximum only: no heavy read on a public address
     body = ics.render(rows, c.today, host=urlsplit(settings.BASE_URL).hostname or "paceforge.fr",
-                      guidance=lambda row: cv.guidance(row.kind, row.structure, zones))
+                      guidance=lambda row: cv.guidance(row.kind, row.structure, zones), zone=c.zone)
     return Response(body, media_type="text/calendar; charset=utf-8", headers={
         "Content-Disposition": 'inline; filename="paceforge-coaching.ics"',
         "Cache-Control": "private, max-age=300", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"})
@@ -190,7 +192,8 @@ async def _onboarding(request: Request, db: AsyncSession, user: User, *, plan: C
     chosen = {"goal": str(plan.route_id) if plan and plan.route_id else ("none" if plan or not races else None),
               "days": list(days), "long_day": plan.long_day if plan else None,
               # the starting volume is computed again when the plan is made again (the plan's own without a history)
-              "base": computed or (plan.base_minutes if plan else None)}
+              "base": computed or (plan.base_minutes if plan else None),
+              "moments": list(ag.moments_of(plan)) if plan else list(cs.MOMENTS)}
     if form:
         chosen.update(form)
     if chosen["goal"] is None and races:
@@ -202,6 +205,7 @@ async def _onboarding(request: Request, db: AsyncSession, user: User, *, plan: C
         "races": [{"id": r.id, "name": r.name, "when": d_short(day), "j": rp.j_label(-(day - c.today).days)}
                   for r, day in ((r, rp.race_day(r)) for r in races) if day is not None],
         "weekdays": list(enumerate(("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."))),
+        "moments": [(m, cs.MOMENT_WORDS[m]) for m in cs.MOMENTS],
         "volumes": [(m, hm(m)) for m in volumes],
         "choices": [(m, f"{m // 60}\u00a0h" + (" et +" if m == cp.START_CHOICES[-1] else ""))
                     for m in cp.START_CHOICES]})
@@ -216,30 +220,66 @@ async def _tools(db: AsyncSession, scope: Scope, plan: CoachingPlan, code: str |
         offer = {**offer, "since": d_long(since.astimezone(c.zone).date())}
     return {"feed": feed_urls(plan), "coaches": [{"id": u.id, "name": u.firstname or "Coach"}
                                                  for u in await co.coaches_of(db, scope.athlete.id)], "code": code,
-            "form": offer}
+            "form": offer, "agenda": await _agenda(db, plan, c)}
 
 
-async def _page(request: Request, db: AsyncSession, scope: Scope, d: str | None, w: str | None, v: str | None):
+def _read_word(row, c: co.Clock) -> str:
+    """How a calendar's last reading went, in a few words (never anything the calendar's server said)."""
+    if row.status is None:
+        return ag.PENDING
+    if row.status != ag.OK:
+        return ag.STATUS.get(row.status, ag.STATUS["network"])
+    at = (row.fetched_at if row.fetched_at.tzinfo else row.fetched_at.replace(tzinfo=timezone.utc)).astimezone(c.zone)
+    day = "aujourd’hui" if at.date() == c.today else d_short(at.date())
+    return f"Lu {day} à {cv.clock_time(at.hour * 60 + at.minute)}"
+
+
+async def _agenda(db: AsyncSession, plan: CoachingPlan, c: co.Clock) -> dict:
+    """« Mon agenda »: the addresses, masked, with how their last reading went; the moments chosen."""
+    calendars = await ag.calendars_of(db, plan.user_id)
+    chosen = ag.moments_of(plan)
+    return {"calendars": [{"id": row.id, "masked": ag.mask(row.url), "word": _read_word(row, c),
+                           "ok": row.status in (None, ag.OK)} for row in calendars],
+            "room": len(calendars) < ag.MAX_CALENDARS,
+            "moments": [(m, cs.MOMENT_WORDS[m], m in chosen) for m in cs.MOMENTS]}
+
+
+def _queue_agenda(user_id: int) -> None:
+    """The athlete's calendars read by a worker — never in this request (a user-typed address is fetched there,
+    under services/safe_fetch's rules). A broker that is down: the 3-hourly round reads them."""
+    from app.tasks.coaching import coaching_agenda
+
+    try:
+        coaching_agenda.apply_async(args=[user_id], retry=False)
+    except Exception:
+        logger.exception("Coaching: calendars not queued for user %d", user_id)
+
+
+async def _page(request: Request, db: AsyncSession, scope: Scope, d: str | None, w: str | None, v: str | None,
+                tool: str | None = None, tool_error: str | None = None, tool_note: str | None = None):
+    """`tool`: the fold left open under the calendar (« agenda »), with its error or its note."""
     state = await _state(db, scope)
     await db.commit()
     p = cv.page(state, d=_day(d), w=_day(w), month=v == "mois", coach=scope.coach,
                 hr_reference=await _hr_reference(db, scope.athlete, state.clock))
     return templates.TemplateResponse(request, "coaching.html", context={
         "user": scope.viewer, "scope": scope, "head": cv.header(state, scope.coach), "p": p, "method": cv.METHOD,
-        "athlete_name": scope.athlete.firstname or "Athlète", "error": None,
+        "athlete_name": scope.athlete.firstname or "Athlète", "error": None, "open": tool,
+        "agenda_error": tool_error, "agenda_note": tool_note,
         "tools": None if scope.coach else await _tools(db, scope, state.plan)})
 
 
 @router.get("/coaching", response_class=HTMLResponse)
 async def coaching_page(request: Request, d: str | None = None, w: str | None = None, v: str | None = None,
-                        refaire: str | None = None, course: str | None = None, scope: Scope = Depends(own_scope),
-                        db: AsyncSession = Depends(get_db)):
+                        refaire: str | None = None, course: str | None = None, outil: str | None = None,
+                        scope: Scope = Depends(own_scope), db: AsyncSession = Depends(get_db)):
     plan = await co.get_plan(db, scope.athlete.id)
     if plan is None and refaire != "1" and await co.athletes_of(db, scope.viewer.id):
         return RedirectResponse("/coaching/athletes", status_code=303)  # a coach without a plan of their own
     if plan is None or refaire == "1":
         return await _onboarding(request, db, scope.viewer, plan=plan, course=_int(course))
-    return await _page(request, db, scope, d, w, v)
+    return await _page(request, db, scope, d, w, v, tool="agenda" if outil in ("agenda", "agenda-lu") else None,
+                       tool_note=AGENDA_ASKED if outil == "agenda-lu" else None)
 
 
 @router.post("/coaching/plan")
@@ -251,12 +291,14 @@ async def coaching_save_plan(request: Request, scope: Scope = Depends(own_scope)
     c = await co.clock(db, user)
     try:
         plan = await co.save_plan(db, user, c, route_id=int(goal) if goal.isdigit() else None, days=days,
-                                  long_day=form.get("long_day"), base=form.get("base"))
+                                  long_day=form.get("long_day"), base=form.get("base"),
+                                  moments=form.getlist("moments") if "moments_asked" in form else None)
     except co.Invalid as e:  # nothing was written: the answers are checked first. Answered 200: the app's shell
         # replaces any document answered 4xx by « Écran indisponible », hiding the message the form shows
         return await _onboarding(request, db, user, plan=await co.get_plan(db, user.id), error=str(e), status_code=200,
                                  form={"goal": goal, "days": list(co.clean_days(days)),
-                                       "long_day": _int(form.get("long_day")), "base": _int(form.get("base"))})
+                                       "long_day": _int(form.get("long_day")), "base": _int(form.get("base")),
+                                       "moments": list(cs.clean_moments(form.getlist("moments")))})
     await co.sync(db, plan, user)
     await db.commit()
     logger.info("Coaching: plan saved for user %d", user.id)
@@ -289,6 +331,82 @@ async def coaching_form(value: str = Form(default=""), scope: Scope = Depends(ow
     await db.commit()
     logger.info("Coaching: form option %s for user %d", "on" if plan.form_on_at else "off", scope.athlete.id)
     return RedirectResponse("/coaching#coach-form", status_code=303)
+
+
+# ── « Mon agenda »: the athlete's calendar addresses (never fetched in a request: app.tasks.coaching) ──
+
+AGENDA = "/coaching?outil=agenda#coach-tool-agenda"
+AGENDA_ASKED = "Lecture demandée : recharge la page dans un instant."
+AGENDA_WAIT = "Une actualisation par minute : réessaie dans un instant."
+AGENDA_BUSY = "Trop de changements pour l’instant. Réessaie dans une heure."
+
+
+async def _agenda_plan(db: AsyncSession, scope: Scope) -> CoachingPlan:
+    plan = await co.get_plan(db, scope.athlete.id)
+    if plan is None:
+        raise HTTPException(status_code=404)
+    return plan
+
+
+@router.post("/coaching/agenda")
+async def coaching_agenda_add(request: Request, url: str = Form(default=""), scope: Scope = Depends(own_scope),
+                              db: AsyncSession = Depends(get_db)):
+    """A calendar address added: checked as typed (https, a public host name), stored encrypted, then read by a
+    worker. A refusal is said in the fold (answered 200: the app's shell replaces a 4xx document)."""
+    from app.services.auth import over_quota
+
+    await _agenda_plan(db, scope)
+    error = None
+    if await over_quota("coaching_agenda_save", user=scope.athlete.id):
+        error = AGENDA_BUSY
+    else:
+        try:
+            await ag.add_calendar(db, scope.athlete.id, url)
+        except ag.Invalid as e:
+            error = str(e)
+    if error:
+        return await _page(request, db, scope, None, None, None, tool="agenda", tool_error=error)
+    await db.commit()  # the worker reads the address from its own session
+    _queue_agenda(scope.athlete.id)
+    logger.info("Coaching: calendar address added for user %d", scope.athlete.id)
+    return RedirectResponse(AGENDA, status_code=303)
+
+
+@router.post("/coaching/agenda/refresh")
+async def coaching_agenda_refresh(request: Request, scope: Scope = Depends(own_scope),
+                                  db: AsyncSession = Depends(get_db)):
+    """« Actualiser »: the calendars read again by a worker, once a minute at most."""
+    from app.services.auth import over_quota
+
+    await _agenda_plan(db, scope)
+    if await over_quota("coaching_agenda", user=scope.athlete.id):
+        return await _page(request, db, scope, None, None, None, tool="agenda", tool_error=AGENDA_WAIT)
+    _queue_agenda(scope.athlete.id)
+    return RedirectResponse("/coaching?outil=agenda-lu#coach-tool-agenda", status_code=303)
+
+
+@router.post("/coaching/agenda/moments")
+async def coaching_agenda_moments(request: Request, scope: Scope = Depends(own_scope),
+                                  db: AsyncSession = Depends(get_db)):
+    """When the athlete can run (Matin, Midi, Soir; none ticked: all three): the times follow at once."""
+    plan = await _agenda_plan(db, scope)
+    ag.set_moments(plan, (await request.form()).getlist("moments"))
+    await co.sync(db, plan, scope.athlete)
+    await db.commit()
+    return RedirectResponse(AGENDA, status_code=303)
+
+
+@router.post("/coaching/agenda/{calendar_id}/remove")
+async def coaching_agenda_remove(calendar_id: int, scope: Scope = Depends(own_scope),
+                                 db: AsyncSession = Depends(get_db)):
+    """An address removed, with the busy time read from it; the times are found again without it."""
+    plan = await _agenda_plan(db, scope)
+    if not await ag.remove_calendar(db, scope.athlete.id, calendar_id):
+        raise HTTPException(status_code=404)
+    await co.sync(db, plan, scope.athlete)
+    await db.commit()
+    logger.info("Coaching: calendar address removed for user %d", scope.athlete.id)
+    return RedirectResponse(AGENDA, status_code=303)
 
 
 @router.post("/coaching/share", response_class=HTMLResponse)
@@ -472,6 +590,22 @@ def _session_routes(prefix: str, scope_of) -> APIRouter:
             if row.status != co.PLANNED:
                 raise co.Invalid("Cette séance ne se modifie plus.")
             co.edit(row, c.now, kind=kind, minutes=minutes, origin=scope.origin)
+        except co.Invalid as e:
+            error = str(e)
+        return await _after(request, db, scope, d=row.day, v=v, error=error)
+
+    @r.post(prefix + "/sessions/{session_id}/slot", response_class=HTMLResponse)
+    async def session_slot(session_id: int, request: Request, v: str = Form(default=""),
+                           scope: Scope = Depends(scope_of), db: AsyncSession = Depends(get_db)):
+        """« Autre créneau »: the next free time of the session's day, then the athlete's. Never a coach's route:
+        a coach reads the times, nothing of the calendar behind them."""
+        if scope.coach:
+            raise HTTPException(status_code=404)
+        _plan, row = await _row(db, scope, session_id)
+        state = await _state(db, scope)
+        error = None
+        try:
+            co.choose_slot(state, row)
         except co.Invalid as e:
             error = str(e)
         return await _after(request, db, scope, d=row.day, v=v, error=error)

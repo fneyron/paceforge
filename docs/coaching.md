@@ -58,13 +58,15 @@ ouvre alors « Écran indisponible » (404) pour un compte qui ne l’a pas.
 
 ## Les réponses de départ
 
-Un écran, trois questions et une valeur calculée :
+Un écran, quatre questions et une valeur calculée :
 
 1. **Objectif** : une course à venir de l’athlète (un parcours à pied avec une date), ou « Progresser, sans course »
    (un bloc glissant de 12 semaines (H) qui se prolonge de lui-même).
 2. **Jours disponibles** : de 2 à 6.
 3. **Jour de la sortie longue** : parmi eux ; dimanche par défaut, sinon le dernier jour disponible.
-4. **Volume de départ** : la médiane des minutes de course des 4 dernières semaines complètes (famille « course » de
+4. **Quand peux-tu courir ?** Matin, Midi, Soir ; les trois par défaut. Ne sert qu’à placer les séances dans la
+   journée quand l’athlète relie son agenda (« Mon agenda »).
+5. **Volume de départ** : la médiane des minutes de course des 4 dernières semaines complètes (famille « course » de
    `sante_training.load_family` : route, trail, tapis ; semaines du lundi au dimanche à l’horloge de l’athlète),
    arrondie à 5 min, modifiable. Sans historique : cinq choix, 1 h, 2 h, 3 h, 4 h, 5 h et plus (H).
 
@@ -257,6 +259,84 @@ matin » sur la séance allégée, « Séance reportée de mercredi » sur celle
 semaine, et rien de l’option. Le flux calendrier dit seulement la séance telle qu’elle est devenue (« Footing
 35 min »). L’export d’un coach ne contient rien de l’athlète.
 
+## Mon agenda (les créneaux libres)
+
+Demande du propriétaire, 21 novembre 2026 : « C’est flexible aussi en fonction du calendrier, en mettant peut-être
+les créneaux hors réunion ou rendez-vous ».
+
+**D’où viennent les heures occupées.** Dans Coaching › « Mon agenda », l’athlète colle l’adresse iCalendar privée de
+son agenda : l’« adresse secrète au format iCal » de Google Agenda, le lien d’un calendrier public iCloud, un
+calendrier publié par Outlook. Trois adresses au plus. Chacune est stockée chiffrée (`EncryptedString`), affichée
+masquée (son hôte et ses 4 derniers caractères) et retirable. Un pli dit où trouver l’adresse dans Google, Apple et
+Outlook. Sans aucune adresse, rien ne change : pas d’heure, les séances restent des journées entières.
+
+**Lire une adresse saisie par quelqu’un** est une surface de requête forgée côté serveur (SSRF). Un seul module le
+fait, `app/services/safe_fetch.py` (aucune aide de ce genre n’existait : les autres appels sortants vont à des hôtes
+fixes), et jamais pendant une requête web :
+
+- `https` seulement (`webcal://` est réécrit en `https://`), port 443, pas d’identifiants dans l’adresse, 1 024
+  caractères au plus ; un nom d’hôte avec un point, jamais une adresse IP écrite, jamais un nom interne
+  (`localhost`, `.local`, `.internal`…), jamais l’hôte de PaceForge ;
+- le nom est résolu par ce module et **toutes** ses adresses doivent être publiques : sont refusées les plages
+  privées, de bouclage, lien-local, partagées (100.64/10), multicast, réservées et non spécifiées, une IPv4
+  enveloppée dans une IPv6 étant lue comme son IPv4, et 6to4, Teredo et NAT64 refusés ;
+- la connexion va à **l’adresse vérifiée** : l’URL demandée porte l’IP, l’en-tête `Host` et le nom TLS (SNI) portent
+  le nom, le certificat reste vérifié sur le nom ; une seconde réponse DNS ne peut pas la déplacer ;
+- les redirections sont suivies à la main, 3 au plus, chacune revérifiée depuis le début (schéma, hôte,
+  résolution) ; aucun proxy de l’environnement ;
+- 10 s pour tout l’échange, 2 Mo au plus, lus en flux et coupés à la limite (après décompression) ;
+- le contenu doit se lire comme un `VCALENDAR` ; un refus est un code (« adresse introuvable », « a refusé la
+  lecture »…), **jamais** le corps, la ligne d’état ni les en-têtes de la réponse ;
+- chaque lecture sortante est comptée par compte (`coaching_agenda_fetch`, 30 par heure).
+
+**Quand.** Dans Celery seulement (`app/tasks/coaching.py`) : à l’enregistrement d’une adresse
+(`paceforge.coaching_agenda`), toutes les 3 heures à :47 pour les comptes qui ont un plan et une adresse
+(`paceforge.coaching_agenda_round`), et sur « Actualiser » (une fois par minute au plus, `coaching_agenda`). Après
+chaque lecture, le plan est relu : chaque séance retrouve son créneau.
+
+**Ce qui est lu d’un événement** (`app/services/coaching_ical.py`, pur) : `DTSTART`, `DTEND`, `DURATION`, `RRULE`,
+`EXDATE`, `RECURRENCE-ID`, `TRANSP`, `STATUS`, `UID`. Rien d’autre : un titre, une description, un lieu ou un
+participant n’est jamais lu.
+
+| Dans l’agenda | Lecture |
+|---|---|
+| Un événement avec une heure | Occupé de son début à sa fin : heure UTC, `TZID` (nom IANA, ou nom Windows d’Outlook parmi les plus courants : `WINDOWS_ZONES`), ou heure « flottante » lue à l’horloge de l’athlète (un `TZID` inconnu aussi). |
+| `TRANSP:TRANSPARENT` (affiché « disponible ») ou `STATUS:CANCELLED` | Ignoré. |
+| Un événement d’une journée entière | Ignoré : c’est le plus souvent un rappel ou un anniversaire. |
+| Un événement de journée entière de 2 jours ou plus | L’athlète est « absent » ces jours-là : aucune séance n’y est placée, rien n’est demandé. (H) `AWAY_DAYS` |
+| Un événement répété (`RRULE`) | Développé avec `python-dateutil` (déjà installé : Celery en dépend, épinglé dans les verrous) pour `FREQ=DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY`, à l’horloge de l’événement (un 9 h hebdomadaire reste à 9 h au changement d’heure), moins ses `EXDATE` et les occurrences qu’une exception (`RECURRENCE-ID`) remplace. Une règle à l’heure, à la minute ou à la seconde, une règle illisible et `RDATE` ne sont pas développées : l’événement compte une fois. |
+| Le flux de PaceForge lui-même | Jamais du temps occupé : un calendrier dont le `PRODID` est le nôtre est refusé en entier, un événement dont l’`UID` est celui d’une de nos séances est ignoré (l’athlète qui s’est abonnée au flux dans l’agenda qu’elle a donné). |
+
+**Ce qui est gardé** (`coaching_busy`) : pour les 21 prochains jours, des intervalles occupés — un début, une fin,
+« absence » ou non — fusionnés quand ils se touchent, remplacés à chaque lecture réussie (une lecture ratée garde
+ceux de la dernière réussie). **Jamais un titre, une description, un lieu ni un participant.**
+
+**Les moments.** « Quand peux-tu courir ? » — Matin, Midi, Soir, par plan, dans l’écran de départ et dans « Mon
+agenda » ; les trois par défaut. (H) `WINDOWS` : 6 h–9 h, 11 h 45–14 h, 17 h 30–21 h, à l’horloge de l’athlète.
+
+**Le placement** (`app/services/coaching_slots.py`, pur ; tout est (H)).
+
+| Règle | Valeur |
+|---|---|
+| Ce qu’il faut à une séance | Sa durée + 30 min (se changer, se doucher : `MARGIN`), sans rien d’occupé, dans un des moments choisis ; un départ au quart d’heure. Une séance plus longue que le moment lui-même part au début du moment et le dépasse. |
+| L’ordre des moments | Sortie longue : le matin d’abord. Séance de qualité : le moment où l’athlète s’entraîne vraiment le plus souvent (les départs de ses sorties des 8 dernières semaines, 3 au moins : `USUAL_WEEKS`, `USUAL_MIN_RUNS`), sinon le soir. Séance facile : le premier moment qui a de la place. |
+| Stabilité | Une séance garde l’heure qu’elle a tant que cette heure est libre et dans un moment choisi : pas d’aller-retour d’une lecture à l’autre. |
+| « Autre créneau » | L’athlète fait défiler les heures libres de la journée, toutes les 30 min (`CYCLE`) ; l’heure choisie est alors la sienne, gardée quoi que dise l’agenda ensuite. |
+| Un jour sans place (plein, ou jour d’absence) | La séance part sur le jour disponible le plus proche de la même semaine qui ne porte aucune séance, a un créneau et garde « jamais deux jours durs de suite » (à égalité, le plus tard). Une ligne le dit sur la semaine : « Mardi est plein : séance déplacée à mercredi. » Elle y reste tant que son créneau est libre ; à replacer, elle essaie d’abord son jour d’origine. |
+| Aucun jour possible | Le jour reste, marqué « Journée chargée », sans heure. C’est le cas courant quand chaque jour disponible porte déjà une séance. |
+| Ce qui peut changer de jour | Seulement une séance générée, à venir, que personne n’a modifiée. Une séance déplacée ou modifiée par une personne, ou écrite par le coach, garde son jour et reçoit seulement une heure. La séance d’aujourd’hui ne change jamais de jour ; elle reçoit une heure encore à venir. La course n’a pas d’heure. |
+| Au-delà de 21 jours | Les heures occupées ne sont pas connues : pas d’heure. |
+
+Le placement est refait à chaque lecture du plan (les heures occupées, les moments ou une durée ont pu changer). Tant
+qu’une adresse n’a jamais été lue, rien n’est placé : une heure donnée sur la moitié des agendas serait un pari.
+Retirer la dernière adresse efface les heures et remet à leur jour les séances que l’agenda avait déplacées.
+
+**Ce que voit l’athlète.** Sur la carte du jour, le créneau : « 12 h 15 – 13 h 05 » (une heure s’écrit « 12 h 15 »,
+une durée « 1h05 »), et « Autre créneau ». La frise de la semaine reste telle quelle.
+
+**Ce que voit le coach.** L’heure des séances, et « Séance déplacée de mardi à mercredi. » ; jamais les heures
+occupées, ni qu’un jour est plein, ni « Journée chargée », ni les adresses, ni « Autre créneau ».
+
 ## Les séances et les activités
 
 - Une sortie de la famille « course » le jour local de la séance la marque **faite** et lui est liée ; plusieurs le
@@ -291,6 +371,7 @@ coach, elle reste en base comme annulée pour la même raison.
   faite », « Déplacer », « Modifier ») ; une fois faite : l’activité, le ressenti, la note, le commentaire du coach ;
   un graphique des semaines (prévu en contour, fait en plein, phases, semaine en cours) ; un pli « Comment ça
   marche » ; « Adapter mes séances à ma forme » (si l’option est proposée), « Ajouter à mon calendrier »,
+  « Mon agenda »,
   « Partager avec un coach », « Refaire le plan », « Arrêter le coaching ».
 - « Déplacer » : on touche le bouton puis un jour (à partir d’aujourd’hui) ; un jour qui porte déjà une séance
   prévue l’échange. Tout se fait au clavier (ce sont des boutons). Pas de glisser-déposer.
@@ -307,8 +388,10 @@ coach, elle reste en base comme annulée pour la même raison.
 
 `GET /coaching/cal/<jeton>.ics` : un flux iCalendar, sans session.
 
-- Un événement d’une journée entière par séance (`VALUE=DATE`), des 30 derniers jours à la fin du plan ;
-  `SUMMARY` « Footing 45 min » ; `DESCRIPTION` la structure, le dénivelé à viser s’il y en a un, et la consigne.
+- Un événement par séance, des 30 derniers jours à la fin du plan : **avec une heure** (`DTSTART`/`DTEND` en UTC,
+  affiché « occupé ») quand la séance a un créneau (« Mon agenda »), sinon d’une journée entière (`VALUE=DATE`,
+  `TRANSP:TRANSPARENT`). L’`UID` ne change pas quand une séance reçoit ou perd son heure : le calendrier la met à
+  jour sur place. `SUMMARY` « Footing 45 min » ; `DESCRIPTION` la structure, le dénivelé à viser s’il y en a un, et la consigne.
 - `UID` stable (l’identifiant de la séance : une régénération réécrit la ligne en place), `SEQUENCE` son nombre de
   changements, `DTSTAMP` et `LAST-MODIFIED` son dernier changement : une modification arrive dans le calendrier
   abonné à son prochain rafraîchissement. Une séance supprimée ou annulée n’est plus dans le flux.
@@ -341,7 +424,11 @@ Training API, écriture COROS côté partenaire) que PaceForge n’a pas. Aucun 
 Migration `m4b5c6d7e8f9` (après `l3a4b5c6d7e8`) : `coaching_plans`, `coaching_sessions`, `coaching_links`,
 `coaching_invites`. Migration `n5c6d7e8f9a0` : `coaching_plans.goal_state` (ce que le plan a lu de sa course).
 Migration `o6d7e8f9a0b1` : `coaching_plans.form_on_at`, `form_state`, `coaching_sessions.form` (la forme) ; ces
-champs sortent dans l’export de leur propriétaire et partent avec l’option, l’accord santé, le plan ou le compte. Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
+champs sortent dans l’export de leur propriétaire et partent avec l’option, l’accord santé, le plan ou le compte.
+Migration `p7e8f9a0b1c2` : `coaching_calendars` (les adresses, chiffrées), `coaching_busy` (les heures occupées),
+`coaching_plans.moments`, `coaching_sessions.slot_min`, `slot_chosen`, `slot_flag`. L’export donne l’hôte de chaque
+adresse (jamais l’adresse : c’est le secret d’un autre service) et les heures occupées ; « Arrêter le coaching » et
+la suppression du compte retirent adresses et heures occupées. Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
 (`coaching.json`, `coaching_seances.json` : jamais le jeton du flux ni un code).
 
 Politique de confidentialité, ligne affichée tant que la fonction n’est pas éteinte : « Coaching (bêta) » —
@@ -351,7 +438,11 @@ du compte. Une seconde ligne, « Coaching (bêta) · ta forme » : seulement si 
 d’activation, les matins où l’indice de récupération de Santé est bas (leur date, jamais l’indice ni une mesure),
 les séances allégées ces matins-là ; base « Consentement explicite, donné à part dans Coaching » ; jamais partagé
 (le coach voit qu’une séance a été adaptée, jamais pourquoi) ; gardé jusqu’à la désactivation de l’option, le
-retrait de l’accord sur les données de santé, l’arrêt du coaching ou la suppression du compte.
+retrait de l’accord sur les données de santé, l’arrêt du coaching ou la suppression du compte. Une troisième,
+« Coaching (bêta) · ton agenda » : seulement si une adresse est ajoutée — cette adresse (chiffrée), les heures
+occupées des 21 prochains jours (un début et une fin, jamais un titre, une description, un lieu ni un participant),
+les moments où courir, l’heure donnée à chaque séance ; base « Contrat » ; jamais partagé (le coach voit l’heure des
+séances, jamais l’agenda) ; gardé jusqu’au retrait de l’adresse, l’arrêt du coaching ou la suppression du compte.
 
 ## Mise en service
 
@@ -396,5 +487,6 @@ déplacement de la séance et la règle des trois matins sont des heuristiques (
 descriptive, pas une autorisation de s’entraîner : la règle ne fait qu’enlever de l’intensité, jamais en ajouter.
 
 Aucune étude n’est citée pour la progression de 10 % par semaine, la semaine légère sur quatre, les plafonds, la
-part de la sortie longue, l’adaptation au ressenti, le dénivelé à viser ni la lecture du temps de course au quart
-d’heure : ce sont des usages d’entraînement, marqués (H).
+part de la sortie longue, l’adaptation au ressenti, le dénivelé à viser, la lecture du temps de course au quart
+d’heure, ni les moments, la marge et l’ordre du placement dans l’agenda : ce sont des usages d’entraînement ou des
+choix de PaceForge, marqués (H).

@@ -28,7 +28,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
 from app.models.api_token import ApiToken
-from app.models.coaching import CoachingInvite, CoachingLink, CoachingPlan, CoachingSession
+from app.models.coaching import (
+    CoachingBusy,
+    CoachingCalendar,
+    CoachingInvite,
+    CoachingLink,
+    CoachingPlan,
+    CoachingSession,
+)
 from app.models.coros import CorosConnection
 from app.models.garmin import GarminConnection
 from app.models.health import HealthMetric, HealthSample
@@ -71,7 +78,8 @@ parcours.json           tes parcours et plans de course, avec leurs points de pa
 lactate.json            tes tests de lactate
 nutrition.json          tes produits de nutrition
 coaching.json           ton plan de coaching : objectif, jours, volume, ce que le ressenti a changé, tes coachs et
-                        les athlètes que tu suis (prénoms et dates)
+                        les athlètes que tu suis (prénoms et dates), ton agenda (l’hôte de chaque adresse, jamais
+                        l’adresse, et tes heures occupées : début et fin)
 coaching_seances.json   tes séances de coaching : jour, type, durée, statut, ressenti, note, commentaire du coach
 anciennes_fonctions/    s’il y en a, ce qu’avaient enregistré les fonctions retirées (analyses, messages,
                         bilans de la semaine, plans générés, simulations)
@@ -169,7 +177,7 @@ async def _legacy_batches(db: AsyncSession, table: str, user_id: int,
 
 # the plan's own fields: never the calendar feed's token (nor its hash)
 COACHING_PLAN_FIELDS = ("route_id", "days", "long_day", "base_minutes", "start_monday", "generated_at", "adaptations",
-                        "goal_state", "form_on_at", "form_state", "created_at", "updated_at")
+                        "goal_state", "form_on_at", "form_state", "moments", "created_at", "updated_at")
 
 
 async def coaching(db: AsyncSession, user: User) -> dict[str, Any]:
@@ -185,7 +193,18 @@ async def coaching(db: AsyncSession, user: User) -> dict[str, Any]:
         .order_by(CoachingLink.id))).all()
     invites = (await db.scalars(select(CoachingInvite).where(CoachingInvite.athlete_id == user.id)
                                 .order_by(CoachingInvite.id))).all()
+    # « Mon agenda »: the calendars by their host and dates (an address is a secret of another service: never
+    # written), and the busy time read from them (a start and an end: nothing else was ever kept)
+    from urllib.parse import urlsplit
+
+    calendars = (await db.scalars(select(CoachingCalendar).where(CoachingCalendar.user_id == user.id)
+                                  .order_by(CoachingCalendar.id))).all()
+    busy = (await db.execute(select(CoachingBusy.start_at, CoachingBusy.end_at, CoachingBusy.away).where(
+        CoachingBusy.user_id == user.id).order_by(CoachingBusy.start_at, CoachingBusy.id))).all()
     return {
+        "agenda": [{"hote": urlsplit(c.url or "").hostname, "ajoute_le": _plain(c.created_at),
+                    "lu_le": _plain(c.fetched_at), "etat": c.status} for c in calendars],
+        "heures_occupees": [{"debut": _plain(a), "fin": _plain(b), "absence": bool(w)} for a, b, w in busy],
         "plan": {field: _plain(getattr(plan, field)) for field in COACHING_PLAN_FIELDS} if plan else None,
         "coachs": [{"prenom": name, "depuis": _plain(link.created_at)} for link, name in links
                    if link.athlete_id == user.id],
