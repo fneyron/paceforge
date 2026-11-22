@@ -154,12 +154,12 @@ async def test_a_new_account_gets_a_plan_proposed_with_nothing_to_fill(client, p
     assert _checked(page, "days") == ["1", "3", "6"], "the default week: Tuesday, Thursday, Sunday"
     assert '<option value="6" selected>dimanche</option>' in page and page.count('name="long_day"') == 1
     assert _checked(page, "base") == ["120"] and page.count('type="radio" name="base"') == 5
-    assert _checked(page, "goal") == ["none"] and "Progresser, sans course" in page
+    assert _checked(page, "intent") == ["progresser"] and _checked(page, "goal") == [], "no race: « Progresser »"
     assert "Ajouter une course" in page, "a race without a file can be added from here"
     assert 'name="moments"' not in page and "Quand peux-tu courir" not in page, "asked in « Mon agenda », not here"
     # the week these answers make, drawn at once: the first complete week, one bar per session
     preview = page.split('id="coach-preview"')[1].split("</div>")[0]
-    pv = cv.first_week((1, 3, 6), 6, 120, cp.Goal(), clock.day)
+    pv = cv.first_week((1, 3, 6), 6, 120, cp.Goal(), clock.day, intent=cp.PROGRESSER)
     assert preview.count("pf-coach-bar-s") == 3 == len(_bars(pv)) and "23–29\u00a0nov." in page
     for _i, _cls, duration in _bars(pv):
         assert f"<small>{duration}</small>" in preview
@@ -167,8 +167,8 @@ async def test_a_new_account_gets_a_plan_proposed_with_nothing_to_fill(client, p
     assert "Créer mon plan" in page and "disabled" not in page.split('id="coach-go"')[1].split(">")[0]
     assert (await db_session.execute(select(func.count(CoachingPlan.id)))).scalar() == 0, "nothing exists yet"
     # the proposal posted as it is makes that plan
-    r = await client.post("/coaching/plan", data={"goal": "none", "days": ["1", "3", "6"], "long_day": "6",
-                                                  "base": "120"})
+    r = await client.post("/coaching/plan", data={"intent": "progresser", "goal": "none", "days": ["1", "3", "6"],
+                                                  "long_day": "6", "base": "120"})
     assert r.status_code == 303
     rows = await _rows(db_session, athlete)
     week = [r for r in rows if MONDAY + timedelta(days=7) <= r.day < MONDAY + timedelta(days=14)]

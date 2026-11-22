@@ -55,6 +55,8 @@ FIGURES = {
     "QUALITY_FROM_DAYS": 3, "TWO_QUALITY": (5, 240), "REP_EVERY": 2, "ADAPT_FACTOR": 0.8, "SIGNAL_FROM": 4,
     "SIGNAL_DAYS": 7, "MISSED_FROM": 2, "CLIMB_START": 0.6, "CLIMB_RATE_CAP": 500, "CLIMB_MIN": 100,
     "FORM_FOOTING_SHARE": 0.6, "FORM_FOOTING_CAP": 45, "FORM_LOW_COUNT": 3, "FORM_LOW_DAYS": 5,
+    # the profiles (docs/coaching.md › « Les profils »)
+    "FORME_FLOOR": 75, "FORME_GROWTH": 0.0, "FORME_LIGHT": None, "FORME_LONG_CAP": 90, "FORME_REPS": "fewest",
 }
 # not a training decision: how far ahead to write, a rounding, a stable reading — its line says « choix pratique »
 PRACTICAL = {

@@ -49,6 +49,19 @@ MOVED = "{home} est plein : séance déplacée à {day}."
 MOVED_COACH = "Séance déplacée de {home} à {day}."
 ENDED = {co.PASSED: "{name} est derrière toi : {when}le plan continue sans course.",
          co.GONE: "{name} n’est plus dans tes courses : {when}le plan continue sans course."}
+# the start screen's three intents (docs/coaching.md › « Les profils »): a word, an icon, and the one line each says
+INTENT_CARDS = (
+    (cp.ENTRETIEN, "Garder la forme", "heart",
+     "On garde ton rythme : le même volume chaque semaine, et une séance un peu rythmée."),
+    (cp.PROGRESSER, "Progresser", "chart",
+     "Ton volume monte peu à peu, une semaine sur quatre plus légère, avec une séance de qualité par semaine."),
+    (cp.COURSE, "Préparer une course", "flag",
+     "Le plan mène à ta course : il monte, puis s’allège les deux dernières semaines."),
+)
+# « pour finir » or « pour performer »: read from the race (a time aimed at, or none), never asked
+AIM_LINE = {cp.FINIR: "Sans temps visé, une seule séance de qualité par semaine : le reste en aisance.",
+            cp.PERFORMER: "Avec un temps visé : jusqu’à deux séances de qualité par semaine, à partir de 5 jours "
+                          "et 4 h."}
 METHOD = (
     "Ton plan est en temps, pas en kilomètres. Il part de ton volume habituel et monte d’environ 10 % par semaine ; "
     "une semaine sur quatre est plus légère.",
@@ -58,6 +71,9 @@ METHOD = (
     "plus soutenue quand tu as trois jours ou plus.",
     "Jamais deux jours durs de suite, pas de séance de moins de 30 minutes, et seulement tes jours disponibles.",
     "Avant une course : deux semaines d’affûtage, le volume baisse et quelques efforts courts restent.",
+    "Garder la forme : le même volume chaque semaine (75 minutes au moins), sans semaine allégée, une séance "
+    "rythmée courte et une sortie longue d’1 h 30 au plus. Progresser, ou une course sans temps visé : une seule "
+    "séance de qualité par semaine ; deux, au plus, avec un temps visé.",
     "Le plan vise le temps de ta course : ton objectif, sinon l’estimation de sa page. Pour un trail, tes sorties "
     "longues visent aussi un dénivelé, qui monte au fil des semaines.",
     "Après chaque séance, dis comment c’était. Si le facile te paraît dur, ou si des séances sautent, la semaine "
@@ -104,9 +120,9 @@ def guidance(kind: str, structure: dict | None, rows: list[dict] | None) -> str:
     return f"{text} {hr}." if hr else text
 
 
-def countdown(goal: cp.Goal, today: date) -> str:
+def countdown(goal: cp.Goal, today: date, intent: str | None = None) -> str:
     if goal.race_day is None:
-        return "Progresser, sans course"
+        return "Garder la forme" if intent == cp.ENTRETIEN else "Progresser, sans course"
     k = (goal.race_day - today).days
     if k < 0:
         return f"Course passée · {goal.name}"
@@ -592,12 +608,23 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
 FIRST_EMPTY = "Aucune séance à placer cette semaine-là."
 
 
-def first_week(days: tuple[int, ...], long_day: int, base: int, goal: cp.Goal, today: date) -> dict:
+def profile_lines(inp: cp.Inputs) -> list[str]:
+    """What the start screen says of the rules these answers bring, one short line each: a race « pour finir » or
+    « pour performer » (read from its time aimed at)."""
+    lines = []
+    aim = cp.aim(inp.goal)
+    if inp.intent == cp.COURSE and aim:
+        lines.append(AIM_LINE[aim])
+    return lines
+
+
+def first_week(days: tuple[int, ...], long_day: int, base: int, goal: cp.Goal, today: date,
+               intent: str | None = None) -> dict:
     """The onboarding's preview: the first complete week of the plan these answers would make — this week on a
     Monday, the next one otherwise (the only week left before a race this week) — drawn day by day, and the first
     session to come. The sessions are the generator's own (coaching_plan.build, the call sync makes for a plan
-    saved now); nothing is read or written."""
-    inp = cp.Inputs(tuple(days), long_day, base, cp.monday_of(today), goal, {})
+    saved now, with the intent's rules); nothing is read or written."""
+    inp = cp.Inputs(tuple(days), long_day, base, cp.monday_of(today), goal, {}, intent=intent)
     weeks = cp.build(inp, today)
     ahead = [s for w in weeks for s in w.sessions if s.day >= today]
     week = weeks[0] if weeks and (today.weekday() == 0 or len(weeks) == 1) else weeks[1] if len(weeks) > 1 else None
@@ -635,7 +662,7 @@ def first_week(days: tuple[int, ...], long_day: int, base: int, goal: cp.Goal, t
             "legend": [(cls, word) for cls, word in LEGEND if cls in kinds],
             "aria": f"Semaine du {week_label(monday)}, {len(shown)} séance{'s' if len(shown) > 1 else ''}"
                     + (f", {hm_long(total)}" if total else "") + (" : " + " ; ".join(said) if said else "") + ".",
-            "first": {"when": when, "what": what} if first is not None else None}
+            "first": {"when": when, "what": what} if first is not None else None, "lines": profile_lines(inp)}
 
 
 def header(state: co.State, coach: bool = False) -> dict:
@@ -644,7 +671,7 @@ def header(state: co.State, coach: bool = False) -> dict:
     monday = cp.monday_of(today)
     # a plan that lost its race starts again next Monday: this week keeps no phase
     phase = cp.phase_of(monday, state.inputs) if monday >= state.plan.start_monday else "apres"
-    return {"goal": countdown(state.goal, today), "time": goal_time(state.goal, coach),
+    return {"goal": countdown(state.goal, today, state.inputs.intent), "time": goal_time(state.goal, coach),
             "phase": cp.PHASES.get(phase) if phase != "apres" else None, "ended": ended_line(state)}
 
 

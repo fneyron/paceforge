@@ -344,7 +344,7 @@ def recent_runs(runs: list[st.Session], rows: list[CoachingSession], day: date) 
 
 def inputs(plan: CoachingPlan, goal: cp.Goal, recent: tuple[tuple[date, int], ...] = ()) -> cp.Inputs:
     return cp.Inputs(plan.weekdays, plan.long_day, plan.base_minutes, plan.start_monday, goal,
-                     dict(plan.adaptations or {}), recent)
+                     dict(plan.adaptations or {}), recent, intent=plan.intent if plan.intent in cp.INTENTS else None)
 
 
 # ── the plan's rows ─────────────────────────────────────────────────────────
@@ -395,13 +395,28 @@ def clean_answers(days, long_day, base) -> tuple[tuple[int, ...], int, int]:
     return days, long_day, base
 
 
+def clean_intent(value, has_race: bool) -> str | None:
+    """The intent the start screen sent; None when none was sent (a screen opened before the profiles: the plan
+    keeps the rules it was made with). « Préparer une course » needs a race; the two others aim at none."""
+    if value is None or str(value).strip() == "":
+        return None
+    value = str(value).strip()
+    if value not in cp.INTENTS:
+        raise Invalid("Choisis ce que tu veux : garder la forme, progresser ou préparer une course.")
+    if value == cp.COURSE and not has_race:
+        raise Invalid("Choisis ta course, ou ajoute-la.")
+    return value
+
+
 async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | None, days, long_day,
-                    base, moments=None, race: tuple | None = None) -> CoachingPlan:
+                    base, moments=None, race: tuple | None = None, intent: str | None = None) -> CoachingPlan:
     """The onboarding's answers kept: a new plan, or the same one made again (« Refaire le plan »: week 0 is this
     week again, what the ressenti changed is forgotten; the sessions done, past or edited by a person stay).
     `race`: a race without a course, (name, day, km, target_s) as clean_race reads it — the plan's goal instead of
     a Route."""
     days, long_day, base = clean_answers(days, long_day, base)
+    if intent in (cp.ENTRETIEN, cp.PROGRESSER):  # no race aimed at
+        route_id, race = None, None
     if race is not None:
         route_id = None
     elif route_id is not None and route_id not in {r.id for r in await goal_options(db, user.id, c.today)}:
@@ -415,6 +430,7 @@ async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | N
     clear_custom(plan)
     if race is not None:
         plan.race_name, plan.race_date, plan.race_km, plan.race_target_s = race
+    plan.intent = intent
     plan.start_monday, plan.adaptations, plan.generated_at = cp.monday_of(c.today), None, c.now
     plan.goal_state = None  # the race's times are read again; a lost race's line goes
     if moments is not None:  # when the athlete can run (the onboarding's chips; None: left as it was)
