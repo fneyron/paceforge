@@ -327,6 +327,34 @@ async def follow_goal(db: AsyncSession, plan: CoachingPlan, route, rows: list, t
     return None, rows
 
 
+def history(runs: list, rows: list[CoachingSession] | None = None) -> list:
+    """What the level reads (coaching_plan.read_level): every run recorded, and the sessions ticked « Fait » by hand
+    without one (an athlete without a watch has a history too)."""
+    out = list(runs)
+    out += [SimpleNamespace(day=r.day, minutes=r.done_minutes or r.minutes) for r in rows or ()
+            if r.status == DONE and r.activity_id is None and r.kind != cp.RACE]
+    return out
+
+
+def level_state(level: cp.Level, today: date) -> dict:
+    """What the plan keeps of the level it read (shown to the athlete with its reason, in the export)."""
+    return {"weeks": level.weeks, "busy": level.busy, "median": level.median, "longest": level.longest,
+            "history": level.history, "base": level.base, "day": today.isoformat()}
+
+
+def level_of(plan: CoachingPlan) -> cp.Level | None:
+    """The level the plan read when it was made, None for a plan made before the profiles."""
+    if plan.intent not in cp.INTENTS or plan.level not in (cp.DEBUTANT, cp.REGULIER, cp.ENTRAINE):
+        return None
+    kept = plan.level_read or {}
+    try:
+        return cp.Level(plan.level, int(kept.get("weeks") or 0), int(kept.get("busy") or 0),
+                        int(kept.get("median") or 0), int(kept.get("longest") or 0), bool(kept.get("history", True)),
+                        int(kept.get("base") or plan.base_minutes))
+    except (TypeError, ValueError):
+        return cp.Level(plan.level)
+
+
 def clear_custom(plan: CoachingPlan) -> None:
     plan.race_name = plan.race_date = plan.race_km = plan.race_target_s = None
 
@@ -344,7 +372,8 @@ def recent_runs(runs: list[st.Session], rows: list[CoachingSession], day: date) 
 
 def inputs(plan: CoachingPlan, goal: cp.Goal, recent: tuple[tuple[date, int], ...] = ()) -> cp.Inputs:
     return cp.Inputs(plan.weekdays, plan.long_day, plan.base_minutes, plan.start_monday, goal,
-                     dict(plan.adaptations or {}), recent, intent=plan.intent if plan.intent in cp.INTENTS else None)
+                     dict(plan.adaptations or {}), recent, intent=plan.intent if plan.intent in cp.INTENTS else None,
+                     level=plan.level if plan.intent in cp.INTENTS else None)
 
 
 # ── the plan's rows ─────────────────────────────────────────────────────────
@@ -422,6 +451,10 @@ async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | N
     elif route_id is not None and route_id not in {r.id for r in await goal_options(db, user.id, c.today)}:
         raise Invalid("Cette course n’est plus disponible.")
     plan = await get_plan(db, user.id)
+    # the level, read again each time the plan is made (never asked; a plan made before the profiles has none) —
+    # read before anything changes on the plan
+    level = None if intent is None else cp.read_level(
+        history(await runs_of(db, user.id, c), await sessions_of(db, plan) if plan is not None else []), c.today, base)
     if plan is None:
         plan = CoachingPlan(user_id=user.id)
         db.add(plan)
@@ -431,6 +464,7 @@ async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | N
     if race is not None:
         plan.race_name, plan.race_date, plan.race_km, plan.race_target_s = race
     plan.intent = intent
+    plan.level, plan.level_read = (level.level, level_state(level, c.today)) if level is not None else (None, None)
     plan.start_monday, plan.adaptations, plan.generated_at = cp.monday_of(c.today), None, c.now
     plan.goal_state = None  # the race's times are read again; a lost race's line goes
     if moments is not None:  # when the athlete can run (the onboarding's chips; None: left as it was)

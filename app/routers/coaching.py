@@ -256,8 +256,13 @@ async def _preview(db: AsyncSession, user: User, c: co.Clock, *, goal: str | Non
         # days out of range are said by the line under the days (`silent`: not twice)
         return {"error": str(e), "silent": not 2 <= len(picked) <= 6, "label": "", "aria": str(e), "empty": None,
                 "cols": [{"wd": w, "bars": []} for w in WEEKDAYS], "legend": [], "first": None, "note": None,
-                "lines": [], "long_day": _int(long_day), "long_days": [(d, WEEKDAYS_L[d]) for d in picked]}
-    return {**cv.first_week(clean_days, clean_long, clean_base, target, c.today, intent=intent), "error": None,
+                "lines": [], "level": None, "long_day": _int(long_day), "long_days": [(d, WEEKDAYS_L[d]) for d in picked]}
+    level = None
+    if intent is not None:  # the level the plan would read, from the same history (never asked)
+        rows = await co.sessions_of(db, plan) if plan is not None else []
+        level = cp.read_level(co.history(await co.runs_of(db, user.id, c), rows), c.today, clean_base)
+    return {**cv.first_week(clean_days, clean_long, clean_base, target, c.today, intent=intent, level=level),
+            "error": None,
             "silent": False, "long_day": clean_long, "long_days": [(d, WEEKDAYS_L[d]) for d in clean_days]}
 
 

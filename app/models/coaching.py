@@ -50,6 +50,10 @@ class CoachingPlan(Base):
     # the intent chosen on the start screen (docs/coaching.md › « Les profils »): « entretien » (Garder la forme),
     # « progresser », « course »; None: a plan made before the profiles, which keeps the rules it was made with
     intent: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    # the level read from the athlete's history when the plan was made or made again (« debutant », « regulier »,
+    # « entraine »; never asked) and what it read: {"weeks", "busy", "median", "longest", "history", "base", "day"}
+    level: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    level_read: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     days: Mapped[str] = mapped_column(String(16), nullable=False)  # weekdays available, « 1,3,5,6 » (0 = Monday)
     long_day: Mapped[int] = mapped_column(Integer, nullable=False)
     base_minutes: Mapped[int] = mapped_column(Integer, nullable=False)  # the starting weekly minutes
