@@ -77,7 +77,8 @@ telephone_jours.json    les valeurs du jour envoyées par ton téléphone (pas, 
 parcours.json           tes parcours et plans de course, avec leurs points de passage
 lactate.json            tes tests de lactate
 nutrition.json          tes produits de nutrition
-coaching.json           ton plan de coaching : objectif, jours, volume, ce que le ressenti a changé, les personnes qui
+coaching.json           ton plan de coaching : objectif (une course ajoutée sans fichier : nom, date, distance, temps
+                        visé), jours, volume, ce que le ressenti a changé, les personnes qui
                         suivent ton plan et celles dont tu suis le plan (prénoms et dates), ton agenda (l’hôte de chaque adresse, jamais
                         l’adresse, et tes heures occupées : début et fin)
 coaching_seances.json   tes séances de coaching : jour, type, durée, statut, ressenti, note, commentaire de qui suit ton plan
@@ -176,7 +177,7 @@ async def _legacy_batches(db: AsyncSession, table: str, user_id: int,
 
 
 # the plan's own fields: never the calendar feed's token (nor its hash)
-COACHING_PLAN_FIELDS = ("route_id", "days", "long_day", "base_minutes", "start_monday", "generated_at", "adaptations",
+COACHING_PLAN_FIELDS = ("route_id", "race_name", "race_date", "race_km", "race_target_s", "days", "long_day", "base_minutes", "start_monday", "generated_at", "adaptations",
                         "goal_state", "form_on_at", "form_state", "moments", "created_at", "updated_at")
 
 

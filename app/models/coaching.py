@@ -1,6 +1,7 @@
 """Coaching (beta, docs/coaching.md): an athlete's plan, its sessions, and who follows it as a coach.
 
-- coaching_plans: one per athlete. The goal (a Route with a race date, or none: « Progresser »), the weekdays
+- coaching_plans: one per athlete. The goal (a Route with a race date, a race without a course — its name, day,
+  distance and optional time aimed at, `race_*` — or none: « Progresser »), the weekdays
   available, the long run's weekday, the starting weekly minutes, the Monday the progression counts from, what the
   ressenti changed week by week (`adaptations`: {Monday ISO: {"factor", "reason", …}}, kept so that a past week
   still says why it was lighter), what the plan last read of its race (`goal_state`: the race page's objective and
@@ -24,7 +25,7 @@ No pain, injury or illness field anywhere: the ressenti is how hard the session 
 """
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.crypto import EncryptedString
@@ -40,6 +41,12 @@ class CoachingPlan(Base):
                                          unique=True, index=True)
     # the race aimed at; None: « Progresser, sans course » (the race deleted: the same)
     route_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("routes.id", ondelete="SET NULL"), nullable=True)
+    # or a race without a course (« Ajouter une course »: no GPX file): its name, day, distance and, if given, the
+    # time aimed at; all None for a plan aimed at a Route or at no race
+    race_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    race_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    race_km: Mapped[float | None] = mapped_column(Float, nullable=True)
+    race_target_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
     days: Mapped[str] = mapped_column(String(16), nullable=False)  # weekdays available, « 1,3,5,6 » (0 = Monday)
     long_day: Mapped[int] = mapped_column(Integer, nullable=False)
     base_minutes: Mapped[int] = mapped_column(Integer, nullable=False)  # the starting weekly minutes

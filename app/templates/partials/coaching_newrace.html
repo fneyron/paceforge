@@ -1,0 +1,25 @@
+{#- Coaching › the start screen's « Ajouter une course »: a race without a GPX file — a name, a date, a distance, and
+    optionally a time aimed at; nothing else. Its fields open under the option once it is chosen (without JavaScript
+    they always show); typing in them chooses it. `chosen.race`: what was typed (filled again after a refusal). -#}
+{% set nr = chosen.race or {} %}
+<label class="pf-coach-option"><input type="radio" name="goal" value="new" id="coach-goal-new"{% if chosen.goal == "new" %} checked{% endif %}><span><b>Ajouter une course</b><small>Sans fichier GPX&nbsp;: un nom, une date, une distance</small></span></label>
+<div class="pf-coach-newrace" id="coach-newrace" data-newrace>
+    <div class="pf-coach-field">
+        <label for="race-name">Nom de la course</label>
+        <input id="race-name" name="race_name" class="pf-input" maxlength="80" autocomplete="off" placeholder="10 km du lac d’Annecy" value="{{ nr.race_name or '' }}">
+    </div>
+    <div class="pf-coach-field-pair">
+        <div class="pf-coach-field">
+            <label for="race-date">Date</label>
+            <input id="race-date" name="race_date" type="date" class="pf-input" min="{{ today }}" max="{{ race_max }}" value="{{ nr.race_date or '' }}">
+        </div>
+        <div class="pf-coach-field">
+            <label for="race-km">Distance</label>
+            <span class="pf-coach-unit"><input id="race-km" name="race_km" class="pf-input" inputmode="decimal" autocomplete="off" placeholder="10" value="{{ nr.race_km or '' }}"><span aria-hidden="true">km</span></span>
+        </div>
+    </div>
+    <fieldset class="pf-coach-field pf-coach-field-time">
+        <legend>Temps visé <small>facultatif</small></legend>
+        <span class="pf-coach-unit"><input name="race_h" class="pf-input" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="Heures" value="{{ nr.race_h or '' }}"><span aria-hidden="true">h</span><input name="race_min" class="pf-input" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="Minutes" value="{{ nr.race_min or '' }}"><span aria-hidden="true">min</span></span>
+    </fieldset>
+</div>

@@ -22,21 +22,16 @@
     <form method="post" action="/coaching/plan" class="pf-coach-onb-form" id="coach-onb" hx-get="/coaching/apercu" hx-trigger="change" hx-target="#coach-preview" hx-swap="outerHTML" hx-sync="this:replace">
         {% if error %}<p class="pf-coach-error" role="alert">{{ error }}</p>{% endif %}
 
-        {% if races %}
         <fieldset class="pf-coach-card pf-coach-q-card">
             <legend class="pf-coach-h">Ton objectif</legend>
             <div class="pf-coach-options">
                 {% for r in races %}
-                <label class="pf-coach-option"><input type="radio" name="goal" value="{{ r.id }}"{% if chosen.goal == r.id|string %} checked{% endif %}><span><b>{{ r.name }}</b><small>{{ r.when }} · {{ r.j }}</small></span></label>
+                <label class="pf-coach-option"><input type="radio" name="goal" value="{{ r.id }}"{% if chosen.goal == r.id %} checked{% endif %}><span><b>{{ r.name }}</b><small>{{ r.when }} · {{ r.j }}</small></span></label>
                 {% endfor %}
+                {% include "partials/coaching_newrace.html" %}
                 <label class="pf-coach-option"><input type="radio" name="goal" value="none"{% if chosen.goal == "none" %} checked{% endif %}><span><b>Progresser, sans course</b><small>12 semaines, renouvelées au fil de l’eau</small></span></label>
             </div>
         </fieldset>
-        {% else %}
-        {#- no race to come: one goal, said (not asked) -#}
-        <input type="hidden" name="goal" value="none">
-        <p class="pf-coach-nogoal">Objectif&nbsp;: <b>Progresser, sans course</b> <span>12 semaines, renouvelées au fil de l’eau</span></p>
-        {% endif %}
 
         <section class="pf-coach-card pf-coach-first" aria-labelledby="coach-first-h">
             <div class="pf-coach-first-head">
@@ -87,15 +82,26 @@
     if (!form) return;
     var days = form.querySelectorAll("[data-days] input");
     var hint = document.getElementById("coach-days-hint"), go = document.getElementById("coach-go");
+    // « Ajouter une course »: its fields open once it is chosen; typing in them chooses it; the button waits for a
+    // name, a date and a distance
+    var fresh = document.getElementById("coach-goal-new"), block = document.getElementById("coach-newrace");
+    function filled() {
+        if (!fresh || !fresh.checked || !block) return true;
+        return ["race_name", "race_date", "race_km"].every(function (n) { var f = form.elements[n]; return f && f.value.trim(); });
+    }
     function sync() {
         var n = [].filter.call(days, function (d) { return d.checked; }).length;
-        if (go) go.disabled = n < 2 || n > 6;
+        if (block && fresh) block.hidden = !fresh.checked;
+        if (go) go.disabled = n < 2 || n > 6 || !filled();
         if (!hint) return;
         var text = n > 6 ? "Garde un jour de repos : 6 jours au plus." : n < 2 ? "Choisis au moins 2 jours." : "Touche un jour pour l’ajouter ou l’enlever.";
         if (hint.textContent !== text) hint.textContent = text;
         hint.classList.toggle("pf-coach-error", n < 2 || n > 6);
     }
     days.forEach(function (d) { d.addEventListener("change", sync); });
+    form.addEventListener("change", sync);
+    form.addEventListener("input", sync);
+    if (block && fresh) block.addEventListener("focusin", function () { if (!fresh.checked) { fresh.checked = true; sync(); } });
     sync();
     // the week drawn again (htmx): its description is said
     document.addEventListener("htmx:afterSettle", function () {
