@@ -85,6 +85,11 @@ QUALITY_PAIR = "Tu peux courir la séance en footing."
 METHOD = (
     "Ton plan est en temps, pas en kilomètres. Il part de ton volume habituel et monte d’environ 10 % par semaine ; "
     "une semaine sur quatre est plus légère.",
+    "La cible de chaque séance vient de tes données : l’allure, de ta vitesse critique, calculée sur tes meilleurs "
+    "efforts du 400 m au 5 km des 16 dernières semaines ; le cardio, de ta FC max. Sans assez de sorties, rien "
+    "n’est affiché, et la sensation reste le repère.",
+    "Les allures valent sur le plat : en côte, il n’y en a pas. Sur les efforts de moins de 3 minutes, seule la "
+    "sensation compte : le cardio n’a pas le temps de monter.",
     "Aucune séance ne dépasse de plus de 10 % ta plus longue sortie des 30 derniers jours : la semaine peut alors "
     "demander un peu moins que prévu.",
     "La semaine, c’est surtout du facile : au moins 80 % du temps en aisance, une sortie longue, et une séance "
@@ -102,11 +107,6 @@ METHOD = (
     "suivante s’allège toute seule.",
     "Si tu l’actives, le plan lit ta récupération de Santé chaque matin : basse, ta séance dure devient un footing "
     "et se décale. Une bonne récupération n’ajoute jamais rien.",
-    "La cible de chaque séance vient de tes données : l’allure, de ta vitesse critique, calculée sur tes meilleurs "
-    "efforts du 400 m au 5 km des 16 dernières semaines ; le cardio, de ta FC max. Sans assez de sorties, rien "
-    "n’est affiché, et la sensation reste le repère.",
-    "Les allures valent sur le plat. Pour les efforts de moins de 3 minutes et en côte, seule la sensation compte : "
-    "le cardio n’a pas le temps de monter.",
     "Tes sorties enregistrées cochent les séances du jour. Sans montre, touche « C’est fait ».",
     "Si tu relies ton agenda, chaque séance prend un créneau libre, hors réunions et rendez-vous ; un jour plein "
     "décale sa séance. PaceForge n’en garde que tes heures occupées.",

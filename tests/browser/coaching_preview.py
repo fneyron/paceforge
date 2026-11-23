@@ -20,6 +20,9 @@ uvicorn tests.browser.coaching_preview:app --host 127.0.0.1 --port 8961
 A fifth account (Léa, POST /__preview/coaching/as/story) is the owner's story: a new account, no activity, no race —
 the visual check adds « 10 km du lac d’Annecy » on 24 April 2027 without a GPX file, keeps two days and makes the plan.
 
+A sixth account (Rémi, POST /__preview/coaching/as/road) runs on the road: a 10 km in 33 days with a time aimed at,
+eight weeks of runs with Strava's best efforts and a confirmed maximum — every « Cible » of a road plan.
+
 A fourth account has no plan either but a habit (Hugo: Monday, Wednesday and Saturday for eight weeks, the long run
 on Saturday, a race in 40 days): what the onboarding proposes from a history. A fixture signs it in on request —
 POST /__preview/coaching/as/habit (and back: …/as/new) — so that no fourth server is needed.
@@ -50,6 +53,13 @@ if settings.COACHING_BETA_USERS != "*":
 settings.BASE_URL = "https://paceforge.example"
 
 
+def best_efforts(cs: float, d_prime: float, distances, slower: int = 0) -> list[dict]:
+    """Strava's best efforts of one run, on the line distance = D′ + CS × time (the older the week, 1 % slower each:
+    the fastest of the window is the most recent)."""
+    return [{"name": f"{d} m", "distance": d, "elapsed_time": round((d - d_prime) / cs * (1 + 0.01 * slower)),
+             "moving_time": round((d - d_prime) / cs * (1 + 0.01 * slower))} for d in distances]
+
+
 @asynccontextmanager
 async def lifespan(app):
     async with preview.lifespan(app):
@@ -76,7 +86,9 @@ async def lifespan(app):
             habit = User(firstname="Hugo", email="hugo@example.org", email_verified=True, timezone="UTC")
             # the owner's story: a new account, no activity, that will add a race without a GPX file
             story = User(firstname="Léa", email="story@example.org", email_verified=True, timezone="UTC")
-            db.add_all([coach, new, habit, story])
+            road = User(firstname="Rémi", email="road@example.org", email_verified=True, timezone="UTC",
+                        max_heart_rate=190)
+            db.add_all([coach, new, habit, story, road])
             await db.flush()
             # Hugo: eight weeks on Monday, Wednesday and Saturday (the long run), and a race to come
             for week in range(1, 9):
@@ -88,12 +100,28 @@ async def lifespan(app):
                                     distance=km * 1000, moving_time=minutes * 60, elapsed_time=minutes * 60 + 60,
                                     total_elevation_gain=60, average_speed=km * 1000 / (minutes * 60),
                                     raw_data={"utc_offset": 0}))
+            # Rémi: a road runner, a 10 km in 33 days with a time aimed at (45 min), four runs a week for eight
+            # weeks with Strava's best efforts, a confirmed maximum — every « Cible » of a road plan: the footing,
+            # the threshold and the intervals, the long run on flat ground, the race's pace
+            for week in range(1, 9):
+                for wd, name, minutes, km in ((0, "Footing", 45, 8.6), (1, "Fractionné", 55, 10.5),
+                                              (3, "Footing", 45, 8.4), (6, "Sortie longue", 90, 16.8)):
+                    day = monday - timedelta(weeks=week) + timedelta(days=wd)
+                    db.add(Activity(user_id=road.id, strava_activity_id=810000 + week * 10 + wd, name=name,
+                                    sport_type="Run", start_date=datetime.combine(day, time(7), timezone.utc),
+                                    distance=km * 1000, moving_time=minutes * 60, elapsed_time=minutes * 60 + 60,
+                                    total_elevation_gain=30, average_speed=km * 1000 / (minutes * 60),
+                                    average_heartrate=148, max_heartrate=181, raw_data={"utc_offset": 0},
+                                    best_efforts=best_efforts(3.9, 150, (400, 805, 1000, 1609, 3219, 5000),
+                                                              slower=week) if wd == 1 else None))
             db.add(Route(user_id=habit.id, name="Semi des Vignes", total_distance_km=21.1, total_elevation_gain=180,
                          sport_type="road", race_date=(today + timedelta(days=40)).isoformat()))
-            # the athlete's runs: the last 5 weeks on Tuesday, Thursday, Friday and Sunday, this week before today
+            # the athlete's runs: the last 11 weeks on Tuesday, Thursday, Friday and Sunday, this week before today —
+            # Strava's best efforts on the Tuesday footings (her critical speed, docs/coaching.md › « L’intensité »:
+            # 3.6 m/s, D′ 140 m — the paces of her tickets on flat ground)
             await db.execute(delete(Activity).where(Activity.user_id == athlete.id))
             n = 0
-            for week in range(5, -1, -1):
+            for week in range(11, -1, -1):
                 for wd, name, minutes, km, up in ((1, "Footing du mardi", 42, 6.9, 40), (3, "Côtes au parc", 47, 7.2, 160),
                                                   (4, "Footing du vendredi", 38, 6.2, 30),
                                                   (6, "Sortie longue en forêt", 78 - 2 * week, 12.4, 320)):
@@ -105,7 +133,9 @@ async def lifespan(app):
                                     if wd in (3, 6) else "Run", start_date=datetime.combine(day, time(7), timezone.utc),
                                     distance=km * 1000, moving_time=minutes * 60, elapsed_time=minutes * 60 + 90,
                                     total_elevation_gain=up, average_heartrate=141, max_heartrate=168,
-                                    average_speed=km * 1000 / (minutes * 60), raw_data={"utc_offset": 0}))
+                                    average_speed=km * 1000 / (minutes * 60), raw_data={"utc_offset": 0},
+                                    best_efforts=best_efforts(3.6, 140, (400, 805, 1000, 1609, 5000), slower=week)
+                                    if wd == 1 else None))
             # yesterday, a run outside the plan (Wednesday is not one of her days)
             db.add(Activity(user_id=athlete.id, strava_activity_id=700900, name="Footing avec Léa", sport_type="Run",
                             start_date=datetime.combine(monday + timedelta(days=2), time(18), timezone.utc),
@@ -170,8 +200,15 @@ async def lifespan(app):
                                         end_at=datetime.combine(day, time(h2, m2), timezone.utc)))
             await db.flush()
             await co.sync(db, plan, athlete, noon)
+            # Rémi's plan, made this morning: five days, the long run on Sunday, 4 h 20 a week, his 10 km
+            road_plan = await co.save_plan(
+                db, road, co.Clock(noon, timezone.utc, today), route_id=None, days=[0, 1, 3, 4, 6], long_day=6,
+                base=260, race=("10 km de la Voie Verte", today + timedelta(days=33), 10.0, 45 * 60),
+                intent=cp.COURSE)
+            await co.sync(db, road_plan, road, noon)
             await db.commit()
-            ids = {"athlete": athlete.id, "coach": coach.id, "new": new.id, "habit": habit.id, "story": story.id}
+            ids = {"athlete": athlete.id, "coach": coach.id, "new": new.id, "habit": habit.id, "story": story.id,
+                   "road": road.id}
             app.state.coaching_ids = ids
             app.state.user_id = ids[AS]
             app.state.coaching_feed = plan.feed_token

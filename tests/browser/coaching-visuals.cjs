@@ -265,7 +265,9 @@ async function sheet(page) {
       assert.equal(await gauge.getAttribute('aria-label'), 'Effort facile : niveau 2 sur 4', key);
       assert.deepEqual(await gauge.locator('i').evaluateAll(all => all.map(i => getComputedStyle(i).backgroundColor)).then(c => [c[0] === c[1], c[1] === c[2], c[2] === c[3]]), [true, false, true], key + ': two steps of four are filled');
       assert.equal(await page.locator('.pf-coach-session svg.pf-effort').count(), 0, key + ': no profile for a steady session');
-      assert.match(await page.locator('.pf-coach-s-guide').innerText(), /^Facile\s: tu peux tenir une conversation\. 112–148\sbpm$/, key);
+      // la cible, inside the ticket: her pace on flat ground (her critical speed) and her heart-rate range; the feel under it
+      assert.deepEqual(await page.locator('.pf-coach-ticket .pf-coach-target-vals b').allInnerTexts(), ['5:40/km', '112–148bpm'], key);
+      assert.match(await page.locator('.pf-coach-s-guide').innerText(), /^Facile\s: tu peux tenir une conversation\.$/, key);
       // ONE main action, « Pas faite » quiet beside it; « Déplacer », « Modifier » quiet under them
       assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), ['C’est fait'], key + ': one main action');
       const main = await page.locator('[id^="coach-done-"]').boundingBox();
@@ -672,6 +674,104 @@ async function sheet(page) {
         await page.close();
       }
       for (const kind of ['is-easy is-planned', 'is-hard is-planned', 'is-long is-planned', 'is-long is-done', 'is-hard is-missed', 'is-race is-planned']) assert.ok(seenKinds.has(kind), 'a ticket of each kind: ' + kind + ' ' + [...seenKinds]);
+    }
+
+    // ── la cible: each kind's target inside its ticket — a road runner (Rémi: the threshold, the intervals, the
+    //    recovery run, the long run on flat ground, the race's pace) and the trail athlete (her hills, her long run
+    //    with a climb: no pace) — at 320 and 393 px, light and dark, 200 % text, contrast, targets ──
+    {
+      const at = days => { const d = new Date(fixture.day + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
+      const as = who => fetch(`${fresh}/__preview/coaching/as/${who}`, { method: 'POST' }).then(r => r.json());
+      assert.deepEqual(await as('road'), { synthetic: true, as: 'road' });
+      const raceDay = at(33);
+      // [name, server, day, the ticket's title, its Cible heading, its values]
+      const cases = [
+        ['threshold', fresh, fixture.day, /^Séance/, 'Cible · pendant les efforts', [/^\d:\d\d–\d:\d\d\/km$/, /^\d{3}–\d{3}bpm$/], ['Allure, sur le plat', 'Cardio']],
+        ['intervals', fresh, at(7), /^Séance/, 'Cible · pendant les efforts', [/^\d:\d\d–\d:\d\d\/km$/, /^171–181bpm$/], ['Allure, sur le plat', 'Cardio en fin d’effort']],
+        ['easy', fresh, at(1), /^Récup/, 'Cible', [/^\d:\d\d\/km$/, /^95–132bpm$/], ['Pas plus vite que, sur le plat', 'Cardio']],
+        ['long', fresh, at(3), /^Sortie longue/, 'Cible', [/^\d:\d\d\/km$/, /^114–151bpm$/], ['Pas plus vite que, sur le plat', 'Cardio']],
+        ['race', fresh, raceDay, /^Course/, 'Cible', [/^4:30\/km$/], ['Allure de course']],
+        ['hills', athlete, at(1), /^Côtes/, 'Cible · pendant les efforts', [/^168–177bpm$/], ['Cardio en fin d’effort']],
+        ['long-climb', athlete, at(3), /^Sortie longue/, 'Cible', [/^112–148bpm$/], ['Cardio']],
+      ];
+      const paces = {};
+      for (const width of [320, 393]) for (const dark of [false, true]) {
+        const page = await open(browser, { width, dark });
+        for (const [name, server, day, title, head, values, labels] of cases) {
+          const key = `cible ${name} ${width}${dark ? ' dark' : ''}`;
+          await page.goto(`${server}/coaching?d=${day}`, { waitUntil: 'networkidle' });
+          const ticket = page.locator('.pf-coach-session').first().locator('.pf-coach-ticket');
+          assert.match(await ticket.locator('.pf-coach-s-title').innerText(), title, key);
+          const target = ticket.locator('.pf-coach-target');
+          assert.equal((await target.locator('.pf-coach-target-h').innerText()).replace(/\s+/g, ' ').toLowerCase(), head.toLowerCase(), key);
+          const shown = await target.locator('.pf-coach-target-vals b').allInnerTexts();
+          assert.equal(shown.length, values.length, key + ' ' + shown);
+          shown.forEach((v, i) => assert.match(v, values[i], key + ' ' + v));
+          assert.deepEqual(await target.locator('.pf-coach-target-vals span[aria-hidden]').allInnerTexts(), labels, key);
+          if (name === 'threshold' || name === 'intervals') paces[name] = shown[0];
+          // the values in the large tabular type, in the ticket's own ink (4.5:1 on its colour)
+          const looks = await target.evaluate(t => {
+            const rgb = c => c.match(/[\d.]+/g).slice(0, 3).map(Number);
+            const lum = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+            const ground = lum(rgb(getComputedStyle(t.closest('.pf-coach-ticket')).backgroundColor));
+            return [...t.querySelectorAll('p, a, b, span:not(.sr-only)')].filter(el => el.getClientRects().length).map(el => {
+              const a = lum(rgb(getComputedStyle(el).color));
+              return { el: el.className || el.tagName, size: parseFloat(getComputedStyle(el).fontSize), tabular: getComputedStyle(el).fontVariantNumeric,
+                ratio: (Math.max(a, ground) + 0.05) / (Math.min(a, ground) + 0.05) };
+            });
+          });
+          for (const l of looks) assert.ok(l.ratio >= 4.5, key + ': contrast ' + JSON.stringify(l));
+          for (const l of looks.filter(x => x.el === 'B')) assert.ok(l.size >= 26 && /tabular-nums/.test(l.tabular), key + ': large and tabular ' + JSON.stringify(l));
+          // « D’où viennent ces chiffres ? » under the values, a 44 px target; the feel under the ticket, once
+          assert.ok((await target.locator('.pf-coach-target-how').boundingBox()).height >= 44, key);
+          if (name !== 'race') assert.match(await page.locator('.pf-coach-session').first().locator('.pf-coach-s-guide').innerText(), /^(Très facile|Facile|Efforts)/, key);
+          const said = await page.locator('.pf-coach-daycard').innerText();
+          for (const v of shown) assert.equal(said.split(v.replace(/\/km|bpm/, '')).length - 1, 1, key + ': each number once ' + v);
+          await noOverflow(page, key);
+          await targets(page, key);
+          await page.locator('.pf-coach-session').first().locator('.pf-coach-ticket').screenshot({ path: `${out}/cible-${width}-${name}${dark ? '-dark' : ''}.png` });
+        }
+        assert.deepEqual(page.errors, [], 'cible: browser errors');
+        await page.close();
+      }
+      assert.notEqual(paces.threshold, paces.intervals, 'the intervals run faster than the threshold');
+      // short efforts: a line, not a hole (the taper's « rappels » of 2 min, before Rémi's race)
+      {
+        const page = await open(browser, { width: 393 });
+        let found = null;
+        for (let k = 14; k < 33 && !found; k++) {
+          await page.goto(`${fresh}/coaching?d=${at(k)}`, { waitUntil: 'networkidle' });
+          if (await page.locator('.pf-coach-target-note').count()) found = at(k);
+        }
+        assert.ok(found, 'a session of short efforts before the race');
+        assert.match(await page.locator('.pf-coach-s-text').first().innerText(), /× 2 min soutenu/);
+        assert.match(await page.locator('.pf-coach-target-note').first().innerText(), /^À la sensation\s: l’effort est trop court pour le cardio\.$/);
+        assert.equal(await page.locator('.pf-coach-target-how, .pf-coach-target-vals').count(), 0);
+        await page.locator('.pf-coach-session .pf-coach-ticket').first().screenshot({ path: `${out}/cible-393-short.png` });
+        // the race's road heading stays as it was: the pace is on the race's ticket only
+        await page.goto(`${fresh}/coaching`, { waitUntil: 'networkidle' });
+        assert.doesNotMatch(await page.locator('.pf-coach-goal').innerText(), /\/km/, 'the heading has no pace');
+        // « D’où viennent ces chiffres ? »: the sheet opens on « Comment ça marche », which says it
+        await page.locator('.pf-coach-target-how').first().click();
+        const st = await sheet(page);
+        assert.equal(st.open, true, 'the sheet');
+        assert.equal(st.tool, 'coach-tool-how', 'on « Comment ça marche »');
+        assert.match(await page.locator('#coach-tool-how').innerText(), /La cible de chaque séance vient de tes données/);
+        await page.screenshot({ path: `${out}/cible-393-how.png` });
+        await page.keyboard.press('Escape');
+        // 200 % text at 320 px: the values wrap, nothing leaves the ticket
+        const small = await open(browser, { width: 320, height: 2400 });
+        for (const day of [fixture.day, at(7), at(3)]) {
+          await small.goto(`${fresh}/coaching?d=${day}`, { waitUntil: 'networkidle' });
+          await small.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+          await noOverflow(small, '200 % text ' + day);
+        }
+        await small.locator('.pf-coach-session .pf-coach-ticket').first().screenshot({ path: `${out}/cible-320-long-200pct.png` });
+        assert.deepEqual([...page.errors, ...small.errors], [], 'cible: browser errors');
+        await small.close();
+        await page.close();
+      }
+      await as('new');
     }
 
     // ── taps: no full reload, instant feedback, keyboard; the debrief, a run outside the plan, « Déplacer » ──
@@ -1314,6 +1414,24 @@ async function sheet(page) {
           await noOverflow(page, 'story plan');
           await shot(page, 'story-393-plan');
           await theme(page, true); await shot(page, 'story-393-plan-dark'); await theme(page, false);
+          // no run, no maximum: the long run's ticket says where the maximum is confirmed, nothing else
+          {
+            const sunday = new Date(fixture.day + 'T00:00:00Z'); sunday.setUTCDate(sunday.getUTCDate() + 3);
+            await page.goto(fresh + '/coaching?d=' + sunday.toISOString().slice(0, 10), { waitUntil: 'networkidle' });
+            const link = page.locator('.pf-coach-ticket .pf-coach-target-link');
+            assert.equal(await link.innerText(), 'Confirme ta FC max pour voir ta zone');
+            assert.equal(await link.getAttribute('href'), '/settings#max-heart-rate');
+            assert.ok((await link.boundingBox()).height >= 44, 'a 44 px target');
+            assert.equal(await page.locator('.pf-coach-target-vals, .pf-coach-target-how').count(), 0, 'no value, nothing to explain');
+            for (const c of await ticketContrast(page)) assert.ok(c.ratio >= 4.5, 'no data: ' + JSON.stringify(c));
+            await page.locator('.pf-coach-daycard').screenshot({ path: `${out}/cible-393-nodata.png` });
+            await theme(page, true); await page.locator('.pf-coach-daycard').screenshot({ path: `${out}/cible-393-nodata-dark.png` }); await theme(page, false);
+            const small = await open(browser, { width: 320 });
+            await small.goto(fresh + '/coaching?d=' + sunday.toISOString().slice(0, 10), { waitUntil: 'networkidle' });
+            await noOverflow(small, 'no data 320');
+            await small.locator('.pf-coach-daycard').screenshot({ path: `${out}/cible-320-nodata.png` });
+            await small.close();
+          }
           await page.goto(fresh + '/coaching?d=2027-04-24', { waitUntil: 'networkidle' });
           assert.match(await page.locator('.pf-coach-s-title').first().innerText(), /Course/);
           await shot(page, 'story-393-race-day');
@@ -1385,6 +1503,9 @@ async function sheet(page) {
       assert.equal(await page.locator('.pf-coach-day').count(), 14, 'this week and the next');
       assert.equal(await page.locator(`#coach-day-${fixture.day}.is-today.is-selected`).count(), 1);
       for (const c of await ticketContrast(page)) assert.ok(c.ratio >= 4.5, 'follower: ' + JSON.stringify(c));
+      // la cible: her pace, never a heart rate, never the way to her settings
+      assert.deepEqual(await page.locator('.pf-coach-target-vals b').allInnerTexts(), ['5:40/km'], 'follower: the pace only');
+      assert.doesNotMatch(await page.locator('#main-content').innerText(), /bpm|Cardio|FC max|D’où viennent/, 'follower: no heart rate');
       assert.equal(await page.locator('[id^="coach-done-"], [id^="coach-missed-"]').count(), 0, 'a follower never ticks');
       assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), []);
       assert.equal(await page.locator('.pf-coach-do').count(), 0, 'no « C’est fait » row');
