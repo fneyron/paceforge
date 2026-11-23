@@ -603,6 +603,50 @@ calendrier publié par Outlook. Trois adresses au plus. Chacune est stockée chi
 masquée (son hôte et ses 4 derniers caractères) et retirable. Un pli dit où trouver l’adresse dans Google, Apple et
 Outlook. Sans aucune adresse, rien ne change : pas d’heure, les séances restent des journées entières.
 
+**Ou un compte connecté : Google Agenda, Outlook** (23 novembre 2026, « On ne peut pas connecter les calendriers
+Microsoft, Google etc. simplement en API ? » puis « Lance les calendriers oui »). Au-dessus du champ de l’adresse,
+« Connecter Google Agenda » et « Connecter Outlook » — chacun montré seulement quand son connecteur est configuré
+(`GOOGLE_CALENDAR_*`, `MICROSOFT_CALENDAR_*` : drapeau, identifiant et secret ; sans eux, l’écran est celui d’avant et
+les routes répondent 404) —, une phrase : « PaceForge lit seulement quand tu es occupé. Jamais les titres. », puis les
+sources connectées, listées comme les adresses (« Google Agenda », « Outlook », l’état de la dernière lecture,
+« Retirer »). Une connexion de chaque au plus ; se reconnecter renouvelle la même. L’adresse à coller reste, pour
+Apple (aucune API de ce genre) et tout le reste. Code : `app/services/coaching_accounts.py`.
+
+| | Google Agenda | Outlook (Microsoft) |
+|---|---|---|
+| Connexion | OAuth 2.0, code d’autorisation + PKCE (S256), `access_type=offline`, `prompt=consent` | Plateforme d’identité Microsoft v2, `common` (comptes pro et personnels), code + PKCE, `prompt=select_account` |
+| Autorisation demandée | `https://www.googleapis.com/auth/calendar.freebusy` (« voir tes disponibilités »), seule | `offline_access` et `MICROSOFT_CALENDAR_SCOPE` : `Calendars.ReadBasic` par défaut, `Calendars.Read` en repli (toute autre valeur est lue comme `Calendars.ReadBasic`) |
+| Ce qui est lu | `freebusy.query` sur l’agenda principal : des intervalles occupés, aucun événement | `GET /me/calendarView` de l’agenda par défaut, `$select=start,end,showAs,isAllDay,isCancelled`, paginé (100 par page, 15 pages au plus, une page suivante sur l’hôte de Graph seulement), `Prefer: outlook.timezone="UTC"` |
+| Occupé | ce que Google dit occupé | `showAs` « busy » et « oof » (absent) ; « free », « tentative » (pas encore une réunion), « workingElsewhere » (on travaille, ailleurs) et « unknown » ne le sont pas ; un événement annulé non plus |
+| Journée entière | un intervalle d’un minuit local à un autre : 2 jours ou plus, « absent » ; un seul jour, ignoré (la règle de l’adresse : Google ne dit pas « journée entière », un jour complet d’occupations collées serait lu de même) | `isAllDay` : la règle de l’adresse, sur les jours de l’athlète |
+| Retirer | le jeton est révoqué chez Google (`/revoke`) | rien à révoquer pour une seule application chez Microsoft : l’athlète le retire dans son compte Microsoft ; les jetons sont effacés |
+
+Ce qui est stocké d’un compte connecté : son service, ses jetons chiffrés (`EncryptedString`), leur échéance. Jamais
+son e-mail, son identifiant, le nom d’un agenda, ni rien d’un événement au-delà d’un début, d’une fin et « absent ».
+Un jeton expiré est renouvelé dans la lecture ; un renouvellement refusé (`invalid_grant` : retiré, ou expiré — les
+7 jours d’une application Google « en test ») donne « À reconnecter : l’accès a expiré ou a été retiré. » et un lien
+« Reconnecter », jamais une page d’erreur : les jetons sont effacés, les heures de la dernière lecture réussie restent
+jusqu’à leur échéance. Une lecture refusée (401/403) renouvelle le jeton une fois, puis vaut « à reconnecter » (le
+journal le dit pour `MICROSOFT_CALENDAR_SCOPE`). Ni un jeton, ni un code, ni un `state`, ni les mots du fournisseur ne
+sont journalisés : seulement le fournisseur et un code d’erreur.
+
+Au retour du fournisseur, l’athlète retrouve « Mon agenda » ouvert, le résultat en une ligne : « Google Agenda
+connecté : lecture en cours. », « Connexion annulée. », « La connexion a expiré. Réessaie. », « Outlook a refusé la
+connexion. Réessaie. », « … ne répond pas pour l’instant. Réessaie dans quelques minutes. », et pour un compte pro dont
+l’administrateur n’a pas donné son accord : « Ton organisation n’autorise pas cette connexion : demande à ton
+administrateur, ou colle l’adresse de ton agenda. » Le résultat voyage en deux codes dans l’adresse
+(`?outil=agenda&connexion=google&resultat=ok`), jamais en message. Le `state` et le vérificateur PKCE voyagent scellés
+dans le cookie de session signé (10 minutes) : un retour dans un autre navigateur, ou avec un autre `state`, est
+refusé.
+
+**Dans l’app iPhone.** Google refuse sa connexion dans une WebView (`disallowed_useragent`). Le bouton demande au
+serveur (`POST /coaching/agenda/{google|microsoft}/app`) le lien de la feuille de connexion du système, signé par le
+ticket à usage unique que COROS et Strava utilisent déjà (2 minutes, dans le fragment du lien) ; l’app ouvre
+`/mobile/oauth/agenda/{google|microsoft}` dans `ASWebAuthenticationSession`, la page montre le compte PaceForge avant
+le consentement, et la feuille se ferme sur `paceforge://agenda?connexion=…&resultat=…` ; l’app rouvre « Mon agenda »
+avec sa ligne. Une app installée plus ancienne (sans `.pf-native-agenda`) ne montre pas les boutons : l’adresse à
+coller, comme avant.
+
 **Lire une adresse saisie par quelqu’un** est une surface de requête forgée côté serveur (SSRF). Un seul module le
 fait, `app/services/safe_fetch.py` (aucune aide de ce genre n’existait : les autres appels sortants vont à des hôtes
 fixes), et jamais pendant une requête web :
@@ -624,9 +668,10 @@ fixes), et jamais pendant une requête web :
   lecture »…), **jamais** le corps, la ligne d’état ni les en-têtes de la réponse ;
 - chaque lecture sortante est comptée par compte (`coaching_agenda_fetch`, 30 par heure).
 
-**Quand.** Dans Celery seulement (`app/tasks/coaching.py`) : à l’enregistrement d’une adresse
-(`paceforge.coaching_agenda`), toutes les 3 heures à :47 pour les comptes qui ont un plan et une adresse
-(`paceforge.coaching_agenda_round`), et sur « Actualiser » (une fois par minute au plus, `coaching_agenda`). Après
+**Quand.** Dans Celery seulement (`app/tasks/coaching.py`) : à l’enregistrement d’une adresse ou d’une connexion
+(`paceforge.coaching_agenda`), toutes les 3 heures à :47 pour les comptes qui ont un plan et une adresse ou un compte
+connecté (`paceforge.coaching_agenda_round`), et sur « Actualiser » (une fois par minute au plus, `coaching_agenda`) ;
+un compte connecté est compté comme une adresse (`coaching_agenda_fetch`). Après
 chaque lecture, le plan est relu : chaque séance retrouve son créneau.
 
 **Ce qui est lu d’un événement** (`app/services/coaching_ical.py`, pur) : `DTSTART`, `DTEND`, `DURATION`, `RRULE`,
@@ -674,7 +719,13 @@ Retirer la dernière adresse efface les heures et remet à leur jour les séance
 une durée « 1h05 »), et « Autre créneau ». Les barres de la semaine restent telles quelles.
 
 **Ce que voit le coach.** L’heure des séances, et « Séance déplacée de mardi à mercredi. » ; jamais les heures
-occupées, ni qu’un jour est plein, ni « Journée chargée », ni les adresses, ni « Autre créneau ».
+occupées, ni qu’un jour est plein, ni « Journée chargée », ni les adresses, ni les comptes connectés, ni « Autre
+créneau ».
+
+**Export et suppression.** « Télécharger mes données » donne chaque adresse par son hôte et chaque compte connecté
+par son service (« Google Agenda », « Outlook »), avec leurs dates et leur état — jamais une adresse ni un jeton —, et
+les heures occupées. « Arrêter le coaching » et la suppression du compte révoquent l’accès Google et effacent tout ;
+le retrait du consentement aux données de santé n’y touche pas (l’agenda n’en est pas).
 
 ## Les séances et les activités
 
