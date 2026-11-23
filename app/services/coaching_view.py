@@ -568,7 +568,8 @@ def road(state: co.State, shown: date, coach: bool = False) -> dict | None:
     race_day = state.goal.race_day
     race_week = cp.monday_of(race_day) if race_day else None
     start = state.plan.start_monday
-    bars, runs = [], []
+    bars: list[dict] = []
+    runs: list[dict] = []
     for m in mondays:
         key = cp.phase_of(m, state.inputs) if m >= start else ""
         word = cp.PHASES.get(key, "") if key != "apres" else ""
