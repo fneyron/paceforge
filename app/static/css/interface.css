@@ -1793,7 +1793,21 @@ button.pf-coach-day.is-warn::after, .pf-coach-day.is-drop-warn::after { content:
 .pf-coach-gauge.is-l1 i:nth-child(-n+1), .pf-coach-gauge.is-l2 i:nth-child(-n+2), .pf-coach-gauge.is-l3 i:nth-child(-n+3), .pf-coach-gauge.is-l4 i { background: rgb(var(--on)); }
 .pf-coach-s-text { margin-top: 10px; font-size: 0.96875rem; font-weight: 500; line-height: 1.35; color: inherit; }
 .pf-coach-s-guide { margin: 12px 2px 0; min-width: 0; font-size: 0.9375rem; line-height: 1.4; color: rgb(var(--pf-gray-600)); }
-.pf-coach-hr { display: inline-block; white-space: nowrap; font-weight: 650; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
+/* la cible: inside the ticket, under the effort — one or two values in the display type, a tiny label each; the
+   short efforts' line; the way to the maximum heart rate; « D’où viennent ces chiffres ? » (all in the ticket's own
+   ink: 4.5:1 on every ground) */
+.pf-coach-target { margin-top: 14px; padding-top: 10px; border-top: 1px solid rgb(var(--on) / .4); }
+.pf-coach-target-h { font-size: 0.75rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; line-height: 1.3; }
+.pf-coach-target-h span { font-weight: 600; letter-spacing: .02em; text-transform: none; }
+.pf-coach-target-vals { display: flex; flex-wrap: wrap; gap: 6px 24px; margin-top: 4px; }
+.pf-coach-target-vals p { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
+.pf-coach-target-vals span { font-size: 0.8125rem; font-weight: 600; line-height: 1.3; }
+.pf-coach-target-vals b { font-family: var(--pf-font-display); font-size: 1.75rem; font-weight: 700; line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pf-coach-target-vals small { margin-left: 3px; font-size: 0.875rem; font-weight: 600; letter-spacing: 0; }
+.pf-coach-target-note { margin-top: 4px; font-size: 0.9375rem; font-weight: 600; line-height: 1.35; }
+.pf-coach-target-link, .pf-coach-target-how { display: inline-flex; align-items: center; min-height: 44px; color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.pf-coach-target-link { font-size: 0.9375rem; font-weight: 600; line-height: 1.3; }
+.pf-coach-target-how { margin-top: 2px; font-size: 0.8125rem; font-weight: 500; }
 .pf-coach-slot { display: flex; align-items: center; flex-wrap: wrap; gap: 0 10px; margin: 6px 2px 0; min-height: 44px; }
 .pf-coach-slot-time { font-size: 1rem; font-weight: 650; letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); white-space: nowrap; }
 .pf-coach-full { padding: 4px 10px; border-radius: 999px; background: rgb(var(--pf-soft)); font-size: 0.8125rem; font-weight: 600; color: rgb(var(--pf-gray-700)); }

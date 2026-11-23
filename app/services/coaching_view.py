@@ -6,10 +6,12 @@ volume, tinted by its phase —, the session done that waits for its ressenti, t
 column, each session a tile as tall as it is long, coloured by its kind, shaped by its status, the runs done outside
 the plan in grey), the next week as a compact row, and the day chosen as a ticket.
 """
+import math
 from datetime import date, timedelta
 
 from app.services import coaching as co
 from app.services import coaching_agenda as ag
+from app.services import coaching_pace as pace
 from app.services import coaching_plan as cp
 from app.services import coaching_slots as cs
 from app.services import race_prep as rp
@@ -100,6 +102,11 @@ METHOD = (
     "suivante s’allège toute seule.",
     "Si tu l’actives, le plan lit ta récupération de Santé chaque matin : basse, ta séance dure devient un footing "
     "et se décale. Une bonne récupération n’ajoute jamais rien.",
+    "La cible de chaque séance vient de tes données : l’allure, de ta vitesse critique, calculée sur tes meilleurs "
+    "efforts du 400 m au 5 km des 16 dernières semaines ; le cardio, de ta FC max. Sans assez de sorties, rien "
+    "n’est affiché, et la sensation reste le repère.",
+    "Les allures valent sur le plat. Pour les efforts de moins de 3 minutes et en côte, seule la sensation compte : "
+    "le cardio n’a pas le temps de monter.",
     "Tes sorties enregistrées cochent les séances du jour. Sans montre, touche « C’est fait ».",
     "Si tu relies ton agenda, chaque séance prend un créneau libre, hors réunions et rendez-vous ; un jour plein "
     "décale sa séance. PaceForge n’en garde que tes heures occupées.",
@@ -131,22 +138,150 @@ def hr_rows(reference: float | None) -> list[dict] | None:
     return zones["rows"] if zones.get("ready") else None
 
 
-def feel_and_range(kind: str, structure: dict | None, rows: list[dict] | None) -> tuple[str, str | None]:
-    """(the feel, by the talk test; the heart-rate range when a maximum is known, else None)."""
+def feel(kind: str, structure: dict | None) -> str:
+    """What to feel, by the talk test (it stays under the ticket, whatever the target)."""
     level = cp.main_level(kind, structure)
     text = cp.FEEL.get(level, cp.FEEL[2])
     if kind in (cp.QUALITY, cp.HILLS):
         text = {3: "Efforts soutenus : quelques mots, pas des phrases.",
                 4: "Efforts vifs : parler devient impossible."}.get(level, text)
-    span = cp.HR_ZONES.get(level)
-    hr = f"{rows[span[0] - 1]['low']}–{rows[span[1] - 1]['high']}{NNBSP}bpm" if rows and span else None
-    return rp.fr(text) or text, hr
+    return rp.fr(text) or text
 
 
-def guidance(kind: str, structure: dict | None, rows: list[dict] | None) -> str:
-    """One line: the feel, then the heart-rate range when there is one (the calendar feed's description)."""
-    text, hr = feel_and_range(kind, structure, rows)
-    return f"{text} {hr}." if hr else text
+# la cible (docs/coaching.md › « L’intensité »): a session's target, read from the athlete's own data — a pace from
+# their critical speed (coaching_pace), a heart-rate range from their maximum — shown large inside the ticket while
+# the session is to do (or missed); nothing when the data is not enough, never a default
+TARGET_SHORT = "À la sensation : l’effort est trop court pour le cardio."
+TARGET_MISSING = "Confirme ta FC max pour voir ta zone"
+TARGET_EFFORTS = "pendant les efforts"
+FLAT = "sur le plat"
+MAX_HR_HREF = "/settings#max-heart-rate"
+PACE_STEP = 5  # choix pratique: a pace said to 5 s
+
+
+def _bloc(structure: dict | None) -> tuple[float, int] | None:
+    """(minutes of one effort, its level) of a structured session's repetitions, else None."""
+    for step in (structure or {}).get("steps", []):
+        if step.get("t") == "bloc":
+            try:
+                return float(step.get("effort") or 0), int(step.get("level", 3))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def pace_label(seconds: float) -> str:
+    """« 4:35 » (min:s per km, to PACE_STEP)."""
+    s = int(PACE_STEP * round(seconds / PACE_STEP))
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def pace_range(fast: float, slow: float) -> str:
+    a, b = pace_label(fast), pace_label(slow)
+    return a if a == b else f"{a}–{b}"
+
+
+def _pace_aria(text: str) -> str:
+    """« 4:35–4:50 » as a screen reader says it: « 4 min 35 à 4 min 50 »."""
+    return " à ".join(f"{m} min {s}" if s != "00" else f"{m} min" for m, s in
+                      (part.split(":") for part in text.split("–")))
+
+
+def hr_range(kind: str, structure: dict | None, reference: float | None) -> str | None:
+    """The heart-rate range of a session, « 160–172 » (bpm), from a known maximum: the app's zones for the levels 1
+    to 3 (cp.HR_ZONES), 90–95 % for « vite » efforts of LAG_MIN or more (cp.HR_FAST); None for shorter efforts, the
+    fixed session, the race, or without a maximum."""
+    if not reference or cp.is_fixed(structure) or kind == cp.RACE:
+        return None
+    bloc = _bloc(structure)
+    if bloc is not None and bloc[0] < cp.LAG_MIN:
+        return None
+    level = bloc[1] if bloc is not None else cp.main_level(kind, structure)
+    if level >= 4:
+        if bloc is None:
+            return None
+        lo, hi = (math.ceil(reference * p / 100) for p in cp.HR_FAST)
+        return f"{lo}–{hi}"
+    rows, span = hr_rows(reference), cp.HR_ZONES.get(level)
+    return f"{rows[span[0] - 1]['low']}–{rows[span[1] - 1]['high']}" if rows and span else None
+
+
+def target(kind: str, structure: dict | None, *, reference: float | None = None,
+           critical: pace.Critical | None = None, goal: cp.Goal | None = None) -> dict | None:
+    """A session's target: {"efforts": the target is the efforts' (a structured session), "vals": [{"label",
+    "value", "unit", "aria"}] — a pace and/or a heart-rate range —, "note": the short efforts' line, "hr": whether a
+    heart-rate target would show with a maximum}; None when the session has none (the fixed session: its content is
+    the club's; a trail race; a race without an objective).
+    - a pace only on flat ground: the quality sessions (never the hills), the easy runs, a long run without a climb
+      to aim at, « sur le plat »; never for efforts under LAG_MIN;
+    - the race: a road race with an objective, its average pace (plain arithmetic), no heart rate (its intensity
+      depends on its length)."""
+    if cp.is_fixed(structure):
+        return None
+    values: list[dict] = []
+
+    def add_pace(label: str, text: str) -> None:
+        values.append({"label": label, "value": text, "unit": "/km", "aria": f"{label} : {_pace_aria(text)} au km"})
+
+    if kind == cp.RACE:
+        if goal is None or goal.trail or goal.time_kind != co.OBJECTIVE:
+            return None
+        seconds = pace.race_pace(goal.km, goal.race_minutes)
+        if seconds is None:
+            return None
+        add_pace("Allure de course", pace_label(seconds))
+        return {"efforts": False, "vals": values, "note": None, "hr": False}
+    bloc = _bloc(structure)
+    if bloc is not None and bloc[0] < cp.LAG_MIN:
+        return {"efforts": True, "vals": [], "note": rp.fr(TARGET_SHORT) or TARGET_SHORT, "hr": False}
+    level = bloc[1] if bloc is not None else cp.main_level(kind, structure)
+    climb = bool((structure or {}).get("climb"))
+    if critical is not None:
+        if bloc is not None and kind == cp.QUALITY and level >= 4:
+            add_pace(f"Allure, {FLAT}", pace_range(*pace.vo2max(critical)))
+        elif bloc is not None and kind == cp.QUALITY and level == 3:
+            add_pace(f"Allure, {FLAT}", pace_range(*pace.threshold(critical)))
+        elif bloc is None and kind in (cp.FOOTING, cp.RECUP, cp.LONG) and level <= 2 and not climb:
+            add_pace(f"Pas plus vite que, {FLAT}", pace_label(pace.easy_cap(critical)))
+    hr_rule = (bloc is not None and level >= 4) or (level in cp.HR_ZONES)
+    hr = hr_range(kind, structure, reference)
+    if hr:
+        label = "Cardio en fin d’effort" if bloc is not None and level >= 4 else "Cardio"
+        values.append({"label": label, "value": hr, "unit": "bpm", "aria": f"{label} : {hr.replace('–', ' à ')} bpm"})
+    if not values and not hr_rule:
+        return None
+    return {"efforts": bloc is not None, "vals": values, "note": None, "hr": hr_rule}
+
+
+def target_line(t: dict | None) -> str | None:
+    """The target in one line (the calendar feed): « Cible pendant les efforts : 4:35–4:50 /km sur le plat, 160–172
+    bpm. »"""
+    if not t:
+        return None
+    if t["note"]:
+        return t["note"]
+    said = []
+    for v in t["vals"]:
+        if v["unit"] == "bpm":
+            said.append(f"{v['value']}{NNBSP}bpm")
+        elif v["label"].startswith("Pas plus vite"):
+            said.append(f"pas plus vite que {v['value']}{NNBSP}/km {FLAT}")
+        elif v["label"] == "Allure de course":
+            said.append(f"allure de course {v['value']}{NNBSP}/km")
+        else:
+            said.append(f"{v['value']}{NNBSP}/km {FLAT}")
+    if not said:
+        return None
+    text = (f"Cible {TARGET_EFFORTS} : " if t["efforts"] else "Cible : ") + ", ".join(said) + "."
+    return rp.fr(text) or text
+
+
+def guidance(kind: str, structure: dict | None, reference: float | None = None,
+             critical: pace.Critical | None = None, goal: cp.Goal | None = None) -> str:
+    """One line: the feel, then the target when there is one (the calendar feed's description)."""
+    text = feel(kind, structure)
+    line = target_line(target(kind, structure, reference=reference, critical=critical, goal=goal))
+    return f"{text} {line}" if line else text
 
 
 def countdown(goal: cp.Goal, today: date, intent: str | None = None) -> str:
@@ -276,9 +411,25 @@ FOLLOWER = "la personne qui suit ton plan"
 COMMENT = "Commentaire"
 
 
-def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool, names: dict | None = None) -> dict:
+def _target(row, state: co.State, reference: float | None, critical, coach: bool) -> dict | None:
+    """The ticket's « Cible » while the session is to do (or missed; once done the ticket says what was run): the
+    target, the line that leads to the maximum heart rate when nothing can be shown (the athlete's own, never a
+    follower's: a follower never reads a heart rate), and the way to « Comment ça marche »."""
+    if row.status not in (co.PLANNED, co.MISSED):
+        return None
+    t = target(row.kind, row.structure, reference=None if coach else reference, critical=critical, goal=state.goal)
+    if t is None or (coach and not t["vals"] and not t["note"]):
+        return None
+    missing = TARGET_MISSING if not coach and not t["vals"] and not t["note"] and t["hr"] else None
+    return {**t, "missing": missing, "href": MAX_HR_HREF, "how": not coach and bool(t["vals"]),
+            "head": TARGET_EFFORTS if t["efforts"] and (t["vals"] or missing) else None}
+
+
+def _session(row, state: co.State, reference, runs_by_id: dict, coach: bool, names: dict | None = None,
+             critical=None) -> dict:
     """`names`: {"athlete": first name, "follower": the first name of the one person who follows the plan, None
-    when there are several or none} — a session someone else changed, or a comment, is signed with a first name."""
+    when there are several or none} — a session someone else changed, or a comment, is signed with a first name.
+    `reference`: the athlete's maximum heart rate; `critical`: their critical speed (coaching_pace)."""
     today = state.clock.today
     names = names or {}
     follower, athlete = names.get("follower"), names.get("athlete") or "l’athlète"
@@ -309,7 +460,8 @@ def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool, names
         "text": text[:1].upper() + text[1:], "profile": None if steady else profile,
         "gauge": {"level": level, "aria": f"Effort {cp.LEVELS.get(level, '')} : niveau {level} sur 4"} if steady
         else None,
-        "guidance": feel_and_range(row.kind, row.structure, rows_hr),
+        "feel": feel(row.kind, row.structure),
+        "target": _target(row, state, reference, critical, coach),
         "edited": {"coach": f"Modifiée par {follower or FOLLOWER}", "athlete": "Modifiée par toi"}.get(row.origin)
         if not coach else {"coach": "Modifiée par toi", "athlete": f"Modifiée par {athlete}"}.get(row.origin),
         "comment_by": follower or COMMENT,
@@ -623,7 +775,8 @@ def day_word_title(day: date, today: date) -> str:
 
 
 def page(state: co.State, *, d: date | None = None, w: date | None = None, move: int | None = None,
-         coach: bool = False, hr_reference: float | None = None, names: dict | None = None) -> dict:
+         coach: bool = False, hr_reference: float | None = None, names: dict | None = None,
+         critical: pace.Critical | None = None) -> dict:
     """Everything the swapped part draws: the road and its heading (`road`, `head`), the board (`cal`: the week shown
     with its line and its seven days, then the next week as a compact row), the day opened as tickets, the session
     waiting for a debrief (`debrief`; `waiting`: how many do — what a notification may count). `names`: the first
@@ -641,7 +794,6 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, move:
     for run in extras:
         extra_days[run.day] = extra_days.get(run.day, 0.0) + max(run.minutes, 1)
     done = co.done_by_week(state.runs, state.rows)
-    rows_hr = hr_rows(hr_reference)
     runs_by_id = {run.id: run for run in state.runs}
     moving = next((r for r in live if r.id == move and co.movable(r, today)), None) if move else None
     waiting = [] if coach else co.awaiting_debrief(live, today)
@@ -678,7 +830,7 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, move:
     # a day without a session, today or later: the next session to come is named (and one tap away)
     coming = next((r for r in live if r.day > selected and r.status == co.PLANNED), None) \
         if selected >= today and not by_day.get(selected) else None
-    sessions = [_session(r, state, rows_hr, runs_by_id, coach, names) for r in by_day.get(selected, [])]
+    sessions = [_session(r, state, hr_reference, runs_by_id, coach, names, critical) for r in by_day.get(selected, [])]
     for one in sessions:  # the ressenti of the session asked about at the top is said there, once
         one["asked"] = ask is not None and one["id"] == ask["id"]
     runs_out: list[dict] = []

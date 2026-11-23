@@ -163,13 +163,19 @@ REASONS = {
 }
 # the levels of intensity: by feel first (the talk test: Persinger 2004; Foster 2008), a heart-rate range when a
 # maximum is known (the app's own five zones, heart_rate_zones: level 1 = zones 1–2, level 2 = zones 2–3, level 3 =
-# zone 4; none for the short hard efforts, where the heart rate lags). Speech turns difficult at the ventilatory
+# zone 4; HR_FAST for « vite » efforts of 3 min or more; none for shorter efforts, where the heart rate lags), and a
+# pace from the athlete's critical speed (coaching_pace). Speech turns difficult at the ventilatory
 # threshold, about 86–89 % of the peak heart rate on a treadmill (Persinger 2004): « facile » stays under it,
 # « soutenu » (80–90 %) holds it. The zones' bounds are the app's (H).
 LEVELS = {1: "très facile", 2: "facile", 3: "soutenu", 4: "vite"}
 FEEL = {1: "Très facile : tu parles sans y penser.", 2: "Facile : tu peux tenir une conversation.",
         3: "Soutenu : quelques mots, pas des phrases.", 4: "Vite : parler devient impossible."}
 HR_ZONES = {1: (1, 2), 2: (2, 3), 3: (4, 4)}
+# « vite » efforts of LAG_MIN or more (intervals, long hills): 90–95 % of the maximal heart rate, reached by the end
+# of each effort (Helgerud 2007: 4 × 4 min at 90–95 %). Shorter efforts (fartlek, short hills, rappels) keep none:
+# the heart rate lags behind a short effort; the 3 min are (H), our intervals' length (Helgerud's were 4).
+HR_FAST = (90, 95)
+LAG_MIN = 3
 
 # the quality sessions: (kind, minutes of an effort, minutes of its recovery, level, fewest and most repetitions,
 # how the effort is said, how the recovery is said). Each format is one a study ran, or sits inside what it ran
@@ -206,6 +212,7 @@ class Goal:
     name: str = ""
     time_kind: str = ""  # which one `race_minutes` is: objectif | estimation | approx
     climb_rate: float | None = None  # a trail race's D+ per hour of race (metres); None: no climb target
+    km: float | None = None  # its distance (a road race's pace is plain arithmetic: coaching_view.target)
 
 
 @dataclass(frozen=True)
