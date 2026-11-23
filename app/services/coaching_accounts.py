@@ -284,7 +284,7 @@ async def _get_busy(client: httpx.AsyncClient, provider: str, token: str, lo: da
         _check(r, provider)
         return google_busy(_json(r), zone)
     events: list = []
-    url: str | None = urls("microsoft")["calendar_view"] + "?" + urlencode({
+    url: str = urls("microsoft")["calendar_view"] + "?" + urlencode({
         "startDateTime": _iso(lo), "endDateTime": _iso(hi), "$select": "start,end,showAs,isAllDay,isCancelled",
         "$top": PAGE_SIZE})
     allowed = urlsplit(urls("microsoft")["calendar_view"]).hostname
@@ -295,11 +295,13 @@ async def _get_busy(client: httpx.AsyncClient, provider: str, token: str, lo: da
         if not isinstance(body, dict) or not isinstance(body.get("value"), list):
             raise Failed("format")
         events.extend(body["value"])
-        url = body.get("@odata.nextLink")
-        if not url:
+        following = body.get("@odata.nextLink")
+        if not following:
             break
-        if not isinstance(url, str) or urlsplit(url).scheme != "https" or urlsplit(url).hostname != allowed:
+        if not isinstance(following, str) or urlsplit(following).scheme != "https" \
+                or urlsplit(following).hostname != allowed:
             raise Failed("format")  # a next page is followed on Graph's own host only
+        url = following
     return outlook_busy(events, zone)
 
 
@@ -367,6 +369,11 @@ async def revoke(row) -> bool:
     if r.status_code != 200:  # 400: already revoked or expired
         logger.info("Coaching: Google calendar %d revoke answered %d", row.id, r.status_code)
     return r.status_code == 200
+
+
+async def let_go(row) -> None:
+    """revoke, for the account deletion's steps (their outcome is not read)."""
+    await revoke(row)
 
 
 # ── the outcome of a sign-in, as one line on « Mon agenda » ─────────────────
