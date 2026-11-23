@@ -1941,8 +1941,9 @@ a.pf-coach-activity:hover b { color: rgb(var(--pf-accent)); }
 .pf-coach-fixed-days legend { padding: 0; margin-bottom: 6px; }
 .pf-coach-fixed .pf-coach-row label small { font-weight: 500; }
 .pf-coach-fixed-name { width: auto; flex: 0 1 12rem; min-width: 0; min-height: 44px; }
-.pf-coach-tool-body.pf-coach-fixed { margin-top: 0; padding-top: 0; border-top: 0; }
-.pf-coach-fixed-form { display: grid; gap: 0; }
+.pf-coach-tool-body.pf-coach-fixed { justify-items: stretch; margin-top: 0; padding-top: 0; border-top: 0; }
+.pf-coach-fixed-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; min-width: 0; }
+.pf-coach-fixed-body { min-width: 0; }
 .pf-coach-fixed-form > .pf-btn { justify-self: start; margin-top: 12px; }
 .pf-coach-fixed-note { margin-top: 10px; }
 .pf-coach-pv-more .pf-coach-legend { margin-top: 10px; }
@@ -2025,6 +2026,7 @@ a.pf-coach-activity:hover b { color: rgb(var(--pf-accent)); }
 .pf-coach-joinrow .pf-input { min-width: 0; flex: 1; text-transform: uppercase; letter-spacing: .04em; }
 .pf-coach-joinrow .pf-input::placeholder { text-transform: none; letter-spacing: 0; }
 @media (max-width: 359px) {
+    .pf-coach-tool-body.pf-coach-fixed { padding-left: 0; }  /* seven weekdays: the whole width */
     .pf-coach-card { padding: 14px 10px; }
     /* seven days across 280 px: the calendar gives its own padding to the days (39 px wide) */
     .pf-coach-calendar { padding-left: 6px; padding-right: 6px; }
