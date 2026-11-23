@@ -6,8 +6,8 @@ check, at every request, that the link athlete → coach exists and that the ath
 key (the one documented exception to « never a token in a URL »: a calendar app cannot send a header).
 
 The same handlers serve the athlete (/coaching/…) and the coach (/coaching/athletes/<id>/…): `Scope` says who looks
-at whose plan. A tap swaps the calendar part in place (htmx); without JavaScript the same forms post and come back
-to the page.
+at whose plan. A tap swaps the page's part in place (the road, the board, the day: htmx); without JavaScript the same
+forms post and come back to the page.
 """
 import logging
 from dataclasses import dataclass
@@ -137,9 +137,9 @@ async def _main(request: Request, db: AsyncSession, scope: Scope, state: co.Stat
 
 async def _after(request: Request, db: AsyncSession, scope: Scope, *, d: date | None, v: str | None,
                  error: str | None = None) -> Response:
-    """After a change: the plan read again (matching, adaptation, regeneration), then the calendar part in place, or
-    the page for a browser without JavaScript. Every form of the calendar says which weeks it was showing (`w`); the
-    debrief asked at the top says which day was open (`back`): the calendar stays where it was."""
+    """After a change: the plan read again (matching, adaptation, regeneration), then the swapped part in place, or
+    the page for a browser without JavaScript. Every form of the board says which week it was showing (`w`); the
+    debrief asked at the top says which day was open (`back`): the board stays where it was."""
     form = await request.form()
     w, back = _day(str(form.get("w") or "")), _day(str(form.get("back") or ""))
     d = back or d
@@ -354,7 +354,7 @@ FIXED_DURATIONS = tuple(range(cp.FIXED_RANGE[0], cp.FIXED_RANGE[1] + 1, cp.STEP)
 
 
 def _fixed_view(fields: dict, proposals: list[dict]) -> dict:
-    """What « Ma séance fixe » draws, on the start screen and in « Options du plan »: the weekday chips (one
+    """What « Ma séance fixe » draws, on the start screen and in the options' sheet: the weekday chips (one
     choice), the durations, the name, and for each weekday the duration proposed and why (coaching_start: read on
     the athlete's runs of that weekday — the screen fills it in when a weekday is chosen, never a weekday by
     itself)."""
@@ -370,7 +370,7 @@ def _fixed_view(fields: dict, proposals: list[dict]) -> dict:
 
 
 async def _fixed_tool(db: AsyncSession, plan: CoachingPlan, c: co.Clock, runs: list | None) -> dict:
-    """« Ma séance fixe » in « Options du plan »: the plan's, or empty; its line when it sits next to the long run;
+    """« Ma séance fixe » in the options' sheet: the plan's, or empty; its line when it sits next to the long run;
     what it says in its row's summary (« mercredi · 1h15 · Séance club »)."""
     kept = co.fixed_of(plan)
     runs = runs if runs is not None else await co.runs_of(db, plan.user_id, c)
