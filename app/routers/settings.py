@@ -342,7 +342,7 @@ async def _revoke_links(db: AsyncSession, user: User, strava: bool = True) -> No
 
         for cal in (await db.execute(select(CoachingCalendar).where(
                 CoachingCalendar.user_id == user_id, CoachingCalendar.provider != "ical"))).scalars():
-            steps.append((f"{cal.provider} calendar", partial(coaching_accounts.revoke, cal)))
+            steps.append((f"{cal.provider} calendar", partial(coaching_accounts.let_go, cal)))
     clean = True
     for name, step in steps:
         try:
