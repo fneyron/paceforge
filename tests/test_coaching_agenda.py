@@ -189,7 +189,9 @@ async def test_only_busy_intervals_are_kept_never_a_title_a_place_or_an_attendee
     assert len(rows) == 4 and {c.name for c in CoachingBusy.__table__.columns} == {
         "id", "user_id", "calendar_id", "start_at", "end_at", "away"}, "a start, an end, away or not: nothing else"
     assert {c.name for c in CoachingCalendar.__table__.columns} == {
-        "id", "user_id", "url", "status", "fetched_at", "checked_at", "created_at"}
+        "id", "user_id", "url", "status", "fetched_at", "checked_at", "created_at",
+        # a connected Google Agenda or Outlook (test_coaching_accounts): its service and its encrypted tokens only
+        "provider", "access_token", "refresh_token", "token_expires_at"}
     dump = await _everything(db_session)
     for secret in SECRETS:
         assert secret not in dump, f"« {secret} » was stored"

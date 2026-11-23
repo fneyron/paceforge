@@ -111,6 +111,22 @@ class Settings(BaseSettings):
     # route answers 404, no menu entry, no card, no line in the privacy policy, no scheduled task).
     COACHING_BETA_USERS: str = "*"
 
+    # Coaching › « Mon agenda »: Google Agenda and Outlook connected by OAuth to read the athlete's busy time, nothing
+    # else (app.services.coaching_accounts, docs/official-connectors.md › « Agendas »). Dark until configured, as
+    # the official connectors: active only when enabled AND its client id and secret are set; until then its routes
+    # answer 404, no page shows it and nothing calls the provider. *_URLS overrides an endpoint (a JSON object).
+    GOOGLE_CALENDAR_ENABLED: bool = False
+    GOOGLE_CALENDAR_CLIENT_ID: str = ""
+    GOOGLE_CALENDAR_CLIENT_SECRET: str = ""
+    GOOGLE_CALENDAR_URLS: str = ""
+    MICROSOFT_CALENDAR_ENABLED: bool = False
+    MICROSOFT_CALENDAR_CLIENT_ID: str = ""
+    MICROSOFT_CALENDAR_CLIENT_SECRET: str = ""
+    # the delegated permission read with: Calendars.ReadBasic (the least privileged) or Calendars.Read (the
+    # documented fallback when personal Outlook.com accounts refuse the first); anything else reads as the first
+    MICROSOFT_CALENDAR_SCOPE: str = "Calendars.ReadBasic"
+    MICROSOFT_CALENDAR_URLS: str = ""
+
     @property
     def strava_shared_ready(self) -> bool:
         return bool(self.STRAVA_SHARED_APP_ENABLED and self.STRAVA_CLIENT_ID and self.STRAVA_CLIENT_SECRET)
@@ -134,6 +150,16 @@ class Settings(BaseSettings):
     def polar_accesslink_ready(self) -> bool:
         return bool(self.POLAR_ACCESSLINK_ENABLED and self.POLAR_ACCESSLINK_CLIENT_ID.strip()
                     and self.POLAR_ACCESSLINK_CLIENT_SECRET.strip())
+
+    @property
+    def google_calendar_ready(self) -> bool:
+        return bool(self.GOOGLE_CALENDAR_ENABLED and self.GOOGLE_CALENDAR_CLIENT_ID.strip()
+                    and self.GOOGLE_CALENDAR_CLIENT_SECRET.strip())
+
+    @property
+    def microsoft_calendar_ready(self) -> bool:
+        return bool(self.MICROSOFT_CALENDAR_ENABLED and self.MICROSOFT_CALENDAR_CLIENT_ID.strip()
+                    and self.MICROSOFT_CALENDAR_CLIENT_SECRET.strip())
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

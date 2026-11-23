@@ -67,6 +67,16 @@ x-env: &env
   # Coaching (beta, docs/coaching.md): every account by default (the variable unset or left empty); emails, only
   # those accounts; « off », the feature does not exist. No « * » default here: Coolify stores a default once.
   COACHING_BETA_USERS: ${COACHING_BETA_USERS:-}
+  # Coaching › « Mon agenda »: Google Agenda and Outlook by OAuth, off until configured (docs/official-connectors.md)
+  GOOGLE_CALENDAR_ENABLED: ${GOOGLE_CALENDAR_ENABLED:-false}
+  GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
+  GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
+  GOOGLE_CALENDAR_URLS: ${GOOGLE_CALENDAR_URLS:-}
+  MICROSOFT_CALENDAR_ENABLED: ${MICROSOFT_CALENDAR_ENABLED:-false}
+  MICROSOFT_CALENDAR_CLIENT_ID: ${MICROSOFT_CALENDAR_CLIENT_ID:-}
+  MICROSOFT_CALENDAR_CLIENT_SECRET: ${MICROSOFT_CALENDAR_CLIENT_SECRET:-}
+  MICROSOFT_CALENDAR_SCOPE: ${MICROSOFT_CALENDAR_SCOPE:-Calendars.ReadBasic}
+  MICROSOFT_CALENDAR_URLS: ${MICROSOFT_CALENDAR_URLS:-}
   DEBUG: "false"
   # glibc opens one malloc arena per thread by default: two cap what a worker keeps after a burst of pages
   MALLOC_ARENA_MAX: "2"
