@@ -148,15 +148,17 @@ def test_the_entrainement_dial_against_the_usual_week():
     test_sante_train_hr)."""
     usual = [300, 400] * 5 + [350] + [900]  # a 12th week back: out of the 11 (mean 350, from 300 to 400)
     assert sante.usual_week(_weeks(usual), SINCE) == 350
-    cases = {350: ("100", "comme d'habitude", 0.5), 400: ("114", "comme d'habitude", 0.571),
-             401: ("115", "plus que d'habitude", 0.573), 300: ("86", "comme d'habitude", 0.429),
-             299: ("85", "moins que d'habitude", 0.427), 700: ("200", "plus que d'habitude", 1.0),
+    # the ring is full at the usual week (100 %); beyond it the ring stays full and a second lap takes the rest
+    cases = {350: ("100", "comme d'habitude", 1.0), 400: ("114", "comme d'habitude", 1.0),
+             401: ("115", "plus que d'habitude", 1.0), 300: ("86", "comme d'habitude", 0.857),
+             299: ("85", "moins que d'habitude", 0.854), 700: ("200", "plus que d'habitude", 1.0),
              1013: ("289", "plus que d'habitude", 1.0)}
     for minutes, (value, word, fill) in cases.items():
         t = sante.training(_weeks(usual, minutes), D)
         d = t["dial"]
         assert (d["value"], d["unit"], d["label"], d["sub"], d["tone"], d["href"], _fill(d)) == (
             value, "%", "Entraînement", word, "accent", "#entrainement", fill), minutes
+        assert round(d["over"] / d["c"], 3) == round(min(1.0, max(0.0, minutes / 350 - 1)), 3), minutes
         assert t["week"] == sante.viz.hm(minutes) and t["usual"] == "ta semaine habituelle : 5h50"
     assert sante.training(_weeks(usual, 350), D)["dial"]["aria"] == ("Entraînement 100 % de ta semaine "
                                                                      "habituelle, comme d'habitude.")
