@@ -389,7 +389,6 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None,
 # the Sommeil dial's word from this morning's 24 h against the 8-h need: « suffisant » from 7 h (Watson 2015a;
 # Hirshkowitz 2015), « court » under 6 h (Craven 2022), « un peu court » between
 NO_NIGHT_WORD = "pas de données"
-TRAIN_NOTE = f"100{viz.NBSP}% = ta semaine habituelle"  # under the Entraînement dial: what its percentage is of
 TRAIN_TURN = 1  # the Entraînement dial's full turn: the usual week, as the two other dials are full at 100 % (owner, 2026-11-23: a ring full at 200 % with a « 100 % » mark at its half was not understood); beyond it, a second lap
 NO_HABIT = "pas encore d'habitude"  # the Entraînement dial without a usual week
 NO_USUAL = "pas encore de semaine habituelle"  # its card's row then
@@ -513,8 +512,9 @@ def _top(day: dict, sessions, has_watch: bool, page: dict, until: date, load: di
                   "#vfc" if page.get("vfc") else "#fc" if page.get("fc") else None)
     train = training(sessions, day["day"], until, load=load)
     train["chart"] = st.training_days(sessions, day["day"], until)
-    # what the percentage is of, under the ring (« 92 % » of what? the owner, 2026-11-23); the 7 days are the card's
-    train["dial"]["note"] = TRAIN_NOTE if train["usual"] is not None else None
+    # no line under the ring beyond its word (owner, 2026-11-23: « mets pas de texte en dessous »): the ring full at
+    # the usual week says it, the card and the screen reader keep the 7 days and what 100 % is
+    train["dial"]["note"] = None
     if train["usual"] is not None:
         train["dial"]["aria"] += " Sur les 7 derniers jours ; 100 % représente ta semaine habituelle."
     recup = sc.dial(score, state, recup_href)
