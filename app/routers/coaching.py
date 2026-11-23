@@ -127,8 +127,9 @@ async def _names(db: AsyncSession, scope: Scope) -> dict:
 async def _main(request: Request, db: AsyncSession, scope: Scope, state: co.State, *, d: date | None = None,
                 w: date | None = None, v: str | None = None, move: int | None = None, error: str | None = None,
                 status_code: int = 200) -> Response:
-    """The calendar part (partials/coaching_main.html), for an htmx swap."""
-    p = cv.page(state, d=d, w=w, month=v == "mois", move=move, coach=scope.coach,
+    """The swapped part (partials/coaching_main.html), for an htmx swap. `v`: the address of the « Mois » view of
+    before, still answered — with the week board (the road took its place)."""
+    p = cv.page(state, d=d, w=w, move=move, coach=scope.coach,
                 hr_reference=await _hr_reference(db, scope.athlete, state.clock), names=await _names(db, scope))
     return templates.TemplateResponse(request, "partials/coaching_main.html", status_code=status_code, context={
         "p": p, "scope": scope, "error": error})
@@ -145,8 +146,7 @@ async def _after(request: Request, db: AsyncSession, scope: Scope, *, d: date | 
     state = await _state(db, scope)
     await db.commit()
     if not _htmx(request):
-        query = "&".join(x for x in (f"d={d.isoformat()}" if d else "", f"w={w.isoformat()}" if w else "",
-                                     "v=mois" if v == "mois" else "") if x)
+        query = "&".join(x for x in (f"d={d.isoformat()}" if d else "", f"w={w.isoformat()}" if w else "") if x)
         return RedirectResponse(scope.base + (f"?{query}" if query else ""), status_code=303)
     return await _main(request, db, scope, state, d=d, w=w, v=v, error=error)
 
@@ -391,7 +391,8 @@ async def _tools(db: AsyncSession, scope: Scope, plan: CoachingPlan, code: str |
         offer = {**offer, "since": d_long(since.astimezone(c.zone).date())}
     return {"feed": feed_urls(plan), "coaches": [{"id": u.id, "name": u.firstname or "Quelqu’un"}
                                                  for u in await co.coaches_of(db, scope.athlete.id)], "code": code,
-            "form": offer, "agenda": await _agenda(db, plan, c), "fixed": await _fixed_tool(db, plan, c, runs)}
+            "form": offer, "agenda": await _agenda(db, plan, c), "fixed": await _fixed_tool(db, plan, c, runs),
+            "method": cv.METHOD}
 
 
 def _read_word(row, c: co.Clock) -> str:
@@ -435,13 +436,13 @@ def _queue_agenda(user_id: int) -> None:
 
 async def _page(request: Request, db: AsyncSession, scope: Scope, d: str | None, w: str | None, v: str | None,
                 tool: str | None = None, tool_error: str | None = None, tool_note: str | None = None):
-    """`tool`: what « Options du plan » opens on (« agenda », « forme »…), with the agenda's error or note."""
+    """`tool`: what the options' sheet opens on (« agenda », « forme »…), with the agenda's error or note."""
     state = await _state(db, scope)
     await db.commit()
-    p = cv.page(state, d=_day(d), w=_day(w), month=v == "mois", coach=scope.coach,
+    p = cv.page(state, d=_day(d), w=_day(w), coach=scope.coach,
                 hr_reference=await _hr_reference(db, scope.athlete, state.clock), names=await _names(db, scope))
     return templates.TemplateResponse(request, "coaching.html", context={
-        "user": scope.viewer, "scope": scope, "head": cv.header(state, scope.coach), "p": p, "method": cv.METHOD,
+        "user": scope.viewer, "scope": scope, "p": p,
         "athlete_name": scope.athlete.firstname or "Athlète", "error": None, "open": tool,
         "agenda_error": tool_error if tool == "agenda" else None, "agenda_note": tool_note,
         "fixed_error": tool_error if tool == "fixed" else None,
@@ -579,8 +580,10 @@ async def coaching_fixed_remove(scope: Scope = Depends(own_scope), db: AsyncSess
 # ── « Mon agenda »: the athlete's calendar addresses (never fetched in a request: app.tasks.coaching) ──
 
 AGENDA = "/coaching?outil=agenda#coach-tool-agenda"
-# ?outil=…: what « Options du plan » opens on when the page comes back from one of its forms
-TOOLS = {"agenda": "agenda", "agenda-lu": "agenda", "forme": "form", "options": "options", "fixe": "fixed"}
+# ?outil=…: what the options' sheet opens on when the page comes back from one of its forms (without JavaScript: the
+# same section at the end of the page, the fragment on the tool)
+TOOLS = {"agenda": "agenda", "agenda-lu": "agenda", "forme": "form", "options": "options", "fixe": "fixed",
+         "calendrier": "feed", "partage": "share", "methode": "how"}
 AGENDA_ASKED = "Lecture demandée : recharge la page dans un instant."
 AGENDA_WAIT = "Une actualisation par minute : réessaie dans un instant."
 AGENDA_BUSY = "Trop de changements pour l’instant. Réessaie dans une heure."
@@ -766,7 +769,7 @@ async def coaching_revoke(coach_id: int, request: Request, scope: Scope = Depend
     await co.unlink(db, scope.athlete.id, coach_id)
     await db.commit()
     if not _htmx(request):
-        return RedirectResponse("/coaching", status_code=303)
+        return RedirectResponse("/coaching?outil=partage#coach-tool-share", status_code=303)
     return templates.TemplateResponse(request, "partials/coaching_tools.html", context={
         "tools": await _tools(db, scope, plan), "scope": scope, "open": "share"})
 
@@ -781,7 +784,7 @@ async def coaching_feed_regenerate(request: Request, scope: Scope = Depends(own_
     co.new_feed_token(plan)
     await db.commit()
     if not _htmx(request):
-        return RedirectResponse("/coaching", status_code=303)
+        return RedirectResponse("/coaching?outil=calendrier#coach-tool-feed", status_code=303)
     return templates.TemplateResponse(request, "partials/coaching_tools.html", context={
         "tools": await _tools(db, scope, plan), "scope": scope, "open": "feed"})
 
@@ -846,7 +849,7 @@ def _session_routes(prefix: str, scope_of) -> APIRouter:
     async def calendar_part(request: Request, d: str | None = None, w: str | None = None, v: str | None = None,
                             move: int | None = None, scope: Scope = Depends(scope_of),
                             db: AsyncSession = Depends(get_db)):
-        """A day, a week or a month chosen; `move`: the session being moved (the days become its targets)."""
+        """A day or a week chosen; `move`: the session being moved (the days become its targets)."""
         if not _htmx(request):  # an address someone opened by itself: the page
             query = str(request.url.query)
             return RedirectResponse(scope.base + (f"?{query}" if query else ""), status_code=303)
