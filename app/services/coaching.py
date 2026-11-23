@@ -12,6 +12,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone, tzinfo
 from types import SimpleNamespace
+from typing import Any
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -374,7 +375,70 @@ def recent_runs(runs: list[st.Session], rows: list[CoachingSession], day: date) 
 def inputs(plan: CoachingPlan, goal: cp.Goal, recent: tuple[tuple[date, int], ...] = ()) -> cp.Inputs:
     return cp.Inputs(plan.weekdays, plan.long_day, plan.base_minutes, plan.start_monday, goal,
                      dict(plan.adaptations or {}), recent, intent=plan.intent if plan.intent in cp.INTENTS else None,
-                     level=plan.level if plan.intent in cp.INTENTS else None)
+                     level=plan.level if plan.intent in cp.INTENTS else None, fixed=fixed_of(plan))
+
+
+# ── the fixed session (docs/coaching.md › « La séance fixe ») ───────────────
+
+def fixed_of(plan: CoachingPlan) -> cp.Fixed | None:
+    """The plan's fixed session as the rules read it, None without one (or a value that no longer reads)."""
+    kept = plan.fixed or {}
+    try:
+        day, minutes = int(kept["day"]), int(kept["minutes"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not 0 <= day <= 6 or not cp.FIXED_RANGE[0] <= minutes <= cp.FIXED_RANGE[1]:
+        return None
+    return cp.Fixed(day, minutes, str(kept.get("name") or "").strip() or cp.FIXED_NAME)
+
+
+def clean_fixed(day, minutes, name, days: tuple[int, ...], long_day: int) -> cp.Fixed:
+    """« Ma séance fixe » as typed: a weekday, a duration (to 5 min, held to FIXED_RANGE), an optional name. Its
+    weekday joins the days available — six at most with it (a rest day stays); never the long run's day (the plan
+    moves neither: the athlete chooses). Invalid says what is wrong, as the form shows it."""
+    try:
+        day = int(str(day).strip())
+    except (TypeError, ValueError) as e:
+        raise Invalid("Choisis le jour de ta séance fixe.") from e
+    if not 0 <= day <= 6:
+        raise Invalid("Choisis le jour de ta séance fixe.")
+    try:
+        minutes = int(cp.clamp(cp.round5(float(str(minutes).strip())), *cp.FIXED_RANGE))
+    except (TypeError, ValueError) as e:
+        raise Invalid("Indique la durée de ta séance fixe.") from e
+    if day == long_day:
+        raise Invalid("Ta sortie longue est ce jour-là : choisis un autre jour pour l’une ou l’autre.")
+    if len(set(days) | {day}) > 6:
+        raise Invalid("Garde un jour de repos : 6 jours au plus, ta séance fixe comprise.")
+    name = " ".join(str(name or "").split())[:cp.FIXED_NAME_MAX] or cp.FIXED_NAME
+    return cp.Fixed(day, minutes, name)
+
+
+def fixed_state(fixed: cp.Fixed | None) -> dict | None:
+    """What the plan keeps of it (coaching_plans.fixed)."""
+    return None if fixed is None else {"day": fixed.day, "minutes": fixed.minutes, "name": fixed.name}
+
+
+FIXED_NEXT = {-1: "la veille", 1: "le lendemain"}
+
+
+def fixed_warning(fixed: cp.Fixed | None, long_day: int) -> str | None:
+    """« Ta séance fixe est la veille de ta sortie longue : deux jours durs de suite. » — said where the option is
+    set; nothing is moved (the athlete chose both days; the weeks then say it, as for any two hard days)."""
+    if fixed is None:
+        return None
+    for gap, word in FIXED_NEXT.items():
+        if (fixed.day - long_day) % 7 == gap % 7:
+            return f"Ta séance fixe est {word} de ta sortie longue : deux jours durs de suite."
+    return None
+
+
+async def set_fixed(db: AsyncSession, plan: CoachingPlan, user: User, fixed: cp.Fixed | None) -> "State":
+    """« Ma séance fixe » set, changed or removed: kept on the plan, then the plan read again — the one regeneration
+    path (`sync`): the sessions still to come that the plan may rewrite follow, from today; what a person pinned,
+    moved, edited or did stays."""
+    plan.fixed = fixed_state(fixed)
+    return await sync(db, plan, user)
 
 
 # ── the plan's rows ─────────────────────────────────────────────────────────
@@ -438,13 +502,19 @@ def clean_intent(value, has_race: bool) -> str | None:
     return value
 
 
+KEEP = object()  # save_plan's `fixed` when the screen did not ask it (a screen opened before): left as it was
+
+
 async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | None, days, long_day,
-                    base, moments=None, race: tuple | None = None, intent: str | None = None) -> CoachingPlan:
+                    base, moments=None, race: tuple | None = None, intent: str | None = None,
+                    fixed: Any = KEEP) -> CoachingPlan:
     """The onboarding's answers kept: a new plan, or the same one made again (« Refaire le plan »: week 0 is this
     week again, what the ressenti changed is forgotten; the sessions done, past or edited by a person stay).
     `race`: a race without a course, (name, day, km, target_s) as clean_race reads it — the plan's goal instead of
-    a Route."""
+    a Route. `fixed`: the fixed session, (day, minutes, name) as typed, None for none, KEEP: as it was."""
     days, long_day, base = clean_answers(days, long_day, base)
+    if fixed is not KEEP and fixed is not None:
+        fixed = clean_fixed(fixed[0], fixed[1], fixed[2], days, long_day)
     if intent in (cp.ENTRETIEN, cp.PROGRESSER):  # no race aimed at
         route_id, race = None, None
     if race is not None:
@@ -470,6 +540,11 @@ async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | N
     plan.goal_state = None  # the race's times are read again; a lost race's line goes
     if moments is not None:  # when the athlete can run (the onboarding's chips; None: left as it was)
         ag.set_moments(plan, moments)
+    kept = fixed_of(plan)
+    if fixed is not KEEP:
+        plan.fixed = fixed_state(fixed)
+    elif kept is not None and (kept.day == long_day or len(set(days) | {kept.day}) > 6):
+        plan.fixed = None  # the days changed under it on a screen that did not ask: it no longer fits
     await db.flush()
     return plan
 
@@ -672,8 +747,8 @@ async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime |
     usual = ag.usual_moment(runs, c.today) if agenda is not None else None
     local = c.now.astimezone(c.zone)
 
-    def movable(row: CoachingSession) -> bool:
-        return replaceable(row, c.today)
+    def movable(row: CoachingSession) -> bool:  # the fixed session keeps its day: the club's is the club's
+        return replaceable(row, c.today) and not cp.is_fixed(row.structure)
 
     def changed(row: CoachingSession) -> None:
         touch(row, c.now)
@@ -808,7 +883,8 @@ def lighten_today(db: AsyncSession, plan: CoachingPlan, rows: list[CoachingSessi
     is left alone (the page offers « Alléger aujourd'hui »); in a taper week only the swap to a footing, its
     duration kept. Both rows are marked (`form`): a regeneration leaves them, a second reading changes nothing."""
     today, out = c.today, list(rows)
-    for row in [r for r in rows if r.day == today and r.kind in HARD_KINDS and replaceable(r, today)]:
+    for row in [r for r in rows if r.day == today and r.kind in HARD_KINDS and replaceable(r, today)
+                and not cp.is_fixed(r.structure)]:  # the fixed session is the athlete's: « Alléger aujourd'hui »
         taper = _taper(inp, today)
         was = (row.kind, row.minutes, row.structure)
         target = None

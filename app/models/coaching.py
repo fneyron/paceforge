@@ -21,6 +21,8 @@
   not, for the next 21 days; never a title, a description, a place or an attendee. `moments` on the plan: when the
   athlete can run (matin, midi, soir). A session's `slot_min` is the time it was given (minutes after midnight on
   the athlete's clock), `slot_chosen` that the athlete picked it, `slot_flag` that its day has no room.
+- the fixed session (docs/coaching.md › « La séance fixe »): `fixed` on the plan, the one weekly session the athlete
+  brings (a club's) — its weekday, its duration, its name; None: none. Its sessions are ordinary rows.
 No pain, injury or illness field anywhere: the ressenti is how hard the session felt (1–5), nothing else.
 """
 from datetime import date, datetime
@@ -67,6 +69,9 @@ class CoachingPlan(Base):
     form_on_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # {"low": [day ISO, …], "day": the day last read, "seen": an index was read that day, "checked": when}
     form_state: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+    # « Ma séance fixe »: {"day": 0–6, "minutes", "name"} — a session of the athlete's own (a club's) every week,
+    # around which the plan is written; None: none
+    fixed: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     # when the athlete can run: « matin,midi,soir » (None: all three)
     moments: Mapped[str | None] = mapped_column(String(24), nullable=True)
     feed_token: Mapped[str | None] = mapped_column(EncryptedString(255), nullable=True)
