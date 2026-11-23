@@ -56,6 +56,17 @@ templates.env.globals["google_site_verification"] = GOOGLE_SITE_VERIFICATION  # 
 templates.env.globals["official_connectors_active"] = active_providers
 # and the Coaching (beta) row only while Coaching is on (partials/coaching_privacy.html)
 templates.env.globals["coaching_active"] = coaching_enabled
+
+
+def agenda_accounts_active() -> list[str]:
+    """Google Agenda and Outlook in « Mon agenda », each only while its connector is configured and Coaching on: /privacy
+    names them then, and only then (partials/coaching_privacy.html, partials/agenda_privacy.html)."""
+    from app.services import coaching_accounts
+
+    return coaching_accounts.active() if coaching_enabled() else []
+
+
+templates.env.globals["agenda_accounts_active"] = agenda_accounts_active
 HOME = "/sante"  # Santé is the main dashboard
 # Where a sign-in may lead instead of Santé: a connection page asked for before the login, or the race plans (the
 # method page's « Créer mon plan », carried through sign-up and the email check in the session). Nothing else.

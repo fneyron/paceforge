@@ -103,11 +103,12 @@
             <li><strong>COROS</strong>, si tu le relies&nbsp;: le même principe, sur le serveur de ton compte COROS&nbsp;: Europe, Monde (États-Unis) ou Chine&#8239;; ces deux derniers hors UE.</li>
             <li><strong>Garmin</strong> (hors UE), si tu le relies&nbsp;: ton e-mail et ton mot de passe Garmin partent une fois chez Garmin pour ouvrir l’accès, sans être conservés&#8239;; ensuite, seulement des demandes de lecture.</li>
             {% include "partials/official_privacy.html" %}
+            {% include "partials/agenda_privacy.html" %}
             <li><strong>Open-Meteo</strong> (Suisse, protection reconnue par l’UE)&nbsp;: les coordonnées et les dates de ton parcours et de tes activités, pour la météo et l’altitude.</li>
             <li><strong>Serveurs Overpass d’OpenStreetMap</strong> (Allemagne, Autriche)&nbsp;: la zone de ton parcours, pour le terrain.</li>
             <li><strong>Fonds de carte</strong>&nbsp;: ton navigateur charge la carte chez OpenFreeMap (Hongrie), CARTO (carte sombre) et Amazon Web Services (relief), ces deux derniers aux États-Unis, hors UE. Comme pour toute carte en ligne, ils voient ton adresse IP et la zone affichée.</li>
         </ul>
-        <p>Open-Meteo et Overpass ne reçoivent ni ton nom, ni ton e-mail&nbsp;: les demandes partent du serveur de PaceForge. Apple et Google ne reçoivent rien de PaceForge.</p>
+        <p>Open-Meteo et Overpass ne reçoivent ni ton nom, ni ton e-mail&nbsp;: les demandes partent du serveur de PaceForge. {% if 'google' in (agenda_accounts_active() if agenda_accounts_active is defined else []) %}Apple ne reçoit rien de PaceForge, ni Google en dehors de Google Agenda si tu le connectes.{% else %}Apple et Google ne reçoivent rien de PaceForge.{% endif %}</p>
     </section>
 
     <section aria-labelledby="droits">

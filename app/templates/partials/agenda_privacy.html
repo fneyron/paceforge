@@ -1,0 +1,10 @@
+{# /privacy › Qui reçoit quoi: Google and Microsoft for Coaching › « Mon agenda », each only while its connector is
+   configured and Coaching on (agenda_accounts_active): the policy never claims a processing that does not happen.
+   Wording kept in docs/official-connectors.md › « Agendas ». #}
+{% set agenda_acc = agenda_accounts_active() if agenda_accounts_active is defined else [] %}
+{% if 'google' in agenda_acc %}
+<li><strong>Google</strong> (Google LLC, États-Unis, hors UE), si tu connectes Google Agenda dans Coaching › «&nbsp;Mon agenda&nbsp;»&nbsp;: tu autorises PaceForge sur la page de Google, sans lui donner ton mot de passe, à voir seulement tes disponibilités. PaceForge y lit tes heures occupées des 21 prochains jours&#8239;; jamais un titre, un lieu ni un participant. «&nbsp;Retirer&nbsp;», l’arrêt du coaching ou la suppression de ton compte retirent cet accès chez Google&#8239;; tu peux aussi le retirer dans ton compte Google.</li>
+{% endif %}
+{% if 'microsoft' in agenda_acc %}
+<li><strong>Microsoft</strong> (Microsoft Corporation, États-Unis, hors UE), si tu connectes Outlook dans Coaching › «&nbsp;Mon agenda&nbsp;»&nbsp;: tu autorises PaceForge sur la page de Microsoft, sans lui donner ton mot de passe, à lire ton agenda. PaceForge n’en demande que le début, la fin et la disponibilité (occupé, absent) de chaque événement des 21 prochains jours&#8239;; jamais un titre, un lieu ni un participant. «&nbsp;Retirer&nbsp;» efface l’accès chez PaceForge&#8239;; pour le retirer aussi chez Microsoft, passe par ton compte Microsoft.</li>
+{% endif %}
