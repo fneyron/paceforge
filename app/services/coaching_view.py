@@ -72,6 +72,11 @@ NOVICE_RULE = ("huit semaines en aisance d’abord, quatre jours de course au pl
 TWO_DAYS = ("Deux séances par semaine suffisent pour préparer un 10 km et progresser quand on court depuis peu.",
             "Pour aller plus loin, c’est une troisième séance, facile, qui aide le plus.")
 SIDE_BY_SIDE = "Deux jours de suite : la séance rythmée devient un footing."
+# the fixed session (docs/coaching.md › « La séance fixe »): what the start screen says once, the race week's line,
+# and the word its day carries in the calendar (« Club » for the name given by default, else its first word)
+FIXED_LINE = "{name} est ta séance de qualité de la semaine : le plan écrit le reste autour."
+FIXED_RACE_WEEK = "Semaine de la course : ta séance fixe laisse la place au rappel du plan."
+FIXED_SHORT = "Club"
 QUALITY_PAIR = "Tu peux courir la séance en footing."
 METHOD = (
     "Ton plan est en temps, pas en kilomètres. Il part de ton volume habituel et monte d’environ 10 % par semaine ; "
@@ -98,6 +103,15 @@ METHOD = (
     "décale sa séance. PaceForge n’en garde que tes heures occupées.",
     "Ce que tu modifies ou déplaces reste tel quel ; le reste du plan se recalcule autour.",
 )
+
+
+def short_title(kind: str, structure: dict | None) -> str:
+    """The one word a day of the calendar carries: the kind's, or the fixed session's (« Club »; a name typed: its
+    first word)."""
+    if cp.is_fixed(structure):
+        name = cp.title(kind, structure)
+        return FIXED_SHORT if name == cp.FIXED_NAME else name.split()[0]
+    return KIND_SHORT.get(kind, kind)
 
 
 def week_label(monday: date) -> str:
@@ -269,7 +283,7 @@ def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool, names
     level = cp.main_level(row.kind, row.structure)
     can_tick = not coach and row.day <= today and run is None and row.status != co.CANCELLED
     return {
-        "id": row.id, "kind": row.kind, "title": cp.KINDS.get(row.kind, row.kind),
+        "id": row.id, "kind": row.kind, "title": cp.title(row.kind, row.structure),
         # the race's time is the header's (« Objectif 6h30 »): printed once
         "duration": "" if row.kind == cp.RACE and goal_time(state.goal) else hm(row.minutes),
         "minutes": row.minutes, "cls": KIND_CLASS.get(row.kind, "easy"), "status": row.status,
@@ -352,7 +366,7 @@ def drops(row, shown: list[date], live: list, today: date, free: frozenset) -> d
     said = [(day, *drop(day, row, today, free, hard)) for day in shown]
     return {"to": " ".join(d.isoformat() for d, ok, _ in said if ok),
             "warn": " ".join(d.isoformat() for d, _, warn in said if warn),
-            "what": f"{KIND_SHORT.get(row.kind, row.kind)} {hm(row.minutes)}"}
+            "what": f"{short_title(row.kind, row.structure)} {hm(row.minutes)}"}
 
 
 def _cell(day: date, rows: list, extra: float, state: co.State, selected: date, scale: float, *,
@@ -371,7 +385,7 @@ def _cell(day: date, rows: list, extra: float, state: co.State, selected: date, 
     for r in rows:
         slot = clock_time(r.slot_min) if r.status == co.PLANNED and r.slot_min is not None else None
         time = time or slot
-        said.append(f"{cp.KINDS.get(r.kind, r.kind)} {hm_long(r.minutes)}, {STATUS_WORD.get(r.status, '')}"
+        said.append(f"{cp.title(r.kind, r.structure)} {hm_long(r.minutes)}, {STATUS_WORD.get(r.status, '')}"
                     + (f" à {slot}" if slot else "") + (", à débriefer" if r.id in waiting else ""))
         blocks.append({"cls": KIND_CLASS.get(r.kind, "easy"), "status": r.status,
                        "h": 100 if r.kind == cp.RACE else bar_height(r.minutes, scale), "id": r.id,
@@ -383,7 +397,7 @@ def _cell(day: date, rows: list, extra: float, state: co.State, selected: date, 
     if len(blocks) > 1:  # several the same day share the cell's room
         for block in blocks:
             block["h"] = max(BAR_MIN // 2, block["h"] // len(blocks))
-    word = KIND_SHORT.get(rows[0].kind, rows[0].kind) if rows else (EXTRA_WORD if extra else "")
+    word = short_title(rows[0].kind, rows[0].structure) if rows else (EXTRA_WORD if extra else "")
     out = {"iso": day.isoformat(), "wd": JOURS[day.weekday()], "num": day.day, "today": day == today,
            "selected": day == selected, "past": day < today, "blocks": blocks, "extra": bool(extra),
            "word": word + (f" +{len(rows) - 1}" if len(rows) > 1 else ""), "time": time,
@@ -474,7 +488,7 @@ def debrief(state: co.State, waiting: list, d: date | None, runs_by_id: dict) ->
     run = runs_by_id.get(row.activity_id) if row.activity_id else None
     when = day_word(row.day, state.clock.today)
     title = f"Ta sortie {when} est arrivée" if run else f"Ta séance {when} est faite"
-    what = cp.KINDS.get(row.kind, row.kind) + ("" if row.kind == cp.RACE else f" {hm(row.minutes)}")
+    what = cp.title(row.kind, row.structure) + ("" if row.kind == cp.RACE else f" {hm(row.minutes)}")
     return {"id": row.id, "day": row.day.isoformat(), "title": rp.fr(title) or title, "ask": "C’était comment ?",
             "line": " · ".join(x for x in (what, _activity(run, link=False)["line"] if run else None) if x),
             "cls": KIND_CLASS.get(row.kind, "easy"), "more": len(waiting) - 1}
@@ -496,15 +510,18 @@ def week_summary(state: co.State, monday: date, done: dict[date, float]) -> dict
 
 
 def week_note(state: co.State, monday: date, coach: bool = False) -> dict:
-    """The week's phase, whether it is the lighter 4th one, and the one line an adaptation gives it (a week the form
-    lightened says why to the athlete only)."""
+    """The week's phase, whether it is the lighter 4th one, the one line an adaptation gives it (a week the form
+    lightened says why to the athlete only), and — a plan with a fixed session — the race week's line."""
     entry = (state.plan.adaptations or {}).get(monday.isoformat()) or {}
     phase = cp.phase_of(monday, state.inputs) if monday >= state.plan.start_monday else None
     week = next((x for x in state.weeks if x.monday == monday), None)
     reason = entry.get("reason") or ""
+    rd = state.goal.race_day
     return {"phase": cp.PHASES.get(phase) if phase and phase != "apres" else None,
             "light": bool(week and week.light and not reason),
-            "reason": COACH_WEEK if coach and reason == cp.FORM else cp.REASONS.get(reason)}
+            "reason": COACH_WEEK if coach and reason == cp.FORM else cp.REASONS.get(reason),
+            "fixed": rp.fr(FIXED_RACE_WEEK) if state.inputs.fixed is not None and rd is not None
+            and cp.monday_of(rd) == monday else None}
 
 
 def chart(state: co.State, done: dict[date, float]) -> dict | None:
@@ -565,7 +582,7 @@ def _attach(run, live: list, today: date) -> dict | None:
     row = min(left, key=lambda r: (r.status != co.MISSED, abs(r.minutes - run.minutes), r.day))
     return {"id": row.id, "day": run.day.isoformat(),
             "label": f"C’est ma séance de {JOURS_L[row.day.weekday()]}",
-            "what": f"{cp.KINDS.get(row.kind, row.kind)} {hm(row.minutes)}"}
+            "what": f"{cp.title(row.kind, row.structure)} {hm(row.minutes)}"}
 
 
 def page(state: co.State, *, d: date | None = None, w: date | None = None, month: bool = False,
@@ -645,14 +662,14 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
         "cal": {**nav, "heads": JOURS, "weeks": weeks, "by_hand": any(x["to"] for x in by_hand.values()),
                 "has_today": mondays[0] <= today <= mondays[-1] + timedelta(days=6)},
         "debrief": ask, "waiting": len(waiting),
-        "next": {"iso": coming.day.isoformat(), "title": cp.KINDS.get(coming.kind, coming.kind),
+        "next": {"iso": coming.day.isoformat(), "title": cp.title(coming.kind, coming.structure),
                  "duration": "" if coming.kind == cp.RACE else hm(coming.minutes),
                  "cls": KIND_CLASS.get(coming.kind, "easy"),
                  "when": "demain" if coming.day == today + timedelta(days=1) else viz.d_long(coming.day)}
         if coming else None,
         "sessions": sessions, "extras": runs_out,
-        "moving": {"id": moving.id, "title": cp.KINDS.get(moving.kind, moving.kind),
-                   "what": f"{cp.KINDS.get(moving.kind, moving.kind)} {hm(moving.minutes)}",
+        "moving": {"id": moving.id, "title": cp.title(moving.kind, moving.structure),
+                   "what": f"{cp.title(moving.kind, moving.structure)} {hm(moving.minutes)}",
                    "hard": moving.kind in cp.HARD} if moving else None,
         "can_add": coach and selected >= today,
         "ressenti": list(enumerate(cp.RESSENTI, start=1)),
@@ -686,9 +703,11 @@ def level_line(level: cp.Level | None, week: int = 0) -> dict | None:
 
 
 def side_by_side(inp: cp.Inputs) -> bool:
-    """Two days only, and they are neighbours (Sunday and Monday too): the plan writes no session with rhythm."""
+    """Two days only, and they are neighbours (Sunday and Monday too): the plan writes no session with rhythm — a
+    fixed session stays where the athlete put it (co.fixed_warning says it instead)."""
     days = cp.days_used(inp)
-    return inp.intent is not None and len(days) == 2 and cp.circular(*days) == 1 and not cp.novice(inp)
+    return (inp.intent is not None and len(days) == 2 and cp.circular(*days) == 1 and not cp.novice(inp)
+            and inp.fixed is None)
 
 
 def short_race(inp: cp.Inputs, weeks: list) -> str | None:
@@ -708,10 +727,16 @@ def short_race(inp: cp.Inputs, weeks: list) -> str | None:
 
 
 def profile_lines(inp: cp.Inputs, weeks: list | None = None) -> list[str]:
-    """What the start screen says of the rules these answers bring, one short line each: a race « pour finir » or
-    « pour performer » (read from its time aimed at; a « débutant » always « pour finir »); two days a week, what
-    they give and what a third would add; two days side by side; a race closer than the long run can grow."""
+    """What the start screen says of the rules these answers bring, one short line each: the fixed session, and next
+    to the long run when it is; a race « pour finir » or « pour performer » (read from its time aimed at; a
+    « débutant » always « pour finir »); two days a week, what they give and what a third would add; two days side
+    by side; a race closer than the long run can grow."""
     lines = []
+    if inp.fixed is not None:
+        lines.append(rp.fr(FIXED_LINE.format(name=inp.fixed.name)) or FIXED_LINE)
+        warning = co.fixed_warning(inp.fixed, inp.long_day)
+        if warning:
+            lines.append(rp.fr(warning) or warning)
     aim = cp.aim(inp.goal)
     if inp.intent == cp.COURSE and aim:
         lines.append(AIM_LINE[cp.FINIR if cp.novice(inp) else aim])
@@ -726,13 +751,13 @@ def profile_lines(inp: cp.Inputs, weeks: list | None = None) -> list[str]:
 
 
 def first_week(days: tuple[int, ...], long_day: int, base: int, goal: cp.Goal, today: date,
-               intent: str | None = None, level: cp.Level | None = None) -> dict:
+               intent: str | None = None, level: cp.Level | None = None, fixed: cp.Fixed | None = None) -> dict:
     """The onboarding's preview: the first complete week of the plan these answers would make — this week on a
     Monday, the next one otherwise (the only week left before a race this week) — drawn day by day, and the first
     session to come. The sessions are the generator's own (coaching_plan.build, the call sync makes for a plan
     saved now, with the intent's rules); nothing is read or written."""
     inp = cp.Inputs(tuple(days), long_day, base, cp.monday_of(today), goal, {}, intent=intent,
-                    level=level.level if level is not None and intent is not None else None)
+                    level=level.level if level is not None and intent is not None else None, fixed=fixed)
     weeks = cp.build(inp, today)
     ahead = [s for w in weeks for s in w.sessions if s.day >= today]
     week = weeks[0] if weeks and (today.weekday() == 0 or len(weeks) == 1) else weeks[1] if len(weeks) > 1 else None
@@ -749,7 +774,8 @@ def first_week(days: tuple[int, ...], long_day: int, base: int, goal: cp.Goal, t
             cls = KIND_CLASS.get(s.kind, "easy")
             bars.append({"cls": cls, "h": 100 if s.kind == cp.RACE else bar_height(s.minutes, scale),
                          "duration": "" if s.kind == cp.RACE else hm(s.minutes).replace(" min", NNBSP + "min")})
-            said.append(f"{JOURS_L[i]} : {cp.KINDS.get(s.kind, s.kind).lower()}"
+            name = cp.title(s.kind, s.structure)
+            said.append(f"{JOURS_L[i]} : {name if cp.is_fixed(s.structure) else name.lower()}"
                         + ("" if s.kind == cp.RACE else f" {hm_long(s.minutes)}"))
             if cls not in kinds:
                 kinds.append(cls)
@@ -758,10 +784,11 @@ def first_week(days: tuple[int, ...], long_day: int, base: int, goal: cp.Goal, t
     if first is not None:
         when = ("aujourd’hui" if first.day == today else "demain" if first.day == today + timedelta(days=1)
                 else viz.d_long(first.day))
-        what = cp.KINDS.get(first.kind, first.kind) + ("" if first.kind == cp.RACE else f" {hm(first.minutes)}")
+        what = cp.title(first.kind, first.structure) + ("" if first.kind == cp.RACE else f" {hm(first.minutes)}")
     total = sum(s.minutes for s in shown if s.kind != cp.RACE)
     # a day chosen that holds no session that week (a volume too short for all its days, a race week) is said
-    idle = [JOURS_L[d] for d in sorted(days) if shown and not any(s.day.weekday() == d for s in shown)
+    chosen = sorted(set(days) | ({fixed.day} if fixed else set()))  # the fixed session's weekday joins them
+    idle = [JOURS_L[d] for d in chosen if shown and not any(s.day.weekday() == d for s in shown)
             and monday + timedelta(days=d) >= today]
     note = (" et ".join([", ".join(idle[:-1]), idle[-1]] if len(idle) > 1 else idle)
             + (" restent libres" if len(idle) > 1 else " reste libre") + " cette semaine-là.") if idle else None

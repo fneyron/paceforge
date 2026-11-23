@@ -17,6 +17,28 @@
         <p id="coach-form-note" class="pf-label">{% if tools.form.on %}Activé le {{ tools.form.since }}. {% endif %}Un matin où ta récupération de Santé est basse, ta séance dure devient un footing. La personne qui suit ton plan ne voit jamais pourquoi.</p>
     </form>
     {% endif %}
+    {#- « Ma séance fixe »: the weekly session the athlete brings (a club's), around which the plan is written. A plain
+        form: the page comes back with the plan written again from today. -#}
+    {% set fixed = tools.fixed %}
+    {% if fixed %}
+    <details class="pf-coach-tool" id="coach-tool-fixed"{% if open == "fixed" %} open{% endif %}>
+        <summary class="pf-tool"><span>{{ icon("repeat") }}<span>Ma séance fixe <small>{{ fixed.said or "Une séance de ton club, chaque semaine" }}</small></span></span>{{ icon("chev-r", "pf-chev") }}</summary>
+        <div class="pf-coach-tool-body pf-coach-fixed" data-fixed>
+            {% if fixed_error %}<p class="pf-coach-error" role="alert">{{ fixed_error }}</p>{% endif %}
+            {% if fixed.warning %}<p class="pf-coach-reason pf-coach-hardpair">{{ fixed.warning }}</p>{% endif %}
+            <form method="post" action="/coaching/fixe" class="pf-coach-fixed-form">
+                {% include "partials/coaching_fixed_fields.html" %}
+                <p class="pf-label pf-coach-fixed-note">Le plan écrit ses séances autour, sans toucher à son jour ni à sa durée.</p>
+                <button type="submit" id="coach-fixed-save" class="pf-btn pf-btn-primary pf-btn-sm">Enregistrer</button>
+            </form>
+            {% if fixed.set %}
+            <form method="post" action="/coaching/fixe/retirer">
+                <button type="submit" id="coach-fixed-remove" class="pf-coach-textbtn text-danger">Retirer</button>
+            </form>
+            {% endif %}
+        </div>
+    </details>
+    {% endif %}
     <details class="pf-coach-tool" id="coach-tool-feed"{% if open == "feed" %} open{% endif %}>
         <summary class="pf-tool"><span>{{ icon("calendar") }}<span>Ajouter à mon calendrier</span></span>{{ icon("chev-r", "pf-chev") }}</summary>
         <div class="pf-coach-tool-body">

@@ -7,6 +7,8 @@ import statistics
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from app.services import coaching_plan as cp
+
 HABIT_WEEKS = 8  # (H) the runs read: the 8 weeks before today
 HABIT_MIN_RUNS = 4  # (H) fewer days of running than this is not a habit: the default week is proposed
 HABIT_DAYS = (3, 5)  # (H) between 3 and 5 days are proposed (fewer when the athlete ran on fewer weekdays)
@@ -67,3 +69,35 @@ def habitual_days(runs, today: date) -> Proposal | None:
 def proposal(runs, today: date) -> Proposal:
     """What the onboarding ticks by itself: the athlete's habit, else the default week."""
     return habitual_days(runs, today) or Proposal(DEFAULT_DAYS, DEFAULT_LONG, False)
+
+
+# ── « Ma séance fixe »: its duration proposed from the history (docs/coaching.md › « La séance fixe ») ──
+FIXED_WEEKS = 8  # (H) the runs read: the 8 complete weeks (Monday to Sunday) before this one, as HABIT_WEEKS
+WEEKDAYS_PLURAL = ("lundis", "mardis", "mercredis", "jeudis", "vendredis", "samedis", "dimanches")
+
+
+def usual_minutes(runs, today: date, weekday: int) -> int | None:
+    """The median duration of the athlete's runs on `weekday` over the FIXED_WEEKS complete weeks before `today`'s
+    (two runs the same day: one day, their minutes added), to 5 min and held to FIXED_RANGE; None without any."""
+    m0 = today - timedelta(days=today.weekday())
+    first = m0 - timedelta(weeks=FIXED_WEEKS)
+    by_day: dict[date, float] = {}
+    for run in runs:
+        if first <= run.day < m0 and run.day.weekday() == weekday and run.minutes > 0:
+            by_day[run.day] = by_day.get(run.day, 0.0) + run.minutes
+    if not by_day:
+        return None
+    return int(cp.clamp(cp.round5(statistics.median(by_day.values())), *cp.FIXED_RANGE))
+
+
+def fixed_proposals(runs, today: date) -> list[dict]:
+    """For each weekday (0 = Monday), the duration the screen proposes for a fixed session on it, and why in a few
+    words: « lu sur tes mercredis », else FIXED_DEFAULT (« sans sortie ce jour-là »). The weekday itself is never
+    guessed: the athlete chooses it."""
+    out, default = [], f"{cp.FIXED_DEFAULT // 60}h{cp.FIXED_DEFAULT % 60:02d}"
+    for wd in range(7):
+        read = usual_minutes(runs, today, wd)
+        out.append({"minutes": read or cp.FIXED_DEFAULT,
+                    "why": f"Lu sur tes {WEEKDAYS_PLURAL[wd]}." if read
+                    else f"Sans sortie ce jour-là : {default} par défaut."})
+    return out

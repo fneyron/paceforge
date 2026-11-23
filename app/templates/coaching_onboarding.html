@@ -4,7 +4,8 @@
     computed volume) and the week these answers make is drawn (partials/coaching_preview.html). The days sit under
     their bars: a tap adds or removes one and the week is drawn again by the real generator (htmx, GET
     /coaching/apercu: nothing is written). Without JavaScript the form posts as it is. The same screen makes the
-    plan again (« Refaire le plan »). -#}
+    plan again (« Refaire le plan »). Under the days, one quiet line opens « Ma séance fixe » (a club's session each
+    week): its weekday, duration and name, which the week drawn follows. -#}
 {% from "partials/_icons.html" import icon %}
 
 {% block title %}Coaching — PaceForge{% endblock title %}
@@ -53,6 +54,13 @@
                 </div>
             </fieldset>
             <p class="pf-label pf-coach-days-hint" id="coach-days-hint" role="status">Touche un jour pour l’ajouter ou l’enlever.</p>
+            {#- « Ma séance fixe »: one quiet line under the days, that opens its three answers (docs/coaching.md ›
+                « La séance fixe ») -#}
+            <div class="pf-coach-fixed" id="coach-fixed" data-fixed>
+                <input type="hidden" name="fixed_asked" value="1">
+                <label class="pf-coach-fixed-toggle"><input type="checkbox" name="fixed_on" value="1" id="coach-fixed-on" data-fixed-toggle{% if fixed.on %} checked{% endif %}><span>J’ai déjà une séance chaque semaine (club)</span></label>
+                {% include "partials/coaching_fixed_fields.html" %}
+            </div>
             {#- the week drawn again is said to a screen reader (the drawing itself is replaced: this line stays) -#}
             <p class="sr-only" id="coach-preview-said" role="status"></p>
             {% with part = "more" %}{% include "partials/coaching_preview.html" %}{% endwith %}
@@ -80,6 +88,7 @@
 {% endblock content %}
 
 {% block scripts %}
+<script defer src="/static/js/coaching-fixed.js?v={{ request.app.state.build_id }}"></script>
 <script>
 // The plan needs 2 to 6 days: outside of them the button waits and the line under the days says why, in the error's
 // colour (the server checks again, and the week's place says it too).

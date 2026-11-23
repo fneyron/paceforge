@@ -228,6 +228,22 @@ def _custom_race(goal: str | None, fields: dict, plan: CoachingPlan | None, toda
     return None
 
 
+FIXED_FIELDS = ("fixed_day", "fixed_minutes", "fixed_name")
+
+
+def _fixed_fields(values) -> dict:
+    """« J’ai déjà une séance chaque semaine »: whether it is ticked, and its fields as the form sends them (kept to
+    fill the form again)."""
+    return {"on": bool(values.get("fixed_on")), **{k: str(values.get(k) or "").strip()[:80] for k in FIXED_FIELDS}}
+
+
+def _fixed_answer(fields: dict | None) -> tuple | None:
+    """The fixed session's answers, (day, minutes, name) as co.clean_fixed reads them; None when it is not ticked."""
+    if not fields or not fields.get("on"):
+        return None
+    return fields.get("fixed_day"), fields.get("fixed_minutes"), fields.get("fixed_name")
+
+
 def _intent(value) -> str | None:
     """The intent as the screen sends it; None when it sends none (a screen opened before the profiles)."""
     value = str(value or "").strip()
@@ -235,12 +251,15 @@ def _intent(value) -> str | None:
 
 
 async def _preview(db: AsyncSession, user: User, c: co.Clock, *, goal: str | None, days, long_day, base,
-                   fields: dict | None = None, plan: CoachingPlan | None = None, intent: str | None = None) -> dict:
+                   fields: dict | None = None, plan: CoachingPlan | None = None, intent: str | None = None,
+                   fixed: dict | None = None) -> dict:
     """The onboarding's week, drawn from the answers as they stand (coaching_view.first_week: the generator's own
     sessions, with the intent's rules). Reads only. Answers that cannot make a plan give {"error"}: the screen says
     what is missing where the week would be."""
     try:
         clean_days, clean_long, clean_base = co.clean_answers(days, long_day, base)
+        answer = _fixed_answer(fixed)
+        own = co.clean_fixed(answer[0], answer[1], answer[2], clean_days, clean_long) if answer is not None else None
         if intent in (cp.ENTRETIEN, cp.PROGRESSER):  # no race aimed at
             target = cp.Goal()
         else:
@@ -261,7 +280,8 @@ async def _preview(db: AsyncSession, user: User, c: co.Clock, *, goal: str | Non
     if intent is not None:  # the level the plan would read, from the same history (never asked)
         rows = await co.sessions_of(db, plan) if plan is not None else []
         level = cp.read_level(co.history(await co.runs_of(db, user.id, c), rows), c.today, clean_base)
-    return {**cv.first_week(clean_days, clean_long, clean_base, target, c.today, intent=intent, level=level),
+    return {**cv.first_week(clean_days, clean_long, clean_base, target, c.today, intent=intent, level=level,
+                            fixed=own),
             "error": None,
             "silent": False, "long_day": clean_long, "long_days": [(d, WEEKDAYS_L[d]) for d in clean_days]}
 
@@ -286,6 +306,7 @@ async def _onboarding(request: Request, db: AsyncSession, user: User, *, plan: C
         days, long_day = proposed.days, proposed.long_day
     own = _own_race(plan, c.today)
     aimed = bool(plan and (plan.route_id or own))
+    kept = co.fixed_of(plan) if plan is not None else None
     chosen: dict[str, Any] = {
         "goal": str(plan.route_id) if plan and plan.route_id else OWN_RACE if own else (
             "none" if plan or not races else None),
@@ -295,7 +316,11 @@ async def _onboarding(request: Request, db: AsyncSession, user: User, *, plan: C
                    cp.COURSE if aimed else cp.PROGRESSER) if plan else (cp.COURSE if races else cp.PROGRESSER),
         "days": list(days), "long_day": long_day,
         # the starting volume is computed again when the plan is made again (the plan's own without a history)
-        "base": computed or (plan.base_minutes if plan else None), "race": _race_fields({})}
+        "base": computed or (plan.base_minutes if plan else None), "race": _race_fields({}),
+        # « Ma séance fixe »: the plan's own (« Refaire le plan »); else closed, no weekday guessed
+        "fixed": {"on": True, "fixed_day": str(kept.day), "fixed_minutes": str(kept.minutes),
+                  "fixed_name": "" if kept.name == cp.FIXED_NAME else kept.name} if kept else
+        {"on": False, "fixed_day": "", "fixed_minutes": "", "fixed_name": ""}}
     if form:
         chosen.update(form)
     if chosen["goal"] in (None, "none") and races:
@@ -307,7 +332,7 @@ async def _onboarding(request: Request, db: AsyncSession, user: User, *, plan: C
     base = chosen["base"]
     volumes = sorted({*range(60, 901, 15), base})
     pv = await _preview(db, user, c, goal=chosen["goal"], days=chosen["days"], long_day=chosen["long_day"], base=base,
-                        fields=chosen["race"], plan=plan, intent=chosen["intent"])
+                        fields=chosen["race"], plan=plan, intent=chosen["intent"], fixed=chosen["fixed"])
     options = [{"id": str(r.id), "name": r.name, "when": d_short(day), "j": rp.j_label(-(day - c.today).days)}
                for r, day in ((r, rp.race_day(r)) for r in races) if day is not None]
     if own is not None:  # the plan's race without a course, offered again beside the courses imported since
@@ -316,6 +341,7 @@ async def _onboarding(request: Request, db: AsyncSession, user: User, *, plan: C
     return templates.TemplateResponse(request, "coaching_onboarding.html", status_code=status_code, context={
         "user": user, "redo": plan is not None, "error": error, "chosen": chosen, "computed": computed, "pv": pv,
         "races": options, "today": c.today.isoformat(), "intents": cv.INTENT_CARDS,
+        "fixed": _fixed_view(chosen["fixed"], cst.fixed_proposals(runs, c.today)),
         "race_max": (c.today + timedelta(days=co.RACE_AHEAD_DAYS)).isoformat(),
         "weekdays": list(enumerate(zip(WEEKDAYS, WEEKDAYS_L, strict=True))),
         "volumes": [(m, hm(m)) for m in volumes],
@@ -323,7 +349,39 @@ async def _onboarding(request: Request, db: AsyncSession, user: User, *, plan: C
                     for m in cp.START_CHOICES]})
 
 
-async def _tools(db: AsyncSession, scope: Scope, plan: CoachingPlan, code: str | None = None) -> dict:
+FIXED_DURATIONS = tuple(range(cp.FIXED_RANGE[0], cp.FIXED_RANGE[1] + 1, cp.STEP))
+
+
+def _fixed_view(fields: dict, proposals: list[dict]) -> dict:
+    """What « Ma séance fixe » draws, on the start screen and in « Options du plan »: the weekday chips (one
+    choice), the durations, the name, and for each weekday the duration proposed and why (coaching_start: read on
+    the athlete's runs of that weekday — the screen fills it in when a weekday is chosen, never a weekday by
+    itself)."""
+    day = _int(fields.get("fixed_day"))
+    minutes = _int(fields.get("fixed_minutes"))
+    if minutes not in FIXED_DURATIONS:
+        minutes = proposals[day]["minutes"] if day is not None and 0 <= day <= 6 else cp.FIXED_DEFAULT
+    return {"on": bool(fields.get("on")), "day": day, "minutes": minutes, "name": fields.get("fixed_name") or "",
+            "placeholder": cp.FIXED_NAME, "name_max": cp.FIXED_NAME_MAX,
+            "why": proposals[day]["why"] if day is not None and 0 <= day <= 6 else "",
+            "props": proposals, "durations": [(m, hm(m)) for m in FIXED_DURATIONS],
+            "weekdays": list(enumerate(zip(WEEKDAYS, WEEKDAYS_L, strict=True)))}
+
+
+async def _fixed_tool(db: AsyncSession, plan: CoachingPlan, c: co.Clock, runs: list | None) -> dict:
+    """« Ma séance fixe » in « Options du plan »: the plan's, or empty; its line when it sits next to the long run;
+    what it says in its row's summary (« mercredi · 1h15 · Séance club »)."""
+    kept = co.fixed_of(plan)
+    runs = runs if runs is not None else await co.runs_of(db, plan.user_id, c)
+    fields = ({"on": True, "fixed_day": str(kept.day), "fixed_minutes": str(kept.minutes),
+               "fixed_name": "" if kept.name == cp.FIXED_NAME else kept.name} if kept else {"on": False})
+    return {**_fixed_view(fields, cst.fixed_proposals(runs, c.today)), "set": kept is not None,
+            "said": f"{WEEKDAYS_L[kept.day].capitalize()} · {hm(kept.minutes)} · {kept.name}" if kept else None,
+            "warning": co.fixed_warning(kept, plan.long_day)}
+
+
+async def _tools(db: AsyncSession, scope: Scope, plan: CoachingPlan, code: str | None = None,
+                 runs: list | None = None) -> dict:
     # the form option: offered only with the health consent and an index in Santé; said « activé le … » once on
     c = await co.clock(db, scope.athlete)
     offer = await co.form_offer(db, plan, scope.athlete, c)
@@ -332,7 +390,7 @@ async def _tools(db: AsyncSession, scope: Scope, plan: CoachingPlan, code: str |
         offer = {**offer, "since": d_long(since.astimezone(c.zone).date())}
     return {"feed": feed_urls(plan), "coaches": [{"id": u.id, "name": u.firstname or "Quelqu’un"}
                                                  for u in await co.coaches_of(db, scope.athlete.id)], "code": code,
-            "form": offer, "agenda": await _agenda(db, plan, c)}
+            "form": offer, "agenda": await _agenda(db, plan, c), "fixed": await _fixed_tool(db, plan, c, runs)}
 
 
 def _read_word(row, c: co.Clock) -> str:
@@ -377,8 +435,9 @@ async def _page(request: Request, db: AsyncSession, scope: Scope, d: str | None,
     return templates.TemplateResponse(request, "coaching.html", context={
         "user": scope.viewer, "scope": scope, "head": cv.header(state, scope.coach), "p": p, "method": cv.METHOD,
         "athlete_name": scope.athlete.firstname or "Athlète", "error": None, "open": tool,
-        "agenda_error": tool_error, "agenda_note": tool_note,
-        "tools": None if scope.coach else await _tools(db, scope, state.plan)})
+        "agenda_error": tool_error if tool == "agenda" else None, "agenda_note": tool_note,
+        "fixed_error": tool_error if tool == "fixed" else None,
+        "tools": None if scope.coach else await _tools(db, scope, state.plan, runs=state.runs)})
 
 
 @router.get("/coaching", response_class=HTMLResponse)
@@ -405,7 +464,7 @@ async def coaching_preview(request: Request, scope: Scope = Depends(own_scope), 
     user = scope.viewer
     pv = await _preview(db, user, await co.clock(db, user), goal=q.get("goal"), days=q.getlist("days"),
                         long_day=q.get("long_day"), base=q.get("base"), fields=_race_fields(q),
-                        plan=await co.get_plan(db, user.id), intent=_intent(q.get("intent")))
+                        plan=await co.get_plan(db, user.id), intent=_intent(q.get("intent")), fixed=_fixed_fields(q))
     return templates.TemplateResponse(request, "partials/coaching_preview.html", context={"pv": pv, "part": "swap"})
 
 
@@ -427,6 +486,8 @@ async def coaching_save_plan(request: Request, scope: Scope = Depends(own_scope)
         co.clean_intent(intent, race is not None or route_id is not None)
         plan = await co.save_plan(db, user, c, route_id=route_id, days=days, intent=intent,
                                   long_day=form.get("long_day"), base=form.get("base"), race=race,
+                                  # « Ma séance fixe »: a screen opened before it does not ask (left as it was)
+                                  fixed=_fixed_answer(_fixed_fields(form)) if "fixed_asked" in form else co.KEEP,
                                   # no longer asked here (« Mon agenda » asks it); a screen opened before still sends it
                                   moments=form.getlist("moments") if "moments_asked" in form else None)
     except co.Invalid as e:  # nothing was written: the answers are checked first. Answered 200: the app's shell
@@ -434,7 +495,8 @@ async def coaching_save_plan(request: Request, scope: Scope = Depends(own_scope)
         return await _onboarding(request, db, user, plan=await co.get_plan(db, user.id), error=str(e), status_code=200,
                                  form={"goal": goal, "days": list(co.clean_days(days)), "race": fields,
                                        "intent": intent or (cp.PROGRESSER if goal in ("", "none") else cp.COURSE),
-                                       "long_day": _int(form.get("long_day")), "base": _int(form.get("base"))})
+                                       "long_day": _int(form.get("long_day")), "base": _int(form.get("base")),
+                                       "fixed": _fixed_fields(form)})
     await co.sync(db, plan, user)
     await db.commit()
     logger.info("Coaching: plan saved for user %d", user.id)
@@ -469,11 +531,44 @@ async def coaching_form(value: str = Form(default=""), scope: Scope = Depends(ow
     return RedirectResponse("/coaching?outil=forme#coach-form", status_code=303)
 
 
+# ── « Ma séance fixe » (docs/coaching.md › « La séance fixe ») ──────────────
+
+FIXED = "/coaching?outil=fixe#coach-tool-fixed"
+
+
+@router.post("/coaching/fixe")
+async def coaching_fixed(request: Request, scope: Scope = Depends(own_scope), db: AsyncSession = Depends(get_db)):
+    """« Ma séance fixe » set or changed: its weekday, duration and name kept on the plan, and the plan written again
+    around it from today (co.set_fixed: the one regeneration path). A refusal is said in its row (answered 200: the
+    app's shell replaces a 4xx document)."""
+    plan = await _agenda_plan(db, scope)
+    form = await request.form()
+    try:
+        fixed = co.clean_fixed(form.get("fixed_day"), form.get("fixed_minutes"), form.get("fixed_name"),
+                               plan.weekdays, plan.long_day)
+    except co.Invalid as e:
+        return await _page(request, db, scope, None, None, None, tool="fixed", tool_error=str(e))
+    await co.set_fixed(db, plan, scope.athlete, fixed)
+    await db.commit()
+    logger.info("Coaching: fixed session set for user %d", scope.athlete.id)
+    return RedirectResponse(FIXED, status_code=303)
+
+
+@router.post("/coaching/fixe/retirer")
+async def coaching_fixed_remove(scope: Scope = Depends(own_scope), db: AsyncSession = Depends(get_db)):
+    """« Retirer »: no fixed session any more; the plan places its own quality sessions again from today."""
+    plan = await _agenda_plan(db, scope)
+    await co.set_fixed(db, plan, scope.athlete, None)
+    await db.commit()
+    logger.info("Coaching: fixed session removed for user %d", scope.athlete.id)
+    return RedirectResponse(FIXED, status_code=303)
+
+
 # ── « Mon agenda »: the athlete's calendar addresses (never fetched in a request: app.tasks.coaching) ──
 
 AGENDA = "/coaching?outil=agenda#coach-tool-agenda"
 # ?outil=…: what « Options du plan » opens on when the page comes back from one of its forms
-TOOLS = {"agenda": "agenda", "agenda-lu": "agenda", "forme": "form", "options": "options"}
+TOOLS = {"agenda": "agenda", "agenda-lu": "agenda", "forme": "form", "options": "options", "fixe": "fixed"}
 AGENDA_ASKED = "Lecture demandée : recharge la page dans un instant."
 AGENDA_WAIT = "Une actualisation par minute : réessaie dans un instant."
 AGENDA_BUSY = "Trop de changements pour l’instant. Réessaie dans une heure."
