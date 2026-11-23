@@ -217,7 +217,8 @@ def slot_label(row) -> str | None:
 
 def _other_slot(row, state: co.State) -> bool:
     """Whether « Autre créneau » has another free time to offer for this session."""
-    if state.agenda is None or row.status != co.PLANNED or row.day < state.clock.today or row.kind == cp.RACE:
+    if (state.agenda is None or row.status != co.PLANNED or row.day < state.clock.today or row.kind == cp.RACE
+            or cp.is_fixed(row.structure)):  # the club's hour is the club's
         return False
     local = state.clock.now.astimezone(state.clock.zone)
     return ag.next_slot(row, state.agenda, state.plan, state.clock.today, local.hour * 60 + local.minute,

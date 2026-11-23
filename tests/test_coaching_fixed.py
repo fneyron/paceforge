@@ -356,3 +356,25 @@ async def test_a_low_morning_leaves_the_club_session_alone(client, people, beta,
     co.lighten_today(db_session, plan, rows, inp, c)
     assert cp.is_fixed(today_rows[0].structure) and today_rows[0].kind == cp.QUALITY and not today_rows[0].form
 
+
+
+def test_the_agenda_gives_the_club_session_no_time_and_offers_no_other():
+    """The club's hour is the club's: « Mon agenda » places the plan's sessions and leaves the fixed one alone."""
+    from types import SimpleNamespace
+
+    from app.models.coaching import CoachingSession
+    from app.services import coaching_agenda as ag
+    from app.services import coaching_slots as cs
+
+    today = date(2026, 11, 23)
+    fixed = cp.Fixed(2, 75, "Séance club")
+
+    def row(day, structure, kind):
+        return CoachingSession(plan_id=1, user_id=1, day=day, auto_day=day, kind=kind, minutes=60, structure=structure,
+                               status="planned", pinned=False, origin="auto", manual=False, seq=0, slot_chosen=False)
+    club = row(today + timedelta(days=2), cp.fixed_structure(fixed), cp.QUALITY)
+    footing = row(today + timedelta(days=1), cp.default_structure(cp.FOOTING, 60), cp.FOOTING)
+    plan = SimpleNamespace(weekdays=(1, 2, 6), moments=None)
+    ag.place([club, footing], cs.Agenda(), plan, today, 0, None, lambda r: True, lambda r: None)
+    assert footing.slot_min is not None, "a session of the plan gets its time"
+    assert (club.slot_min, club.slot_flag, club.day) == (None, None, today + timedelta(days=2))

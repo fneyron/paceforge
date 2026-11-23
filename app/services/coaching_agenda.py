@@ -225,7 +225,8 @@ def place(rows: list[CoachingSession], agenda: cs.Agenda, plan: CoachingPlan, to
     """The sessions from today on given their time (coaching_slots.place) and, for a future day with no room, their
     day; `movable(row)`: whether the plan may rewrite the row (a generated session nobody touched); `touch(row)`:
     a change a calendar must see. True when a row changed."""
-    live = [r for r in rows if r.status != "cancelled" and r.day >= today]
+    # the fixed session (the club's) has its own hour: the agenda gives it none and never calls its day full
+    live = [r for r in rows if r.status != "cancelled" and r.day >= today and not cp.is_fixed(r.structure)]
     items = {id(r): _item(r, today, movable) for r in live}
     placed = cs.place(list(items.values()), agenda, plan.weekdays, moments_of(plan), today, now_min, usual)
     changed = False
