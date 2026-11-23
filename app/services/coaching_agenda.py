@@ -1,11 +1,13 @@
-"""Coaching › « Mon agenda » (docs/coaching.md): the athlete's private calendar addresses, the busy time read from
-them, and the time each session is given. The reading itself is pure (coaching_ical), the placement too
+"""Coaching › « Mon agenda » (docs/coaching.md): the athlete's private calendar addresses and connected accounts
+(Google Agenda, Outlook: services/coaching_accounts), the busy time read from them, and the time each session is
+given. The reading itself is pure (coaching_ical), the placement too
 (coaching_slots); the fetch is safe_fetch's, the only code that requests a user-typed address.
 
 - an address is checked when it is typed (safe_fetch.clean_url: https, a public host name, never this site's),
   stored encrypted, shown masked; 3 at most per athlete;
 - it is NEVER fetched in a web request: app.tasks.coaching reads it once saved, every 3 hours, and on « Actualiser »
-  (once a minute at most), each fetch counted per account (auth.QUOTAS);
+  (once a minute at most), each fetch counted per account (auth.QUOTAS); a connected account is read in the same
+  round, under the same counts;
 - what is kept of a calendar is its busy intervals for the next 21 days — a start, an end, away or not: never a
   title, a description, a place or an attendee (coaching_ical never reads them);
 - a coach is never shown any of it: only the time a session was given.
@@ -41,7 +43,10 @@ STATUS = {
     "format": "Cette adresse ne donne pas un calendrier iCal.",
     "own": "C’est le calendrier de PaceForge : rien à y lire.",
     "rate": "Trop de lectures pour l’instant : nouvel essai plus tard.",
+    "reauth": "À reconnecter : l’accès a expiré ou a été retiré.",
+    "off": "Connexion indisponible pour l’instant.",
 }
+ICAL = "ical"
 PENDING = "Lecture en cours…"
 
 
@@ -51,6 +56,13 @@ class Invalid(ValueError):
 
 def own_host() -> str:
     return (urlsplit(settings.BASE_URL).hostname or "paceforge.fr").lower()
+
+
+def label(row: CoachingCalendar) -> str:
+    """What the page calls a source: a connected account by its service's name, an address masked."""
+    from app.services import coaching_accounts as accounts
+
+    return accounts.NAMES.get(row.provider) or mask(row.url)
 
 
 def mask(url: str | None) -> str:
@@ -81,7 +93,7 @@ async def add_calendar(db: AsyncSession, user_id: int, raw: str | None) -> Coach
     except safe_fetch.Refused as e:
         raise Invalid("Colle une adresse de calendrier en https:// (ou webcal://)." if e.code == "url"
                       else STATUS["host"]) from e
-    existing = await calendars_of(db, user_id)
+    existing = [c for c in await calendars_of(db, user_id) if c.provider == ICAL]
     if any(c.url == url for c in existing):
         raise Invalid("Cette adresse est déjà dans ton agenda.")
     if len(existing) >= MAX_CALENDARS:
@@ -92,10 +104,35 @@ async def add_calendar(db: AsyncSession, user_id: int, raw: str | None) -> Coach
     return row
 
 
+async def connect_account(db: AsyncSession, user_id: int, provider: str, tokens: dict) -> CoachingCalendar:
+    """A Google Agenda or Outlook account connected (one of each per athlete: connecting again renews its tokens),
+    its tokens kept encrypted; read by a worker next."""
+    from app.services import coaching_accounts as accounts
+
+    row = next((c for c in await calendars_of(db, user_id) if c.provider == provider), None)
+    if row is None:
+        row = CoachingCalendar(user_id=user_id, provider=provider)
+        db.add(row)
+    accounts.keep_tokens(row, tokens)
+    row.status = None
+    await db.flush()
+    return row
+
+
+async def _let_go(row: CoachingCalendar) -> None:
+    """A connected account's access withdrawn at the provider where it can be (best effort), its tokens forgotten."""
+    from app.services import coaching_accounts as accounts
+
+    if row.provider != ICAL:
+        await accounts.revoke(row)
+        accounts.forget_tokens(row)
+
+
 async def remove_calendar(db: AsyncSession, user_id: int, calendar_id: int) -> bool:
     row = await db.get(CoachingCalendar, calendar_id)
     if row is None or row.user_id != user_id:
         return False
+    await _let_go(row)
     await db.execute(delete(CoachingBusy).where(CoachingBusy.calendar_id == row.id))
     await db.delete(row)
     await db.flush()
@@ -103,7 +140,9 @@ async def remove_calendar(db: AsyncSession, user_id: int, calendar_id: int) -> b
 
 
 async def clear(db: AsyncSession, user_id: int) -> None:
-    """« Arrêter le coaching »: the addresses and the busy time go."""
+    """« Arrêter le coaching »: the addresses, the connected accounts (revoked where it can be) and the busy time go."""
+    for row in await calendars_of(db, user_id):
+        await _let_go(row)
     await db.execute(delete(CoachingBusy).where(CoachingBusy.user_id == user_id))
     await db.execute(delete(CoachingCalendar).where(CoachingCalendar.user_id == user_id))
 
@@ -113,14 +152,21 @@ async def clear(db: AsyncSession, user_id: int) -> None:
 async def read_calendar(db: AsyncSession, row: CoachingCalendar, zone: tzinfo, now: datetime) -> str:
     """One calendar fetched and read: its busy intervals replace the ones kept; its status says how it went. A
     failure keeps the intervals of the last good reading. The status is a code: nothing of the response is kept."""
+    from app.services import coaching_accounts as accounts
     from app.services.auth import over_quota
 
     row.checked_at = now
     try:
         if await over_quota("coaching_agenda_fetch", user=row.user_id):
             raise safe_fetch.Refused("rate")
-        body = await safe_fetch.fetch(row.url, own_host())
-        busy = ical.parse(body.decode("utf-8", errors="replace"), zone, now)
+        if row.provider != ICAL:  # a connected account: its busy intervals, nothing else (coaching_accounts)
+            busy = await accounts.read(row, zone, now)
+        else:
+            body = await safe_fetch.fetch(row.url or "", own_host())
+            busy = ical.parse(body.decode("utf-8", errors="replace"), zone, now)
+    except accounts.Failed as e:
+        row.status = e.code if e.code in STATUS else "network"
+        return row.status
     except safe_fetch.Refused as e:
         row.status = e.code if e.code in STATUS else "network"
         return row.status
