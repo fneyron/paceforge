@@ -817,7 +817,8 @@ tableau, le jour en ticket, les options dans une feuille.
      quand on est ailleurs ;
    - **chaque colonne se lit sans légende** : le jour, son numéro (aujourd’hui sur un disque de l’accent), une
      grande case où **chaque séance est une tuile haute comme sa durée** (`tile_height` : la même échelle pour toutes
-     les semaines, 30 min et moins au plus bas, 3 h 30 et plus au plus haut ; la course remplit sa case) et **de la
+     les semaines du plan, 30 min et moins au plus bas, la plus longue séance du plan au plus haut — 1 h 30 au
+     moins, `tile_top` ; la course remplit sa case) et **de la
      couleur de son type** ; **teintée avec un contour** tant qu’elle est prévue, **pleine avec une coche** une fois
      faite, **en pointillés** quand elle est manquée ; une sortie hors plan est une tuile grise ; la tuile porte sa
      durée courte (« 40′ », « 1h05 »), un mot dessous (« Footing », « Longue », « Côtes », « Club »…). L’heure du

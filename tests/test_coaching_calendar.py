@@ -5,6 +5,7 @@ earlier this week can be planned again, or be the run done another day); a sessi
 is asked about first, in one tap, and counted for a later notification."""
 import re
 from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -104,7 +105,12 @@ def _tiles(cell: str) -> list[tuple[str, str, int | None]]:
 
 
 def test_a_tile_is_as_tall_as_its_session_on_one_scale_for_every_week():
-    assert [cv.tile_height(m) for m in (20, 30, 75, 120, 210, 300)] == [28, 28, 45, 62, 95, 95]
+    assert [cv.tile_height(m, 210) for m in (20, 30, 75, 120, 210, 300)] == [28, 28, 45, 62, 95, 95]
+    # the scale is the plan's: its longest session fills the slot (the race aside), 1 h 30 at least
+    assert [cv.tile_height(m) for m in (30, 45, 60, 90, 120)] == [28, 45, 62, 95, 95]
+    short = [SimpleNamespace(kind=cp.EASY, minutes=40), SimpleNamespace(kind=cp.RACE, minutes=600)]
+    assert cv.tile_top(short) == cv.TILE_TOP == 90 and cv.tile_top([]) == 90
+    assert cv.tile_top(short + [SimpleNamespace(kind=cp.LONG, minutes=240)]) == 240
     assert [cv.tile_label(m) for m in (40, 60, 115, 120)] == ["40′", "1h", "1h55", "2h"]
     assert cv.big_duration(40) == {"h": None, "m": "40"} and cv.big_duration(65) == {"h": "1", "m": "05"}
     assert cv.big_duration(120) == {"h": "2", "m": ""}
@@ -160,7 +166,7 @@ async def test_the_page_is_the_road_the_board_and_the_day_s_ticket(client, peopl
     for cell in cells[:7]:
         day = re.search(r'id="coach-day-([\d-]+)"', cell).group(1)
         on = [r for r in rows if r.day.isoformat() == day]
-        assert _tiles(cell) == [(cv.KIND_CLASS[r.kind], "planned", 100 if r.kind == cp.RACE else cv.tile_height(r.minutes))
+        assert _tiles(cell) == [(cv.KIND_CLASS[r.kind], "planned", 100 if r.kind == cp.RACE else cv.tile_height(r.minutes, cv.tile_top(rows)))
                                 for r in on], day
     assert f'<span class="pf-coach-word" aria-hidden="true">{cv.KIND_SHORT[today.kind]}</span>' in mine
     assert f">{cv.tile_label(today.minutes)}</span></i>" in mine
@@ -346,7 +352,8 @@ async def test_by_hand_the_calendar_carries_what_moving_answers(client, people, 
     await db_session.flush()
     main = _main((await client.get("/coaching")).text)
     assert f"/sessions/{done.id}/move" not in main
-    assert f'<i class="pf-coach-tile is-extra is-done" style="--h: {cv.tile_height(38)}" data-run=' in main
+    top = cv.tile_top(await _rows(db_session, athlete))
+    assert f'<i class="pf-coach-tile is-extra is-done" style="--h: {cv.tile_height(38, top)}" data-run=' in main
     assert 'data-run="2026-11-18" data-what="Sortie"' in main
     assert 'id="coach-day-2026-11-19" data-day="2026-11-19" hx-get=' in main
     assert ('<p class="pf-coach-drag-hint" id="coach-drag-hint" aria-hidden="true" hidden>'
@@ -421,7 +428,9 @@ async def test_a_run_that_does_not_match_is_said_and_can_leave_the_session(clien
     assert '<span class="pf-coach-status">Fait autrement</span>' in page and ">Fait</span>" not in page
     assert f'<p class="pf-coach-t-dur" aria-hidden="true">3<small>h</small>17 <span>prévu {hm(tue.minutes)}</span></p>' \
         in page, "the ticket says the time run, large, and the time planned beside it"
-    assert f'<i class="pf-coach-tile is-{cv.KIND_CLASS[tue.kind]} is-done" style="--h: {cv.tile_height(197)}">' in page
+    top = cv.tile_top(await _rows(db_session, athlete))
+    assert f'<i class="pf-coach-tile is-{cv.KIND_CLASS[tue.kind]} is-done" style="--h: {cv.tile_height(197, top)}">' \
+        in page
     assert f'<p class="pf-coach-s-guide pf-coach-misfit">{hm(197)} au lieu de {hm(tue.minutes)}</p>' in page
     assert re.search(rf'<button type="submit" name="value" value="missed" id="coach-unlink-{tue.id}" '
                      r'class="pf-coach-quietbtn">Ce n’est pas cette séance</button>', page)
