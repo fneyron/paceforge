@@ -26,9 +26,10 @@ LEGEND = (("easy", "Footing"), ("long", "Sortie longue"), ("hard", "Séance"), (
 BAR_SCALE_MIN = 60  # the start screen's week: the tallest bar is the longest session shown, 1 h at least
 BAR_MIN = 22  # % of a column's room: a short session still shows
 WINDOW_WEEKS = 2  # the board's week, and the next one as a compact row
-# a session's tile on the board, in % of its day's slot: as tall as it is long on one scale for every week (30 min
-# and less: TILE_MIN; 3 h 30 and more: TILE_MIN + TILE_SPAN); the race fills its slot
-TILE_MIN, TILE_SPAN, TILE_FROM, TILE_RANGE = 28, 67, 30, 180
+# a session's tile on the board, in % of its day's slot: as tall as it is long on one scale for every week of the plan
+# (30 min and less: TILE_MIN; the plan's longest session, 1 h 30 at least: TILE_MIN + TILE_SPAN); the race fills
+# its slot
+TILE_MIN, TILE_SPAN, TILE_FROM, TILE_TOP = 28, 67, 30, 90
 ROAD_WEEKS = 30  # the road: 30 weeks at most (its bars stay a finger wide at 320 px)
 EXTRA_WORD = "Sortie"  # a run outside the plan, as a day's block reads
 WEEK_NAMES = {0: "Cette semaine", 1: "Semaine prochaine", -1: "Semaine dernière"}
@@ -348,10 +349,16 @@ def bar_height(minutes: float, scale: float) -> int:
     return int(min(100, max(BAR_MIN, round(100 * minutes / max(scale, 1)))))
 
 
-def tile_height(minutes: float) -> int:
-    """A session's tile on the board, in % of its day's slot: one scale for every week, so that a long run looks long
-    whatever the week around it (30 min: TILE_MIN; 3 h 30 and more: TILE_MIN + TILE_SPAN)."""
-    share = min(1.0, max(0.0, (minutes - TILE_FROM) / TILE_RANGE))
+def tile_top(rows: list) -> int:
+    """The duration that fills a day's slot on the board: the plan's longest session, the race aside (1 h 30 at least,
+    so that a plan of short footings does not draw them all tall)."""
+    return max([TILE_TOP] + [int(r.minutes) for r in rows if r.kind != cp.RACE and r.minutes])
+
+
+def tile_height(minutes: float, top: float = TILE_TOP) -> int:
+    """A session's tile on the board, in % of its day's slot: one scale for every week of the plan, so that a long run
+    looks long whatever the week around it (30 min: TILE_MIN; `top` and more: TILE_MIN + TILE_SPAN)."""
+    share = min(1.0, max(0.0, (minutes - TILE_FROM) / max(1.0, top - TILE_FROM)))
     return int(round(TILE_MIN + TILE_SPAN * share))
 
 
@@ -421,6 +428,7 @@ def _cell(day: date, rows: list, extra: float, state: co.State, selected: date, 
     de … », by hand)."""
     today = state.clock.today
     by_hand = by_hand or {}
+    top = tile_top(state.rows)
     said, blocks = [], []
     for r in rows:
         slot = clock_time(r.slot_min) if r.status == co.PLANNED and r.slot_min is not None else None
@@ -428,11 +436,11 @@ def _cell(day: date, rows: list, extra: float, state: co.State, selected: date, 
                     + (f" à {slot}" if slot else "") + (", à débriefer" if r.id in waiting else ""))
         minutes = r.done_minutes if r.status == co.DONE and r.done_minutes else r.minutes
         blocks.append({"cls": KIND_CLASS.get(r.kind, "easy"), "status": r.status, "race": r.kind == cp.RACE,
-                       "h": 100 if r.kind == cp.RACE else tile_height(minutes), "label": tile_label(minutes),
+                       "h": 100 if r.kind == cp.RACE else tile_height(minutes, top), "label": tile_label(minutes),
                        "id": r.id, "hand": by_hand.get(r.id) if by_hand.get(r.id, {}).get("to") else None})
     if extra:
         said.append("une sortie hors plan")
-        blocks.append({"cls": "extra", "status": co.DONE, "race": False, "h": tile_height(extra),
+        blocks.append({"cls": "extra", "status": co.DONE, "race": False, "h": tile_height(extra, top),
                        "label": tile_label(extra), "run": day.isoformat() if run_by_hand else None, "what": EXTRA_WORD})
     if len(blocks) > 1:  # several the same day share the slot
         for block in blocks:
