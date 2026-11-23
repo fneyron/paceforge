@@ -218,8 +218,10 @@
   root.addEventListener('contextmenu', function (e) { if (press || drag || scrub) e.preventDefault(); });
   root.addEventListener('dragstart', function (e) { if (dayOf(e.target) || (e.target.closest && e.target.closest('#coach-road'))) e.preventDefault(); });
   root.addEventListener('click', function (e) {
-    if (Date.now() < roadQuiet && e.target.closest && e.target.closest('#coach-road')) { e.preventDefault(); e.stopPropagation(); return; }
-    if (Date.now() < quietUntil && dayOf(e.target)) { e.preventDefault(); e.stopPropagation(); }
+    // the click a pointer sends after a scrub or a drag is theirs (a key's click, detail 0, is always the key's)
+    var pointer = e.detail !== 0;
+    if (pointer && Date.now() < roadQuiet && e.target.closest && e.target.closest('#coach-road')) { e.preventDefault(); e.stopPropagation(); return; }
+    if (pointer && Date.now() < quietUntil && dayOf(e.target)) { e.preventDefault(); e.stopPropagation(); }
     quietUntil = 0;
     var step = e.target.closest && e.target.closest('#coach-prev, #coach-next');
     if (step) leave(step.id === 'coach-next' ? 'next' : 'prev');

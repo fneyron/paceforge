@@ -679,7 +679,10 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, move:
                              "attach": None if coach or runs_out else _attach(run, live, today)})
     return {
         "today": today.isoformat(), "selected": selected.isoformat(), "is_today": selected == today,
-        "day_title": day_word_title(selected, today), "day_long": viz.d_long(selected),
+        "day_title": day_word_title(selected, today),
+        # under « Aujourd’hui » the whole date; under a weekday the rest of it (« Samedi · 21 novembre »)
+        "day_long": viz.d_long(selected) if abs((selected - today).days) <= 1
+        else f"{selected.day} {MOIS_L[selected.month - 1]}",
         "head": header(state, coach), "road": road(state, board, coach),
         "cal": {**nav, "weeks": weeks, "by_hand": any(x["to"] for x in by_hand.values()),
                 "has_today": board <= today <= board + timedelta(days=6)},

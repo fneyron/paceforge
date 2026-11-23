@@ -1719,7 +1719,7 @@ a.pf-coach-step:hover { background: rgb(var(--pf-line)); }
 .dark .pf-coach-tile { color: rgb(var(--c)); }
 .pf-coach-tile.is-done { background: rgb(var(--cs)); box-shadow: none; color: rgb(var(--pf-coach-on)); }
 .pf-coach-tile.is-missed { background: none; box-shadow: none; outline: 1.5px dashed rgb(var(--pf-gray-400)); outline-offset: -1.5px; color: rgb(var(--pf-gray-500)); }
-.pf-coach-tile.is-race { justify-content: center; padding: 0; }
+.pf-coach-tile.is-race { justify-content: center; padding: 0; background: rgb(var(--cs)); box-shadow: none; color: rgb(var(--pf-coach-on)); }
 .pf-coach-tile .pf-coach-check { width: 14px; height: 14px; }
 .pf-coach-tile[data-move], .pf-coach-tile[data-run] { cursor: grab; }
 /* a session done that waits for its ressenti: a dot by its day's number */
@@ -1797,7 +1797,6 @@ button.pf-coach-day.is-warn::after, .pf-coach-day.is-drop-warn::after { content:
 .pf-coach-slot { display: flex; align-items: center; flex-wrap: wrap; gap: 0 10px; margin: 6px 2px 0; min-height: 44px; }
 .pf-coach-slot-time { font-size: 1rem; font-weight: 650; letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); white-space: nowrap; }
 .pf-coach-full { padding: 4px 10px; border-radius: 999px; background: rgb(var(--pf-soft)); font-size: 0.8125rem; font-weight: 600; color: rgb(var(--pf-gray-700)); }
-.pf-coach-slot .pf-coach-quietbtn { margin-left: -10px; }
 .pf-coach-formline { margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: rgb(var(--pf-warn-soft)); color: rgb(var(--pf-warn)); font-size: 0.875rem; font-weight: 600; line-height: 1.4; }
 .pf-coach-formline:has(a) { padding-top: 0; padding-bottom: 0; }
 .pf-coach-formline a { display: flex; align-items: center; min-height: 44px; color: inherit; text-decoration: underline; text-underline-offset: 3px; }
@@ -1825,13 +1824,13 @@ button.pf-coach-day.is-warn::after, .pf-coach-day.is-drop-warn::after { content:
 /* ONE main action, « Pas faite » quiet beside it; the rest quiet under them */
 .pf-coach-do { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
 .pf-coach-do .pf-btn { flex: 1; min-height: 54px; border-radius: 27px; font-family: var(--pf-font-display); font-size: 1.0625rem; font-weight: 600; }
-.pf-coach-quiet { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 2px; margin: 6px -10px -6px; }
+.pf-coach-quiet { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 2px; margin: 6px 0 -6px; }
 .pf-coach-quiet > form { display: contents; }
 .pf-coach-quietbtn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 22px; background: none; font: inherit; font-size: 0.90625rem; font-weight: 600; line-height: 1.2; color: rgb(var(--pf-gray-600)); text-decoration: none; cursor: pointer; white-space: nowrap; }
 .pf-coach-quietbtn:hover { background: rgb(var(--pf-soft)); color: rgb(var(--pf-ink)); }
 .pf-coach-quietbtn:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: -2px; }
 .pf-coach-do .pf-coach-quietbtn { flex: none; }
-.pf-coach-attach { margin: 2px -12px 0; }
+.pf-coach-attach { margin: 2px 0 0; }
 .pf-coach-attach .pf-coach-quietbtn { display: inline; padding-top: 12px; padding-bottom: 12px; white-space: normal; text-align: left; line-height: 1.5; }
 .pf-coach-attach .pf-coach-quietbtn span { font-weight: 500; }
 .pf-effort { display: block; width: 100%; height: 52px; margin-top: 8px; }
@@ -1852,8 +1851,8 @@ button.pf-coach-day.is-warn::after, .pf-coach-day.is-drop-warn::after { content:
 .pf-coach-edit > summary::-webkit-details-marker { display: none; }
 .pf-coach-edit[open] { flex-basis: 100%; order: 1; }
 .pf-coach-edit[open] > summary { color: rgb(var(--pf-ink)); }
-.pf-coach-add { margin: 8px -12px -6px; }
-.pf-coach-form { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px 12px; margin: 8px 10px 0; padding: 14px; border-radius: 16px; background: rgb(var(--pf-soft)); }
+.pf-coach-add { margin: 8px 0 -6px; }
+.pf-coach-form { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px 12px; margin: 8px 0 0; padding: 14px; border-radius: 16px; background: rgb(var(--pf-soft)); }
 .pf-coach-form label, .pf-coach-manual label { font-size: 0.875rem; font-weight: 600; color: rgb(var(--pf-gray-700)); }
 .pf-coach-form .pf-btn { grid-column: 1 / -1; }
 .pf-coach-select { min-height: 44px; width: 100%; padding: 0 12px; border-radius: 12px; border: 1px solid rgb(var(--pf-gray-400)); background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); font: inherit; font-size: 1rem; }
@@ -1872,6 +1871,8 @@ button.pf-coach-day.is-warn::after, .pf-coach-day.is-drop-warn::after { content:
 .pf-coach-sheet-close { padding: 0; background: rgb(var(--pf-soft)); }
 .pf-coach-sheet :is(.pf-coach-sheet-back, .pf-coach-sheet-close)[hidden] { display: none; }
 .pf-coach-sheet-back:hover { background: rgb(var(--pf-soft)); }
+.pf-coach-sheet.is-tool .pf-coach-sheet-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.pf-coach-sheet.is-tool .pf-coach-sheet-head { justify-content: space-between; }
 html.pf-coach-locked, html.pf-coach-locked body { overflow: hidden; }
 .pf-coach-dialog { position: fixed; inset: auto 0 0 0; width: 100%; max-width: 480px; max-height: calc(100dvh - 32px); margin: 0 auto; padding: 0; border: 0; border-radius: 26px 26px 0 0; background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); overflow: auto; overscroll-behavior: contain; box-shadow: 0 -10px 40px rgb(0 0 0 / .18); }
 .pf-coach-dialog::backdrop { background: rgb(0 0 0 / .42); }
@@ -2114,12 +2115,13 @@ html.pf-coach-locked, html.pf-coach-locked body { overflow: hidden; }
 .pf-large-text .pf-coach-weekhead { flex-wrap: wrap; }
 .pf-large-text .pf-coach-word, .pf-large-text .pf-coach-wd { display: none; }
 .pf-large-text .pf-coach-tile span { display: none; }
+.pf-large-text .pf-coach-num { width: auto; min-width: 26px; height: auto; padding: 0 3px; border-radius: 999px; font-size: 0.75rem; line-height: 1.35; }
 .pf-large-text .pf-coach-optgrid { grid-template-columns: minmax(0, 1fr); }
 .pf-large-text .pf-coach-do { flex-wrap: wrap; }
 @media (min-width: 900px) {
     /* the width used: the road and the debrief across, then the board and the day's ticket side by side */
     #coach-main { max-width: none; }
-    .pf-coach-road, .pf-coach-debrief { max-width: 760px; }
+    .pf-coach-debrief { max-width: 760px; }
     .pf-coach-calendar { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; gap: 0 36px; }
     .pf-coach-daycard { margin-top: 0; }
     .pf-coach-tile { max-width: 52px; }
