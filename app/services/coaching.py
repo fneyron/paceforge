@@ -125,7 +125,7 @@ def goal_of(route, objective_s: int | None = None, estimate_s: int | None = None
         seconds = rp.expected_s(route) or 3600
         kind = OBJECTIVE if getattr(route, "target_time_s", None) else ROUGH
     rate = up / (seconds / 3600) if trail and up > 0 else None
-    return cp.Goal(rd, seconds / 60, trail, route.id, route.name or "", kind, rate)
+    return cp.Goal(rd, seconds / 60, trail, route.id, route.name or "", kind, rate, float(km) if km else None)
 
 
 RACE_NAME_MAX = 80
@@ -145,7 +145,7 @@ def custom_goal(name: str | None, day: date | None, km: float | None, target_s: 
                            sport_type="road")
     seconds = rp.expected_s(stub) or 3600
     return cp.Goal(day, seconds / 60, False, None, (name or "").strip() or "Ta course",
-                   OBJECTIVE if target_s else ROUGH, None)
+                   OBJECTIVE if target_s else ROUGH, None, float(km))
 
 
 def plan_custom(plan: CoachingPlan) -> SimpleNamespace | None:
@@ -283,6 +283,19 @@ async def first_goal(db: AsyncSession, user: User, route_id: int | None, today: 
             _PEEKED.clear()
         _PEEKED[key] = times or (None, None)
     return goal_of(route, *_PEEKED[key])
+
+
+async def goal_light(db: AsyncSession, plan: CoachingPlan) -> cp.Goal:
+    """The plan's race as the last reading kept it (`goal_state`), without a prediction or a write: the calendar
+    feed's (a race without a course: its own; none: no race)."""
+    if plan_custom(plan) is not None:
+        return custom_goal_of(plan)
+    route = await plan_route(db, plan)
+    if route is None:
+        return cp.Goal()
+    kept = plan.goal_state or {}
+    same = kept.get("route") == route.id
+    return goal_of(route, kept.get("objective_s") if same else None, kept.get("estimate_s") if same else None)
 
 
 def goal_ended(plan: CoachingPlan) -> dict | None:

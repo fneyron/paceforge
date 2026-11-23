@@ -76,6 +76,13 @@
     opener = tile;
     show(tile.dataset.tool);
   });
+  // a link of the page that leads to a tool (« D’où viennent ces chiffres ? » on a ticket): the sheet opens on it
+  root.addEventListener('click', function (e) {
+    var link = e.target.closest && e.target.closest('a[data-tool-open]');
+    if (!link || !document.getElementById(link.dataset.toolOpen)) return;
+    e.preventDefault();
+    open(link.dataset.toolOpen);
+  });
   // a tool's htmx answer replaces #coach-tools: the sheet stays on that tool (watched on the sheet itself: an
   // outerHTML swap's own events start from the element it removed)
   new MutationObserver(function () {

@@ -137,8 +137,18 @@
                     {#- how hard: a structured session keeps its profile, block by block; a steady one is one of four levels -#}
                     {% if s.profile %}{{ vz.viz_profile(s.profile) }}{% elif s.gauge %}<span class="pf-coach-gauge is-l{{ s.gauge.level }}" role="img" aria-label="{{ s.gauge.aria }}"><i></i><i></i><i></i><i></i></span>{% endif %}
                     {% if s.text and s.big %}<p class="pf-coach-s-text">{{ s.text }}</p>{% endif %}
+                    {#- la cible: the session's pace and/or heart rate, from the athlete's own data, while it is to do -#}
+                    {% if s.target %}{% set t = s.target %}
+                    <div class="pf-coach-target" role="group" aria-labelledby="coach-target-{{ s.id }}">
+                        <p class="pf-coach-target-h" id="coach-target-{{ s.id }}">Cible{% if t.head %}<span> · {{ t.head }}</span>{% endif %}</p>
+                        {% if t.vals %}<div class="pf-coach-target-vals">{% for v in t.vals %}<p><span aria-hidden="true">{{ v.label }}</span><b aria-hidden="true">{{ v.value }}<small>{{ v.unit }}</small></b><span class="sr-only">{{ v.aria }}</span></p>{% endfor %}</div>
+                        {% elif t.note %}<p class="pf-coach-target-note">{{ t.note }}</p>
+                        {% elif t.missing %}<a class="pf-coach-target-link" href="{{ t.href }}">{{ t.missing }}</a>{% endif %}
+                        {% if t.how %}<a class="pf-coach-target-how" href="/coaching?outil=methode#coach-tool-how" data-tool-open="coach-tool-how">D’où viennent ces chiffres&nbsp;?</a>{% endif %}
+                    </div>
+                    {% endif %}
                 </div>
-                {% if s.status == "planned" %}<p class="pf-coach-s-guide">{{ s.guidance[0] }}{% if s.guidance[1] %} <span class="pf-coach-hr">{{ s.guidance[1] }}</span>{% endif %}</p>{% endif %}
+                {% if s.status in ("planned", "missed") %}<p class="pf-coach-s-guide">{{ s.feel }}</p>{% endif %}
                 {#- the agenda: the time the session was given; the athlete may ask for another free one -#}
                 {% if s.slot or s.full %}
                 <div class="pf-coach-slot">

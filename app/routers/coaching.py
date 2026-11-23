@@ -109,6 +109,25 @@ async def _hr_reference(db: AsyncSession, athlete: User, c: co.Clock) -> float |
         return athlete.max_heart_rate
 
 
+async def _critical(db: AsyncSession, athlete: User, c: co.Clock, streams: bool = True):
+    """The athlete's critical speed from their own runs (coaching_pace), for the sessions' paces; None when the runs
+    do not give one."""
+    from app.services import coaching_pace
+
+    try:
+        return await coaching_pace.for_athlete(db, athlete.id, c.today, streams=streams)
+    except Exception:
+        logger.exception("Coaching: the critical speed failed for user %d", athlete.id)
+        return None
+
+
+async def _targets(db: AsyncSession, scope: Scope, state: co.State) -> dict:
+    """What the tickets' « Cible » reads, once per page: the critical speed, and the maximum heart rate for the
+    athlete's own page only — the person who follows a plan never reads a heart rate (docs/coaching.md)."""
+    return {"critical": await _critical(db, scope.athlete, state.clock),
+            "hr_reference": None if scope.coach else await _hr_reference(db, scope.athlete, state.clock)}
+
+
 async def _state(db: AsyncSession, scope: Scope) -> co.State:
     plan = await co.get_plan(db, scope.athlete.id)
     if plan is None:
@@ -129,8 +148,8 @@ async def _main(request: Request, db: AsyncSession, scope: Scope, state: co.Stat
                 status_code: int = 200) -> Response:
     """The swapped part (partials/coaching_main.html), for an htmx swap. `v`: the address of the « Mois » view of
     before, still answered — with the week board (the road took its place)."""
-    p = cv.page(state, d=d, w=w, move=move, coach=scope.coach,
-                hr_reference=await _hr_reference(db, scope.athlete, state.clock), names=await _names(db, scope))
+    p = cv.page(state, d=d, w=w, move=move, coach=scope.coach, **await _targets(db, scope, state),
+                names=await _names(db, scope))
     return templates.TemplateResponse(request, "partials/coaching_main.html", status_code=status_code, context={
         "p": p, "scope": scope, "error": error})
 
@@ -185,9 +204,14 @@ async def calendar_feed(token: str, request: Request, db: AsyncSession = Depends
         raise HTTPException(status_code=404)
     c = await co.clock(db, owner)
     rows = await co.sessions_of(db, plan)
-    zones = cv.hr_rows(owner.max_heart_rate)  # the confirmed maximum only: no heavy read on a public address
+    # the confirmed maximum only, and the critical speed from the best efforts alone: no heavy read on a public
+    # address
+    reference = owner.max_heart_rate
+    critical = await _critical(db, owner, c, streams=False)
+    goal = await co.goal_light(db, plan)
     body = ics.render(rows, c.today, host=urlsplit(settings.BASE_URL).hostname or "paceforge.fr",
-                      guidance=lambda row: cv.guidance(row.kind, row.structure, zones), zone=c.zone)
+                      guidance=lambda row: cv.guidance(row.kind, row.structure, reference, critical, goal)
+                      if row.status in (co.PLANNED, co.MISSED) else cv.feel(row.kind, row.structure), zone=c.zone)
     return Response(body, media_type="text/calendar; charset=utf-8", headers={
         "Content-Disposition": 'inline; filename="paceforge-coaching.ics"',
         "Cache-Control": "private, max-age=300", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"})
@@ -439,8 +463,8 @@ async def _page(request: Request, db: AsyncSession, scope: Scope, d: str | None,
     """`tool`: what the options' sheet opens on (« agenda », « forme »…), with the agenda's error or note."""
     state = await _state(db, scope)
     await db.commit()
-    p = cv.page(state, d=_day(d), w=_day(w), coach=scope.coach,
-                hr_reference=await _hr_reference(db, scope.athlete, state.clock), names=await _names(db, scope))
+    p = cv.page(state, d=_day(d), w=_day(w), coach=scope.coach, **await _targets(db, scope, state),
+                names=await _names(db, scope))
     return templates.TemplateResponse(request, "coaching.html", context={
         "user": scope.viewer, "scope": scope, "p": p,
         "athlete_name": scope.athlete.firstname or "Athlète", "error": None, "open": tool,
