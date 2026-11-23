@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { appShellScript, calendarFeedUrl, calendarOrigin, destinations, isBridgeUrl, messagePageUrl, prepareNavigationScript, refreshable, reloadable, sameScreen, screenUrl, tabForUrl, tabNavigationScript, tabs } from './navigation';
+import { agendaReturnUrl, agendaScheme, agendaSheetUrl, appShellScript, calendarFeedUrl, calendarOrigin, destinations, isBridgeUrl, messagePageUrl, prepareNavigationScript, refreshable, reloadable, sameScreen, screenUrl, tabForUrl, tabNavigationScript, tabs } from './navigation';
 
 test('internal detail pages keep the right native tab; external URLs cannot change it', () => {
   assert.equal(tabForUrl('https://paceforge.fr/accueil'), 'health');
@@ -78,8 +78,11 @@ test('the shell announces the native Coaching tab to this site only', () => {
   const site = page('https://paceforge.fr');
   assert.equal(site.window.paceforgeNativeCoaching, 1);
   assert.ok(site.classes.has('pf-native-coaching') && site.classes.has('pf-native-refresh'));
+  assert.equal(site.window.paceforgeNativeAgenda, 1);
+  assert.ok(site.classes.has('pf-native-agenda'));
   const other = page('https://example.org');
   assert.equal(other.window.paceforgeNativeCoaching, undefined);
+  assert.equal(other.window.paceforgeNativeAgenda, undefined);
   assert.equal(other.classes.size, 0);
 });
 
@@ -139,4 +142,30 @@ test('an older web Tabs object safely falls back and still acknowledges the save
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(messages[1].ok, true);
   assert.equal(messages[1].tabs_ready, false);
+});
+
+test('« Mon agenda »: only the site\'s agenda sheet with a ticket opens the system sheet; its return is two known codes', () => {
+  const ticket = 'eyJ1Ijo0MiwicCI6ImFnZW5kYS1nb29nbGUifQ.ZZ_x-1.abcDEF123';
+  assert.deepEqual(agendaSheetUrl(`https://paceforge.fr/mobile/oauth/agenda/google#${ticket}`),
+    { provider: 'google', url: `https://paceforge.fr/mobile/oauth/agenda/google#${ticket}` });
+  assert.equal(agendaSheetUrl(`https://paceforge.fr/mobile/oauth/agenda/microsoft#${ticket}`)?.provider, 'microsoft');
+  for (const url of [
+    'https://paceforge.fr/mobile/oauth/agenda/google',  // no ticket
+    `https://paceforge.fr/mobile/oauth/agenda/apple#${ticket}`,
+    `https://paceforge.fr/mobile/oauth/agenda/google?next=x#${ticket}`,
+    `https://paceforge.fr/mobile/oauth/agenda/google/confirm#${ticket}`,
+    `https://paceforge.fr/mobile/oauth/strava#${ticket}`,
+    `https://paceforge.fr.evil.test/mobile/oauth/agenda/google#${ticket}`,
+    `https://accounts.google.com/mobile/oauth/agenda/google#${ticket}`,
+    'https://paceforge.fr/mobile/oauth/agenda/google#<script>alert(1)</script>',
+  ]) assert.equal(agendaSheetUrl(url), null, url);
+  const base = 'https://paceforge.fr/coaching?outil=agenda&connexion=google&resultat=';
+  assert.equal(agendaReturnUrl('google', `${agendaScheme}?connexion=google&resultat=ok`), `${base}ok#coach-tool-agenda`);
+  assert.equal(agendaReturnUrl('google', `${agendaScheme}?connexion=google&resultat=organisation`), `${base}organisation#coach-tool-agenda`);
+  assert.equal(agendaReturnUrl('google', null), `${base}annule#coach-tool-agenda`, 'the sheet closed by hand');
+  assert.equal(agendaReturnUrl('google', `${agendaScheme}?connexion=google&resultat=<b>`), `${base}annule#coach-tool-agenda`);
+  assert.equal(agendaReturnUrl('google', `${agendaScheme}?connexion=microsoft&resultat=ok`), `${base}annule#coach-tool-agenda`);
+  assert.equal(agendaReturnUrl('google', 'paceforge://devices?connexion=google&resultat=ok'), `${base}annule#coach-tool-agenda`);
+  assert.equal(agendaReturnUrl('microsoft', `${agendaScheme}?connexion=microsoft&resultat=panne`),
+    'https://paceforge.fr/coaching?outil=agenda&connexion=microsoft&resultat=panne#coach-tool-agenda');
 });
