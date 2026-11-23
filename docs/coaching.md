@@ -481,21 +481,54 @@ intervalles courts en vitesse (`BESIDE_FIXED`, (H)).
 
 ### L’intensité
 
-Quatre niveaux, dits d’abord par la sensation (le test de la parole : Persinger 2004 ; Foster 2008), puis par une
-plage de fréquence cardiaque quand une FC maximale est connue (confirmée dans Réglages, sinon le repère observé de
-Santé, `heart_rate_reference`). Les plages reprennent les cinq zones de l’app (`heart_rate_zones`).
+Demande du propriétaire, 23 novembre 2026, devant le ticket : « Tu ne met pas les zones cibles ? HR vitesse ou
+autre ? ». Chaque séance a **une cible** lue dans les données de l’athlète : une allure (depuis sa vitesse critique),
+une plage de fréquence cardiaque (depuis sa FC maximale), ou les deux. La sensation reste dite d’abord (le test de la
+parole : Persinger 2004 ; Foster 2008) ; la cible la précise. **Quand les données ne suffisent pas, rien n’est
+affiché** : jamais d’allure ni de FC par défaut.
 
-Leur correspondance avec les niveaux : le moment où parler devient difficile est le seuil ventilatoire, mesuré à
-86–89 % de la FC de pointe sur tapis chez 16 volontaires (Persinger 2004) ; tant que la parole est confortable,
-l’effort est sous ce seuil. « Facile » (60–80 %) reste donc dessous, « Soutenu » (80–90 %) le contient — c’est aussi
-la FC des 4 × 8 min de Seiler 2013 (90 %). Les bornes exactes sont celles des zones de l’app : (H) chiffre.
+**La FC maximale** : confirmée dans Réglages (`#max-heart-rate`), sinon le repère observé de Santé
+(`heart_rate_reference`). Les plages des niveaux 1 à 3 reprennent les cinq zones de l’app (`heart_rate_zones`). Leur
+correspondance : le moment où parler devient difficile est le seuil ventilatoire, mesuré à 86–89 % de la FC de pointe
+sur tapis chez 16 volontaires (Persinger 2004) ; « Facile » (60–80 %) reste dessous, « Soutenu » (80–90 %) le
+contient — c’est aussi la FC des 4 × 8 min de Seiler 2013 (90 %). Les bornes exactes sont celles des zones de l’app :
+(H) chiffre.
 
-| Niveau | Sensation | Plage de FC |
+**La vitesse critique** (`services/coaching_pace.py`) sépare le domaine « lourd », où un état stable s’installe, du
+domaine « sévère », où il ne s’installe pas (Jones & Vanhatalo 2017). Elle se calcule comme Smyth & Muniz-Pumares
+2020 la calculent sur des données d’entraînement brutes :
+
+| Étape | PaceForge | Source |
 |---|---|---|
-| 1 Très facile | Tu parles sans y penser | Zones 1–2 (50–70 % de la FC max) |
-| 2 Facile | Tu peux tenir une conversation | Zones 2–3 (60–80 %) |
-| 3 Soutenu | Quelques mots, pas des phrases | Zone 4 (80–90 %) |
-| 4 Vite | Parler devient impossible | Aucune : sur un effort court la FC est en retard |
+| Fenêtre | Les 16 semaines qui précèdent aujourd’hui ; au moins 24 sorties de course (Run, TrailRun) dedans, sinon rien. | Smyth & Muniz-Pumares 2020 (16 semaines avant le marathon, 24 activités au moins). Le tapis (VirtualRun) est laissé de côté : sa distance est celle de la machine ou d’un capteur — choix pratique `RUN_SPORTS`. |
+| Efforts | Le temps le plus rapide sur 400, 800, 1000, 1500, 3000 et 5000 m dans la fenêtre : les meilleurs efforts de Strava (400 m, 1/2 mile, 1 km, 1 mile, 2 miles, 5 km, chacun à sa vraie distance, comptés pour la cible la plus proche à 10 % près), sinon les efforts glissants les plus rapides calculés sur les flux distance et temps d’une sortie. | Les distances : Smyth & Muniz-Pumares 2020. (H) : l’étude lit l’allure ajustée à la pente tous les 100 m ; PaceForge n’ajuste pas la pente — un effort en descente est écarté à la place (ci-dessous) ; les distances de Strava et la tolérance de 10 % `BUCKET_TOLERANCE` sont les nôtres. |
+| Modèle | La droite distance = D′ + VC × temps (moindres carrés) ; les trois distances du meilleur modèle de l’étude, 400, 800 et 5000 m, quand elles y sont ; sinon toutes les distances trouvées, trois au moins, de 1000 m ou moins à 3000 m ou plus. | Smyth & Muniz-Pumares 2020 (la pente est la VC ; 400–800–5000 m prédisait le mieux le marathon). Le repli est (H) `SHORT_MAX`, `LONG_MIN` : l’étude a essayé toutes les combinaisons de trois distances ou plus, de VC voisines (3,74 ± 0,08 m/s). |
+| Descente | Un effort dont la descente nette atteint 1 % de sa distance est écarté, quand l’altitude est connue. | (H) `DOWNHILL`. Une montée ne fait que ralentir un effort : elle ne peut que baisser la VC. |
+| Erreurs | Un effort plus rapide que le record du monde de sa distance ; dans un flux, un trou de plus de 10 s ou un pas plus rapide que 10,5 m/s dans l’effort ; une droite dont D′ n’est pas positif ou dépasse 400 m ; une VC hors de 1,5–6,5 m/s : rien. | Les records : choix pratique `RECORD_S`. (H) `MAX_GAP_S`, `MAX_STEP_SPEED`, `D_PRIME_MAX` (l’étude trouve D′ = 136 ± 39 m), `CS_RANGE`. |
+
+Elle est lue **une fois par page** (et une fois par flux calendrier, sur les seuls meilleurs efforts de Strava : pas
+de lecture lourde sur une adresse publique). Rien n’est stocké : elle est recalculée à la lecture.
+
+**Les cibles**, séance par séance. Une allure n’est donnée que **sur le plat** (dit à côté) : les séances de qualité
+hors côtes, les sorties faciles, une sortie longue sans dénivelé à viser. Une séance structurée a la cible de ses
+efforts (« pendant les efforts ») ; la récupération reste dans la phrase de la structure.
+
+| Séance | Allure | FC | Source |
+|---|---|---|---|
+| Footing, récup, sortie longue sans dénivelé à viser (niveaux 1–2) | **Pas plus vite que** 82,3 % de la VC | Zones 2–3 (60–80 %) ; récup : zones 1–2 (50–70 %) | Allure : le premier seuil (la frontière modéré–lourd) se trouve en moyenne à 82,3 % de la VC (IC 95 % 81,1–83,6 ; Hunter 2024, méta-analyse, 26 études, 527 coureurs ; les auteurs recommandent un test pour plus de précision). Une borne haute seulement : rien ne fixe une borne basse. FC : les zones de l’app, (H). |
+| Sortie longue avec un dénivelé à viser (trail) | Aucune (pas sur le plat) | Zones 2–3 | Les zones de l’app, (H). |
+| Seuil : *n* × 8 min soutenu | 93–97 % de la VC | Zone 4 (80–90 %) | Nixon 2021 (10 coureurs bien entraînés) : l’état stable maximal de lactate à 15,2 km/h pour une VC de 16,4 (92,7 %), la V̇O2 encore stable 0,5 km/h sous la VC (97 %). Les bornes arrondies : (H) `THRESHOLD`. FC : Seiler 2013 (90 %), les zones de l’app (H). |
+| Intervalles : *n* × 3 min vite | La vitesse de V̇O2max sur la droite de l’athlète : VC + D′ / t, t de 505 s à 303 s | 90–95 % de la FC max, atteinte en fin d’effort | Allure : la vitesse de V̇O2max se tient 404 ± 101 s (Billat 1994, 8 coureurs de bon niveau) ; des efforts à cette vitesse durant 60 % de ce temps ont amélioré V̇O2max et le 3000 m (Esfarjani 2007) — un effort de 3 min est 60 % de 5 min ; la durée tenue à une vitesse au-dessus de la VC est D′ / (v − VC) (Jones & Vanhatalo 2017). Prendre la moyenne ± 1 écart-type de Billat pour tous : (H) `VO2MAX_TIME_S`. FC : Helgerud 2007 (4 × 4 min à 90–95 %, 40 hommes modérément entraînés) `HR_FAST`. |
+| Côtes longues : *n* × 4 min en côte | Aucune (côte) | 90–95 % de la FC max, en fin d’effort | Helgerud 2007 ; en côte, une transposition. |
+| Fartlek (2 min), côtes courtes (1 min), rappels (2 min) | Aucune | Aucune : « À la sensation : l’effort est trop court pour le cardio. » | La FC monte en retard sur un effort court ; le seuil de 3 min `LAG_MIN` est (H) : la durée de nos intervalles (ceux de Helgerud 2007 duraient 4 min). **Changé le 23 novembre 2026** : les rappels (niveau 3) affichaient la zone 4. |
+| Séance fixe (club) | Aucune | Aucune | Son contenu est celui du club. |
+| Course sur route avec un objectif | L’allure moyenne : le temps visé divisé par la distance | Aucune | Arithmétique. Aucune séance du plan n’est prévue à l’allure de course (les rappels sont « soutenus ») : aucun type de séance n’est ajouté, l’allure est sur le ticket de la course seulement. FC : l’intensité d’une course dépend de sa longueur, **aucune étude** ne donne une plage commune (**changé le 23 novembre 2026** : la zone 4 n’est plus dite le jour de la course). |
+| Trail, course sans objectif (une estimation) | Aucune | Aucune | Une estimation n’est pas une cible. |
+
+**Qui voit quoi.** L’athlète : l’allure et la FC. **La personne qui suit le plan ne lit jamais une FC** — une FC
+maximale est une donnée physiologique, parfois le repère de Santé — : elle voit l’allure seulement (tirée des
+sorties dont elle lit déjà le résumé), jamais la ligne qui mène à la FC maximale. **Changé le 23 novembre 2026** :
+la plage de FC lui était montrée.
 
 Le flux calendrier, public, ne lit que la FC maximale confirmée.
 
@@ -842,7 +875,17 @@ tableau, le jour en ticket, les options dans une feuille.
      quatre marches pour une séance continue), la structure en mots ; le texte du ticket se lit à 4,5:1 au moins sur
      sa couleur dans les deux thèmes (les séances dures prennent `--pf-warn` en fond, `--pf-warn-mark` ne portant le
      blanc qu’à 3,7:1) ; une séance manquée est un bloc pâle en pointillés ;
-   - sous lui : la consigne et la plage de FC, le créneau et « Autre créneau » (ou « Journée chargée »), les lignes
+   - **la cible**, dans le bloc, sous l’effort dessiné et la structure (`coaching_view.target`, voir
+     « L’intensité ») : « Cible » (« Cible · pendant les efforts » pour une séance structurée), puis une ou deux
+     valeurs dans le grand type tabulaire, chacune avec son petit mot au-dessus — « Allure, sur le plat » 4:40–4:50
+     /km, « Pas plus vite que, sur le plat » 5:30 /km, « Cardio » 149–167 bpm, « Cardio en fin d’effort » 168–177
+     bpm, « Allure de course » 5:00 /km ; pour les efforts de moins de 3 min, une ligne : « À la sensation : l’effort
+     est trop court pour le cardio. » ; sans FC maximale ni allure, une ligne discrète, liée à Réglages : « Confirme
+     ta FC max pour voir ta zone » ; enfin, discret, « D’où viennent ces chiffres ? », qui ouvre « Comment ça
+     marche » dans la feuille. Seulement tant que la séance est à faire (et pour une séance manquée) : une fois
+     faite, le ticket dit ce qui a été couru. Texte à l’encre du ticket (4,5:1 sur chaque couleur), cibles de
+     44 px ; les valeurs passent à la ligne plutôt que de déborder à 320 px et à 200 % de texte ;
+   - sous lui : la consigne (le test de la parole), le créneau et « Autre créneau » (ou « Journée chargée »), les lignes
      de la forme (« Séance allégée… », « Alléger aujourd’hui »), l’activité liée et son lien, « 3h17 au lieu de
      45 min », la durée réelle d’une coche à la main, le ressenti (les mêmes boutons ronds ; demandé en haut tant
      qu’il manque), la note et le commentaire, signés ;
@@ -949,7 +992,9 @@ les routes et les tables gardent « coach » pour le rôle : la personne qui sui
 - Un événement par séance, des 30 derniers jours à la fin du plan : **avec une heure** (`DTSTART`/`DTEND` en UTC,
   affiché « occupé ») quand la séance a un créneau (« Mon agenda »), sinon d’une journée entière (`VALUE=DATE`,
   `TRANSP:TRANSPARENT`). L’`UID` ne change pas quand une séance reçoit ou perd son heure : le calendrier la met à
-  jour sur place. `SUMMARY` « Footing 45 min » ; `DESCRIPTION` la structure, le dénivelé à viser s’il y en a un, et la consigne.
+  jour sur place. `SUMMARY` « Footing 45 min » ; `DESCRIPTION` la structure, le dénivelé à viser s’il y en a un, la consigne et,
+  pour une séance à faire, la cible en une ligne (« Cible pendant les efforts : 4:00–4:15 /km sur le plat,
+  168–177 bpm. »).
 - `UID` stable (l’identifiant de la séance : une régénération réécrit la ligne en place), `SEQUENCE` son nombre de
   changements, `DTSTAMP` et `LAST-MODIFIED` son dernier changement : une modification arrive dans le calendrier
   abonné à son prochain rafraîchissement. Une séance supprimée ou annulée n’est plus dans le flux.
@@ -1245,6 +1290,34 @@ DOI vérifiés sur Crossref)
   Strength and Conditioning Research*, 15(1), 109–115. [PMID 11708692](https://pubmed.ncbi.nlm.nih.gov/11708692/)
   (pas de DOI). Vélo et basket.
 
+**La cible : vitesse critique, allures, FC** (ouvertes le 23 novembre 2026 : fiche PubMed et résumé lus pour
+chacune ; texte intégral lu pour Smyth & Muniz-Pumares 2020, Jones & Vanhatalo 2017 et Muniz-Pumares 2025)
+
+- Smyth B., Muniz-Pumares D. (2020). Calculation of critical speed from raw training data in recreational marathon
+  runners. *Medicine & Science in Sports & Exercise*, 52(12), 2637–2645.
+  [10.1249/MSS.0000000000002412](https://doi.org/10.1249/MSS.0000000000002412). Plus de 25 000 coureurs amateurs,
+  carnets Strava des 16 semaines avant un marathon ; la méthode de `coaching_pace`.
+- Jones A. M., Vanhatalo A. (2017). The ‘critical power’ concept: applications to sports performance with a focus
+  on intermittent high-intensity exercise. *Sports Medicine*, 47(Suppl 1), 65–78.
+  [10.1007/s40279-017-0688-0](https://doi.org/10.1007/s40279-017-0688-0). Revue : la puissance (vitesse) critique,
+  frontière des domaines lourd et sévère.
+- Hunter B., Meyler S., Maunder E., Cox T. H., Muniz-Pumares D. (2024). The relationship between the moderate–heavy
+  boundary and critical speed in running. *International Journal of Sports Physiology and Performance*, 19(9),
+  963–972. [10.1123/ijspp.2024-0101](https://doi.org/10.1123/ijspp.2024-0101). Méta-analyse, 26 études, 527
+  participants ; le premier seuil à 82,3 % de la VC (80,6 % chez les plus lents, 84,2 % chez les plus rapides).
+- Nixon R. J., Kranen S. H., Vanhatalo A., Jones A. M. (2021). Steady-state V̇O2 above MLSS: evidence that critical
+  speed better represents maximal metabolic steady state in well-trained runners. *European Journal of Applied
+  Physiology*, 121(11), 3133–3144. [10.1007/s00421-021-04780-8](https://doi.org/10.1007/s00421-021-04780-8). 10
+  coureurs bien entraînés, sur tapis.
+- Billat V., Renoux J. C., Pinoteau J., Petit B., Koralsztein J. P. (1994). Reproducibility of running time to
+  exhaustion at VO2max in subelite runners. *Medicine & Science in Sports & Exercise*, 26(2), 254–257.
+  [10.1249/00005768-199402000-00018](https://doi.org/10.1249/00005768-199402000-00018). 8 coureurs de bon niveau ;
+  404 ± 101 s à la vitesse de V̇O2max, avec une grande variabilité individuelle (CV 25 %).
+- Muniz-Pumares 2025 (déjà cité plus haut) découpe l’entraînement de 119 452 marathoniens avec ces mêmes repères :
+  la VC entre ses zones 2 et 3, 82,3 % de la VC entre ses zones 1 et 2 (d’après Hunter 2024).
+- Helgerud 2007 et Esfarjani 2007 (« Les séances de qualité ») : relus pour la cible — 4 min à 90–95 % de la FC max ;
+  8 efforts à la vitesse de V̇O2max durant 60 % du temps qu’elle se tient.
+
 **La forme**
 
 - Kiviniemi A. M., Hautala A. J., Kinnunen H., Tulppo M. P. (2007). Endurance training guided individually by daily
@@ -1308,8 +1381,17 @@ Dit sans détour, pour que cette page reste vraie :
 - **Des transpositions** : la règle « une séance » vient d’une étude en kilomètres et s’applique ici en minutes ;
   le seuil de 4 × 8 min vient de cyclistes ; la règle du matin lit l’indice de Santé, pas la VFC seule ; plusieurs
   études portent sur des athlètes très entraînés ou sur une dizaine de personnes.
+- **La cible** : les bornes 93–97 % de la VC du seuil (arrondies de Nixon 2021), la moyenne ± 1 écart-type de
+  Billat 1994 prise pour tous (la vitesse des intervalles), le seuil de 3 min sous lequel la FC n’est pas une cible
+  (`LAG_MIN`), la descente de 1 % qui écarte un effort, le repli sans les trois distances du meilleur modèle, les
+  bornes de D′ (400 m) et de la VC (1,5–6,5 m/s), le trou de 10 s et le pas de 10,5 m/s d’un flux, la tolérance de
+  10 % sur les distances de Strava sont (H) chiffre. L’absence de FC le jour de la course : **aucune étude** ne donne
+  une plage commune à toutes les longueurs de course. Les intervalles en côte reprennent la FC d’efforts courus sur
+  le plat (Helgerud 2007) : une transposition, comme les allures de Nixon 2021 (10 coureurs bien entraînés) et de
+  Billat 1994 (8 coureurs de bon niveau) appliquées à des coureurs amateurs.
 - **Des choix pratiques**, qui ne sont pas des décisions d’entraînement : la semaine du lundi au dimanche,
-  l’arrondi à 5 min, les 24 et 12 semaines écrites, les cinq volumes de départ, la lecture du temps de course au
+  l’arrondi à 5 min, une allure dite à 5 s près, les records du monde qui écartent un effort, le tapis laissé de
+  côté, les 24 et 12 semaines écrites, les cinq volumes de départ, la lecture du temps de course au
   quart d’heure, le plancher d’une heure, et dans l’agenda les moments, la marge de 30 min, l’ordre du placement
   et l’absence à partir de 2 jours.
 
