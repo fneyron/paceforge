@@ -923,7 +923,7 @@ async def test_the_page_prints_each_number_once_and_explains_in_one_fold(client,
     assert re.search(r"Efforts (soutenus|vifs)", main)
     summary = cv.week_summary(await co.sync(db_session, plan, athlete), cp.monday_of(nxt.day), {})
     assert main.count(f">{summary['line']}<") == 1, "the week's time, under its title only"
-    assert summary["label"] not in main and "pf-viz" not in main, "no chart: the road says the weeks"
+    assert "pf-viz" not in main and 'id="coach-plan"' not in main, "no chart: the road says the weeks"
     assert page.count(">Comment ça marche<") == 2, "a tile of the options, and its tool's title"
     assert "10 %" in page.split('id="coach-tool-how"')[1]
     assert not re.search(r"Bosquet|Mujika|Seiler|\(H\)", page), "sources and (H) stay in the docs and the code"
