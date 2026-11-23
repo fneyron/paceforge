@@ -268,7 +268,8 @@ async def test_google_sign_in_round_trip_state_pkce_encrypted_tokens_never_logge
     assert row.access_token == "g-at-1" and row.refresh_token == "g-rt-1" and row.url is None and row.status is None
     assert row.token_expires_at is not None
     raw = (await db_session.execute(text("SELECT access_token, refresh_token FROM coaching_calendars"))).one()
-    assert all(v and not v.startswith(("g-at", "g-rt")) and "g-" not in v for v in raw), "encrypted at rest"
+    # the tokens' own text is nowhere in what is stored (« g- » alone may appear by chance in a ciphertext)
+    assert all(v and "g-at" not in v and "g-rt" not in v for v in raw), "encrypted at rest"
     assert queued == [athlete.id], "read by a worker"
     page = (await client.get(r.headers["location"].split("#")[0])).text
     fold = _fold(page)

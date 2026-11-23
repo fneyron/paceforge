@@ -128,6 +128,18 @@ async def test_the_loader_reads_the_runs_of_the_window_once(db_session, people, 
     assert (await pace.for_athlete(db_session, athlete.id, same_today)).cs > CS
     assert (await pace.for_athlete(db_session, athlete.id, same_today, streams=False)).cs == pytest.approx(CS, abs=0.01)
     assert await pace.for_athlete(db_session, people.coach.id, same_today) is None, "no runs: nothing"
+    # a fastest effort run downhill: its run's altitude says so, the next fastest takes its place
+    steep = _run(athlete, same_today - timedelta(days=3), 30, 960)
+    steep.best_efforts = [{"distance": 400, "elapsed_time": 60, "start_index": 0, "end_index": 1}]
+    steep.streams_data = {"time": [0, 60], "distance": [0, 400], "altitude": [500, 460]}
+    db_session.add(steep)
+    await db_session.flush()
+    kept = await pace.for_athlete(db_session, athlete.id, same_today)
+    assert all(e.seconds != 60 for e in kept.points), "the descent is not a best effort"
+    assert any(e.seconds == 60 for e in (await pace.for_athlete(db_session, athlete.id, same_today, streams=False)).points)
+    # kept in this process while the runs do not change
+    assert await pace.for_athlete(db_session, athlete.id, same_today) is kept
+
 
 
 # ── the targets, kind by kind (pure) ────────────────────────────────────────
@@ -159,9 +171,15 @@ def test_each_kind_of_session_has_its_target():
     assert _vals(inter) == [(f"Allure, {cv.FLAT}", "4:00–4:15", "/km"), ("Cardio en fin d’effort", "168–177", "bpm")]
     # hills: never a pace; long hills (4 min) a heart rate, short hills (1 min) the feel
     assert _vals(_t(q["cotes_longues"][0], q["cotes_longues"][2])) == [("Cardio en fin d’effort", "168–177", "bpm")]
-    for key in ("cotes_courtes", "fartlek", "rappels"):
+    t = _t(q["cotes_courtes"][0], q["cotes_courtes"][2])
+    assert t["vals"] == [] and t["note"] == cv.rp.fr(cv.TARGET_SHORT), "short hills: the feel alone"
+    # efforts under 3 min on flat ground: no heart rate (it lags), the pace of their level
+    for key, said in (("fartlek", "4:00–4:15"), ("rappels", "4:40–4:50")):
         t = _t(q[key][0], q[key][2])
-        assert t["vals"] == [] and t["note"] == cv.rp.fr(cv.TARGET_SHORT), key + ": too short for the heart rate"
+        assert _vals(t) == [(f"Allure, {cv.FLAT}", said, "/km")] and t["hr"] is False, key
+        assert t["note"] == cv.rp.fr(cv.TARGET_SHORT_PACED), key + ": too short for the heart rate"
+        bare = cv.target(q[key][0], q[key][2], reference=186)
+        assert bare["vals"] == [] and bare["note"] == cv.rp.fr(cv.TARGET_SHORT), key + ": no pace known"
     # the fixed session: its content is the club's
     assert _t(cp.QUALITY, cp.fixed_structure(cp.Fixed(1, 75, "Club"))) is None
     # a session a person made: the same rules
@@ -195,7 +213,9 @@ def test_the_calendar_feed_says_the_target_in_one_line():
     assert cv.guidance(cp.FOOTING, cp.steady(40, 2), None, C).endswith("Cible : pas plus vite que 5:30 /km "
                                                                         "sur le plat.")
     assert cv.guidance(cp.FOOTING, cp.steady(40, 2)) == "Facile : tu peux tenir une conversation."
-    assert cv.guidance(cp.QUALITY, cp.quality_session("fartlek", 5)[2], 186, C).endswith(cv.rp.fr(cv.TARGET_SHORT))
+    said = cv.guidance(cp.QUALITY, cp.quality_session("fartlek", 5)[2], 186, C)
+    assert "4:00–4:15" in said and "bpm" not in said and said.endswith(cv.rp.fr(cv.TARGET_SHORT_PACED))
+    assert cv.guidance(cp.QUALITY, cp.quality_session("fartlek", 5)[2], 186).endswith(cv.rp.fr(cv.TARGET_SHORT))
 
 
 def test_paces_are_said_to_five_seconds():
