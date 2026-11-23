@@ -17,7 +17,8 @@
   reason) and the day last read; a session lightened on such a morning carries `form`. All of it is cleared when
   the option is turned off, the health consent withdrawn or the plan deleted.
 - the agenda (docs/coaching.md › « Mon agenda »): coaching_calendars holds the private iCalendar addresses the
-  athlete pasted (3 at most, encrypted), coaching_busy the busy time read from them — a start, an end, « away » or
+  athlete pasted (3 at most, encrypted) and the Google Agenda / Outlook accounts connected (one each, their tokens
+  encrypted), coaching_busy the busy time read from them — a start, an end, « away » or
   not, for the next 21 days; never a title, a description, a place or an attendee. `moments` on the plan: when the
   athlete can run (matin, midi, soir). A session's `slot_min` is the time it was given (minutes after midnight on
   the athlete's clock), `slot_chosen` that the athlete picked it, `slot_flag` that its day has no room.
@@ -154,16 +155,23 @@ class CoachingInvite(Base):
 
 
 class CoachingCalendar(Base):
-    """A private iCalendar address the athlete pasted in « Mon agenda » (Google's secret address, an iCloud public
-    link, an Outlook published calendar): encrypted, shown masked, removable. `status`: None (not read yet), « ok »,
-    or why the last reading was refused (safe_fetch.Refused.code, « format », « own », « rate »)."""
+    """A source of busy time in « Mon agenda »: `provider` « ical », a private iCalendar address the athlete pasted
+    (Google's secret address, an iCloud public link, an Outlook published calendar) — `url`, encrypted, shown masked —;
+    or « google » / « microsoft », an account connected by OAuth to read its busy time only (services/coaching_accounts):
+    its tokens, encrypted, and when the access token lapses; no address, no e-mail, no calendar name. Removable.
+    `status`: None (not read yet), « ok », or why the last reading was refused (safe_fetch.Refused.code, « format »,
+    « own », « rate »; « reauth »: the account's access expired or was withdrawn)."""
 
     __tablename__ = "coaching_calendars"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
                                          index=True)
-    url: Mapped[str] = mapped_column(EncryptedString(4096), nullable=False)
+    provider: Mapped[str] = mapped_column(String(12), nullable=False, default="ical", server_default="ical")
+    url: Mapped[str | None] = mapped_column(EncryptedString(4096), nullable=True)  # « ical » only
+    access_token: Mapped[str | None] = mapped_column(EncryptedString(8192), nullable=True)
+    refresh_token: Mapped[str | None] = mapped_column(EncryptedString(8192), nullable=True)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # last good reading
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # last attempt
