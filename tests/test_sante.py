@@ -305,7 +305,7 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     assert {key: value for key, value in train.items() if key != "chart"} == {
         "dial": page["dials"][2], "week": "15h35", "usual": None,
         "word": "pas encore de semaine habituelle", "intensity": None, "since": date(2026, 10, 2), "ratio": None}
-    assert not train["dial"]["usual_marker"]  # a measured duration does not invent a usual week
+    assert train["dial"]["note"] is None and not train["dial"]["over"]  # a measured duration does not invent a usual week
     chart = train["chart"]
     chart_data = json.loads(chart["data"])
     assert chart["duration"] == train["week"] and chart["minutes"] == 935 and chart["count"] == 1
@@ -674,7 +674,7 @@ async def test_strava_only_has_no_score_and_one_line(as_user: AsyncClient, db_se
     assert (sleep["value"], sleep["sub"], sleep["href"]) == ("—", "pas de données", None)
     assert (recup["value"], recup["sub"], recup["href"]) == ("—", "pas de score", None)
     assert (train["sub"], train["href"], train["unit"]) == ("7 derniers jours", "#entrainement", None)
-    assert train["note"] is None and not train["usual_marker"]
+    assert train["note"] is None and not train["over"]
     html = (await as_user.get("/sante")).text
     # no card of signals (owner, 2026-10-17): the one line says why, once
     assert "Mesures insuffisantes" not in html and html.count("Connecte ta montre pour voir tes signaux nocturnes.") == 1

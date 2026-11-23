@@ -143,7 +143,9 @@ def test_the_same_hours_harder_read_more_than_usual():
         assert (t["dial"]["value"], t["dial"]["sub"], t["intensity"]) == (value, word, pace), hr
         assert t["week"] == "5h00" and t["usual"] == f"ta semaine habituelle{viz.NBSP}: 5h00"
         assert t["dial"]["aria"] == f"Entraînement {sc.pct(int(value))} de ta semaine habituelle, {word}."
-        assert t["dial"]["dash"] == viz.ring("x", ratio / 2, "", None)["dash"]  # the arc full at 200 %
+        # the ring is full at the usual week (100 %), as the two other dials; what goes beyond is a second lap
+        assert t["dial"]["dash"] == viz.ring("x", ratio, "", None)["dash"]
+        assert t["dial"]["over"] == viz.ring("x", 1, "", None, over=ratio - 1)["over"] and (t["dial"]["over"] > 0) == (ratio > 1)
 
 
 def test_the_dial_is_the_hours_times_the_intensity():
@@ -184,7 +186,7 @@ def test_an_athlete_without_hr_gets_the_time_dial():
         word = ("plus que d'habitude" if minutes > 400 else "moins que d'habitude" if minutes < 300
                 else "comme d'habitude")
         assert (t["dial"]["value"], t["dial"]["sub"], t["intensity"]) == (str(sc.rounded(100 * ratio)), word, None)
-        assert t["dial"]["dash"] == viz.ring("x", ratio / 2, "", None)["dash"], minutes
+        assert t["dial"]["dash"] == viz.ring("x", ratio, "", None)["dash"], minutes
     assert sc.rounded(100 * 437.5 / 350) == 125  # 125 % on the dot: no rounding drift
 
 
@@ -262,9 +264,11 @@ async def test_the_card_on_the_page(as_user: AsyncClient, db_session: AsyncSessi
     p = sc.rounded(100 * st.minute_load(150, 50, 180) / st.minute_load(130, 50, 180))  # no night: 50; max 180
     assert p == 168
     assert ('<a class="pf-ring pf-ring-entrainement is-accent" href="#entrainement" aria-label="Entraînement '
-            '168 % de ta semaine habituelle, plus que d&#39;habitude. 100 % représente ta semaine habituelle ; '
-            'un tour complet représente 200 %.">') in main
-    assert '<span class="pf-ring-usual" aria-hidden="true">100 %</span>' in main
+            '168 % de ta semaine habituelle, plus que d&#39;habitude. Sur les 7 derniers jours ; 100 % représente '
+            'ta semaine habituelle.">') in main
+    # the ring is full at 100 % and the 68 % beyond are a second lap; under it, what the percentage is of
+    assert "pf-ring-usual" not in html and main.count('class="pf-ring-arc pf-ring-over"') == 1
+    assert '<span class="pf-ring-note" aria-hidden="true">100\u00a0% = ta semaine habituelle</span>' in main
     train = main.split('<section id="entrainement"')[1].split("</section>")[0]
     assert 'data-viz-key="charge-accumulee"' in train
     assert '<section id="charge-detail" class="pf-load-detail">' in train

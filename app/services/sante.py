@@ -8,7 +8,7 @@ physiological recovery measure or a training clearance. Recorded race/ultra
 context is dated separately, without score caps or a physiological recovery deadline. Before noon a pending
 night may retain yesterday's explicitly dated cycle.
 Entraînement compares the last seven days' load to the usual week: 100 % is a reference, not a target, and the
-full arc is 200 %; the same load (sante_load, one pipeline) draws the Charge cumulée and Activités' 7 / 28 days.
+full arc is 100 % (a second lap beyond); the same load (sante_load, one pipeline) draws the Charge cumulée and Activités' 7 / 28 days.
 
 The rings open native disclosures with sleep details, nightly signals and history, or training context. The
 nightly VFC/FC charts remain visible: rolling trends, measured points and provisional references are labelled
@@ -389,7 +389,8 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None,
 # the Sommeil dial's word from this morning's 24 h against the 8-h need: « suffisant » from 7 h (Watson 2015a;
 # Hirshkowitz 2015), « court » under 6 h (Craven 2022), « un peu court » between
 NO_NIGHT_WORD = "pas de données"
-TRAIN_TURN = 2  # the Entraînement dial's full turn: twice the usual week
+TRAIN_NOTE = f"100{viz.NBSP}% = ta semaine habituelle"  # under the Entraînement dial: what its percentage is of
+TRAIN_TURN = 1  # the Entraînement dial's full turn: the usual week, as the two other dials are full at 100 % (owner, 2026-11-23: a ring full at 200 % with a « 100 % » mark at its half was not understood); beyond it, a second lap
 NO_HABIT = "pas encore d'habitude"  # the Entraînement dial without a usual week
 NO_USUAL = "pas encore de semaine habituelle"  # its card's row then
 # its card's « Intensité »: the minutes' weight against the usual week's
@@ -438,7 +439,7 @@ def training(sessions, today: date, until: date | None = None, rest: float = 50.
     """« Entraînement », the third dial and its card (research_ind_train.md): the
     heart-rate load of the last 7 days (sante_load: one pipeline, `load` the day's sante_training.loads, else
     computed with `rest` and `peak`, today's bounds for every week, H) against the usual week's (the mean of the
-    11 weeks before the 7 days), as a percentage, 100 % as usual, the arc full at twice it, in the accent colour;
+    11 weeks before the 7 days), as a percentage, 100 % as usual: the arc full at it, what goes beyond as a second lap;
     « comme d'habitude » while the 7 days' load lies between the lightest and the heaviest of those 11 weeks that
     hold an activity, else « plus que d'habitude » or
     « moins que d'habitude »; without a usual week (4 active weeks), the measured duration and « 7 derniers jours ».
@@ -481,7 +482,7 @@ def training(sessions, today: date, until: date | None = None, rest: float = 50.
         pace = (INTENSITY_WORDS[0] if intensity > 1 + INTENSITY_SPREAD else
                 INTENSITY_WORDS[2] if intensity < 1 - INTENSITY_SPREAD else INTENSITY_WORDS[1])
     return {"dial": viz.ring("entrainement", ratio["ratio"] / TRAIN_TURN, str(p), "Entraînement", word,
-                             tone="accent", unit="%", href=href,
+                             tone="accent", unit="%", href=href, over=ratio["ratio"] / TRAIN_TURN - 1,
                              aria=f"Entraînement {sc.pct(p)} de ta semaine habituelle, {word}."),
             "week": viz.hm(week), "usual": f"ta semaine habituelle{viz.NBSP}: {viz.hm(round(usual / 5) * 5)}",
             "word": None, "intensity": pace, "since": since, "ratio": p}
@@ -512,10 +513,10 @@ def _top(day: dict, sessions, has_watch: bool, page: dict, until: date, load: di
                   "#vfc" if page.get("vfc") else "#fc" if page.get("fc") else None)
     train = training(sessions, day["day"], until, load=load)
     train["chart"] = st.training_days(sessions, day["day"], until)
-    train["dial"]["note"] = "7 jours" if train["usual"] is not None else None
-    train["dial"]["usual_marker"] = train["usual"] is not None
+    # what the percentage is of, under the ring (« 92 % » of what? the owner, 2026-11-23); the 7 days are the card's
+    train["dial"]["note"] = TRAIN_NOTE if train["usual"] is not None else None
     if train["usual"] is not None:
-        train["dial"]["aria"] += " 100 % représente ta semaine habituelle ; un tour complet représente 200 %."
+        train["dial"]["aria"] += " Sur les 7 derniers jours ; 100 % représente ta semaine habituelle."
     recup = sc.dial(score, state, recup_href)
     if state and state["tone"] != "ok" and state["reasons"]:  # the card of signals' reason, under its ring
         recup.update(note=state["reasons"][0]["label"], reason=True)
