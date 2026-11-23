@@ -35,8 +35,13 @@ const SHELL = (() => {
   const script = /export const appShellScript = `([^`]+)`;/.exec(source)[1];
   const marker = /^\s*window\.paceforgeNativeCoaching = 1;\n\s*document\.documentElement\.classList\.add\('pf-native-coaching'\);\n/m;
   assert.ok(marker.test(script), 'the shell announces its Coaching tab');
+  // « Mon agenda »'s Google Agenda and Outlook in the system's sign-in sheet: announced by the shells since (`noagenda`:
+  // one with the Coaching tab but from before that; `old` predates both)
+  const agenda = /^\s*window\.paceforgeNativeAgenda = 1;\n\s*document\.documentElement\.classList\.add\('pf-native-agenda'\);\n/m;
+  assert.ok(agenda.test(script), 'the shell announces its agenda sign-in sheet');
   const bind = (text, origin) => text.split('${JSON.stringify(ORIGIN)}').join(JSON.stringify(origin));
-  return { new: origin => bind(script, origin), old: origin => bind(script.replace(marker, ''), origin) };
+  return { new: origin => bind(script, origin), old: origin => bind(script.replace(marker, '').replace(agenda, ''), origin),
+    noagenda: origin => bind(script.replace(agenda, ''), origin) };
 })();
 
 // A page as a phone or a desktop sees it. `app`: inside the phone app's WebView — 'new', the app with the native
@@ -413,6 +418,64 @@ async function held(page) {
       await noOverflow(wide, 'agenda desktop');
       await shot(wide, 'athlete-1280-agenda');
       await wide.close();
+    }
+
+    // ── « Mon agenda » with Google Agenda and Outlook configured: the two buttons above the address, the sentence,
+    //    a source to reconnect; at 320 px, light and dark, on the site and in the app (an app from before the sign-in
+    //    sheet keeps the screen of before). Off again afterwards: the checks above saw the screen without them. ──
+    {
+      const turn = async state => assert.equal((await fetch(`${athlete}/__preview/coaching/agenda-accounts/${state}`, { method: 'POST' })).status, 200);
+      try {
+        await turn('on');
+        for (const [app, dark] of [[false, false], [false, true], ['new', false], ['new', true], ['noagenda', false]]) {
+          const key = `agenda accounts${app ? ' ' + app : ''}${dark ? ' dark' : ''}`;
+          const page = await open(browser, { width: 320, dark, app });
+          await page.goto(`${athlete}/coaching?outil=agenda`, { waitUntil: 'networkidle' });
+          const agenda = page.locator('#coach-tool-agenda');
+          const buttons = agenda.locator('[data-agenda-connect]');
+          if (app === 'noagenda') {
+            assert.equal(await buttons.evaluateAll(all => all.filter(el => el.getClientRects().length).length), 0, key + ': hidden');
+            assert.equal(await agenda.getByText('Jamais les titres').isVisible(), false, key);
+            assert.ok(await agenda.locator('#coach-cal-url').isVisible(), key + ': the address to paste stays');
+          } else {
+            assert.deepEqual((await buttons.allInnerTexts()).map(t => t.trim()), ['Connecter Google Agenda', 'Connecter Outlook'], key);
+            assert.equal((await agenda.locator('.pf-coach-connect-note').innerText()).trim(), 'PaceForge lit seulement quand tu es occupé. Jamais les titres.');
+            for (const b of await buttons.all()) assert.ok((await b.boundingBox()).height >= 44, key + ': a 44 px target');
+            const above = await page.evaluate(() => document.querySelector('[data-agenda-connect]').getBoundingClientRect().bottom <=
+              document.querySelector('#coach-cal-url').getBoundingClientRect().top);
+            assert.ok(above, key + ': above the address');
+            assert.equal(await page.locator('script[src*="coaching-agenda.js"]').count(), 1);
+          }
+          await noOverflow(page, key);
+          await shot(page, `athlete-320-agenda-accounts${app ? '-app' + (app === 'noagenda' ? '-before-sheet' : '') : ''}${dark ? '-dark' : ''}`);
+          assert.deepEqual(page.errors, [], key + ': browser errors');
+          await page.close();
+        }
+        // a connected Google Agenda whose access expired: listed like an address, « Reconnecter », « Retirer »;
+        // only « Connecter Outlook » is left to offer
+        await turn('reauth');
+        for (const dark of [false, true]) {
+          const page = await open(browser, { width: 320, dark });
+          await page.goto(`${athlete}/coaching?outil=agenda`, { waitUntil: 'networkidle' });
+          const agenda = page.locator('#coach-tool-agenda');
+          const row = agenda.locator('.pf-coach-calrow').first();
+          assert.equal(await row.locator('b').innerText(), 'Google Agenda');
+          assert.match(await row.locator('small').innerText(), /^À reconnecter\s:\sl’accès a expiré ou a été retiré\.$/);
+          assert.ok(await row.getByText('Reconnecter', { exact: true }).isVisible() && await row.getByText('Retirer').isVisible());
+          assert.deepEqual((await agenda.locator('.pf-coach-connect [data-agenda-connect]').allInnerTexts()).map(t => t.trim()), ['Connecter Outlook']);
+          await noOverflow(page, 'agenda reauth');
+          await shot(page, `athlete-320-agenda-reconnect${dark ? '-dark' : ''}`);
+          // back from the provider: the outcome in one line
+          await page.goto(`${athlete}/coaching?outil=agenda&connexion=microsoft&resultat=organisation`, { waitUntil: 'networkidle' });
+          assert.match(await agenda.locator('.pf-coach-error').innerText(), /^Ton organisation n’autorise pas cette connexion/);
+          await noOverflow(page, 'agenda refusal');
+          if (!dark) await shot(page, 'athlete-320-agenda-refusal');
+          assert.deepEqual(page.errors, [], 'agenda reauth: browser errors');
+          await page.close();
+        }
+      } finally {
+        await turn('off');
+      }
     }
 
     // ── desktop (before the taps below answer the debrief) ──

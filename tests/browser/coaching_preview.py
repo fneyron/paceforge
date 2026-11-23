@@ -194,3 +194,30 @@ async def sign_in_as(who: str):
     """This preview's signed-in account, changed on request (synthetic accounts of this temporary database only)."""
     app.state.user_id = app.state.coaching_ids[who]
     return {"synthetic": True, "as": who}
+
+
+# « Mon agenda »'s Google Agenda and Outlook (services/coaching_accounts): off in this preview, as in production until
+# their credentials are set. The visual check turns them on to see the two buttons, and adds a Google source whose
+# access expired (« À reconnecter »), then puts everything back. Fake credentials: nothing here calls a provider.
+AGENDA_SETTINGS = ("GOOGLE_CALENDAR_ENABLED", "GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET",
+                   "MICROSOFT_CALENDAR_ENABLED", "MICROSOFT_CALENDAR_CLIENT_ID", "MICROSOFT_CALENDAR_CLIENT_SECRET")
+AGENDA_OFF = {key: getattr(settings, key) for key in AGENDA_SETTINGS}
+
+
+@app.post("/__preview/coaching/agenda-accounts/{state}")
+async def agenda_accounts(state: str):
+    """« on »: both connectors configured (preview values); « reauth »: and a connected Google Agenda to reconnect;
+    « off »: as before (no connector, no connected account)."""
+    if state not in {"on", "reauth", "off"}:
+        raise ValueError(state)
+    for key in AGENDA_SETTINGS:
+        setattr(settings, key, AGENDA_OFF[key] if state == "off" else
+                True if key.endswith("_ENABLED") else f"preview-{key.lower()}")
+    async with preview.factory() as db:
+        athlete_id = app.state.coaching_ids["athlete"]
+        await db.execute(delete(CoachingCalendar).where(CoachingCalendar.user_id == athlete_id,
+                                                        CoachingCalendar.provider != "ical"))
+        if state == "reauth":
+            db.add(CoachingCalendar(user_id=athlete_id, provider="google", status="reauth"))
+        await db.commit()
+    return {"synthetic": True, "agenda_accounts": state}
