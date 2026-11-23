@@ -15,6 +15,9 @@ html { -webkit-text-size-adjust: 100%; }
 .pf-old-shell-only { display: none !important; }
 .pf-native:not(.pf-native-coaching) .pf-old-shell-only { display: flex !important; }
 .pf-native:not(.pf-native-coaching) .pf-webcal { display: none !important; }
+/* .pf-native-agenda: the shell opens « Connecter Google Agenda / Outlook » in the system's sign-in sheet (Google
+   refuses a WebView). An installed app older than that keeps « Mon agenda » as it was: the address to paste. */
+.pf-native:not(.pf-native-agenda) [data-agenda-connect], .pf-native:not(.pf-native-agenda) .pf-coach-connect-note { display: none !important; }
 /* Older companions still navigate to provider anchors instead of native settings. */
 .pf-native .pf-settings-connections:has(:target) { display: block !important; }
 .pf-native { --pf-font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --pf-font-text: var(--pf-font-display); }
@@ -1890,6 +1893,9 @@ a.pf-coach-activity:hover b { color: rgb(var(--pf-accent)); }
 .pf-coach-calrow b { display: block; font-weight: 600; overflow-wrap: anywhere; }
 .pf-coach-calrow small { display: block; font-size: 0.8125rem; color: rgb(var(--pf-gray-500)); }
 .pf-coach-calrow small.text-danger { color: rgb(var(--pf-danger)); }
+.pf-coach-connect { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; max-width: 560px; }
+.pf-coach-connect .pf-btn { min-height: 44px; flex: 1 1 12rem; justify-content: center; }
+.pf-coach-calrow a.pf-coach-textbtn { display: inline-flex; align-items: center; }
 .pf-coach-moments .pf-coach-q { margin-top: 4px; }
 .pf-coach-calhelp { width: 100%; max-width: 560px; }
 .pf-coach-tool > summary { list-style: none; }

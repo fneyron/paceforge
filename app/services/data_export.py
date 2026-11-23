@@ -195,7 +195,8 @@ async def coaching(db: AsyncSession, user: User) -> dict[str, Any]:
     invites = (await db.scalars(select(CoachingInvite).where(CoachingInvite.athlete_id == user.id)
                                 .order_by(CoachingInvite.id))).all()
     # « Mon agenda »: the calendars by their host and dates (an address is a secret of another service: never
-    # written), and the busy time read from them (a start and an end: nothing else was ever kept)
+    # written), a connected Google Agenda or Outlook by its service and dates (never its tokens), and the busy time
+    # read from them (a start and an end: nothing else was ever kept)
     from urllib.parse import urlsplit
 
     calendars = (await db.scalars(select(CoachingCalendar).where(CoachingCalendar.user_id == user.id)
@@ -203,8 +204,10 @@ async def coaching(db: AsyncSession, user: User) -> dict[str, Any]:
     busy = (await db.execute(select(CoachingBusy.start_at, CoachingBusy.end_at, CoachingBusy.away).where(
         CoachingBusy.user_id == user.id).order_by(CoachingBusy.start_at, CoachingBusy.id))).all()
     return {
-        "agenda": [{"hote": urlsplit(c.url or "").hostname, "ajoute_le": _plain(c.created_at),
-                    "lu_le": _plain(c.fetched_at), "etat": c.status} for c in calendars],
+        "agenda": [{**({"hote": urlsplit(c.url or "").hostname} if c.provider == "ical" else
+                       {"service": {"google": "Google Agenda", "microsoft": "Outlook"}.get(c.provider, c.provider)}),
+                    "ajoute_le": _plain(c.created_at), "lu_le": _plain(c.fetched_at), "etat": c.status}
+                   for c in calendars],
         "heures_occupees": [{"debut": _plain(a), "fin": _plain(b), "absence": bool(w)} for a, b, w in busy],
         "plan": {field: _plain(getattr(plan, field)) for field in COACHING_PLAN_FIELDS} if plan else None,
         "coachs": [{"prenom": name, "depuis": _plain(link.created_at)} for link, name in links
