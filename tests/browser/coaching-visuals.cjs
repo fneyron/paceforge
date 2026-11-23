@@ -296,12 +296,29 @@ async function held(page) {
       assert.equal(await toggle.getAttribute('aria-checked'), 'true', key);
       assert.ok((await toggle.boundingBox()).height >= 44, key + ': the switch is a 44 px target');
       assert.match(await page.locator('#coach-form-note').innerText(), /^Activé le \S+ \d+ \S+\. Un matin où ta récupération de Santé est basse, ta séance dure devient un footing\. La personne qui suit ton plan ne voit jamais pourquoi\.$/, key);
-      assert.deepEqual((await page.locator('#coach-tools .pf-tool').allInnerTexts()).map(t => t.trim().split('\n')[0].trim()), ['Adapter mes séances à ma forme', 'Ajouter à mon calendrier', 'Mon agenda', 'Partager mon plan', 'Suivre le plan de quelqu’un', 'Refaire le plan', 'Arrêter le coaching'], key + ': every option is still there');
+      assert.deepEqual((await page.locator('#coach-tools .pf-tool').allInnerTexts()).map(t => t.trim().split('\n')[0].trim()), ['Adapter mes séances à ma forme', 'Ma séance fixe', 'Ajouter à mon calendrier', 'Mon agenda', 'Partager mon plan', 'Suivre le plan de quelqu’un', 'Refaire le plan', 'Arrêter le coaching'], key + ': every option is still there');
       for (const box of await page.locator('#coach-tools .pf-tool').evaluateAll(all => all.map(el => el.getBoundingClientRect().height))) assert.ok(box >= 44, key + ': 44 px rows');
       // the plan is automatic: nothing the athlete reads says « coach » (the feature keeps its name)
       assert.doesNotMatch(await page.locator('#main-content').innerText(), /\bcoachs?\b/i, key + ': never « coach »');
       await noOverflow(page, key + ' options');
       if (width === 393 && !app) await shot(page, `athlete-393-options${dark ? '-dark' : ''}`);
+      // « Ma séance fixe »: a row of the options — its weekday (one choice), its duration, its name, « Enregistrer »
+      assert.match(await page.locator('#coach-tool-fixed > summary').innerText(), /^Ma séance fixe\s+Une séance de ton club, chaque semaine$/, key);
+      await page.locator('#coach-tool-fixed > summary').click();
+      assert.equal(await page.locator('#coach-tool-fixed input[name="fixed_day"]').count(), 7, key + ': seven weekdays');
+      assert.equal(await page.locator('#coach-tool-fixed input[name="fixed_day"]:checked').count(), 0, key + ': no weekday guessed');
+      assert.equal(await page.locator('#coach-fixed-min').inputValue(), '75', key + ': 1 h 15 until a weekday is chosen');
+      for (const id of ['#coach-fixed-save', '#coach-fixed-name']) assert.ok((await page.locator(id).boundingBox()).height >= 44, key + ': 44 px ' + id);
+      assert.equal(await page.locator('#coach-fixed-remove').count(), 0, key + ': nothing to remove yet');
+      await page.locator('#coach-fixed-day-2').check({ force: true });
+      assert.match(await page.locator('#coach-tool-fixed [data-fixed-why]').innerText(), /^(Lu sur tes mercredis\.|Sans sortie ce jour-là : 1h15 par défaut\.)$/, key + ': the duration proposed, and why');
+      await noOverflow(page, key + ' fixed');
+      const card = await page.locator('#coach-options').boundingBox();
+      const beyond = await page.locator('#coach-tool-fixed :is(.pf-coach-chip, select, input.pf-input, .pf-btn)').evaluateAll((all, right) =>
+        all.filter(el => el.getClientRects().length && el.getBoundingClientRect().right > right + 0.5).map(el => el.outerHTML.slice(0, 60)), card.x + card.width);
+      assert.deepEqual(beyond, [], key + ': « Ma séance fixe » stays inside its card');
+      if (!app) await shot(page, `athlete-${width}-fixed${dark ? '-dark' : ''}`);
+      await page.locator('#coach-tool-fixed > summary').click();
       // the calendar: a browser and the updated app get the subscription button (the app hands webcal:// to the
       // system); an older app drops that link, so it only shows the address to copy
       await page.locator('#coach-tool-feed > summary').click();
@@ -915,6 +932,36 @@ async function held(page) {
         await noOverflow(page, key + ' error');
         await shot(page, 'new-393-onboarding-error');
       }
+      assert.deepEqual(page.errors, [], key + ': browser errors');
+      await page.close();
+    }
+    for (const [width, dark] of [[393, false], [393, true], [320, false]]) {
+      // « Ma séance fixe » on the start screen: one quiet line under the days, that opens its three answers; a weekday
+      // chosen fills in its duration, is ticked among the days, and the week drawn follows (nothing is written)
+      const key = `new account fixed ${width}${dark ? ' dark' : ''}`;
+      const page = await open(browser, { width, dark });
+      await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
+      const line = page.locator('label.pf-coach-fixed-toggle');
+      assert.equal((await line.innerText()).trim(), 'J’ai déjà une séance chaque semaine (club)', key);
+      assert.ok((await line.boundingBox()).height >= 44, key + ': a 44 px line');
+      assert.equal(await page.locator('[data-fixed-body]').isVisible(), false, key + ': closed');
+      await redrawn(page, () => page.locator('#coach-fixed-on').check());
+      assert.equal(await page.locator('[data-fixed-body]').isVisible(), true, key + ': open');
+      await redrawn(page, () => page.locator('#coach-fixed-day-2').check({ force: true }));
+      await page.waitForFunction(() => document.querySelector('#coach-preview .pf-coach-pv-col:nth-child(3) .pf-coach-bar-s'));
+      assert.equal(await page.locator('#coach-fixed-min').inputValue(), '75', key);
+      assert.equal(await page.locator('[data-fixed-why]').innerText(), 'Sans sortie ce jour-là : 1h15 par défaut.', key);
+      assert.equal(await page.locator('#coach-day-2').isChecked(), true, key + ': ticked among the days');
+      assert.ok((await previewBars(page)).some(([day, kind, duration]) => day === 2 && kind === 'hard' && /1h15/.test(duration)), key + ': the club session drawn');
+      assert.match(await page.locator('#coach-preview').getAttribute('aria-label'), /mercredi : Séance club 1 heure 15/, key);
+      assert.match(await page.locator('.pf-coach-pv-lines').innerText(), /Séance club est ta séance de qualité de la semaine/, key);
+      const fixedChips = await page.locator('[data-fixed-body] .pf-coach-chip').evaluateAll(all => all.map(el => Math.round(el.getBoundingClientRect().top)));
+      assert.equal(fixedChips.length, 7, key);
+      if (width >= 393) assert.equal(new Set(fixedChips).size, 1, key + ': the weekdays on one line');
+      await page.locator('#coach-fixed').scrollIntoViewIfNeeded();
+      await noOverflow(page, key);
+      await shot(page, `new-${width}-onboarding-fixed${dark ? '-dark' : ''}`);
+      assert.equal((await (await fetch(fresh + '/coaching/calendar', { headers: { 'HX-Request': 'true' } })).status), 404, key + ': nothing written');
       assert.deepEqual(page.errors, [], key + ': browser errors');
       await page.close();
     }
