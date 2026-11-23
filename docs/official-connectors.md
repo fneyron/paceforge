@@ -328,3 +328,119 @@ consentement : désinscription chez le fournisseur puis suppression du lien.
   `connections.official?.garmin` est vrai, sinon garder `openSettings('/connections/garmin')`. Puis la check-list de
   `mobile/AGENTS.md` et TestFlight. Tant que ce n’est pas livré, les utilisateurs de l’app gardent l’ancienne
   connexion Garmin dans l’app et peuvent passer à l’officielle depuis paceforge.fr.
+
+## Agendas : Google Agenda et Outlook (Coaching › « Mon agenda »)
+
+Statut au 23 novembre 2026 : **code prêt, éteint**, aucun identifiant créé. Rien n’a été essayé contre les vrais
+Google et Microsoft : tout est testé contre des faux (`tests/test_coaching_accounts.py`). Ce que ces connexions lisent
+et comment : `docs/coaching.md` › « Mon agenda ». Code : `app/services/coaching_accounts.py` (pas dans
+`app/connectors` : elles n’apportent aucune activité, seulement des heures occupées).
+
+Comme les connecteurs officiels, chacun est **actif** seulement si son drapeau est à `true` **et** son client id et
+son secret sont posés (`settings.google_calendar_ready`, `settings.microsoft_calendar_ready`) : sinon « Mon agenda »
+est l’écran d’avant, les routes répondent 404, la politique de confidentialité n’en dit rien, rien n’appelle le
+fournisseur.
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `GOOGLE_CALENDAR_ENABLED` | `false` | Interrupteur Google Agenda. |
+| `GOOGLE_CALENDAR_CLIENT_ID` / `GOOGLE_CALENDAR_CLIENT_SECRET` | vide | Le client OAuth « Application Web » de Google Cloud. |
+| `GOOGLE_CALENDAR_URLS` | vide | JSON, un point d’accès remplacé : clés `authorize`, `token`, `revoke`, `freebusy`. |
+| `MICROSOFT_CALENDAR_ENABLED` | `false` | Interrupteur Outlook. |
+| `MICROSOFT_CALENDAR_CLIENT_ID` / `MICROSOFT_CALENDAR_CLIENT_SECRET` | vide | L’« ID d’application (client) » et la **valeur** d’un secret client de l’inscription Entra. |
+| `MICROSOFT_CALENDAR_SCOPE` | `Calendars.ReadBasic` | La permission déléguée lue : `Calendars.ReadBasic` (la moindre) ou `Calendars.Read` (repli). Toute autre valeur est lue comme `Calendars.ReadBasic`. |
+| `MICROSOFT_CALENDAR_URLS` | vide | JSON : clés `authorize`, `token`, `calendar_view`. |
+
+URLs de redirection à déclarer : `https://paceforge.fr/coaching/agenda/google/callback` (Google) et
+`https://paceforge.fr/coaching/agenda/microsoft/callback` (Microsoft) — bâties sur `BASE_URL`, comme les autres.
+
+### Chez Google (Google Cloud Console, compte contact@paceforge.fr)
+
+1. **Projet** : console.cloud.google.com › nouveau projet « PaceForge ».
+2. **API** : API et services › Bibliothèque › « Google Calendar API » › Activer.
+3. **Google Auth Platform › Branding** (l’ancien « Écran de consentement OAuth ») : nom de l’application
+   « PaceForge » ; e-mail d’assistance contact@paceforge.fr ; page d’accueil `https://paceforge.fr` ; règles de
+   confidentialité `https://paceforge.fr/privacy` ; conditions d’utilisation `https://paceforge.fr/cgu` ; domaine
+   autorisé `paceforge.fr` (déjà validé dans la Search Console : la balise `google-site-verification` est servie) ;
+   contact développeur contact@paceforge.fr. Pas de logo au début (un logo déclenche une vérification de la marque).
+4. **Audience** : type « Externe ». Statut de publication :
+   - « En test » : 100 utilisateurs de test au plus, à lister ici (leur e-mail Google) ; leurs autorisations
+     **expirent après 7 jours** — l’écran dit alors « À reconnecter » chaque semaine. Bien pour essayer sur ton
+     propre compte ;
+   - « En production » sans vérification : l’écran « Google n’a pas validé cette application » s’affiche et 100
+     nouveaux utilisateurs au plus, mais plus d’expiration à 7 jours.
+5. **Accès aux données** : « Ajouter ou supprimer des niveaux d’accès » › saisir
+   `https://www.googleapis.com/auth/calendar.freebusy` (« Voir vos disponibilités dans vos agendas »), et rien
+   d’autre. Regarde l’étiquette que la console lui donne (non sensible, sensible, restreint) : la documentation
+   publique ne le dit pas. Si elle est « sensible », la publication demande la vérification de l’application :
+   domaine validé, page d’accueil et politique de confidentialité sur ce domaine, une justification de la permission
+   (« PaceForge place les séances d’entraînement de l’athlète hors de ses heures occupées ; il ne lit que les
+   intervalles occupés, jamais un événement ; c’est la permission la plus étroite de l’API Agenda »), une courte vidéo
+   qui montre le bouton, l’écran de consentement et les heures données aux séances ; Google annonce 3 à 5 jours
+   ouvrés.
+6. **Clients** : « Créer un client » › type « Application Web », nom « PaceForge web » ; URI de redirection
+   autorisés : `https://paceforge.fr/coaching/agenda/google/callback` (aucune origine JavaScript). Copie l’ID client
+   et le secret.
+7. **Coolify** : `GOOGLE_CALENDAR_ENABLED=true`, `GOOGLE_CALENDAR_CLIENT_ID=…`, `GOOGLE_CALENDAR_CLIENT_SECRET=…`,
+   puis redéploie.
+
+### Chez Microsoft (centre d’administration Microsoft Entra)
+
+1. **Un annuaire** : entra.microsoft.com, avec un annuaire Entra au nom de PaceForge (gratuit, créé avec un compte
+   Azure pour contact@paceforge.fr ; un compte Microsoft personnel seul ne peut plus inscrire d’application).
+2. **Inscriptions d’applications › Nouvelle inscription** : nom « PaceForge » ; types de comptes pris en charge :
+   « Comptes dans un annuaire d’organisation (tout locataire Microsoft Entra ID – multilocataire) et comptes Microsoft
+   personnels (par exemple, Skype, Xbox) » ; URI de redirection : plateforme « Web »,
+   `https://paceforge.fr/coaching/agenda/microsoft/callback`.
+3. **Certificats et secrets** › « Nouveau secret client » (24 mois au plus) : copie sa **valeur** (pas son ID), et
+   note la date d’expiration — à renouveler avant, sinon chaque lecture échoue.
+4. **Autorisations de l’API** › Ajouter › Microsoft Graph › Autorisations déléguées : `Calendars.ReadBasic` et
+   `offline_access`. Retire `User.Read`, ajoutée d’office et inutile ici. Aucun consentement administrateur n’est
+   demandé pour ces deux-là ; une organisation peut néanmoins l’exiger de son côté (l’athlète voit alors « Ton
+   organisation n’autorise pas cette connexion… »).
+5. **Personnalisation et propriétés** : page d’accueil `https://paceforge.fr`, conditions `https://paceforge.fr/cgu`,
+   confidentialité `https://paceforge.fr/privacy`. **Vérification de l’éditeur** (le badge bleu, et ce que beaucoup
+   d’organisations exigent pour laisser leurs employés consentir à une application multilocataire) : un identifiant
+   Microsoft AI Cloud Partner Program vérifié, rattaché à l’annuaire, et le domaine d’éditeur `paceforge.fr` vérifié —
+   ce dernier demande de servir `https://paceforge.fr/.well-known/microsoft-identity-association.json`, **qui
+   n’existe pas encore** (une petite route à ajouter le jour où tu la demandes). Sans elle, les comptes personnels
+   Outlook.com et les organisations qui le permettent se connectent quand même.
+6. **Coolify** : `MICROSOFT_CALENDAR_ENABLED=true`, `MICROSOFT_CALENDAR_CLIENT_ID=<ID d’application (client)>`,
+   `MICROSOFT_CALENDAR_CLIENT_SECRET=<valeur du secret>`, `MICROSOFT_CALENDAR_SCOPE=Calendars.ReadBasic`, puis
+   redéploie.
+7. **Si les comptes personnels sont refusés** (des fils Microsoft Q&A rapportent des 401/403 avec
+   `Calendars.ReadBasic` sur Outlook.com) : la source passe à « À reconnecter » aussitôt après la première lecture et
+   le journal du worker dit « refused the reading (check MICROSOFT_CALENDAR_SCOPE) ». Ajoute alors `Calendars.Read`
+   dans les autorisations de l’API, pose `MICROSOFT_CALENDAR_SCOPE=Calendars.Read`, redéploie : chaque athlète
+   reconnecte une fois. Aucune nouvelle version n’est nécessaire.
+
+### Confidentialité (texte en place)
+
+Avec un connecteur configuré, `/privacy` ajoute (`partials/agenda_privacy.html`, `partials/coaching_privacy.html`) :
+
+- dans « Qui reçoit quoi », pour Google : « **Google** (Google LLC, États-Unis, hors UE), si tu connectes Google
+  Agenda dans Coaching › « Mon agenda » : tu autorises PaceForge sur la page de Google, sans lui donner ton mot de
+  passe, à voir seulement tes disponibilités. PaceForge y lit tes heures occupées des 21 prochains jours ; jamais un
+  titre, un lieu ni un participant. « Retirer », l’arrêt du coaching ou la suppression de ton compte retirent cet
+  accès chez Google ; tu peux aussi le retirer dans ton compte Google. » ;
+- pour Microsoft : « **Microsoft** (Microsoft Corporation, États-Unis, hors UE), si tu connectes Outlook dans
+  Coaching › « Mon agenda » : tu autorises PaceForge sur la page de Microsoft, sans lui donner ton mot de passe, à
+  lire ton agenda. PaceForge n’en demande que le début, la fin et la disponibilité (occupé, absent) de chaque
+  événement des 21 prochains jours ; jamais un titre, un lieu ni un participant. « Retirer » efface l’accès chez
+  PaceForge ; pour le retirer aussi chez Microsoft, passe par ton compte Microsoft. » ;
+- « Apple et Google ne reçoivent rien de PaceForge. » devient, Google configuré : « Apple ne reçoit rien de
+  PaceForge, ni Google en dehors de Google Agenda si tu le connectes. » ;
+- la ligne « Coaching (bêta) · ton agenda » dit « une adresse ou connectes Google Agenda [ou Outlook] », « l’accès à
+  ce compte (chiffré, jamais ton mot de passe) », « en collant l’adresse ou en connectant ton agenda », « jusqu’au
+  retrait de l’adresse ou de la connexion ».
+
+À vérifier avec un juriste : l’entité Google à nommer pour des utilisateurs européens (Google Ireland Limited est le
+fournisseur des services Google dans l’EEE ; le texte nomme Google LLC comme pour les autres fournisseurs
+américains), et les clauses de transfert hors UE.
+
+### Application mobile
+
+Une modification native, **livrée dans ce lot, à publier sur TestFlight** : l’app ouvre la connexion Google ou
+Outlook dans la feuille de connexion du système (Google refuse les WebView), et annonce qu’elle sait le faire
+(`.pf-native-agenda`). Une app installée plus ancienne ne montre pas les deux boutons : « Mon agenda » y reste l’écran
+d’avant, et une connexion faite depuis paceforge.fr y apparaît dans la liste, avec « Retirer ».
