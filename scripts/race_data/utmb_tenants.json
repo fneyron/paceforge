@@ -33280,5 +33280,191 @@
       ]
     ],
     "date": null
+  },
+  "mountyun_2026": {
+    "event": "云丘山越野赛 by UTMB®",
+    "races": [
+      [
+        "EMY",
+        "EMY",
+        "FINISHED"
+      ],
+      [
+        "UMY",
+        "UMY",
+        "FINISHED"
+      ],
+      [
+        "DMY",
+        "DMY",
+        "FINISHED"
+      ],
+      [
+        "MMY",
+        "MMY",
+        "FINISHED"
+      ]
+    ],
+    "date": null
+  },
+  "omanbyutmb_2026": {
+    "event": "Oman by UTMB",
+    "races": [
+      [
+        "hajar",
+        "HAJAR ULTRA",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "jabal",
+        "JABAL CLASSIC",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "skyward",
+        "SKYWARD CANYON",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "capital",
+        "OLD CAPITAL TRAIL",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "scenic",
+        "SCENIC ASCENT",
+        "NOT_LAUNCHED"
+      ]
+    ],
+    "date": null
+  },
+  "pacifictrails_2026": {
+    "event": "HOKA Pacific Trails California by UTMB",
+    "races": [
+      [
+        "50k",
+        "50k",
+        "FINISHED"
+      ],
+      [
+        "25k",
+        "25k",
+        "FINISHED"
+      ]
+    ],
+    "date": null
+  },
+  "puglia_2026": {
+    "event": "Puglia by Utmb",
+    "races": [
+      [
+        "CUT50",
+        "Castellaneta Underground Trail 50km",
+        "FINISHED"
+      ],
+      [
+        "GRT35",
+        "Ginosa RivoltaTrail 35km",
+        "FINISHED"
+      ],
+      [
+        "SDM140",
+        "I Sassi di Matera 140km",
+        "FINISHED"
+      ],
+      [
+        "MLT85",
+        "Le Maioliche di Laterza 85km",
+        "FINISHED"
+      ],
+      [
+        "CVT10",
+        "Costa Verde Trail 10km",
+        "FINISHED"
+      ]
+    ],
+    "date": null
+  },
+  "saintelyon_2026": {
+    "event": "ASICS SAINTÉLYON",
+    "races": [
+      [
+        "160km",
+        "LYON SAINTÉLYON",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "stelyon",
+        "SAINTÉLYON",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "r2",
+        "SAINTÉLYON RELAIS 2",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "r3",
+        "SAINTÉLYON RELAIS 3",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "r4",
+        "SAINTÉLYON RELAIS 4",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "stexprs",
+        "SAINTEXPRESS",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "evia",
+        "SAINTÉVIA",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "stespri",
+        "SAINTÉSPRINT",
+        "NOT_LAUNCHED"
+      ],
+      [
+        "sttic",
+        "SAINTÉTIC",
+        "NOT_LAUNCHED"
+      ]
+    ],
+    "date": null
+  },
+  "tapalpa_2026": {
+    "event": "UTMS Tapalpa by The North Face 2026",
+    "races": [
+      [
+        "50k",
+        "50k Rokosa",
+        "FINISHED"
+      ],
+      [
+        "30k",
+        "30k Kometa",
+        "FINISHED"
+      ],
+      [
+        "15k",
+        "15k Lakanija",
+        "FINISHED"
+      ],
+      [
+        "10k",
+        "10k Media Luna",
+        "FINISHED"
+      ],
+      [
+        "6k",
+        "6k Magica",
+        "FINISHED"
+      ]
+    ],
+    "date": null
   }
 }
