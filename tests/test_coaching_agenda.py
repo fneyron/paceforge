@@ -118,7 +118,7 @@ async def test_an_address_is_checked_kept_encrypted_shown_masked_and_never_fetch
                       ("javascript:alert(1)", "https://"), ("", "https://"),
                       ("https://test/coaching/cal/abc.ics", "pas acceptée")):
         r = await client.post("/coaching/agenda", data={"url": bad})
-        assert r.status_code == 200 and said in r.text and 'id="coach-tool-agenda" open' in r.text, bad
+        assert r.status_code == 200 and said in r.text and 'class="pf-coach-panel is-asked" id="coach-tool-agenda"' in r.text, bad
         assert "pf-coach-error" in r.text.split('id="coach-tool-agenda"')[1]
     assert queued == [] and (await db_session.execute(select(func.count()).select_from(CoachingCalendar))).scalar() == 0
     r = await client.post("/coaching/agenda", data={"url": GOOGLE})
@@ -276,7 +276,7 @@ async def test_sessions_land_in_free_slots_and_a_full_day_sends_its_session_else
     assert f'<p class="pf-coach-slot-time">19{NNBSP}h{NNBSP}00 – {cv_time(19 * 60 + thu.minutes)}</p>' in page
     assert ">Autre créneau</button>" in page
     flagged = (await client.get(f"/coaching?d={tue.day}")).text
-    assert '<p class="pf-pill pf-pill-soft">Journée chargée</p>' in flagged and "pf-coach-slot-time" not in flagged
+    assert '<p class="pf-coach-full">Journée chargée</p>' in flagged and "pf-coach-slot-time" not in flagged
     # Friday becomes an available day without a session (its own was removed by the coach): Tuesday's session
     # moves there, with its reason on the week
     db_session.add(CoachingLink(athlete_id=athlete.id, coach_id=coach.id))

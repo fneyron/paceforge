@@ -55,8 +55,11 @@ async def _race(db, user, day: date, *, course: bool = True, target: int | None 
     return route
 
 
+PROGRESS = '<b class="pf-coach-lead">Progresser</b> <span class="pf-coach-race">sans course</span>'
+
+
 def _goal_line(page: str) -> str:
-    return re.search(r'<p class="pf-coach-goal">(.*?)</p>', page, re.S).group(1)
+    return re.search(r'<h2 class="pf-coach-goal" id="coach-road-h">(.*?)</h2>', page, re.S).group(1)
 
 
 def _phase(page: str) -> str | None:
@@ -288,7 +291,7 @@ async def test_a_deleted_race_leaves_a_plan_without_a_race_from_the_next_week(cl
     plan.route_id = None
     await db_session.flush()
     page = (await client.get("/coaching")).text
-    assert "Progresser, sans course" in _goal_line(page) and "Trail des Crêtes" not in _goal_line(page)
+    assert PROGRESS in _goal_line(page) and "Trail des Crêtes" not in _goal_line(page)
     line = "Trail des Crêtes n’est plus dans tes courses : dès lundi, le plan continue sans course."
     assert f'<p class="pf-coach-reason pf-coach-ended">{line}</p>' in page and page.count("continue sans course") == 1
     rows = await _rows(db_session, athlete)
@@ -324,11 +327,11 @@ async def test_a_race_behind_leaves_a_plan_without_a_race_from_the_next_week(cli
     race_day = monday + timedelta(days=5)  # this Saturday
     route = await _race(db_session, athlete, race_day, target=3 * 3600)
     plan = await _plan(client, db_session, athlete, goal=str(route.id), days=("1", "3", "5", "6"), base="200")
-    assert "J‑3 · Trail des Crêtes" in _goal_line((await client.get("/coaching")).text)
+    assert "J‑3</b> <span class=\"pf-coach-race\">Trail des Crêtes</span>" in _goal_line((await client.get("/coaching")).text)
     race = next(r for r in await _rows(db_session, athlete) if r.kind == cp.RACE)
     clock.day = race_day + timedelta(days=1)  # the Sunday after
     page = (await client.get("/coaching")).text
-    assert "Progresser, sans course" in _goal_line(page)
+    assert PROGRESS in _goal_line(page)
     assert "Trail des Crêtes est derrière toi : dès lundi, le plan continue sans course." in page
     await db_session.refresh(plan)
     nxt = monday + timedelta(weeks=1)

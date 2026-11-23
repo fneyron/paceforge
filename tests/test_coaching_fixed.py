@@ -248,9 +248,9 @@ async def test_the_option_is_set_changed_and_removed_through_its_row(client, peo
     assert all(r.day >= same_today for r in rows if cp.is_fixed(r.structure)), "written from today on"
     page = (await client.get("/coaching?outil=fixe")).text
     assert "Mardi · 1h15 · Séance club" in page and 'id="coach-fixed-remove"' in page
-    assert re.search(r'<details class="pf-coach-tool" id="coach-tool-fixed" open>', page)
+    assert '<section class="pf-coach-panel is-asked" id="coach-tool-fixed"' in page and 'data-open="fixed"' in page
     card = (await client.get(f"/coaching?d={club[0].day.isoformat()}")).text
-    assert "Séance club <span" in card and "Le contenu est celui de ton club." in card
+    assert ">Séance club<span class=\"sr-only\"> 1h15</span></h4>" in card and "Le contenu est celui de ton club." in card
 
     # changed: a new duration and a name
     await client.post("/coaching/fixe", data={"fixed_day": "1", "fixed_minutes": "65", "fixed_name": "Piste"})
@@ -330,7 +330,7 @@ async def test_a_follower_the_feed_and_the_export_see_it_like_any_session(client
     await db_session.flush()
     _as(client, coach)
     followed = (await client.get(f"/coaching/athletes/{athlete.id}?d={club.day.isoformat()}")).text
-    assert "VMA club <span" in followed and "Ma séance fixe" not in followed
+    assert ">VMA club<span class=\"sr-only\"> 1h15</span></h4>" in followed and "Ma séance fixe" not in followed
     client._transport.app.dependency_overrides.pop(get_current_user)
     feed = (await client.get(f"/coaching/cal/{plan.feed_token}.ics")).text
     assert "SUMMARY:VMA club 1h15" in feed

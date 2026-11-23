@@ -94,7 +94,7 @@ async def test_the_option_is_offered_only_with_the_consent_and_an_index_and_is_o
     page = (await client.get("/coaching")).text
     switch = re.search(r'<button[^>]*id="coach-form-switch"[^>]*>', page).group(0)
     assert 'role="switch"' in switch and 'aria-checked="false"' in switch and 'value="on"' in switch
-    assert "Adapter mes séances à ma forme <small>VFC, sommeil, FC de repos</small>" in page
+    assert "<b>Adapter à ma forme</b>" in page and "(VFC, sommeil, FC de repos)" in page
     assert "Activé le" not in page
     await db_session.refresh(plan)
     assert plan.form_on_at is None, "seeing the switch turns nothing on"

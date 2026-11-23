@@ -420,7 +420,7 @@ async def test_a_refusal_comes_back_as_one_plain_line(client, athlete, db_sessio
     assert "Outlook a refusé la connexion. Réessaie." in _fold(said["other"])
     assert "Google Agenda a refusé la connexion. Réessaie." in _fold(said["token"])
     for page in said.values():
-        assert "AADSTS" not in page and "pf-coach-error" in _fold(page) and 'id="coach-tool-agenda" open' in page
+        assert "AADSTS" not in page and "pf-coach-error" in _fold(page) and 'data-open="agenda"' in page and 'class="pf-coach-panel is-asked" id="coach-tool-agenda"' in page
     assert (await db_session.execute(select(func.count()).select_from(CoachingCalendar))).scalar() == 0
     assert queued == []
     # an unknown pair of codes says nothing

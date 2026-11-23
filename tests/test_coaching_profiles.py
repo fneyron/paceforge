@@ -153,7 +153,7 @@ async def test_garder_la_forme_is_kept_on_the_plan_and_said_in_the_header(client
     plan = (await db_session.execute(select(CoachingPlan))).scalar_one()
     assert (plan.intent, plan.route_id, plan.race_name) == (cp.ENTRETIEN, None, None), "no race aimed at"
     page = (await client.get("/coaching")).text
-    assert "<b>Garder la forme</b>" in page and "Entretien" in page
+    assert "<b class=\"pf-coach-lead\">Garder la forme</b>" in page and "Entretien" in page
     rows = [r for r in await _rows(db_session, athlete) if r.kind != cp.RACE]
     weeks: dict = {}
     for row in rows:

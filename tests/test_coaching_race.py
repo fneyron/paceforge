@@ -106,7 +106,7 @@ async def test_a_new_account_adds_its_race_without_a_file_and_gets_a_plan_to_it(
     assert max(r.day for r in rows) == ANNECY and {r.day.weekday() for r in rows if r.kind != cp.RACE} <= {1, 6}
     # the header: the race, its countdown, its time — no link to a page that does not exist
     page = (await client.get("/coaching")).text
-    goal = re.search(r'<p class="pf-coach-goal">(.*?)</p>', page, re.S).group(1)
+    goal = re.search(r'<h2 class="pf-coach-goal" id="coach-road-h">(.*?)</h2>', page, re.S).group(1)
     assert NAME.replace("’", "&#39;") in goal or NAME in goal
     assert f"Environ{NBSP}55 min" in goal and "/simulator/routes/" not in page
     day = (await client.get(f"/coaching?d={ANNECY.isoformat()}")).text
