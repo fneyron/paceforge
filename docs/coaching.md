@@ -125,6 +125,11 @@ semaine-là). Sous le bouton, la première séance à venir : « Première séan
   au moins 2 jours. »). Un formulaire refusé répond lui aussi 200 : l’app remplace tout document répondu 4xx par
   « Écran indisponible ».
 - Sans JavaScript, le formulaire s’envoie tel quel ; l’aperçu reste celui de l’ouverture.
+- **« Ma séance fixe »** : sous les jours, une ligne discrète, « J’ai déjà une séance chaque semaine (club) », qui
+  ouvre le jour (les puces des jours, un seul choix), la durée (proposée pour le jour choisi, avec sa raison : « Lu
+  sur tes mercredis. ») et le nom (facultatif). Le jour choisi est coché parmi les jours ; la semaine dessinée la
+  suit, et une ligne dit « Séance club est ta séance de qualité de la semaine : le plan écrit le reste autour. ».
+  Décochée, aucune séance fixe. Un écran ouvert avant ce changement ne la demande pas : celle du plan reste.
 - Sur « Refaire le plan », l’aperçu montre ce que le générateur ferait des nouvelles réponses : les séances faites,
   passées ou modifiées par une personne restent, et un agenda relié peut encore déplacer une séance.
 
@@ -383,6 +388,40 @@ sorties par semaine en portent le bénéfice (Lee 2014 ; O’Donovan 2017). Le j
 ce qui a été lu (pour la santé, une activité en 1 ou 2 séances va avec la même mortalité plus basse : O’Donovan 2017 ;
 pour la performance, aucune étude).
 
+### La séance fixe
+
+Demande du propriétaire, 23 novembre 2026 : « Moi j’ai des séances vma club le mercredi, tu vas le voir dans mon
+historique, comment articuler le plan autour du coup ? ». Jusque-là le plan décidait seul où allaient les séances de
+qualité et ce qu’elles contenaient. **« Ma séance fixe »** : une séance hebdomadaire que l’athlète apporte (une
+séance de club), un jour, une durée, un nom facultatif (« Séance club » par défaut) ; le plan s’écrit autour
+(`Fixed`, `week_sessions`, `coaching_plans.fixed`). **Aucune étude** n’a été trouvée sur la façon d’écrire un plan
+autour d’une séance imposée : chaque règle ci-dessous applique une règle du plan déjà sourcée, ou porte sa marque.
+
+| Règle | Valeur | Source |
+|---|---|---|
+| Ce qu’elle est | Une séance de qualité dont le contenu est celui du club : le plan n’écrit **aucune répétition**, seulement son nom, sa durée et une ligne, « Le contenu est celui de ton club. ». Un jour dur comme toute séance de qualité. Une par plan. Son jour s’ajoute aux jours disponibles s’il n’y était pas (six au plus avec lui : un jour de repos reste). | choix pratique `FIXED_KEY`, `FIXED_NAME`, `FIXED_TEXT` ; le jour de repos : la règle « 2 à 6 jours » (Ristolainen 2014, (H)) |
+| C’est la séance de qualité de la semaine | Chaque semaine où les règles permettent au moins une séance de qualité, elle prend cette place : la première séance de qualité du plan n’est pas écrite. Où elles en permettent deux (`TWO_QUALITY` : course « pour performer » ou « Progresser » entraîné, 5 jours, base de 4 h), la seconde reste celle du plan, placée par `place` — jamais la veille ni le lendemain d’un jour dur, la séance fixe comprise (Stanley 2013) — et c’est la séance de la phase qui **n’est pas** des intervalles courts en vitesse : seuil ou côtes longues d’abord, puis côtes courtes, fartlek et intervalles en dernier. | Deux au plus : Seiler & Tønnessen 2009. L’ordre est (H) chiffre `BESIDE_FIXED`, **aucune étude** : la séance de club est déjà le travail court en vitesse (VMA). |
+| Une semaine sans séance de qualité | Là où les règles n’en écriraient aucune (les 8 premières semaines d’un « débutant », une semaine allégée par le ressenti ou la forme, une semaine trop courte), et aussi en semaine légère et chez un « débutant » ensuite : **elle reste** — l’athlète l’a décidée — et le plan n’en ajoute aucune. Une ligne dit quoi en faire au lieu de la retirer : « Semaine légère : la moitié des répétitions suffit. » (« Pour l’instant, … » chez un débutant). Ses minutes dures comptées sont alors divisées par deux. « Garder la forme » la garde entière : c’est l’intensité qui tient la forme. | (H) chiffre `FIXED_HALF`, `FIXED_NOTE` : le principe, garder l’intensité quand le volume baisse, est celui de l’affûtage (Bosquet 2007) ; **aucune étude** pour la semaine légère. Garder la forme : Hickson 1985. |
+| Le temps dur | Elle compte pour **un quart de sa durée** dans les 20 % d’efforts durs (`HARD_SHARE`) : 19 min pour 1 h 15 (16 × 300 m à VMA dans une séance de club de 75 min font 16 à 19 min d’effort). La seconde séance du plan prend ce qui reste du budget (moins de répétitions), jamais l’inverse. | (H) chiffre `FIXED_HARD_SHARE`, **aucune étude** ; les 20 % : Seiler 2010, Muñoz 2014. |
+| La sortie longue et les voisins | Le plan n’écrit jamais une de ses séances dures à côté du jour fixe. Le jour fixe **ne peut pas** être celui de la sortie longue : refusé là où l’option est réglée (« Ta sortie longue est ce jour-là : choisis un autre jour pour l’une ou l’autre. ») — rien n’est déplacé en silence. Voisin de la sortie longue : accepté, une ligne le dit là où l’option est réglée (« Ta séance fixe est la veille de ta sortie longue : deux jours durs de suite. »), et l’avertissement des semaines s’affiche comme pour deux jours durs déplacés à la main. | choix pratique : la solution la plus simple qui ne réécrit rien de ce que l’athlète a choisi ; Stanley 2013 pour l’avertissement. |
+| Affûtage, semaine de la course | Dans les semaines d’affûtage, elle reste, avec « Affûtage : la moitié des répétitions suffit. ». La semaine de la course, le rappel du plan reste et la séance fixe **n’est pas écrite** ; la semaine le dit : « Semaine de la course : ta séance fixe laisse la place au rappel du plan. » | (H) chiffre `FIXED_NOTE`, l’affûtage garde l’intensité et baisse le volume (Bosquet 2007) ; la semaine de la course : (H), **aucune étude**. |
+| La règle « une séance » | Elle s’applique toujours : la durée de la séance fixe est celle de l’athlète, **jamais raccourcie**, mais elle compte comme une sortie pour les jours qui suivent, comme toute séance prévue. Les autres règles (plancher, plafond, sortie longue, ressenti, forme) restent ; à deux jours, la semaine plafonne au plafond de la sortie longue plus la durée de la séance fixe (au lieu des 55 min de `TWO_DAYS_QUALITY`). | Frandsen 2025 `SPIKE` ; le plafond à deux jours : (H) chiffre, comme `TWO_DAYS_QUALITY`. |
+| La durée proposée | La médiane des sorties de l’athlète ce jour de la semaine sur les **8 dernières semaines complètes** (deux sorties le même jour : un jour), arrondie à 5 min, entre 30 min et 3 h, avec sa raison (« Lu sur tes mercredis. ») ; sans sortie ce jour-là : 1 h 15. Le jour, lui, est choisi par l’athlète, jamais deviné. | (H) chiffre `FIXED_WEEKS` (comme les 8 semaines des jours habituels), `FIXED_DEFAULT` (**aucune étude**) ; `FIXED_RANGE` choix pratique |
+| Le reste | Une matinée de récupération basse ne la change pas (elle est à l’athlète : « Alléger aujourd’hui » reste à son toucher) ; un agenda relié lui donne une heure mais ne la change jamais de jour. La sortie enregistrée ce jour-là s’y lie comme à toute séance, et « Fait autrement » lit sa durée. La personne qui suit le plan la voit comme toute séance, avec son nom ; le flux calendrier et l’export la portent ; « Arrêter le coaching » la supprime. | choix pratique |
+
+**Un plan sans séance fixe ne change pas** : sur 3 840 plans (chaque intention et niveau, 2 à 6 jours, quatre
+volumes, sans course, course sur route, trail, avec et sans sorties réelles et une semaine allégée), le générateur
+écrit octet pour octet ce qu’il écrivait avant (`tests/test_coaching_fixed.py`). **La régler, la changer ou la
+retirer** passe par le seul chemin de régénération (`coaching.set_fixed` → `sync`) : les séances à venir que le plan
+peut réécrire suivent, à partir d’aujourd’hui ; ce qu’une personne a épinglé, déplacé, modifié ou fait reste.
+
+**Le cas du propriétaire** (mardi, mercredi, vendredi, samedi, dimanche ; mercredi fixe 1 h 15 ; sortie longue le
+dimanche ; trail avec temps visé ; base 5 h) : chaque semaine la séance club le mercredi, un footing le mardi, la
+seconde séance du plan le vendredi (côtes courtes en base, seuil et côtes longues à tour de rôle en spécifique), une
+récup le samedi, la sortie longue le dimanche ; rien de dur le mardi ni le jeudi. Semaines légères et affûtage : la
+séance club seule, « la moitié des répétitions suffit » ; semaine de la course : le rappel du plan, pas de séance
+club.
+
 ### Les plans faits avant les profils
 
 Un plan créé avant le 22 novembre 2026 n’a ni intention ni niveau (`coaching_plans.intent`, `level` vides). **Il
@@ -429,7 +468,9 @@ dépasser le budget d’efforts durs de la semaine ; le minimum en semaine lég�
 | Affûtage | Rappels : *n* × 2 min soutenu, récup 2 min | 3 à 5 | Le principe : l’affûtage garde l’intensité (Bosquet 2007 ; Mujika 2003). Le format est (H) chiffre. |
 
 Les semaines alternent les deux séances de leur phase ; sans course : fartlek, côtes courtes, seuil à tour de rôle
-(`TEMPLATES`, `BY_PHASE`).
+(`TEMPLATES`, `BY_PHASE`). **Avec une séance fixe** (voir « La séance fixe »), elle est la séance de qualité de la
+semaine, sans répétitions écrites ; la seconde, quand il y en a deux, est celle de la phase qui n’est pas des
+intervalles courts en vitesse (`BESIDE_FIXED`, (H)).
 
 | Autour des efforts | Valeur | Source |
 |---|---|---|
@@ -733,7 +774,9 @@ quand tu vois de nouvelle séance une notif pour débrief du ressenti etc. » **
 5. **« Le plan »**, replié : le graphique des semaines (prévu en contour, fait en plein, phases) ; ouvert, il le
    reste pendant les touchers.
 6. **Deux lignes** : « Comment ça marche » (les règles, en un pli) et **« Options du plan »**, fermé par défaut, qui
-   contient tout le reste, inchangé : « Adapter mes séances à ma forme » (si l’option est proposée, avec son texte
+   contient tout le reste : **« Ma séance fixe »** (le jour, la durée proposée avec sa raison, le nom, « Enregistrer »
+   et « Retirer » ; la ligne de la sortie longue voisine ; `/coaching?outil=fixe#coach-tool-fixed` au retour),
+   « Adapter mes séances à ma forme » (si l’option est proposée, avec son texte
    d’accord), « Ajouter à mon calendrier », « Mon agenda », « Partager mon plan », « Suivre le plan de quelqu’un »,
    « Refaire le plan », « Arrêter le coaching ». Un formulaire des options revient sur les options ouvertes
    (`/coaching?outil=agenda#coach-tool-agenda`, `?outil=forme#coach-form`) ; une adresse qui ne porte que le
@@ -849,7 +892,9 @@ Migration `p7e8f9a0b1c2` : `coaching_calendars` (les adresses, chiffrées), `coa
 `coaching_plans.moments`, `coaching_sessions.slot_min`, `slot_chosen`, `slot_flag`. L’export donne l’hôte de chaque
 adresse (jamais l’adresse : c’est le secret d’un autre service) et les heures occupées ; « Arrêter le coaching » et
 la suppression du compte retirent adresses et heures occupées. Migration `q8f9a0b1c2d3` :
-`coaching_plans.race_name`, `race_date`, `race_km`, `race_target_s` (une course sans fichier), dans l’export. Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
+`coaching_plans.race_name`, `race_date`, `race_km`, `race_target_s` (une course sans fichier), dans l’export.
+Migration `t5d6e7f8a9b0` : `coaching_plans.fixed` (la séance fixe : jour, durée, nom), dans l’export ; ses séances
+sont des lignes ordinaires de `coaching_sessions`. Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
 (`coaching.json`, `coaching_seances.json` : jamais le jeton du flux ni un code).
 
 Politique de confidentialité, ligne affichée tant que la fonction n’est pas éteinte : « Coaching (bêta) » —
@@ -1158,6 +1203,10 @@ Dit sans détour, pour que cette page reste vraie :
   forme » et la séance de qualité unique « pour finir » n’ont **aucune étude**. Toutes ces règles enlèvent ou
   retiennent de la charge par rapport aux règles d’avant, sauf la séance avec du rythme à deux jours, qui en
   ajoute une : c’est la seule, et elle est la mieux appuyée de la revue pour un coureur qui a une habitude.
+- **La séance fixe** : aucune étude n’a été trouvée sur un plan écrit autour d’une séance imposée. Le quart de sa
+  durée compté en efforts durs (`FIXED_HARD_SHARE`), la moitié des répétitions des semaines légères et de
+  l’affûtage (`FIXED_HALF`), l’ordre de la seconde séance (`BESIDE_FIXED`), la semaine de la course sans elle et
+  1 h 15 sans historique (`FIXED_DEFAULT`) sont (H) chiffre ; pour la semaine légère, **aucune étude**.
 - **Aucune étude du tout** : le plafond hebdomadaire, le rythme d’une répétition de plus toutes les 2 semaines, les
   deux séances manquées qui allègent la semaine suivante. Le retour au calme de 10 min n’a pas de bénéfice
   démontré. Ces règles ne font que limiter ou enlever de la charge ; elles restent marquées.
