@@ -26,6 +26,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.coaching import CoachingPlan, CoachingSession
 from app.models.user import User
 from app.services import coaching as co
+from app.services import coaching_accounts as accounts
 from app.services import coaching_agenda as ag
 from app.services import coaching_ics as ics
 from app.services import coaching_plan as cp
@@ -405,12 +406,19 @@ def _read_word(row, c: co.Clock) -> str:
 
 
 async def _agenda(db: AsyncSession, plan: CoachingPlan, c: co.Clock) -> dict:
-    """« Mon agenda »: the addresses, masked, with how their last reading went; the moments chosen."""
-    calendars = await ag.calendars_of(db, plan.user_id)
+    """« Mon agenda »: the connected accounts, then the addresses, masked, with how their last reading went; the
+    buttons of the services configured and not connected yet (none while no connector is: the screen of before);
+    the moments chosen."""
+    calendars = sorted(await ag.calendars_of(db, plan.user_id), key=lambda row: row.provider == ag.ICAL)
     chosen = ag.moments_of(plan)
-    return {"calendars": [{"id": row.id, "masked": ag.mask(row.url), "word": _read_word(row, c),
-                           "ok": row.status in (None, ag.OK)} for row in calendars],
-            "room": len(calendars) < ag.MAX_CALENDARS,
+    connected = {row.provider for row in calendars}
+    return {"calendars": [{"id": row.id, "masked": ag.label(row), "word": _read_word(row, c),
+                           "ok": row.status in (None, ag.OK), "account": row.provider != ag.ICAL,
+                           "reconnect": row.provider if row.status == "reauth" and accounts.ready(row.provider)
+                           else None} for row in calendars],
+            "connect": [{"key": p, "name": accounts.NAMES[p]} for p in accounts.active() if p not in connected],
+            "accounts": bool(accounts.active()),
+            "room": sum(1 for row in calendars if row.provider == ag.ICAL) < ag.MAX_CALENDARS,
             "moments": [(m, cs.MOMENT_WORDS[m], m in chosen) for m in cs.MOMENTS]}
 
 
@@ -443,14 +451,18 @@ async def _page(request: Request, db: AsyncSession, scope: Scope, d: str | None,
 @router.get("/coaching", response_class=HTMLResponse)
 async def coaching_page(request: Request, d: str | None = None, w: str | None = None, v: str | None = None,
                         refaire: str | None = None, course: str | None = None, outil: str | None = None,
+                        connexion: str | None = None, resultat: str | None = None,
                         scope: Scope = Depends(own_scope), db: AsyncSession = Depends(get_db)):
     plan = await co.get_plan(db, scope.athlete.id)
     if plan is None and refaire != "1" and await co.athletes_of(db, scope.viewer.id):
         return RedirectResponse("/coaching/athletes", status_code=303)  # a coach without a plan of their own
     if plan is None or refaire == "1":
         return await _onboarding(request, db, scope.viewer, plan=plan, course=_int(course))
+    # back from a Google Agenda or Outlook sign-in: its outcome in one line (two codes, never a message)
+    said = accounts.result_line(connexion, resultat) if outil == "agenda" else None
     return await _page(request, db, scope, d, w, v, tool=TOOLS.get(outil or ""),
-                       tool_note=AGENDA_ASKED if outil == "agenda-lu" else None)
+                       tool_error=said[0] if said and not said[1] else None,
+                       tool_note=AGENDA_ASKED if outil == "agenda-lu" else said[0] if said and said[1] else None)
 
 
 @router.get("/coaching/apercu", response_class=HTMLResponse)
@@ -640,6 +652,98 @@ async def coaching_agenda_remove(calendar_id: int, scope: Scope = Depends(own_sc
     await db.commit()
     logger.info("Coaching: calendar address removed for user %d", scope.athlete.id)
     return RedirectResponse(AGENDA, status_code=303)
+
+
+# ── « Mon agenda »: Google Agenda and Outlook connected by OAuth (services/coaching_accounts) ──
+# Every route answers 404 while its connector is not configured. The state and the PKCE verifier ride, sealed, in the
+# signed session cookie for 10 minutes; the callback is refused in another browser or with another state.
+
+AGENDA_PENDING = "coaching_agenda_oauth"
+
+
+def _account(provider: str) -> None:
+    if provider not in accounts.PROVIDERS or not accounts.ready(provider):
+        raise HTTPException(status_code=404)
+
+
+@router.get("/coaching/agenda/{provider}/connect")
+async def coaching_agenda_connect(provider: str, request: Request, app: str | None = None,
+                                  scope: Scope = Depends(own_scope), db: AsyncSession = Depends(get_db)):
+    """« Connecter Google Agenda », « Connecter Outlook »: to the provider's consent page (the narrow scope, PKCE,
+    a state). `app=1`: started in the app's sign-in sheet, which the callback closes."""
+    from app.connectors import base
+
+    _account(provider)
+    await _agenda_plan(db, scope)
+    verifier, challenge = base.pkce_pair()
+    state = base.new_state()
+    request.session[AGENDA_PENDING] = {"provider": provider, "state": base.seal(state),
+                                       "verifier": base.seal(verifier), "app": app == "1"}
+    return RedirectResponse(accounts.authorize_url(provider, state, challenge), status_code=302)
+
+
+@router.get("/coaching/agenda/{provider}/callback")
+async def coaching_agenda_callback(provider: str, request: Request, code: str | None = None,
+                                   state: str | None = None, error: str | None = None,
+                                   error_description: str | None = None, scope: Scope = Depends(own_scope),
+                                   db: AsyncSession = Depends(get_db)):
+    """The provider's answer: the state checked, the code exchanged with the PKCE verifier, the tokens kept
+    encrypted, the busy time read by a worker; back on « Mon agenda » (or the app) with the outcome in one line.
+    Nothing of the code, the tokens or the provider's own words is logged."""
+    import httpx
+
+    from app.connectors import base
+
+    _account(provider)
+    pending = request.session.pop(AGENDA_PENDING, None)
+    pending = pending if isinstance(pending, dict) else {}
+    app = pending.get("app") is True
+    name = accounts.NAMES[provider]
+
+    def back(result: str) -> RedirectResponse:
+        return RedirectResponse(accounts.back_to(provider, result, app), status_code=303)
+
+    if pending.get("provider") != provider or not base.state_matches(state, base.unseal(pending.get("state"))):
+        return back("expire")
+    verifier = base.unseal(pending.get("verifier"))
+    if not verifier:
+        return back("expire")
+    if error:
+        logger.info("Coaching: %s refused the agenda connection of user %d (%s)", name, scope.athlete.id,
+                    str(error)[:40])
+        return back(accounts.refusal(str(error), error_description))
+    if not code:
+        return back("refus")
+    await _agenda_plan(db, scope)
+    try:
+        async with base.http_client(timeout=accounts.TIMEOUT_S) as client:
+            tokens = await accounts.exchange(client, provider, code, verifier)
+    except base.TokenError as e:
+        logger.warning("Coaching: %s code exchange failed for user %d (%s)", name, scope.athlete.id, e.code)
+        return back("refus")
+    except (httpx.HTTPError, ValueError, KeyError) as e:
+        logger.warning("Coaching: %s code exchange failed for user %d (%s)", name, scope.athlete.id,
+                       type(e).__name__)
+        return back("panne")
+    await ag.connect_account(db, scope.athlete.id, provider, tokens)
+    await db.commit()  # the worker reads the tokens from its own session
+    _queue_agenda(scope.athlete.id)
+    logger.info("Coaching: %s connected to the agenda of user %d", name, scope.athlete.id)
+    return back("ok")
+
+
+@router.post("/coaching/agenda/{provider}/app")
+async def coaching_agenda_app(provider: str, scope: Scope = Depends(own_scope), db: AsyncSession = Depends(get_db)):
+    """The app's button: the link of its sign-in sheet (Google refuses a WebView), signed in by a one-time ticket in
+    the link's fragment (app.routers.mobile). The app opens it in the system's sheet."""
+    from fastapi.responses import JSONResponse
+
+    from app.routers import mobile
+
+    _account(provider)
+    await _agenda_plan(db, scope)
+    link = f"{settings.BASE_URL.rstrip('/')}/mobile/oauth/agenda/{provider}#{mobile.agenda_ticket(scope.athlete, provider)}"
+    return JSONResponse({"link": link}, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/coaching/share", response_class=HTMLResponse)

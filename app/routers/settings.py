@@ -336,6 +336,13 @@ async def _revoke_links(db: AsyncSession, user: User, strava: bool = True) -> No
         links = links.where(OfficialConnection.provider.in_(HEALTH_PROVIDERS))
     for link in (await db.execute(links)).scalars():
         steps.append((f"{link.provider} (official)", partial(official.disconnect, db, link)))
+    if strava:  # the account deleted: a connected Google Agenda's access withdrawn at Google (Coaching › « Mon agenda »)
+        from app.models.coaching import CoachingCalendar
+        from app.services import coaching_accounts
+
+        for cal in (await db.execute(select(CoachingCalendar).where(
+                CoachingCalendar.user_id == user_id, CoachingCalendar.provider != "ical"))).scalars():
+            steps.append((f"{cal.provider} calendar", partial(coaching_accounts.revoke, cal)))
     clean = True
     for name, step in steps:
         try:

@@ -57,17 +57,25 @@
             </form>
         </div>
     </details>
-    {#- « Mon agenda »: the athlete's private calendar addresses (masked), when they can run, how to find the
-        address. Plain forms: the page comes back with the times found again. -#}
+    {#- « Mon agenda »: Google Agenda and Outlook connected by OAuth (their buttons only while their connector is
+        configured: none, the screen of before), the athlete's private calendar addresses (masked), when they can run,
+        how to find the address. Plain forms: the page comes back with the times found again. In the app the buttons
+        open the system's sign-in sheet (coaching-agenda.js; an older app, without .pf-native-agenda, hides them). -#}
     {% set a = tools.agenda %}
     <details class="pf-coach-tool" id="coach-tool-agenda"{% if open == "agenda" %} open{% endif %}>
         <summary class="pf-tool"><span>{{ icon("watch") }}<span>Mon agenda <small>Des séances hors réunions et rendez-vous</small></span></span>{{ icon("chev-r", "pf-chev") }}</summary>
         <div class="pf-coach-tool-body pf-coach-agenda">
             {% if agenda_error %}<p class="pf-coach-error" role="alert">{{ agenda_error }}</p>{% endif %}
             {% if agenda_note %}<p class="pf-label" role="status">{{ agenda_note }}</p>{% endif %}
+            {% if a.connect %}
+            <div class="pf-coach-connect" data-agenda-connect-row>
+                {% for p in a.connect %}<a class="pf-btn pf-btn-secondary pf-btn-sm" id="coach-cal-connect-{{ p.key }}" href="/coaching/agenda/{{ p.key }}/connect" data-agenda-connect="{{ p.key }}">Connecter {{ p.name }}</a>{% endfor %}
+            </div>
+            {% endif %}
+            {% if a.accounts %}<p class="pf-label pf-coach-connect-note">PaceForge lit seulement quand tu es occupé. Jamais les titres.</p>{% endif %}
             {% for c in a.calendars %}
-            <form class="pf-coach-calrow" method="post" action="/coaching/agenda/{{ c.id }}/remove" onsubmit="event.preventDefault(); var f = this; var msg = 'Retirer cette adresse ? Tes séances n’en tiendront plus compte.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Retirer'); } else if (confirm(msg)) { f.submit(); }">
-                <span><b>{{ c.masked }}</b><small{% if not c.ok %} class="text-danger"{% endif %}>{{ c.word }}</small></span>
+            <form class="pf-coach-calrow" method="post" action="/coaching/agenda/{{ c.id }}/remove" onsubmit="event.preventDefault(); var f = this; var msg = 'Retirer {{ 'cette connexion' if c.account else 'cette adresse' }} ? Tes séances n’en tiendront plus compte.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Retirer'); } else if (confirm(msg)) { f.submit(); }">
+                <span><b>{{ c.masked }}</b><small{% if not c.ok %} class="text-danger"{% endif %}>{{ c.word }}</small>{% if c.reconnect %}<a class="pf-coach-textbtn" id="coach-cal-reconnect-{{ c.id }}" href="/coaching/agenda/{{ c.reconnect }}/connect" data-agenda-connect="{{ c.reconnect }}">Reconnecter</a>{% endif %}</span>
                 <button type="submit" id="coach-cal-remove-{{ c.id }}" class="pf-coach-textbtn text-danger">Retirer</button>
             </form>
             {% endfor %}

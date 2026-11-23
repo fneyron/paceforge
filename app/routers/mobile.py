@@ -420,6 +420,66 @@ async def oauth_confirm(request: Request, provider: SheetProvider, user: User = 
                 cancel=with_result(app_return(provider), "cancelled"), **(health_consent.texts() if ask else {}))
 
 
+# ── Coaching › « Mon agenda »: Google Agenda and Outlook, signed in in the app's sheet ─────────────────────────
+# Google refuses its sign-in inside a WebView (disallowed_useragent): the app opens these pages in the system's
+# sign-in sheet (ASWebAuthenticationSession, Custom Tabs), as COROS and Strava, with the same one-time ticket (its
+# provider « agenda-google », « agenda-microsoft »). The sheet closes on paceforge://agenda with the outcome's code.
+
+AgendaProvider = Literal["google", "microsoft"]
+
+
+def agenda_ticket(user: User, provider: str) -> str:
+    return _ticket(user, f"agenda-{provider}")
+
+
+def _agenda_sheet(provider: str) -> str:
+    """The service's name; 404 while its connector is not configured."""
+    from app.services import coaching_accounts as accounts
+
+    if not accounts.ready(provider):
+        raise HTTPException(404)
+    return accounts.NAMES[provider]
+
+
+@router.get("/mobile/oauth/agenda/{provider}")
+async def agenda_oauth_page(request: Request, provider: AgendaProvider):
+    """The sheet's first page: posts the ticket of its fragment."""
+    from app.services import coaching_accounts as accounts
+
+    return page(request, mode="oauth", name=_agenda_sheet(provider),
+                expired=accounts.back_to(provider, "expire", app=True))
+
+
+@router.post("/mobile/oauth/agenda/{provider}")
+async def agenda_oauth_start(request: Request, provider: AgendaProvider, ticket: str = Form(max_length=512),
+                             db: AsyncSession = Depends(get_db)):
+    """Sign the sheet in as the ticket's account, then the account is shown before the provider's consent."""
+    from app import features
+    from app.dependencies import sign_in
+    from app.services import coaching_accounts as accounts
+
+    _agenda_sheet(provider)
+    user = await _redeem(db, ticket, f"agenda-{provider}")
+    if user is None or not features.coaching_for(user):
+        return RedirectResponse(accounts.back_to(provider, "expire", app=True), status_code=303)
+    request.session.clear()
+    sign_in(request, user)
+    return RedirectResponse(f"/mobile/oauth/agenda/{provider}/confirm", status_code=303)
+
+
+@router.get("/mobile/oauth/agenda/{provider}/confirm")
+async def agenda_oauth_confirm(request: Request, provider: AgendaProvider, user: User = Depends(get_current_user)):
+    """Whose agenda it joins, before the provider's consent: a ticket link sent to someone else cannot quietly
+    attach their calendar to the sender's account."""
+    from app.services import coaching_accounts as accounts
+
+    name = _agenda_sheet(provider)
+    return page(request, mode="oauth-confirm", user=user, name=name,
+                lead=f"Seules tes heures occupées dans {name}, jamais les titres, seront lues pour le compte PaceForge de",
+                start=f"/coaching/agenda/{provider}/connect?app=1",
+                cancel=accounts.back_to(provider, "annule", app=True))
+
+
 def _connect_page(request: Request, user: User, challenge: str, platform: str, error: str | None = None):
     from app.services import health_consent
     # Apple Santé and Health Connect bring health data: the pairing page asks for the consent not given yet

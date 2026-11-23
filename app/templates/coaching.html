@@ -51,6 +51,7 @@
 <script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id }}"></script>
 <script defer src="/static/js/coaching-calendar.js?v={{ request.app.state.build_id }}"></script>
 {% if not scope.coach %}<script defer src="/static/js/coaching-fixed.js?v={{ request.app.state.build_id }}"></script>{% endif %}
+{% if not scope.coach and tools and tools.agenda.accounts %}<script defer src="/static/js/coaching-agenda.js?v={{ request.app.state.build_id }}"></script>{% endif %}
 <script>
 // Instant feedback before the server answers: the ressenti tapped is shown as chosen at once; « Copier » copies the
 // calendar address. The server's answer then replaces the calendar part (htmx).
