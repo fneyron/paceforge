@@ -1,0 +1,21 @@
+{#- « Ma séance fixe »: its three answers, on the start screen and in « Options du plan ». Expects `fixed` =
+    routers.coaching._fixed_view(...): the weekday chips (one choice: the athlete's, never guessed), the duration —
+    the one proposed for the weekday chosen, read on the athlete's runs of that weekday (each chip carries its own:
+    coaching-fixed.js fills it in on a tap, until the athlete picks a duration) — and the name, optional. -#}
+<div class="pf-coach-fixed-body" data-fixed-body>
+    <fieldset class="pf-coach-fixed-days">
+        <legend class="pf-coach-q">Le jour</legend>
+        <div class="pf-coach-chips">
+            {% for i, (word, long) in fixed.weekdays %}<label class="pf-coach-chip"><input type="radio" name="fixed_day" value="{{ i }}" id="coach-fixed-day-{{ i }}" aria-label="{{ long }}" data-minutes="{{ fixed.props[i].minutes }}" data-why="{{ fixed.props[i].why }}"{% if fixed.day == i %} checked{% endif %}><span aria-hidden="true">{{ word }}</span></label>{% endfor %}
+        </div>
+    </fieldset>
+    <div class="pf-coach-row">
+        <label for="coach-fixed-min">Durée</label>
+        <select id="coach-fixed-min" name="fixed_minutes" class="pf-coach-select" data-fixed-minutes>{% for m, word in fixed.durations %}<option value="{{ m }}"{% if m == fixed.minutes %} selected{% endif %}>{{ word }}</option>{% endfor %}</select>
+    </div>
+    <p class="pf-label pf-coach-row-note" data-fixed-why aria-live="polite">{{ fixed.why }}</p>
+    <div class="pf-coach-row">
+        <label for="coach-fixed-name">Nom <small class="pf-label">facultatif</small></label>
+        <input id="coach-fixed-name" name="fixed_name" class="pf-input pf-coach-fixed-name" maxlength="{{ fixed.name_max }}" placeholder="{{ fixed.placeholder }}" value="{{ fixed.name }}" autocomplete="off">
+    </div>
+</div>

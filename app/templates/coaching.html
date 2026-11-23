@@ -3,7 +3,7 @@
     first name. « ‹ Activités » is the way back of an installed app older than the native Coaching tab only. The part
     swapped in place on every tap is partials/coaching_main.html: the page is the calendar — the debrief asked first,
     the weeks, the day opened in them, the plan's chart behind a fold. Under it, two more rows: the rules in one fold,
-    and « Options du plan » — everything else (the form option, the calendar feed, « Mon agenda », sharing, redo,
+    and « Options du plan » — everything else (« Ma séance fixe », the form option, the calendar feed, « Mon agenda », sharing, redo,
     stop), closed until asked for. `open`: what the options open on when the
     page comes back from one of their forms (?outil=…). -#}
 {% from "partials/_icons.html" import icon %}
@@ -50,6 +50,7 @@
 {% block scripts %}
 <script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id }}"></script>
 <script defer src="/static/js/coaching-calendar.js?v={{ request.app.state.build_id }}"></script>
+{% if not scope.coach %}<script defer src="/static/js/coaching-fixed.js?v={{ request.app.state.build_id }}"></script>{% endif %}
 <script>
 // Instant feedback before the server answers: the ressenti tapped is shown as chosen at once; « Copier » copies the
 // calendar address. The server's answer then replaces the calendar part (htmx).

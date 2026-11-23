@@ -71,6 +71,7 @@
                 {% if wk.reason or wk.light %}<p class="pf-coach-reason">{{ wk.reason or "Semaine plus légère, pour assimiler." }}</p>{% endif %}
                 {% if wk.moves %}<p class="pf-coach-reason pf-coach-moves">{{ wk.moves }}</p>{% endif %}
                 {% if wk.hard %}<p class="pf-coach-reason pf-coach-hardpair">{{ wk.hard }}</p>{% endif %}
+                {% if wk.fixed %}<p class="pf-coach-reason">{{ wk.fixed }}</p>{% endif %}
             </div>
             {% endfor %}
         </div>

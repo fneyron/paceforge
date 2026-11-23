@@ -51,7 +51,7 @@ def stamp(moment: datetime | None) -> str:
 
 def summary(row) -> str:
     """« Footing 45 min », « Sortie longue 1h50 »."""
-    return f"{cp.KINDS.get(row.kind, row.kind)} {hm(row.minutes)}"
+    return f"{cp.title(row.kind, row.structure)} {hm(row.minutes)}"
 
 
 def climb(row) -> str:
