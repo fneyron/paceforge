@@ -268,7 +268,8 @@ async def test_the_card_on_the_page(as_user: AsyncClient, db_session: AsyncSessi
             'ta semaine habituelle.">') in main
     # the ring is full at 100 % and the 68 % beyond are a second lap; under it, what the percentage is of
     assert "pf-ring-usual" not in html and main.count('class="pf-ring-arc pf-ring-over"') == 1
-    assert '<span class="pf-ring-note" aria-hidden="true">100\u00a0% = ta semaine habituelle</span>' in main
+    ring = main.split('class="pf-ring pf-ring-entrainement')[1].split("</a>")[0]
+    assert "pf-ring-note" not in ring, "nothing under the ring but its name and its word"
     train = main.split('<section id="entrainement"')[1].split("</section>")[0]
     assert 'data-viz-key="charge-accumulee"' in train
     assert '<section id="charge-detail" class="pf-load-detail">' in train
