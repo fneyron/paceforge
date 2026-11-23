@@ -745,8 +745,10 @@ async function sheet(page) {
         }
         assert.ok(found, 'a session of short efforts before the race');
         assert.match(await page.locator('.pf-coach-s-text').first().innerText(), /× 2 min soutenu/);
-        assert.match(await page.locator('.pf-coach-target-note').first().innerText(), /^À la sensation\s: l’effort est trop court pour le cardio\.$/);
-        assert.equal(await page.locator('.pf-coach-target-how, .pf-coach-target-vals').count(), 0);
+        // no heart rate for efforts that short; on flat ground the pace of their level stays
+        assert.match(await page.locator('.pf-coach-target-note').first().innerText(), /^Cardio\s: à la sensation, l’effort est trop court\.$/);
+        assert.match(await page.locator('.pf-coach-target-vals').first().innerText(), /Allure, sur le plat\s+\d:\d\d–\d:\d\d\s*\/km/);
+        assert.equal(await page.locator('.pf-coach-target-vals').first().innerText().then(t => /bpm/.test(t)), false);
         await page.locator('.pf-coach-session .pf-coach-ticket').first().screenshot({ path: `${out}/cible-393-short.png` });
         // the race's road heading stays as it was: the pace is on the race's ticket only
         await page.goto(`${fresh}/coaching`, { waitUntil: 'networkidle' });

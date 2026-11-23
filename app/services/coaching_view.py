@@ -152,6 +152,7 @@ def feel(kind: str, structure: dict | None) -> str:
 # their critical speed (coaching_pace), a heart-rate range from their maximum — shown large inside the ticket while
 # the session is to do (or missed); nothing when the data is not enough, never a default
 TARGET_SHORT = "À la sensation : l’effort est trop court pour le cardio."
+TARGET_SHORT_PACED = "Cardio : à la sensation, l’effort est trop court."  # beside a pace
 TARGET_MISSING = "Confirme ta FC max pour voir ta zone"
 TARGET_EFFORTS = "pendant les efforts"
 FLAT = "sur le plat"
@@ -213,7 +214,7 @@ def target(kind: str, structure: dict | None, *, reference: float | None = None,
     heart-rate target would show with a maximum}; None when the session has none (the fixed session: its content is
     the club's; a trail race; a race without an objective).
     - a pace only on flat ground: the quality sessions (never the hills), the easy runs, a long run without a climb
-      to aim at, « sur le plat »; never for efforts under LAG_MIN;
+      to aim at, « sur le plat »; efforts under LAG_MIN keep the pace of their level and no heart rate;
     - the race: a road race with an objective, its average pace (plain arithmetic), no heart rate (its intensity
       depends on its length)."""
     if cp.is_fixed(structure):
@@ -232,9 +233,12 @@ def target(kind: str, structure: dict | None, *, reference: float | None = None,
         add_pace("Allure de course", pace_label(seconds))
         return {"efforts": False, "vals": values, "note": None, "hr": False}
     bloc = _bloc(structure)
-    if bloc is not None and bloc[0] < cp.LAG_MIN:
-        return {"efforts": True, "vals": [], "note": rp.fr(TARGET_SHORT) or TARGET_SHORT, "hr": False}
     level = bloc[1] if bloc is not None else cp.main_level(kind, structure)
+    if bloc is not None and bloc[0] < cp.LAG_MIN:  # no heart rate; on flat ground the pace of the effort's level (H)
+        if critical is not None and kind == cp.QUALITY and level >= 3:
+            add_pace(f"Allure, {FLAT}", pace_range(*(pace.vo2max(critical) if level >= 4 else pace.threshold(critical))))
+        said = TARGET_SHORT_PACED if values else TARGET_SHORT
+        return {"efforts": True, "vals": values, "note": rp.fr(said) or said, "hr": False}
     climb = bool((structure or {}).get("climb"))
     if critical is not None:
         if bloc is not None and kind == cp.QUALITY and level >= 4:
@@ -258,7 +262,7 @@ def target_line(t: dict | None) -> str | None:
     bpm. »"""
     if not t:
         return None
-    if t["note"]:
+    if t["note"] and not t["vals"]:
         return t["note"]
     said = []
     for v in t["vals"]:
@@ -273,6 +277,8 @@ def target_line(t: dict | None) -> str | None:
     if not said:
         return None
     text = (f"Cible {TARGET_EFFORTS} : " if t["efforts"] else "Cible : ") + ", ".join(said) + "."
+    if t["note"]:
+        text += " " + t["note"]
     return rp.fr(text) or text
 
 

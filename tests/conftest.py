@@ -322,6 +322,15 @@ def _fresh_race_models():
 
 
 @pytest.fixture(autouse=True)
+def _fresh_critical_speeds():
+    """The critical speed per athlete (coaching_pace) is kept per worker: never across tests, whose ids repeat."""
+    from app.services import coaching_pace
+
+    coaching_pace.forget()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _fresh_legacy_estimates():
     """The older page's estimates read again (routers.simulator._legacy_estimate_s) are kept per worker by route id:
     never across tests, whose ids repeat."""

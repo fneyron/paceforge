@@ -141,9 +141,9 @@
                     {% if s.target %}{% set t = s.target %}
                     <div class="pf-coach-target" role="group" aria-labelledby="coach-target-{{ s.id }}">
                         <p class="pf-coach-target-h" id="coach-target-{{ s.id }}">Cible{% if t.head %}<span> · {{ t.head }}</span>{% endif %}</p>
-                        {% if t.vals %}<div class="pf-coach-target-vals">{% for v in t.vals %}<p><span aria-hidden="true">{{ v.label }}</span><b aria-hidden="true">{{ v.value }}<small>{{ v.unit }}</small></b><span class="sr-only">{{ v.aria }}</span></p>{% endfor %}</div>
-                        {% elif t.note %}<p class="pf-coach-target-note">{{ t.note }}</p>
-                        {% elif t.missing %}<a class="pf-coach-target-link" href="{{ t.href }}">{{ t.missing }}</a>{% endif %}
+                        {% if t.vals %}<div class="pf-coach-target-vals">{% for v in t.vals %}<p><span aria-hidden="true">{{ v.label }}</span><b aria-hidden="true">{{ v.value }}<small>{{ v.unit }}</small></b><span class="sr-only">{{ v.aria }}</span></p>{% endfor %}</div>{% endif %}
+                        {% if t.note %}<p class="pf-coach-target-note">{{ t.note }}</p>
+                        {% elif not t.vals and t.missing %}<a class="pf-coach-target-link" href="{{ t.href }}">{{ t.missing }}</a>{% endif %}
                         {% if t.how %}<a class="pf-coach-target-how" href="/coaching?outil=methode#coach-tool-how" data-tool-open="coach-tool-how">D’où viennent ces chiffres&nbsp;?</a>{% endif %}
                     </div>
                     {% endif %}

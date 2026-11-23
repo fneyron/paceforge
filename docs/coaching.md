@@ -507,7 +507,11 @@ domaine « sévère », où il ne s’installe pas (Jones & Vanhatalo 2017). Ell
 | Erreurs | Un effort plus rapide que le record du monde de sa distance ; dans un flux, un trou de plus de 10 s ou un pas plus rapide que 10,5 m/s dans l’effort ; une droite dont D′ n’est pas positif ou dépasse 400 m ; une VC hors de 1,5–6,5 m/s : rien. | Les records : choix pratique `RECORD_S`. (H) `MAX_GAP_S`, `MAX_STEP_SPEED`, `D_PRIME_MAX` (l’étude trouve D′ = 136 ± 39 m), `CS_RANGE`. |
 
 Elle est lue **une fois par page** (et une fois par flux calendrier, sur les seuls meilleurs efforts de Strava : pas
-de lecture lourde sur une adresse publique). Rien n’est stocké : elle est recalculée à la lecture.
+de lecture lourde sur une adresse publique). Un flux est un gros JSON : seuls ceux qu’il faut sont lus — les
+sorties sans meilleurs efforts, et les sorties qui portent un effort le plus rapide (pour écarter celui couru en
+descente ; le suivant est alors vérifié à son tour), par paquets de 12 (`STREAM_BATCH`, choix pratique). Rien
+n’est stocké en base : le résultat est gardé dans le processus tant que les sorties de la fenêtre ne changent pas
+(`_seen`, 512 athlètes au plus, choix pratique), et recalculé sinon.
 
 **Les cibles**, séance par séance. Une allure n’est donnée que **sur le plat** (dit à côté) : les séances de qualité
 hors côtes, les sorties faciles, une sortie longue sans dénivelé à viser. Une séance structurée a la cible de ses
@@ -520,7 +524,8 @@ efforts (« pendant les efforts ») ; la récupération reste dans la phrase de 
 | Seuil : *n* × 8 min soutenu | 93–97 % de la VC | Zone 4 (80–90 %) | Nixon 2021 (10 coureurs bien entraînés) : l’état stable maximal de lactate à 15,2 km/h pour une VC de 16,4 (92,7 %), la V̇O2 encore stable 0,5 km/h sous la VC (97 %). Les bornes arrondies : (H) `THRESHOLD`. FC : Seiler 2013 (90 %), les zones de l’app (H). |
 | Intervalles : *n* × 3 min vite | La vitesse de V̇O2max sur la droite de l’athlète : VC + D′ / t, t de 505 s à 303 s | 90–95 % de la FC max, atteinte en fin d’effort | Allure : la vitesse de V̇O2max se tient 404 ± 101 s (Billat 1994, 8 coureurs de bon niveau) ; des efforts à cette vitesse durant 60 % de ce temps ont amélioré V̇O2max et le 3000 m (Esfarjani 2007) — un effort de 3 min est 60 % de 5 min ; la durée tenue à une vitesse au-dessus de la VC est D′ / (v − VC) (Jones & Vanhatalo 2017). Prendre la moyenne ± 1 écart-type de Billat pour tous : (H) `VO2MAX_TIME_S`. FC : Helgerud 2007 (4 × 4 min à 90–95 %, 40 hommes modérément entraînés) `HR_FAST`. |
 | Côtes longues : *n* × 4 min en côte | Aucune (côte) | 90–95 % de la FC max, en fin d’effort | Helgerud 2007 ; en côte, une transposition. |
-| Fartlek (2 min), côtes courtes (1 min), rappels (2 min) | Aucune | Aucune : « À la sensation : l’effort est trop court pour le cardio. » | La FC monte en retard sur un effort court ; le seuil de 3 min `LAG_MIN` est (H) : la durée de nos intervalles (ceux de Helgerud 2007 duraient 4 min). **Changé le 23 novembre 2026** : les rappels (niveau 3) affichaient la zone 4. |
+| Fartlek (2 min vite), rappels (2 min soutenu) | L’allure du niveau de l’effort, sur le plat : celle des intervalles pour « vite », celle du seuil pour « soutenu » | Aucune : « Cardio : à la sensation, l’effort est trop court. » | La FC monte en retard sur un effort court ; le seuil de 3 min `LAG_MIN` est (H) : la durée de nos intervalles (ceux de Helgerud 2007 duraient 4 min). L’allure, elle, ne tarde pas : celle du niveau est reprise telle quelle, (H) — **aucune étude** ne la fixe pour un effort de 2 min. **Changé le 23 novembre 2026** : les rappels (niveau 3) affichaient la zone 4. |
+| Côtes courtes (1 min) | Aucune (côte) | Aucune : « À la sensation : l’effort est trop court pour le cardio. » | Comme ci-dessus pour la FC ; en côte, pas d’allure. |
 | Séance fixe (club) | Aucune | Aucune | Son contenu est celui du club. |
 | Course sur route avec un objectif | L’allure moyenne : le temps visé divisé par la distance | Aucune | Arithmétique. Aucune séance du plan n’est prévue à l’allure de course (les rappels sont « soutenus ») : aucun type de séance n’est ajouté, l’allure est sur le ticket de la course seulement. FC : l’intensité d’une course dépend de sa longueur, **aucune étude** ne donne une plage commune (**changé le 23 novembre 2026** : la zone 4 n’est plus dite le jour de la course). |
 | Trail, course sans objectif (une estimation) | Aucune | Aucune | Une estimation n’est pas une cible. |
@@ -879,8 +884,9 @@ tableau, le jour en ticket, les options dans une feuille.
      « L’intensité ») : « Cible » (« Cible · pendant les efforts » pour une séance structurée), puis une ou deux
      valeurs dans le grand type tabulaire, chacune avec son petit mot au-dessus — « Allure, sur le plat » 4:40–4:50
      /km, « Pas plus vite que, sur le plat » 5:30 /km, « Cardio » 149–167 bpm, « Cardio en fin d’effort » 168–177
-     bpm, « Allure de course » 5:00 /km ; pour les efforts de moins de 3 min, une ligne : « À la sensation : l’effort
-     est trop court pour le cardio. » ; sans FC maximale ni allure, une ligne discrète, liée à Réglages : « Confirme
+     bpm, « Allure de course » 5:00 /km ; pour les efforts de moins de 3 min, pas de cardio mais une ligne — « Cardio :
+     à la sensation, l’effort est trop court. » sous l’allure sur le plat, « À la sensation : l’effort est trop court
+     pour le cardio. » seule en côte ou sans allure connue ; sans FC maximale ni allure, une ligne discrète, liée à Réglages : « Confirme
      ta FC max pour voir ta zone » ; enfin, discret, « D’où viennent ces chiffres ? », qui ouvre « Comment ça
      marche » dans la feuille. Seulement tant que la séance est à faire (et pour une séance manquée) : une fois
      faite, le ticket dit ce qui a été couru. Texte à l’encre du ticket (4,5:1 sur chaque couleur), cibles de
@@ -1383,7 +1389,7 @@ Dit sans détour, pour que cette page reste vraie :
   études portent sur des athlètes très entraînés ou sur une dizaine de personnes.
 - **La cible** : les bornes 93–97 % de la VC du seuil (arrondies de Nixon 2021), la moyenne ± 1 écart-type de
   Billat 1994 prise pour tous (la vitesse des intervalles), le seuil de 3 min sous lequel la FC n’est pas une cible
-  (`LAG_MIN`), la descente de 1 % qui écarte un effort, le repli sans les trois distances du meilleur modèle, les
+  (`LAG_MIN`), l’allure du niveau reprise pour les efforts de 2 min, la descente de 1 % qui écarte un effort, le repli sans les trois distances du meilleur modèle, les
   bornes de D′ (400 m) et de la VC (1,5–6,5 m/s), le trou de 10 s et le pas de 10,5 m/s d’un flux, la tolérance de
   10 % sur les distances de Strava sont (H) chiffre. L’absence de FC le jour de la course : **aucune étude** ne donne
   une plage commune à toutes les longueurs de course. Les intervalles en côte reprennent la FC d’efforts courus sur

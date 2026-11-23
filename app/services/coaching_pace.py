@@ -252,9 +252,33 @@ def race_pace(km: float | None, minutes: float | None) -> float | None:
 
 # ── the loader ──────────────────────────────────────────────────────────────
 
+STREAM_BATCH = 12  # choix pratique: the streams are read a few runs at a time (each is a large JSON)
+CACHE_MAX = 512  # choix pratique: the estimates kept in this process, one per athlete and state of their runs
+_seen: dict[tuple, "Critical | None"] = {}
+
+
+def forget() -> None:
+    """Empties the estimates kept in this process (the tests)."""
+    _seen.clear()
+
+
+def _winners(efforts: dict[int, list[Effort]]) -> set[int]:
+    """The runs that hold the fastest effort of a target distance."""
+    best: dict[int, tuple[float, int]] = {}
+    for run_id, items in efforts.items():
+        for effort in items:
+            target = bucket(effort.distance)
+            if target is not None and plausible(effort) and (target not in best or effort.speed > best[target][0]):
+                best[target] = (effort.speed, run_id)
+    return {run_id for _, run_id in best.values()}
+
+
 async def for_athlete(db, user_id: int, today: date, *, streams: bool = True) -> Critical | None:
     """The athlete's critical speed from their runs of the last WINDOW_DAYS, once per page. `streams`: also read the
-    stored streams (a run without best efforts, a best effort's descent); the public calendar feed does not."""
+    stored streams (a run without best efforts, a best effort's descent); the public calendar feed does not.
+    A stream is a large JSON: only those the estimate needs are read — the runs without best efforts, and the runs
+    that hold a fastest effort (to leave out one run downhill, then the next fastest is checked in turn) — and the
+    result is kept in this process for as long as the athlete's runs of the window do not change."""
     from sqlalchemy import select
 
     from app.models.activity import Activity
@@ -263,19 +287,43 @@ async def for_athlete(db, user_id: int, today: date, *, streams: bool = True) ->
     until = datetime.combine(today + timedelta(days=1), time(), timezone.utc)
     where = (Activity.user_id == user_id, Activity.sport_type.in_(RUN_SPORTS), Activity.start_date >= since,
              Activity.start_date < until)
-    rows = (await db.execute(select(Activity.id, Activity.sport_type, Activity.best_efforts).where(*where))).all()
-    if len([r for r in rows if r.sport_type in RUN_SPORTS]) < MIN_RUNS:
+    rows = (await db.execute(select(Activity.id, Activity.sport_type, Activity.best_efforts, Activity.updated_at,
+                                    Activity.streams_data.is_not(None).label("stream")).where(*where))).all()
+    if len(rows) < MIN_RUNS:
         return None
-    kept: dict[int, dict] = {}
+    key = (user_id, today.toordinal(), streams, len(rows), max(r.id for r in rows),
+           max((r.updated_at for r in rows if r.updated_at is not None), default=None),
+           hash(repr(sorted((r.id, repr(r.best_efforts), bool(r.stream)) for r in rows))))
+    if key in _seen:
+        return _seen[key]
+
+    async def read(ids: list[int]) -> dict[int, dict]:
+        out: dict[int, dict] = {}
+        for at in range(0, len(ids), STREAM_BATCH):
+            found = await db.execute(select(Activity.id, Activity.streams_data).where(
+                Activity.id.in_(ids[at:at + STREAM_BATCH])))
+            out.update({r.id: r.streams_data for r in found if isinstance(r.streams_data, dict)})
+        return out
+
+    efforts = {r.id: strava_efforts(r.best_efforts) if r.best_efforts else [] for r in rows}
     if streams:
-        found = await db.execute(select(Activity.id, Activity.streams_data).where(
-            *where, Activity.streams_data.is_not(None)))
-        kept = {r.id: r.streams_data for r in found if isinstance(r.streams_data, dict)}
-    runs = []
-    for r in rows:
-        stream = kept.get(r.id)
-        efforts = strava_efforts(r.best_efforts, stream) if r.best_efforts else []
-        if not efforts and stream:
-            efforts = stream_efforts(stream.get("time"), stream.get("distance"), stream.get("altitude"))
-        runs.append(Run(r.sport_type, tuple(efforts)))
-    return estimate(runs)
+        with_stream = {r.id for r in rows if r.stream}
+        # a run without best efforts: its fastest rolling efforts
+        bare = [r.id for r in rows if not efforts[r.id] and r.id in with_stream]
+        for run_id, stream in (await read(bare)).items():
+            efforts[run_id] = stream_efforts(stream.get("time"), stream.get("distance"), stream.get("altitude"))
+        # Strava's best efforts: the altitude of the runs that hold a fastest one says whether it was run downhill
+        raw = {r.id: r.best_efforts for r in rows}
+        checked = set(bare)
+        for _ in range(len(rows)):
+            todo = sorted((_winners(efforts) & with_stream) - checked)
+            if not todo:
+                break
+            checked.update(todo)
+            for run_id, stream in (await read(todo)).items():
+                efforts[run_id] = strava_efforts(raw[run_id], stream)
+    result = estimate([Run(r.sport_type, tuple(efforts[r.id])) for r in rows])
+    if len(_seen) >= CACHE_MAX:
+        _seen.pop(next(iter(_seen)))
+    _seen[key] = result
+    return result
