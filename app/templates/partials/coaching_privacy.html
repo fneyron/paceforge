@@ -7,11 +7,15 @@
     <td data-label="Base légale">Contrat. Partagé avec la personne avec qui tu partages ton plan (celle à qui tu donnes ton code), et elle seule, jusqu’à ce que tu lui retires l’accès.</td>
     <td data-label="Durée">Jusqu’à l’arrêt du coaching (le plan est supprimé) ou la suppression du compte</td>
 </tr>
+{#- Google Agenda and Outlook are named only while their connector is configured (agenda_accounts_active): without
+    one, the row reads word for word as before. -#}
+{% set agenda_acc = agenda_accounts_active() if agenda_accounts_active is defined else [] %}
+{% set agenda_names = ([("google" in agenda_acc) and "Google Agenda", ("microsoft" in agenda_acc) and "Outlook"]|select|join(" ou ")) %}
 <tr>
     <th scope="row">Coaching (bêta) · ton agenda</th>
-    <td data-label="Données">Seulement si tu ajoutes une adresse dans «&nbsp;Mon agenda&nbsp;»&nbsp;: cette adresse (chiffrée), tes heures occupées des 21 prochains jours — un début et une fin, jamais un titre, une description, un lieu ni un participant —, les moments où tu peux courir, l’heure donnée à chaque séance</td>
-    <td data-label="Base légale">Contrat (une option que tu actives en collant l’adresse). Jamais partagé&nbsp;: la personne avec qui tu partages ton plan voit l’heure de tes séances, jamais ton agenda.</td>
-    <td data-label="Durée">Jusqu’au retrait de l’adresse, l’arrêt du coaching ou la suppression du compte&nbsp;; les heures occupées sont remplacées à chaque lecture</td>
+    <td data-label="Données">Seulement si tu ajoutes une adresse{% if agenda_acc %} ou connectes {{ agenda_names }}{% endif %} dans «&nbsp;Mon agenda&nbsp;»&nbsp;: cette adresse (chiffrée){% if agenda_acc %}, l’accès à ce compte (chiffré, jamais ton mot de passe){% endif %}, tes heures occupées des 21 prochains jours — un début et une fin, jamais un titre, une description, un lieu ni un participant —, les moments où tu peux courir, l’heure donnée à chaque séance</td>
+    <td data-label="Base légale">Contrat (une option que tu actives en collant l’adresse{% if agenda_acc %} ou en connectant ton agenda{% endif %}). Jamais partagé&nbsp;: la personne avec qui tu partages ton plan voit l’heure de tes séances, jamais ton agenda.</td>
+    <td data-label="Durée">Jusqu’au retrait de l’adresse{% if agenda_acc %} ou de la connexion{% endif %}, l’arrêt du coaching ou la suppression du compte&nbsp;; les heures occupées sont remplacées à chaque lecture</td>
 </tr>
 <tr>
     <th scope="row">Coaching (bêta) · ta forme</th>
