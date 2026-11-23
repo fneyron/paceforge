@@ -315,7 +315,8 @@ async def test_a_plan_needs_two_to_six_days_and_a_race_of_the_athlete(client, pe
     race = [r for r in rows if r.kind == cp.RACE]
     assert [(r.day, r.minutes) for r in race] == [(same_today + timedelta(days=75), 360)]
     page = (await client.get("/coaching")).text
-    assert "J‑75 · Trail des Crêtes" in page and 'id="coach-main"' in page and "Comment ça marche" in page
+    assert '<b class="pf-coach-lead">J‑75</b> <span class="pf-coach-race">Trail des Crêtes</span>' in page
+    assert 'id="coach-main"' in page and "Comment ça marche" in page
 
 
 # ── matching with the recorded activities (pure) ────────────────────────────
@@ -386,7 +387,7 @@ async def test_an_activity_marks_its_session_done_and_another_is_out_of_the_plan
     assert "Footing du jour" in page and f'href="/activity/{rows[today_row.id].activity_id}"' in page
     assert "Hors plan · Retour à pied" in page
     # the run arrived and its ressenti is not said yet: the calendar asks first
-    assert "Ta sortie d’aujourd’hui est arrivée\u00a0— c’était comment" in page and page.count('id="coach-ask-') == 5
+    assert "<b>Ta sortie d’aujourd’hui est arrivée.</b> C’était comment" in page and page.count('id="coach-ask-') == 5
     state = await co.sync(db_session, plan, athlete)
     done = co.done_by_week(state.runs, state.rows)
     assert sum(done.values()) == today_row.minutes + 4 + 15 + 33, "every run counts in the week's done time"
@@ -499,7 +500,7 @@ async def test_fait_pas_faite_and_the_ressenti_are_saved_on_the_tap(client, peop
     row = await _past_session(db_session, plan, same_today - timedelta(days=1), minutes=45)
     future = next(r for r in await _rows(db_session, athlete) if r.day > same_today)
     r = await client.post(f"/coaching/sessions/{row.id}/status", data={"value": "done"}, headers=HTMX)
-    assert r.status_code == 200 and "c’était comment" in r.text and 'id="coach-main"' in r.text
+    assert r.status_code == 200 and "</b> C’était comment" in r.text and 'id="coach-main"' in r.text
     await db_session.refresh(row)
     assert (row.status, row.manual, row.done_minutes) == ("done", True, 45)
     r = await client.post(f"/coaching/sessions/{row.id}/status", data={"value": "done", "minutes": "52"}, headers=HTMX)
@@ -916,24 +917,23 @@ async def test_the_page_prints_each_number_once_and_explains_in_one_fold(client,
     await _past_session(db_session, plan, same_today - timedelta(days=1), minutes=45)
     nxt = next(r for r in await _rows(db_session, athlete) if r.day > same_today and r.kind in (cp.QUALITY, cp.HILLS))
     page = (await _as(client, athlete).get(f"/coaching?d={nxt.day}")).text
-    main = page[page.index('id="coach-main"'):page.index("Comment ça marche")]
-    main = re.sub(r'<script type="application/json".*?</script>', "", main, flags=re.S)  # the chart's own readouts
+    main = page[page.index('id="coach-main"'):page.index('<section id="coach-options"')]
     assert main.count(cp.describe(nxt.kind, nxt.structure)) == 1
     assert 'class="pf-effort"' in main and 'role="img"' in main
     assert re.search(r"Efforts (soutenus|vifs)", main)
     summary = cv.week_summary(await co.sync(db_session, plan, athlete), cp.monday_of(nxt.day), {})
-    assert main.count(summary["label"]) == 1, "the week's time, on its bar only"
-    assert "<p" not in main.split('class="pf-coach-plan"')[1].split("</figure>")[1].split("</details>")[0].replace(
-        '<p class="pf-viz-legend"', ""), "no sentence under the chart"
-    assert page.count("Comment ça marche") == 1 and "10 %" in page.split("Comment ça marche")[1]
+    assert main.count(f">{summary['line']}<") == 1, "the week's time, under its title only"
+    assert summary["label"] not in main and "pf-viz" not in main, "no chart: the road says the weeks"
+    assert page.count(">Comment ça marche<") == 2, "a tile of the options, and its tool's title"
+    assert "10 %" in page.split('id="coach-tool-how"')[1]
     assert not re.search(r"Bosquet|Mujika|Seiler|\(H\)", page), "sources and (H) stay in the docs and the code"
     # a heart-rate range once a maximum is known (the app's zones), none without
     easy = next(r for r in await _rows(db_session, athlete) if r.day > same_today and r.kind == cp.FOOTING)
     assert "112–148" in (await client.get(f"/coaching?d={easy.day}")).text
     athlete.max_heart_rate = None
     assert "bpm" not in (await client.get(f"/coaching?d={easy.day}")).text
-    # the month view and a week further on
+    # the address of the « Mois » view of before: answered with the week board of its day
     month = (await client.get(f"/coaching/calendar?d={easy.day}&v=mois", headers=HTMX)).text
-    assert "pf-coach-calendar is-month" in month and 'aria-pressed="true">Mois' in month
+    assert f'id="coach-day-{easy.day}"' in month and "is-month" not in month and ">Mois<" not in month
     assert (await client.get("/coaching/calendar?d=nonsense", headers=HTMX)).status_code == 200
     assert (await client.get("/coaching/calendar?d=2026-11-21")).status_code == 303, "a partial opened by itself"

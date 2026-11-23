@@ -91,13 +91,26 @@ def test_the_sessions_done_wait_a_week_for_their_ressenti():
         "d’aujourd’hui", "d’hier", "de mercredi", "du dimanche 15 novembre"]
 
 
-# ── the page is the calendar ────────────────────────────────────────────────
+# ── the page: the road, the board and its next week, the day as a ticket ────
 
 def _cells(main: str) -> list[str]:
     return re.findall(r'<(?:a|button)[^>]*id="coach-day-[^>]*>.*?</(?:a|button)>', main, re.S)
 
 
-async def test_the_page_is_a_calendar_whose_day_opens_in_place(client, people, db_session, clock):
+def _tiles(cell: str) -> list[tuple[str, str, int | None]]:
+    """A day's tiles: (kind, status, height in % of the slot — None in the next week's small row)."""
+    return [(k, st, int(h) if h else None) for k, st, h in
+            re.findall(r'<i class="pf-coach-tile is-(\w+) is-(\w+)"(?: style="--h: (\d+)")?', cell)]
+
+
+def test_a_tile_is_as_tall_as_its_session_on_one_scale_for_every_week():
+    assert [cv.tile_height(m) for m in (20, 30, 75, 120, 210, 300)] == [28, 28, 45, 62, 95, 95]
+    assert [cv.tile_label(m) for m in (40, 60, 115, 120)] == ["40′", "1h", "1h55", "2h"]
+    assert cv.big_duration(40) == {"h": None, "m": "40"} and cv.big_duration(65) == {"h": "1", "m": "05"}
+    assert cv.big_duration(120) == {"h": "2", "m": ""}
+
+
+async def test_the_page_is_the_road_the_board_and_the_day_s_ticket(client, people, db_session, clock):
     athlete = people.athlete
     athlete.max_heart_rate = 186
     clock.day = TUE  # an available day
@@ -105,55 +118,87 @@ async def test_the_page_is_a_calendar_whose_day_opens_in_place(client, people, d
     rows = await _rows(db_session, athlete)
     today = next(r for r in rows if r.day == TUE)
     main = _main((await client.get("/coaching")).text)
-    # the calendar first, the day opened in it, the plan's chart behind a fold
-    assert (main.index("pf-coach-calendar") < main.index('class="pf-coach-grid"') < main.index("pf-coach-daycard")
-            < main.index('<details class="pf-coach-tool pf-coach-planfold" id="coach-plan">') < main.index("pf-viz-svg"))
+    # the road, then the board and the next week's row, the day's ticket last; no chart, no « Mois »
+    assert (main.index('class="pf-coach-road"') < main.index('class="pf-coach-calendar"')
+            < main.index('class="pf-coach-board"') < main.index("pf-coach-week is-next") < main.index("pf-coach-daycard"))
+    assert "pf-viz" not in main and ">Mois<" not in main and 'id="coach-plan"' not in main
     assert 'id="debrief"' in main and "pf-coach-debrief" not in main, "nothing waits: the anchor is the day's"
-    # this week and the next, each with its line; fourteen days, each a link with a full name
-    assert main.count('<div class="pf-coach-week') == 2 and "16–29\u00a0nov." in main
-    assert "<b>Cette semaine</b>" in main and "<b>Semaine prochaine</b>" in main
+    # the road: every week of the plan a bar, as tall as the time it plans, the current one shown, its address
     state = await co.sync(db_session, plan, athlete)
+    road = cv.page(state)["road"]
+    bars = re.findall(r'<a class="pf-coach-wbar is-(\w+)( is-current)?( is-shown)?( is-race)?" style="--h: (\d+)" '
+                      r'href="/coaching\?w=([\d-]+)" hx-get="/coaching/calendar\?w=\6"[^>]*tabindex="(-?\d)"', main)
+    assert len(bars) == len(road["bars"]) >= 8 and bars[0][5] == MONDAY.isoformat(), "from the plan's first week"
+    assert [b[5] for b in bars if b[1]] == [b[5] for b in bars if b[2]] == [MONDAY.isoformat()]
+    assert [b[6] for b in bars].count("0") == 1 and bars[0][6] == "0", "one bar in the tab order: the arrows move"
+    planned: dict = {}
+    for r in rows:
+        if r.kind != cp.RACE:
+            planned[cp.monday_of(r.day)] = planned.get(cp.monday_of(r.day), 0) + r.minutes
+    peak = max(planned.values())
+    assert [int(b[4]) for b in bars] == [round(22 + 78 * planned.get(date.fromisoformat(b[5]), 0) / peak) if
+                                         planned.get(date.fromisoformat(b[5])) else 6 for b in bars]
+    assert {b[0] for b in bars} == {"progression"} and not road["race"], "no race: one phase, no flag"
+    assert f'data-label="16–22\u00a0nov. · {hm(planned[MONDAY])} prévues · Progression"' in main
+    assert '<b class="pf-coach-lead">Progresser</b> <span class="pf-coach-race">sans course</span>' in main
+    assert f">Semaine 1 sur {len(road['bars'])}<" in main
+    # the board: this week, its line and phase; then next week as a row — fourteen days, each a link with a full name
+    assert main.count('<div class="pf-coach-week is-') == 2 and '<h2 id="coach-cal-h" class="pf-coach-period">Cette semaine</h2>' in main
+    assert '<span id="coach-next-h">Semaine prochaine</span>' in main
     for monday in (MONDAY, MONDAY + timedelta(days=7)):
-        assert main.count(f'>{cv.week_summary(state, monday, {})["label"]}<') >= 1
-    assert main.count('<span class="pf-coach-phase">Progression</span>') == 1, "the phase, said again when it changes"
+        assert main.count(f'>{cv.week_summary(state, monday, {})["line"]}<') == 1
+    assert main.count('<span class="pf-coach-phase">Progression</span>') == 1, "the board's week says its phase"
     cells = _cells(main)
     assert len(cells) == 14 and all(re.search(r'aria-label="(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche) \d+ '
                                               r'novembre : ', c) for c in cells)
-    assert sum(c.count("pf-coach-bar-s") for c in cells) == len([r for r in rows if r.day < MONDAY + timedelta(days=14)])
+    assert sum(len(_tiles(c)) for c in cells) == len([r for r in rows if r.day < MONDAY + timedelta(days=14)])
     mine = cells[1]
     assert "is-today is-selected" in mine and 'aria-current="true"' in mine
     assert (f'aria-label="mardi 17 novembre : {cp.KINDS[today.kind]} {hm_long(today.minutes)}, prévue (aujourd’hui)"'
             in mine)
-    # a day reads without a legend: its block (kind, status, height) and its word
-    assert f'<i class="pf-coach-bar-s is-{cv.KIND_CLASS[today.kind]} is-planned" style="--h: ' in mine
+    # a tile reads without a legend: its kind, its status, a height that follows its duration, its word under it
+    for cell in cells[:7]:
+        day = re.search(r'id="coach-day-([\d-]+)"', cell).group(1)
+        on = [r for r in rows if r.day.isoformat() == day]
+        assert _tiles(cell) == [(cv.KIND_CLASS[r.kind], "planned", 100 if r.kind == cp.RACE else cv.tile_height(r.minutes))
+                                for r in on], day
     assert f'<span class="pf-coach-word" aria-hidden="true">{cv.KIND_SHORT[today.kind]}</span>' in mine
+    assert f">{cv.tile_label(today.minutes)}</span></i>" in mine
+    # the next week's row: small tiles of no height, no word, each day a link to its week
+    assert all(" is-mini" in c and "pf-coach-word" not in c and all(h is None for *_, h in _tiles(c)) for c in cells[7:])
+    assert 'hx-get="/coaching/calendar?d=2026-11-26&w=2026-11-23"' in main
     assert "pf-coach-legend" not in main and "pf-coach-todo" not in main
-    # the day opened: ONE main action, « Déplacer » beside it, the others quiet
-    card = main[main.index("pf-coach-daycard"):main.index('id="coach-plan"')]
-    assert "Aujourd’hui · mardi 17 novembre" in card and 'id="coach-today"' not in card
+    # the day: its ticket — the title, the duration large, the effort drawn —, ONE main action, the others quiet
+    card = main[main.index("pf-coach-daycard"):]
+    assert '<h3 id="coach-day-h" class="pf-coach-date"><span>Aujourd’hui</span> <small>mardi 17 novembre</small></h3>' in card
+    assert 'id="coach-today"' not in main, "today's week: no way back to ask for"
+    assert f'<article class="pf-coach-session is-{cv.KIND_CLASS[today.kind]} is-planned"' in card
+    big = cv.big_duration(today.minutes)
+    assert f'<p class="pf-coach-t-dur" aria-hidden="true">{big["m"]}<small>min</small></p>' in card or big["h"]
+    assert ('class="pf-effort"' in card) != ('class="pf-coach-gauge' in card), "a profile or a gauge, in the ticket"
     assert card.count("pf-btn-primary") == 2, "« C’est fait », and the save of the closed « Modifier » fold"
     done = re.search(rf'<button[^>]*id="coach-done-{today.id}"[^>]*>', card).group(0)
     assert 'value="done"' in done and "pf-btn-primary" in done and "C’est fait" in card
-    assert re.search(rf'<a id="coach-move-{today.id}" class="pf-btn pf-btn-secondary"[^>]*'
+    assert re.search(rf'<button type="submit" name="value" value="missed" id="coach-missed-{today.id}" '
+                     r'class="pf-coach-quietbtn">Pas faite<', card), "quiet, beside it"
+    assert re.search(rf'<a id="coach-move-{today.id}" class="pf-coach-quietbtn"[^>]*'
                      rf'hx-get="/coaching/calendar\?d=2026-11-17&amp;w=2026-11-16&move={today.id}"[^>]*>Déplacer</a>', card)
-    for quiet in (rf'<button[^>]*id="coach-missed-{today.id}"[^>]*class="pf-coach-quietbtn">Pas faite<',
-                  r'<summary class="pf-coach-quietbtn">Modifier<'):
-        assert re.search(quiet, card), quiet
-    # a tap on a day keeps the weeks shown; the arrows slide them; a far day asked alone opens its own week
-    assert 'hx-get="/coaching/calendar?d=2026-11-26&amp;w=2026-11-16"' in main and 'id="coach-prev"' not in main
+    assert re.search(r'<summary class="pf-coach-quietbtn">Modifier<', card)
+    # a tap on a day keeps the week shown; the arrows slide it; a day asked outside it opens its own week
+    assert 'hx-get="/coaching/calendar?d=2026-11-19&w=2026-11-16"' in main and 'id="coach-prev"' not in main
     nxt = (await client.get("/coaching/calendar?w=2026-11-23", headers=HTMX)).text
-    assert "23\u00a0nov. – 6\u00a0déc." in nxt and "<b>Semaine prochaine</b>" in nxt and "<b>30\u00a0nov. – 6\u00a0déc.</b>" in nxt
+    assert '<h2 id="coach-cal-h" class="pf-coach-period">Semaine prochaine</h2>' in nxt
+    assert '<span id="coach-next-h">Semaine suivante</span>' in nxt and 'id="coach-day-2026-12-06"' in nxt
     assert 'hx-get="/coaching/calendar?w=2026-11-16"' in nxt and 'id="coach-today"' in nxt
+    assert 'class="pf-coach-wbar is-progression is-shown"' in nxt, "the road shows the week the board shows"
     kept = (await client.get("/coaching/calendar?d=2026-12-03&w=2026-11-23", headers=HTMX)).text
-    assert "23\u00a0nov. – 6\u00a0déc." in kept and 'id="coach-day-2026-12-03"' in kept
+    assert ">30\u00a0nov. – 6\u00a0déc.</h2>" in kept and 'class="pf-coach-day is-selected" aria-current' in kept
     far = (await client.get("/coaching/calendar?d=2026-12-17", headers=HTMX)).text
-    assert "14–27\u00a0déc." in far and far.count('<div class="pf-coach-week') == 2
-    assert "16–29\u00a0nov." in (await client.get("/coaching/calendar?d=2026-11-26", headers=HTMX)).text
-    # the month: the same days, more weeks
+    assert ">14–20\u00a0déc.</h2>" in far and far.count('<div class="pf-coach-week is-') == 2
+    assert ">Cette semaine</h2>" in (await client.get("/coaching/calendar?d=2026-11-19", headers=HTMX)).text
+    # the address of the « Mois » view of before: the week board of its day (the road took its place)
     month = (await client.get("/coaching/calendar?d=2026-11-17&v=mois", headers=HTMX)).text
-    assert "pf-coach-calendar is-month" in month and "novembre 2026" in month and 'aria-pressed="true">Mois' in month
-    assert month.count('<div class="pf-coach-week') == 6 and len(_cells(month)) == 42
-    assert month.count("is-out") == 12 and "pf-coach-word" in month and "&amp;w=2026-11-01&amp;v=mois" in month
+    assert "is-month" not in month and len(_cells(month)) == 14 and ">Cette semaine</h2>" in month
 
 
 async def test_ticking_asks_the_ressenti_first_and_once(client, people, db_session, clock):
@@ -165,8 +210,8 @@ async def test_ticking_asks_the_ressenti_first_and_once(client, people, db_sessi
     r = await client.post(f"/coaching/sessions/{today.id}/status", data={"value": "done", **keep}, headers=HTMX)
     # done by hand: no main action left; the one question at the top, the day marked until it is answered
     assert r.status_code == 200 and "pf-btn-primary" not in r.text and "C’est fait" not in r.text
-    assert '<section class="pf-coach-card pf-coach-debrief' in r.text and 'id="debrief"' in r.text
-    assert "Ta séance d’aujourd’hui est faite\u00a0— c’était comment" in r.text
+    assert '<section class="pf-coach-debrief' in r.text and 'id="debrief"' in r.text
+    assert "<b>Ta séance d’aujourd’hui est faite.</b> C’était comment" in r.text
     assert r.text.count("data-feel") == 5 and r.text.count('id="coach-ask-') == 5, "asked once: not in the day too"
     assert r.text.index("pf-coach-debrief") < r.text.index("pf-coach-calendar")
     assert r.text.count("pf-coach-todo") == 1 and ", faite, à débriefer" in r.text
@@ -193,7 +238,7 @@ async def test_ticking_asks_the_ressenti_first_and_once(client, people, db_sessi
     r = await client.post(f"/coaching/sessions/{today.id}/status", data={"value": "missed", **keep}, headers=HTMX)
     assert 'aria-label="Annuler « pas faite »"' in r.text
     assert "pf-btn-secondary" in re.search(rf'<button[^>]*id="coach-done-{today.id}"[^>]*>', r.text).group(0)
-    assert re.search(rf'<a id="coach-move-{today.id}" class="pf-btn pf-btn-secondary"[^>]*>Reporter</a>', r.text)
+    assert re.search(rf'<a id="coach-move-{today.id}" class="pf-coach-quietbtn"[^>]*>Reporter</a>', r.text)
     # without JavaScript the form comes back to the page, on the same weeks
     r = await client.post(f"/coaching/sessions/{today.id}/status", data={"value": "done", **keep})
     assert r.status_code == 303 and r.headers["location"] == "/coaching?d=2026-11-17&w=2026-11-16"
@@ -208,7 +253,7 @@ async def test_a_link_opens_the_calendar_on_a_day_s_debrief(client, people, db_s
     await db_session.flush()
     page = (await client.get("/coaching")).text
     main = _main(page)
-    assert "Ta sortie de mercredi est arrivée\u00a0— c’était comment" in main, "the most recent first"
+    assert "<b>Ta sortie de mercredi est arrivée.</b> C’était comment" in main, "the most recent first"
     assert "Puis 1 autre à débriefer." in main and main.count("pf-coach-todo") == 2
     wed = next(r for r in await _rows(db_session, athlete) if r.day == WED)
     assert f'action="/coaching/sessions/{wed.id}/ressenti"' in main and main.count('id="debrief"') == 1
@@ -229,7 +274,7 @@ async def test_a_link_opens_the_calendar_on_a_day_s_debrief(client, people, db_s
     mon.ressenti = None
     await db_session.flush()
     theirs = (await _as(client, people.coach).get(f"/coaching/athletes/{athlete.id}?d=2026-11-16")).text
-    assert "pf-coach-calendar" in theirs and theirs.count('<div class="pf-coach-week') == 2
+    assert "pf-coach-calendar" in theirs and theirs.count('<div class="pf-coach-week is-') == 2 and "pf-coach-wbar" in theirs
     assert "pf-coach-debrief" not in theirs and "pf-coach-todo" not in theirs and 'id="debrief"' not in theirs
     assert "c’était comment" not in theirs and "Ressenti : non renseigné" in theirs and "C’est fait" not in theirs
 
@@ -282,9 +327,10 @@ async def test_by_hand_the_calendar_carries_what_moving_answers(client, people, 
     main = _main((await client.get("/coaching")).text)
     rows = await _rows(db_session, athlete)
     hard = next(r for r in rows if r.kind == cp.HILLS)  # next Thursday's
-    block = re.search(rf'<i class="pf-coach-bar-s [^"]*" style="--h: \d+" data-move="/coaching/sessions/{hard.id}/move"'
-                      r' data-to="([\d -]*)" data-warn="([\d -]*)" data-what="([^"]+)"></i>', main)
-    assert block and block.group(3) == f"{cv.KIND_SHORT[hard.kind]} {hm(hard.minutes)}"
+    block = re.search(rf'<i class="pf-coach-tile [^"]*" data-move="/coaching/sessions/{hard.id}/move"'
+                      r' data-to="([\d -]*)" data-warn="([\d -]*)" data-what="([^"]+)"><span>', main)
+    assert block, "next week's, in the small row: a drop source and a drop target too"
+    assert block.group(3) == f"{cv.KIND_SHORT[hard.kind]} {hm(hard.minutes)}"
     moving = (await client.get(f"/coaching/calendar?d=2026-11-18&w=2026-11-16&move={hard.id}", headers=HTMX)).text
     assert 'is-target' in moving
     cells = {re.search(r'id="coach-day-([\d-]+)"', c).group(1): c for c in _cells(moving)}
@@ -300,12 +346,12 @@ async def test_by_hand_the_calendar_carries_what_moving_answers(client, people, 
     await db_session.flush()
     main = _main((await client.get("/coaching")).text)
     assert f"/sessions/{done.id}/move" not in main
-    assert '<i class="pf-coach-bar-s is-extra is-done" style="--h: ' in main
+    assert f'<i class="pf-coach-tile is-extra is-done" style="--h: {cv.tile_height(38)}" data-run=' in main
     assert 'data-run="2026-11-18" data-what="Sortie"' in main
     assert 'id="coach-day-2026-11-19" data-day="2026-11-19" hx-get=' in main
-    assert ('<p class="pf-label pf-coach-drag-hint" id="coach-drag-hint" aria-hidden="true" hidden>'
-            'Maintiens une séance pour la déplacer.</p>') in main
-    assert 'data-v="semaine" data-w="2026-11-16"' in main
+    assert ('<p class="pf-coach-drag-hint" id="coach-drag-hint" aria-hidden="true" hidden>'
+            'Maintiens une séance pour la déplacer</p>') in main
+    assert '<div class="pf-coach-grid" data-w="2026-11-16">' in main
     # the follower: the same sessions, never the run outside the plan
     db_session.add(CoachingLink(athlete_id=athlete.id, coach_id=people.coach.id))
     await db_session.flush()
@@ -334,7 +380,7 @@ async def test_a_missed_session_is_reported_or_was_the_run_of_another_day(client
                           headers=HTMX)
     await db_session.refresh(tue)
     assert (tue.day, tue.status, tue.done_minutes, tue.pinned) == (WED, "done", 38, True) and tue.activity_id
-    assert "Hors plan" not in r.text and "Ta sortie d’hier est arrivée\u00a0— c’était comment" in r.text
+    assert "Hors plan" not in r.text and "<b>Ta sortie d’hier est arrivée.</b> C’était comment" in r.text
     # a missed session left on its day: « Reporter », to any day to come
     await client.post(f"/coaching/sessions/{tue.id}/status", data={"value": "missed"}, headers=HTMX)
     r = await client.get("/coaching/calendar?d=2026-11-18", headers=HTMX)
@@ -372,7 +418,10 @@ async def test_a_run_that_does_not_match_is_said_and_can_leave_the_session(clien
     page = _main((await client.get("/coaching")).text)
     await db_session.refresh(tue)
     assert tue.status == "done" and tue.activity_id and tue.done_minutes == 197, "the day's run is the day's load"
-    assert '<span class="pf-pill pf-pill-soft">Fait autrement</span>' in page and ">Fait</span>" not in page
+    assert '<span class="pf-coach-status">Fait autrement</span>' in page and ">Fait</span>" not in page
+    assert f'<p class="pf-coach-t-dur" aria-hidden="true">3<small>h</small>17 <span>prévu {hm(tue.minutes)}</span></p>' \
+        in page, "the ticket says the time run, large, and the time planned beside it"
+    assert f'<i class="pf-coach-tile is-{cv.KIND_CLASS[tue.kind]} is-done" style="--h: {cv.tile_height(197)}">' in page
     assert f'<p class="pf-coach-s-guide pf-coach-misfit">{hm(197)} au lieu de {hm(tue.minutes)}</p>' in page
     assert re.search(rf'<button type="submit" name="value" value="missed" id="coach-unlink-{tue.id}" '
                      r'class="pf-coach-quietbtn">Ce n’est pas cette séance</button>', page)
@@ -394,3 +443,63 @@ async def test_a_run_that_does_not_match_is_said_and_can_leave_the_session(clien
     await db_session.refresh(thu)
     assert thu.status == "done" and thu.activity_id
     assert ">Fait</span>" in page and "Fait autrement" not in page and f'id="coach-unlink-{thu.id}"' in page
+
+
+# ── the road to the race ────────────────────────────────────────────────────
+
+async def test_the_road_runs_to_the_race_its_phases_named_and_its_flag_on_the_last_bar(client, people, db_session,
+                                                                                        clock):
+    from app.models.route import Route
+
+    athlete = people.athlete
+    clock.day = TUE
+    route = Route(user_id=athlete.id, name="Trail des Crêtes", total_distance_km=42, total_elevation_gain=2000,
+                  target_time_s=6 * 3600, race_date=(TUE + timedelta(days=75)).isoformat())
+    db_session.add(route)
+    await db_session.flush()
+    plan = await _plan(client, db_session, athlete, goal=str(route.id), days=("1", "3", "6"))
+    state = await co.sync(db_session, plan, athlete)
+    road = cv.page(state)["road"]
+    race_week = cp.monday_of(TUE + timedelta(days=75))
+    bars = road["bars"]
+    # every week from the plan's first to the race's, the race's last, full, flagged; the current week first here
+    assert bars[0]["monday"] == MONDAY.isoformat() and bars[-1]["monday"] == race_week.isoformat()
+    assert [b["race"] for b in bars] == [False] * (len(bars) - 1) + [True] and bars[-1]["h"] == 100 and road["race"]
+    assert bars[0]["current"] and bars[0]["shown"] and sum(b["current"] for b in bars) == 1
+    assert all(6 <= b["h"] <= 100 for b in bars)
+    # the phases in order, each named once with its length in weeks
+    assert [p["key"] for p in road["phases"]] == ["base", "specifique", "affutage"]
+    assert sum(p["weeks"] for p in road["phases"]) == len(bars)
+    assert [p["label"] for p in road["phases"]] == ["Base", "Spécifique", "Affûtage"]
+    assert bars[-1]["aria"].startswith("Semaine de la course, ") and bars[0]["aria"].startswith("Semaine en cours, ")
+    assert road["tip"] == f"Semaine 1 sur {len(bars)}" and road["aria"].endswith("jusqu’à la course")
+    # the heading: « J‑75 », the race, its time with the way to its page (a follower: the words only)
+    head = cv.page(state)["head"]
+    assert (head["lead"], head["race"]) == ("J‑75", "Trail des Crêtes") and head["time"]["href"]
+    assert cv.page(state, coach=True)["head"]["time"]["href"] is None
+    # the board on the race's week: no next week's row (the plan ends there), « Semaine x sur x »
+    last = cv.page(state, w=race_week)
+    assert len(last["cal"]["weeks"]) == 1 and last["road"]["tip"] == f"Semaine {len(bars)} sur {len(bars)}"
+    assert last["road"]["bars"][-1]["shown"] and not last["cal"]["next"]
+    page = (await client.get(f"/coaching?w={race_week.isoformat()}")).text
+    assert 'class="pf-coach-week is-next"' not in page and 'class="pf-coach-wbar is-affutage is-shown is-race"' in page
+
+
+def test_a_long_plan_keeps_thirty_bars_the_current_week_among_them():
+    from types import SimpleNamespace as NS
+
+    start = MONDAY - timedelta(weeks=20)
+    rows = [_row(start + timedelta(weeks=i, days=1)) for i in range(45)]
+    for r in rows:
+        r.minutes = 60
+    inputs = cp.Inputs((1,), 1, 180, start, cp.Goal(None, None, None), {}, intent=cp.PROGRESSER)
+    state = NS(rows=rows, plan=NS(start_monday=start, adaptations={}), weeks=[], goal=cp.Goal(None, None, None),
+               inputs=inputs, clock=NS(today=TUE))
+    road = cv.road(state, MONDAY)
+    assert len(road["bars"]) == cv.ROAD_WEEKS and any(b["current"] for b in road["bars"])
+    last = start + timedelta(weeks=44)
+    assert road["bars"][-1]["monday"] == last.isoformat(), "the plan's end stays on the road"
+    assert road["bars"][0]["monday"] == (last - timedelta(weeks=29)).isoformat(), "its first weeks give way first"
+    late = cv.road(NS(**{**vars(state), "clock": NS(today=last - timedelta(weeks=2))}), MONDAY)
+    assert late["bars"][-1]["monday"] == last.isoformat() and late["tip"] == "Semaine 21 sur 45"
+    assert not road["race"] and {b["h"] for b in road["bars"]} == {100}

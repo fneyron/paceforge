@@ -5,6 +5,7 @@ is a calendar (tests/test_coaching_calendar.py) whose day opens with one main ac
 du plan »; nothing the pages say names a « coach »."""
 import re
 from datetime import date, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -22,6 +23,7 @@ from tests.test_coaching_goal import _race
 
 MONDAY = date(2026, 11, 16)
 NNBSP = "\u202f"
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -301,7 +303,7 @@ async def test_the_preview_is_the_account_s_own_and_needs_coaching(client, peopl
 # ── the day opened in the calendar (the calendar itself: tests/test_coaching_calendar.py) ──
 
 def _main(page: str) -> str:
-    return page[page.index('id="coach-main"'):page.index('class="pf-coach-more"')]
+    return page[page.index('id="coach-main"'):page.index('<section id="coach-options"')]
 
 
 async def test_a_steady_session_shows_a_gauge_and_a_structured_one_its_profile(client, people, db_session, clock):
@@ -326,7 +328,7 @@ async def test_a_day_without_a_session_names_the_next_one(client, people, db_ses
     await _plan(client, db_session, athlete, days=("3", "6"), long_day="6", base="120")
     nxt = next(r for r in await _rows(db_session, athlete))
     page = _main((await client.get("/coaching?d=2026-11-16")).text)  # today, a Monday without a session
-    assert '<p class="pf-coach-rest">Repos</p>' in page and "Prochaine séance · jeudi 19 novembre" in page
+    assert '<div class="pf-coach-restcard">\n                <p class="pf-coach-rest-word">Repos</p>' in page and "Prochaine séance · jeudi 19 novembre" in page
     assert f'href="/coaching?d={nxt.day}&amp;w=2026-11-16"' in page and f'hx-get="/coaching/calendar?d={nxt.day}&amp;w=2026-11-16"' in page
     assert f"{cp.KINDS[nxt.kind]} " in page.split('id="coach-next-session"')[1]
     clock.day = MONDAY + timedelta(days=2)
@@ -334,35 +336,55 @@ async def test_a_day_without_a_session_names_the_next_one(client, people, db_ses
     # a rest day already behind says nothing of what comes next; another day than today has the way back
     page = _main((await client.get("/coaching?d=2026-11-16")).text)
     assert "Repos" in page and "Prochaine séance" not in page
-    assert re.search(r'<a id="coach-today"[^>]*hx-get="/coaching/calendar\?d=2026-11-18"[^>]*>Aujourd’hui</a>', page)
+    assert 'id="coach-today"' not in page, "the board shows today's week: today is one tap on it"
+    away = _main((await client.get("/coaching?d=2026-11-24")).text)
+    assert re.search(r'<a id="coach-today"[^>]*hx-get="/coaching/calendar\?d=2026-11-18"[^>]*>Aujourd’hui</a>', away)
 
 
-async def test_the_tools_sit_behind_one_row_and_open_where_a_link_lands(client, people, db_session, clock):
+async def test_the_options_are_one_button_a_sheet_of_tiles_and_open_where_a_link_lands(client, people, db_session,
+                                                                                         clock):
+    """The round button opens the options: without JavaScript the section at the end of the page (#coach-options),
+    which the button's own address and every ?outil=…#… reach; coaching-sheet.js turns it into a bottom sheet."""
     athlete = people.athlete
     await _plan(client, db_session, athlete)
     page = (await client.get("/coaching")).text
-    tail = page[page.index('class="pf-coach-more"'):]
-    assert tail.count("<details") >= 5 and "Options du plan" in tail
-    assert re.search(r'<details class="pf-coach-tool pf-coach-opts" id="coach-options">', tail), "closed by default"
-    inside = tail[tail.index('id="coach-options"'):]
-    for option in ("Ajouter à mon calendrier", "Mon agenda", "Partager mon plan", "Suivre le plan de quelqu’un",
-                   "Refaire le plan", "Arrêter le coaching"):
-        assert option in inside, option
-    assert tail.index("Comment ça marche") < tail.index("Options du plan")
-    # a form of the options comes back with them open, on its own fold
-    for outil, fold in (("agenda", 'id="coach-tool-agenda" open'), ("agenda-lu", 'id="coach-tool-agenda" open'),
-                        ("forme", 'id="coach-tool-agenda">'), ("options", 'id="coach-tool-agenda">')):
+    button = re.search(r'<a class="pf-coach-optbtn" id="coach-options-btn"[^>]*>', page).group(0)
+    assert 'href="/coaching?outil=options#coach-options"' in button and 'aria-controls="coach-options"' in button
+    assert 'aria-label="Options du plan"' in button and page.index("coach-options-btn") < page.index('id="coach-main"')
+    tail = page[page.index('<section id="coach-options"'):]
+    assert "pf-coach-more" not in page and "<details class=\"pf-coach-tool" not in page, "no fold in the page flow"
+    # the switch, then the tiles — a tile is its tool's address —, then « Refaire le plan » and « Arrêter »
+    tiles = re.findall(r'<a class="pf-coach-opt" id="coach-opt-(\w+)" href="([^"]+)"', tail)
+    assert tiles == [("fixed", "/coaching?outil=fixe#coach-tool-fixed"), ("feed", "/coaching?outil=calendrier#coach-tool-feed"),
+                     ("agenda", "/coaching?outil=agenda#coach-tool-agenda"),
+                     ("share", "/coaching?outil=partage#coach-tool-share"), ("follow", "/coaching/athletes"),
+                     ("how", "/coaching?outil=methode#coach-tool-how")]
+    for word in ("Dans mon calendrier", "Mon agenda", "Partager mon plan", "Suivre un plan", "Comment ça marche",
+                 "Refaire le plan", "Arrêter le coaching"):
+        assert word in tail, word
+    assert tail.index("pf-coach-optgrid") < tail.index('id="coach-tool-feed"') < tail.index('id="coach-redo"')
+    assert '<section class="pf-coach-panel pf-method" id="coach-tool-how"' in tail and "10 %" in tail
+    assert 'data-open=""' in tail and "is-asked" not in tail, "nothing asked: the tiles"
+    # a form of the options comes back on its own tool (the sheet opens there; without JavaScript, the fragment)
+    for outil, panel in (("agenda", "agenda"), ("agenda-lu", "agenda"), ("calendrier", "feed"), ("partage", "share"),
+                         ("methode", "how")):
         page = (await client.get(f"/coaching?outil={outil}")).text
-        assert 'id="coach-options" open>' in page and fold in page, outil
-    assert 'id="coach-options">' in (await client.get("/coaching?outil=nimporte")).text
-    # … and the script opens them for an address that only carries a fragment (/coaching#coach-form)
-    assert 'document.getElementById("coach-options")' in page and "location.hash" in page
+        assert f'class="pf-coach-panel is-asked" id="coach-tool-{panel}"' in page or (
+            f'class="pf-coach-panel pf-method is-asked" id="coach-tool-{panel}"' in page), outil
+    for outil, asked in (("forme", "form"), ("options", "options"), ("nimporte", "")):
+        page = (await client.get(f"/coaching?outil={outil}")).text
+        assert f'id="coach-tools" class="pf-coach-tools" data-open="{asked}"' in page and "is-asked" not in page, outil
+    # … and the sheet's script reads them, and an address that only carries a fragment (/coaching#coach-form)
+    assert '/static/js/coaching-sheet.js' in page
+    script = (ROOT / "app/static/js/coaching-sheet.js").read_text()
+    assert "showModal()" in script and "location.hash" in script and "dataset.open" in script
+    assert "'Escape'" not in script and "addEventListener('close'" in script, "Escape: the dialog's own cancel"
     # a coach's page has none of it
     db_session.add(co.CoachingLink(athlete_id=athlete.id, coach_id=people.coach.id))
     await db_session.flush()
     theirs = (await _as(client, people.coach).get(f"/coaching/athletes/{athlete.id}")).text
     assert "coach-options" not in theirs and "Options du plan" not in theirs and "C’est fait" not in theirs
-    assert "pf-coach-daycard" in theirs and "pf-coach-calendar" in theirs
+    assert "coaching-sheet.js" not in theirs and "pf-coach-daycard" in theirs and "pf-coach-calendar" in theirs
 
 
 # ── the words: the plan is automatic, nobody needs a coach to have one ───────
@@ -390,7 +412,7 @@ async def test_the_pages_never_say_coach(client, people, db_session, clock):
     db_session.add(co.CoachingLink(athlete_id=athlete.id, coach_id=follower.id))
     await db_session.flush()
     page = (await client.get("/coaching?outil=options")).text
-    assert "Partager mon plan" in page and "Suivre le plan de quelqu’un" in page
+    assert "Partager mon plan" in page and "Suivre un plan" in page
     assert "La personne à qui tu donnes le code voit ton plan et peut l’ajuster" in page
     assert "<b>Florent</b> suit ton plan" in page
     # one person follows the plan: a comment and a change are signed with that first name
