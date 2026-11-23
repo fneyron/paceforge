@@ -72,6 +72,29 @@ export function calendarFeedUrl(url: string): string | null {
   return typeof url === 'string' && url.startsWith(calendarOrigin + '/') &&
     /^\/coaching\/cal\/[A-Za-z0-9_-]{32,128}\.ics$/.test(url.slice(calendarOrigin.length)) ? url : null;
 }
+// Coaching › « Mon agenda »: the sign-in sheet of Google Agenda or Outlook. Exactly the site's
+// /mobile/oauth/agenda/<google|microsoft> with a one-time ticket in its fragment (no query); nothing else opens a sheet
+// from a page. The sheet closes on paceforge://agenda?connexion=…&resultat=…, a pair of codes « Mon agenda » says in
+// one line (agendaReturnUrl): never a message, any page can link to the scheme.
+const agendaProviders = ['google', 'microsoft'];
+const agendaResults = ['ok', 'annule', 'expire', 'refus', 'organisation', 'panne'];
+export const agendaScheme = 'paceforge://agenda';
+export function agendaSheetUrl(url: string): { provider: string; url: string } | null {
+  if (!trusted(url)) return null;
+  const u = new URL(url);
+  const match = /^\/mobile\/oauth\/agenda\/(google|microsoft)$/.exec(u.pathname);
+  return match && !u.search && /^#[A-Za-z0-9_.:-]{20,512}$/.test(u.hash) ? { provider: match[1], url } : null;
+}
+export function agendaReturnUrl(provider: string, returned: string | null): string {
+  let result = 'annule';
+  try {
+    const u = returned ? new URL(returned) : null;
+    const code = u && returned!.startsWith(agendaScheme + '?') ? u.searchParams.get('resultat') : null;
+    if (code && agendaResults.includes(code) && u!.searchParams.get('connexion') === provider) result = code;
+  } catch { /* cancelled */ }
+  const name = agendaProviders.includes(provider) ? provider : 'google';
+  return `${ORIGIN}/coaching?outil=agenda&connexion=${name}&resultat=${result}#coach-tool-agenda`;
+}
 export function tabForUrl(url: string): Tab | null {
   if (!trusted(url)) return null;
   const path = new URL(url).pathname;
@@ -94,6 +117,10 @@ export const appShellScript = `
     // the entry card and « ‹ Activités » an older shell needs, and show « S’abonner au calendrier » (interface.css).
     window.paceforgeNativeCoaching = 1;
     document.documentElement.classList.add('pf-native-coaching');
+    // It opens « Mon agenda »'s Google Agenda and Outlook sign-in in the system's sheet (Google refuses a WebView):
+    // the pages show those buttons only then (an older shell keeps the address to paste).
+    window.paceforgeNativeAgenda = 1;
+    document.documentElement.classList.add('pf-native-agenda');
     if (!window.paceforgeAppearanceObserver) {
       const reportAppearance = () => window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'appearance', dark: document.documentElement.classList.contains('dark') }));
       window.paceforgeAppearanceObserver = new MutationObserver(reportAppearance);

@@ -13,7 +13,7 @@ import { KEYS, KeychainLocked, secure } from './src/secure';
 import { backgroundBlock, backgroundPending, blockBackgroundSync, cancelBackgroundSync, disableBackgroundSync, enableBackgroundSync,
   onBackgroundReport, resetBackgroundState, skipSent, syncExclusively } from './src/background';
 import type { Block } from './src/background-engine';
-import { appShellScript, calendarFeedUrl, calendarOrigin, destinations, isBridgeUrl, messagePageUrl, prepareNavigationScript, presentationScript, refreshable, reloadable, sameScreen, screenUrl, Tab, tabForUrl, tabNavigationScript, tabs } from './src/navigation';
+import { agendaReturnUrl, agendaScheme, agendaSheetUrl, appShellScript, calendarFeedUrl, calendarOrigin, destinations, isBridgeUrl, messagePageUrl, prepareNavigationScript, presentationScript, refreshable, reloadable, sameScreen, screenUrl, Tab, tabForUrl, tabNavigationScript, tabs } from './src/navigation';
 import { ConnectionAction, Connections, Provider, providerNames, signInResult } from './src/connections';
 import { acknowledge, inlineConnectionsScript, inlineSessionScript, Pending, retryBridgeScript, takeReply } from './src/bridge';
 import { DeviceDetail, DevicesScreen } from './src/DevicesScreen';
@@ -618,6 +618,13 @@ function Companion() {
       refreshConnections();
     } catch (e) { fail(e); }
   }
+  /** « Mon agenda »: the sheet, signed in by the ticket of its link; then « Mon agenda » with the outcome in one line. */
+  async function signInAgenda(provider: string, link: string) {
+    try {
+      const outcome = await WebBrowser.openAuthSessionAsync(link, agendaScheme, { preferEphemeralSession: true });
+      loadScreen(agendaReturnUrl(provider, outcome.type === 'success' ? outcome.url : null));
+    } catch (e) { fail(e); }
+  }
   async function disconnect() {
     if (!pair || !start()) return;
     cancelAccountWork();
@@ -816,6 +823,9 @@ function Companion() {
               if (recoveringProcess.current) recoveringProcess.current = false;
               else { refresh(); return false; }
             }
+            // « Mon agenda »'s Google Agenda or Outlook: its sign-in in the system's sheet (Google refuses a WebView).
+            const agenda = agendaSheetUrl(request.url);
+            if (agenda) { void signInAgenda(agenda.provider, agenda.url); return false; }
             const path = new URL(request.url).pathname;
             if (path === '/auth/logout') leaveSession();
             if (path === '/settings' && ['#connections', '#coros', '#garmin', '#strava'].includes(new URL(request.url).hash)) { openTab('devices'); return false; }
