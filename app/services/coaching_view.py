@@ -1,13 +1,11 @@
 """Coaching: what the pages draw, from a plan in sync (coaching.State). Every string is made here, each number once:
-a week's « fait / prévu » on its line of the calendar, a session's duration in its title, the activity's own figures
-on its line; the plan's chart shows a week's total only on a tap (viz.rest), as Activités' weeks do.
+a week's « fait / prévu » under its title, a session's duration on its ticket, the activity's own figures on its line.
 
-The page is a calendar (docs/coaching.md › « Les écrans »): this week and the next (or a month), each day its
-sessions as blocks — a colour and a word for the kind, a height for the duration, a shape for the status — and the
-runs done outside the plan; the day chosen opens under it; a session done that waits for its ressenti is asked about
-first.
+The page (docs/coaching.md › « Les écrans »): the road to the race — every week of the plan a bar as tall as its
+volume, tinted by its phase —, the session done that waits for its ressenti, the week shown as a board (each day a
+column, each session a tile as tall as it is long, coloured by its kind, shaped by its status, the runs done outside
+the plan in grey), the next week as a compact row, and the day chosen as a ticket.
 """
-import calendar
 from datetime import date, timedelta
 
 from app.services import coaching as co
@@ -25,14 +23,17 @@ KIND_CLASS = {cp.FOOTING: "easy", cp.RECUP: "recup", cp.LONG: "long", cp.QUALITY
               cp.RACE: "race"}
 STATUS_WORD = {co.PLANNED: "prévue", co.DONE: "faite", co.MISSED: "pas faite"}
 LEGEND = (("easy", "Footing"), ("long", "Sortie longue"), ("hard", "Séance"), ("race", "Course"))
-BAR_SCALE_MIN = 60  # the calendar's blocks: the tallest is the longest session shown, 1 h at least
-BAR_MIN = 22  # % of the cell's room: a short session still shows
-WINDOW_WEEKS = 2  # the calendar opens on this week and the next
+BAR_SCALE_MIN = 60  # the start screen's week: the tallest bar is the longest session shown, 1 h at least
+BAR_MIN = 22  # % of a column's room: a short session still shows
+WINDOW_WEEKS = 2  # the board's week, and the next one as a compact row
+# a session's tile on the board, in % of its day's slot: as tall as it is long on one scale for every week (30 min
+# and less: TILE_MIN; 3 h 30 and more: TILE_MIN + TILE_SPAN); the race fills its slot
+TILE_MIN, TILE_SPAN, TILE_FROM, TILE_RANGE = 28, 67, 30, 180
+ROAD_WEEKS = 30  # the road: 30 weeks at most (its bars stay a finger wide at 320 px)
 EXTRA_WORD = "Sortie"  # a run outside the plan, as a day's block reads
 WEEK_NAMES = {0: "Cette semaine", 1: "Semaine prochaine", -1: "Semaine dernière"}
 HARD_PAIR = "{a} et {b} : deux jours durs de suite."
 UNDO = {co.DONE: "Annuler « fait »", co.MISSED: "Annuler « pas faite »"}
-CHART_WEEKS = 26  # the plan's chart: 26 weeks at most
 # which time the plan runs on, said once in the header: the race page's objective, the simulator's estimate, or —
 # no prediction — a rough guess
 TIME_WORD = {co.OBJECTIVE: "Objectif", co.ESTIMATE: "Estimation", co.ROUGH: "Environ"}
@@ -154,6 +155,15 @@ def countdown(goal: cp.Goal, today: date, intent: str | None = None) -> str:
     if k < 0:
         return f"Course passée · {goal.name}"
     return f"{rp.j_label(-k)} · {goal.name}"
+
+
+def road_head(goal: cp.Goal, today: date, intent: str | None = None) -> tuple[str, str | None]:
+    """The road's heading: (« J‑54 », « Trail des Crêtes ») before a race; its intent's words without one
+    (« Progresser », « sans course »)."""
+    if goal.race_day is None:
+        return ("Garder la forme", None) if intent == cp.ENTRETIEN else ("Progresser", "sans course")
+    k = (goal.race_day - today).days
+    return ("Course passée" if k < 0 else rp.j_label(-k)), goal.name
 
 
 def goal_time(goal: cp.Goal, coach: bool = False) -> dict | None:
@@ -283,10 +293,17 @@ def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool, names
     steady = profile is None or len(profile["blocks"]) < 2
     level = cp.main_level(row.kind, row.structure)
     can_tick = not coach and row.day <= today and run is None and row.status != co.CANCELLED
+    # the ticket's large duration: the time run once done (the run's, else the one ticked by hand), with the time
+    # planned beside it when they differ; the race's time is the road's (« Objectif 5h00 »): printed once
+    did = (run.minutes if run is not None else row.done_minutes) if row.status == co.DONE else None
+    shown = int(round(did)) if did else row.minutes
+    timed_race = row.kind == cp.RACE and goal_time(state.goal) is not None
     return {
         "id": row.id, "kind": row.kind, "title": cp.title(row.kind, row.structure),
         # the race's time is the header's (« Objectif 6h30 »): printed once
-        "duration": "" if row.kind == cp.RACE and goal_time(state.goal) else hm(row.minutes),
+        "duration": "" if timed_race else hm(row.minutes),
+        "big": None if timed_race else big_duration(shown),
+        "planned_said": f"prévu {hm(row.minutes)}" if did and shown != row.minutes else None,
         "minutes": row.minutes, "cls": KIND_CLASS.get(row.kind, "easy"), "status": row.status,
         "text": text[:1].upper() + text[1:], "profile": None if steady else profile,
         "gauge": {"level": level, "aria": f"Effort {cp.LEVELS.get(level, '')} : niveau {level} sur 4"} if steady
@@ -327,8 +344,29 @@ def _session(row, state: co.State, rows_hr, runs_by_id: dict, coach: bool, names
 
 
 def bar_height(minutes: float, scale: float) -> int:
-    """A session's block, in % of its cell's room: its duration against the longest session shown."""
+    """A session's bar on the start screen's week, in % of its column: its duration against the longest shown."""
     return int(min(100, max(BAR_MIN, round(100 * minutes / max(scale, 1)))))
+
+
+def tile_height(minutes: float) -> int:
+    """A session's tile on the board, in % of its day's slot: one scale for every week, so that a long run looks long
+    whatever the week around it (30 min: TILE_MIN; 3 h 30 and more: TILE_MIN + TILE_SPAN)."""
+    share = min(1.0, max(0.0, (minutes - TILE_FROM) / TILE_RANGE))
+    return int(round(TILE_MIN + TILE_SPAN * share))
+
+
+def tile_label(minutes: float) -> str:
+    """What a tile carries, short: « 40′ », « 1h55 », « 2h »."""
+    m = int(round(minutes))
+    if m < 60:
+        return f"{m}′"
+    return f"{m // 60}h{m % 60:02d}" if m % 60 else f"{m // 60}h"
+
+
+def big_duration(minutes: float) -> dict:
+    """The ticket's large duration, its unit smaller: {"h": "1", "m": "05"} or {"h": None, "m": "40"}."""
+    m = int(round(minutes))
+    return {"h": str(m // 60), "m": f"{m % 60:02d}" if m % 60 else ""} if m >= 60 else {"h": None, "m": str(m)}
 
 
 def hard_neighbours(rows: list, today: date) -> list[tuple[date, date]]:
@@ -370,38 +408,39 @@ def drops(row, shown: list[date], live: list, today: date, free: frozenset) -> d
             "what": f"{short_title(row.kind, row.structure)} {hm(row.minutes)}"}
 
 
-def _cell(day: date, rows: list, extra: float, state: co.State, selected: date, scale: float, *,
+def _cell(day: date, rows: list, extra: float, state: co.State, selected: date, *,
           waiting: frozenset = frozenset(), moving=None, free: frozenset = frozenset(), hard: frozenset = frozenset(),
           by_hand: dict | None = None, run_by_hand: bool = False) -> dict:
-    """One day of the calendar: its sessions as blocks (kind, status, height), the run done outside the plan as a
-    grey one, one word, the time given, and what a screen reader says of it all. `extra`: the minutes run outside
-    the plan; `scale`: the minutes a full-height block stands for; `waiting`: the ids of the sessions that wait for
-    a debrief; `moving`: the session being moved (the day then says whether it can take it, and whether that would
-    put two hard days side by side — `hard`: the days that hold another hard session to do). `by_hand`: {session
-    id: drops(...)} for the sessions that can be picked up and dropped on another day; `run_by_hand`: the grey
-    block may be dropped on a session of the week (« C’est ma séance de … », by hand)."""
+    """One day of the board: its sessions as tiles (kind, status, height, the short duration they carry), the run done
+    outside the plan as a grey one, one word under them, and what a screen reader says of it all (the time of day
+    the agenda gave is said there and on the ticket; the column stays clean). `extra`: the minutes run outside the
+    plan; `waiting`: the ids of the sessions that wait for a debrief; `moving`: the session being moved (the day then
+    says whether it can take it, and whether that would put two hard days side by side — `hard`: the days that hold
+    another hard session to do). `by_hand`: {session id: drops(...)} for the sessions that can be picked up and
+    dropped on another day; `run_by_hand`: the grey tile may be dropped on a session of the week (« C’est ma séance
+    de … », by hand)."""
     today = state.clock.today
     by_hand = by_hand or {}
-    said, blocks, time = [], [], None
+    said, blocks = [], []
     for r in rows:
         slot = clock_time(r.slot_min) if r.status == co.PLANNED and r.slot_min is not None else None
-        time = time or slot
         said.append(f"{cp.title(r.kind, r.structure)} {hm_long(r.minutes)}, {STATUS_WORD.get(r.status, '')}"
                     + (f" à {slot}" if slot else "") + (", à débriefer" if r.id in waiting else ""))
-        blocks.append({"cls": KIND_CLASS.get(r.kind, "easy"), "status": r.status,
-                       "h": 100 if r.kind == cp.RACE else bar_height(r.minutes, scale), "id": r.id,
-                       "hand": by_hand.get(r.id) if by_hand.get(r.id, {}).get("to") else None})
+        minutes = r.done_minutes if r.status == co.DONE and r.done_minutes else r.minutes
+        blocks.append({"cls": KIND_CLASS.get(r.kind, "easy"), "status": r.status, "race": r.kind == cp.RACE,
+                       "h": 100 if r.kind == cp.RACE else tile_height(minutes), "label": tile_label(minutes),
+                       "id": r.id, "hand": by_hand.get(r.id) if by_hand.get(r.id, {}).get("to") else None})
     if extra:
         said.append("une sortie hors plan")
-        blocks.append({"cls": "extra", "status": co.DONE, "h": bar_height(extra, scale),
-                       "run": day.isoformat() if run_by_hand else None, "what": EXTRA_WORD})
-    if len(blocks) > 1:  # several the same day share the cell's room
+        blocks.append({"cls": "extra", "status": co.DONE, "race": False, "h": tile_height(extra),
+                       "label": tile_label(extra), "run": day.isoformat() if run_by_hand else None, "what": EXTRA_WORD})
+    if len(blocks) > 1:  # several the same day share the slot
         for block in blocks:
-            block["h"] = max(BAR_MIN // 2, block["h"] // len(blocks))
+            block["h"] = max(TILE_MIN // 2, block["h"] // len(blocks))
     word = short_title(rows[0].kind, rows[0].structure) if rows else (EXTRA_WORD if extra else "")
     out = {"iso": day.isoformat(), "wd": JOURS[day.weekday()], "num": day.day, "today": day == today,
            "selected": day == selected, "past": day < today, "blocks": blocks, "extra": bool(extra),
-           "word": word + (f" +{len(rows) - 1}" if len(rows) > 1 else ""), "time": time,
+           "word": word + (f" +{len(rows) - 1}" if len(rows) > 1 else ""),
            "todo": any(r.id in waiting for r in rows),
            "aria": f"{JOURS_L[day.weekday()]} {day.day} {MOIS_L[day.month - 1]} : " + (" ; ".join(said) or "repos")}
     if moving is not None:
@@ -418,51 +457,29 @@ def bounds(state: co.State) -> tuple[date, date]:
     return first, last
 
 
-def span_label(first: date, last: date) -> str:
-    """« 16–29 nov. », « 23 nov. – 6 déc. »: the days a calendar of whole weeks shows."""
-    if first.month == last.month:
-        return f"{first.day}–{last.day}{NBSP}{MOIS[first.month - 1]}"
-    return f"{first.day}{NBSP}{MOIS[first.month - 1]} – {last.day}{NBSP}{MOIS[last.month - 1]}"
-
-
-def window(state: co.State, d: date | None, w: date | None, month: bool) -> tuple[date, list[date], date]:
-    """(the day opened, the Mondays of the weeks shown, the first day shown — of the month, in a month).
-    - Weeks: WINDOW_WEEKS weeks from `w`'s; without `w`, this week and the next — the week of `d` when the day
-      asked is outside them (a link to a day opens the calendar on it).
-    - Month: the weeks that hold the month of `w` (else of `d`, else of today).
-    - The day: the one asked; else today when it is shown, else the first session shown, else the first day shown.
+def window(state: co.State, d: date | None, w: date | None) -> tuple[date, list[date]]:
+    """(the day opened, the Mondays of the board's week and of the next one).
+    - The board shows `w`'s week; without `w`, this week — the week of `d` whenever the day asked is not in it (a
+      link to a day, a tile of the next week, a session dropped there: the board follows the day).
+    - The day: the one asked; else today when it is on the board, else the board's first session, else its Monday.
       The page opens on today, a rest day too (it names the next session)."""
     today = state.clock.today
-    m0 = cp.monday_of(today)
     first, last = bounds(state)
     lo, hi = first, last + timedelta(days=6)
     if d is not None:
         d = min(max(d, lo), hi)
-    if month:
-        anchor = min(max(w or d or today, lo), hi)
-        start = anchor.replace(day=1)
-        end = start.replace(day=calendar.monthrange(start.year, start.month)[1])
-        mondays, m = [], cp.monday_of(start)
-        while m <= end:
-            mondays.append(m)
-            m += timedelta(weeks=1)
-    else:
-        span = timedelta(weeks=WINDOW_WEEKS)
-        if w is not None:
-            start = cp.monday_of(w)
-            if d is not None and not start <= d < start + span:
-                start = cp.monday_of(d)
-        else:
-            start = m0 if d is None or m0 <= d < m0 + span else cp.monday_of(d)
-        start = min(max(start, first), last)
-        mondays = [start + timedelta(weeks=i) for i in range(WINDOW_WEEKS)]
-        end = mondays[-1] + timedelta(days=6)
+    start = cp.monday_of(w) if w is not None else cp.monday_of(today)
+    if d is not None and not start <= d < start + timedelta(weeks=1):
+        start = cp.monday_of(d)
+    start = min(max(start, first), last)
+    mondays = [start + timedelta(weeks=i) for i in range(WINDOW_WEEKS)]
+    end = start + timedelta(days=6)
     if d is not None:
-        return d, mondays, start
+        return d, mondays
     if start <= today <= end:
-        return today, mondays, start
+        return today, mondays
     inside = sorted(r.day for r in state.rows if r.status != co.CANCELLED and start <= r.day <= end)
-    return (inside[0] if inside else min(max(start, lo), hi)), mondays, start
+    return (inside[0] if inside else start), mondays
 
 
 def week_name(monday: date, today: date) -> str:
@@ -502,10 +519,12 @@ def week_summary(state: co.State, monday: date, done: dict[date, float]) -> dict
     did = done.get(monday, 0)
     if monday > cp.monday_of(state.clock.today):
         return {"planned": planned, "done": 0, "fill": 0, "label": f"{hm(planned)} prévues" if planned else "",
+                "line": f"{hm(planned)} prévues" if planned else "",
                 "aria": f"{hm_long(planned)} prévues"}
     fill = round(min(1.0, did / planned), 3) if planned else (1.0 if did else 0)
     return {"planned": planned, "done": did, "fill": fill,
             "label": f"{hm(did)} / {hm(planned)}" if planned else (hm(did) if did else ""),
+            "line": f"{hm(did)} sur {hm(planned)}" if planned else (f"{hm(did)} faites" if did else ""),
             "aria": f"{hm_long(did)} faites sur {hm_long(planned)} prévues" if planned else
             (f"{hm_long(did)} faites, rien de prévu" if did else "Rien de prévu")}
 
@@ -525,49 +544,51 @@ def week_note(state: co.State, monday: date, coach: bool = False) -> dict:
             and cp.monday_of(rd) == monday else None}
 
 
-def chart(state: co.State, done: dict[date, float]) -> dict | None:
-    """The plan's weeks: planned (outline) against done (solid), the phases, the current week, the race."""
+def road(state: co.State, shown: date, coach: bool = False) -> dict | None:
+    """The road to the race: every week of the plan a bar as tall as the time it plans (against the plan's biggest
+    week), tinted by its phase; the current week, the week the board shows, the race's week (its bar full, a flag on
+    it). Each bar says its dates, time and phase (`label`: what the road reads while a finger scrubs, `aria`) and is
+    the week's address. ROAD_WEEKS at most: the plan's first weeks give way first, never the current one."""
     first, last = bounds(state)
     last = max([last] + [w.monday for w in state.weeks])
-    n = (last - first).days // 7 + 1
-    if n > CHART_WEEKS:
-        first = last - timedelta(weeks=CHART_WEEKS - 1)
-        n = CHART_WEEKS
-    mondays = [first + timedelta(weeks=i) for i in range(n)]
     m0 = cp.monday_of(state.clock.today)
-    by: dict[date, int] = {}
+    n = (last - first).days // 7 + 1
+    if n > ROAD_WEEKS:
+        first = min(m0, last - timedelta(weeks=ROAD_WEEKS - 1))
+        last = first + timedelta(weeks=ROAD_WEEKS - 1)
+        n = ROAD_WEEKS
+    mondays = [first + timedelta(weeks=i) for i in range(n)]
+    planned: dict[date, int] = {}
     for r in state.rows:
         if r.status != co.CANCELLED and r.kind != cp.RACE:
-            by[cp.monday_of(r.day)] = by.get(cp.monday_of(r.day), 0) + r.minutes
-    planned = [by.get(m) or None for m in mondays]
-    did = [(done.get(m, 0) if m <= m0 else None) for m in mondays]
-    if not any(planned) and not any(did):
+            planned[cp.monday_of(r.day)] = planned.get(cp.monday_of(r.day), 0) + r.minutes
+    if not any(planned.get(m) for m in mondays):
         return None
-    phases, read, said = [], [], []
-    for m, p, d in zip(mondays, planned, did, strict=True):
-        key = cp.phase_of(m, state.inputs) if m >= state.plan.start_monday else ""
-        label = cp.PHASES.get(key, "") if key != "apres" else ""
-        phases.append((key if label else "", label))
-        head = "Semaine en cours" if m == m0 else rp.week_label(m)
-        if m <= m0:
-            value = f"{hm(d or 0)} / {hm(p)}" if p else hm(d or 0)
-            spoken = (f"{hm_long(d or 0)} faites sur {hm_long(p)} prévues" if p else f"{hm_long(d or 0)} faites")
+    peak = max(planned.get(m, 0) for m in mondays)
+    race_day = state.goal.race_day
+    race_week = cp.monday_of(race_day) if race_day else None
+    start = state.plan.start_monday
+    bars, runs = [], []
+    for m in mondays:
+        key = cp.phase_of(m, state.inputs) if m >= start else ""
+        word = cp.PHASES.get(key, "") if key != "apres" else ""
+        minutes = planned.get(m, 0)
+        race = m == race_week
+        said = [week_label(m), f"{hm(minutes)} prévues" if minutes else "rien de prévu"] + ([word] if word else [])
+        bars.append({"monday": m.isoformat(), "phase": key if word else "none", "race": race,
+                     "h": 100 if race else (round(22 + 78 * minutes / peak) if minutes else 6),
+                     "current": m == m0, "shown": m == shown, "label": " · ".join(said),
+                     "aria": ("Semaine de la course, " if race else "Semaine en cours, " if m == m0 else "")
+                     + ", ".join(said)})
+        if runs and runs[-1]["key"] == bars[-1]["phase"]:
+            runs[-1]["weeks"] += 1
         else:
-            value = f"{hm(p)} prévues" if p else "—"
-            spoken = f"{hm_long(p)} prévues" if p else "rien de prévu"
-        read.append([head, value, label])
-        said.append(f"Semaine du {d_long(m)} : {spoken}" + (f", phase {label}" if label else ""))
-    goal = state.goal
-    race_week = cp.monday_of(goal.race_day) if goal.race_day else None
-    races = [(race_week, goal.name)] if race_week in mondays else []
-    current = mondays.index(m0) if m0 in mondays else None
-    c = viz.plan_weeks(mondays, planned, did, phases=phases, current=current, readouts=read, arias=said, races=races)
-    c["summary"] = ("Les semaines du plan : le contour est le temps prévu, la barre pleine le temps fait. "
-                    "Les phases sont marquées sous l’axe.")
-    weeks = f"{n} semaine{'s' if n > 1 else ''}"
-    return viz.rest(c, ["Prévu et fait", weeks, ""],
-                    f"Le plan sur {weeks}. Choisis une semaine pour voir son temps prévu et fait.",
-                    back=current if current is not None else n - 1)
+            runs.append({"key": bars[-1]["phase"], "label": word, "weeks": 1})
+    total = (last - start).days // 7 + 1 if last >= start else 0
+    index = (shown - start).days // 7 + 1
+    return {"bars": bars, "phases": runs, "race": race_week in mondays,
+            "tip": f"Semaine {index} sur {total}" if 1 <= index <= total else "Avant le plan",
+            "aria": f"Le plan, {n} semaine{'s' if n > 1 else ''}" + (" jusqu’à la course" if race_week else "")}
 
 
 def _attach(run, live: list, today: date) -> dict | None:
@@ -586,15 +607,21 @@ def _attach(run, live: list, today: date) -> dict | None:
             "what": f"{cp.title(row.kind, row.structure)} {hm(row.minutes)}"}
 
 
-def page(state: co.State, *, d: date | None = None, w: date | None = None, month: bool = False,
-         move: int | None = None, coach: bool = False, hr_reference: float | None = None,
-         names: dict | None = None) -> dict:
-    """Everything the swapped part draws: the calendar (`cal`: its weeks, each with its line and its seven days),
-    the day opened under it, the session waiting for a debrief (`debrief`; `waiting`: how many do — what a
-    notification may count), the plan's chart. `names`: the first names a change or a comment is signed with (see
-    _session). A coach is never asked for a ressenti and sees no « à débriefer » mark."""
+def day_word_title(day: date, today: date) -> str:
+    """The ticket's title: « Aujourd’hui », « Hier », « Demain », else the weekday (« Samedi »)."""
+    gap = (day - today).days
+    return {0: "Aujourd’hui", -1: "Hier", 1: "Demain"}.get(gap) or JOURS_L[day.weekday()].capitalize()
+
+
+def page(state: co.State, *, d: date | None = None, w: date | None = None, move: int | None = None,
+         coach: bool = False, hr_reference: float | None = None, names: dict | None = None) -> dict:
+    """Everything the swapped part draws: the road and its heading (`road`, `head`), the board (`cal`: the week shown
+    with its line and its seven days, then the next week as a compact row), the day opened as tickets, the session
+    waiting for a debrief (`debrief`; `waiting`: how many do — what a notification may count). `names`: the first
+    names a change or a comment is signed with (see _session). A coach is never asked for a ressenti and sees no
+    « à débriefer » mark."""
     today = state.clock.today
-    selected, mondays, start = window(state, d, w, month)
+    selected, mondays = window(state, d, w)
     first, last = bounds(state)
     live = [r for r in state.rows if r.status != co.CANCELLED]
     by_day: dict[date, list] = {}
@@ -611,23 +638,21 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
     waiting = [] if coach else co.awaiting_debrief(live, today)
     waiting_ids = frozenset(r.id for r in waiting)
     ask = debrief(state, waiting, d, runs_by_id)
+    # the next week's row only while the plan has one
+    mondays = [m for m in mondays if m <= last] or mondays[:1]
     shown = [m + timedelta(days=i) for m in mondays for i in range(7)]
-    # the blocks: each as tall as its session is long, against the longest shown (the race fills its cell)
-    scale = max([BAR_SCALE_MIN] + [r.minutes for day in shown for r in by_day.get(day, []) if r.kind != cp.RACE]
-                + [extra_days.get(day, 0) for day in shown])
     hard = hard_days(live, moving) if moving is not None else frozenset()
     free = frozenset(extra_days)
-    # by hand (the calendar's own gestures, coaching-calendar.js): what « Déplacer » takes, the same rights for the
+    # by hand (the board's own gestures, coaching-calendar.js): what « Déplacer » takes, the same rights for the
     # person who follows the plan; none while « Déplacer » has turned the days into targets
     by_hand = {} if moving is not None else {
         r.id: drops(r, shown, live, today, free) for day in shown for r in by_day.get(day, []) if co.movable(r, today)}
     pairs = hard_neighbours(live, today)
     weeks = []
     for m in mondays:
-        days = [{**_cell(day, by_day.get(day, []), extra_days.get(day, 0), state, selected, scale,
-                         waiting=waiting_ids, moving=moving, free=free, hard=hard, by_hand=by_hand,
-                         run_by_hand=not coach and moving is None),
-                 "out": month and day.month != start.month} for day in (m + timedelta(days=i) for i in range(7))]
+        days = [_cell(day, by_day.get(day, []), extra_days.get(day, 0), state, selected, waiting=waiting_ids,
+                      moving=moving, free=free, hard=hard, by_hand=by_hand, run_by_hand=not coach and moving is None)
+                for day in (m + timedelta(days=i) for i in range(7))]
         said = [rp.fr(HARD_PAIR.format(a=JOURS_L[x.weekday()].capitalize(), b=JOURS_L[y.weekday()])
                       + (" " + QUALITY_PAIR if quality_in(live, (x, y)) and not coach else ""))
                 for x, y in pairs if cp.monday_of(x) == m]
@@ -635,16 +660,12 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
                       "summary": week_summary(state, m, done), **week_note(state, m, coach),
                       "moves": week_moves(state, m, coach), "hard": " ".join(x for x in said if x) or None,
                       "days": days})
-    if month:
-        end = start.replace(day=calendar.monthrange(start.year, start.month)[1])
-        before, after = start - timedelta(days=1), end + timedelta(days=1)
-        nav = {"label": f"{MOIS_L[start.month - 1]} {start.year}", "anchor": start.isoformat(),
-               "prev": before.replace(day=1).isoformat() if cp.monday_of(before) >= first else None,
-               "next": after.isoformat() if cp.monday_of(after) <= last else None}
-    else:
-        nav = {"label": span_label(mondays[0], mondays[-1] + timedelta(days=6)), "anchor": mondays[0].isoformat(),
-               "prev": (mondays[0] - timedelta(weeks=1)).isoformat() if mondays[0] > first else None,
-               "next": (mondays[0] + timedelta(weeks=1)).isoformat() if mondays[0] < last else None}
+    if len(weeks) > 1 and weeks[1]["name"] not in WEEK_NAMES.values():
+        weeks[1]["name"] = "Semaine suivante"
+    board = mondays[0]
+    nav = {"anchor": board.isoformat(),
+           "prev": (board - timedelta(weeks=1)).isoformat() if board > first else None,
+           "next": (board + timedelta(weeks=1)).isoformat() if board < last else None}
     # a day without a session, today or later: the next session to come is named (and one tap away)
     coming = next((r for r in live if r.day > selected and r.status == co.PLANNED), None) \
         if selected >= today and not by_day.get(selected) else None
@@ -657,11 +678,11 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
             runs_out.append({**_activity(run, link=not coach),
                              "attach": None if coach or runs_out else _attach(run, live, today)})
     return {
-        "today": today.isoformat(), "selected": selected.isoformat(), "view": "mois" if month else "semaine",
-        "is_today": selected == today,
-        "day_label": ("Aujourd’hui · " if selected == today else "") + viz.d_long(selected),
-        "cal": {**nav, "heads": JOURS, "weeks": weeks, "by_hand": any(x["to"] for x in by_hand.values()),
-                "has_today": mondays[0] <= today <= mondays[-1] + timedelta(days=6)},
+        "today": today.isoformat(), "selected": selected.isoformat(), "is_today": selected == today,
+        "day_title": day_word_title(selected, today), "day_long": viz.d_long(selected),
+        "head": header(state, coach), "road": road(state, board, coach),
+        "cal": {**nav, "weeks": weeks, "by_hand": any(x["to"] for x in by_hand.values()),
+                "has_today": board <= today <= board + timedelta(days=6)},
         "debrief": ask, "waiting": len(waiting),
         "next": {"iso": coming.day.isoformat(), "title": cp.title(coming.kind, coming.structure),
                  "duration": "" if coming.kind == cp.RACE else hm(coming.minutes),
@@ -675,7 +696,6 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, month
         "can_add": coach and selected >= today,
         "ressenti": list(enumerate(cp.RESSENTI, start=1)),
         "kinds": [(k, cp.KINDS[k]) for k in cp.EDITABLE],
-        "chart": chart(state, done),
     }
 
 
@@ -810,7 +830,9 @@ def header(state: co.State, coach: bool = False) -> dict:
     # a plan that lost its race starts again next Monday: this week keeps no phase
     phase = cp.phase_of(monday, state.inputs) if monday >= state.plan.start_monday else "apres"
     week = (monday - state.plan.start_monday).days // 7
-    return {"goal": countdown(state.goal, today, state.inputs.intent), "time": goal_time(state.goal, coach),
+    lead, race = road_head(state.goal, today, state.inputs.intent)
+    return {"goal": countdown(state.goal, today, state.inputs.intent), "lead": lead, "race": race,
+            "time": goal_time(state.goal, coach),
             "level": None if coach else level_line(co.level_of(state.plan), week),
             "notes": [rp.fr(SIDE_BY_SIDE)] if not coach and side_by_side(state.inputs) else [],
             "phase": cp.PHASES.get(phase) if phase != "apres" else None, "ended": ended_line(state)}

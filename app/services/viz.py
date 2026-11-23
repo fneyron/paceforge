@@ -929,30 +929,3 @@ def intensity_profile(structure: dict | None) -> dict | None:
                        "part": part})
         x += w + PROFILE_GAP
     return {"W": width, "H": height, "blocks": blocks, "aria": "Profil de la séance : " + ", ".join(said) + "."}
-
-
-# ── C2 plan weeks: planned (outline) against done (solid), the phases under the axis (Coaching) ─
-
-def plan_weeks(mondays: list[date], planned: list, done: list, *, phases: list[tuple[str, str]], current: int | None,
-               readouts: list[list[str]], arias: list[str], races=()) -> dict:
-    """`bars` with the plan's phases: `phases` [(key, label) per week] drawn as runs under the axis, each named once;
-    `current`: the slot of the week in progress, behind a soft column. The x labels: about five dates."""
-    c = bars(mondays, done, readouts=readouts, arias=arias, planned=planned, races=races, min_top=60, sel=current)
-    n = len(mondays)
-    xs, slot = slot_x(n), X1 / max(n, 1)
-    every = max(1, round(n / 5))
-    c["xt"] = [{"x": xs[i], "label": f"{d.day} {MOIS[d.month - 1]}"} for i, d in enumerate(mondays)
-               if (n - 1 - i) % every == 0]
-    runs: list[dict] = []
-    for i, (key, label) in enumerate(phases):
-        if runs and runs[-1]["key"] == key:
-            runs[-1]["x1"] = round(xs[i] + slot / 2 - 1, 1)
-        elif key:
-            runs.append({"key": key, "label": label, "x0": round(xs[i] - slot / 2 + 1, 1),
-                         "x1": round(xs[i] + slot / 2 - 1, 1)})
-    for r in runs:
-        r["w"], r["cx"] = round(r["x1"] - r["x0"], 1), round((r["x0"] + r["x1"]) / 2, 1)
-        r["named"] = r["w"] >= len(r["label"]) * 5.6  # the name only where it fits
-    c.update(phases=runs, cur=current, slot=round(slot, 1), cur_x=xs[current] if current is not None and n else None,
-             H=178)
-    return c
