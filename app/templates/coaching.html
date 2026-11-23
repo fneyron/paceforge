@@ -1,11 +1,10 @@
 {% extends "base.html" %}
 {#- Coaching (beta): the athlete's plan, or the same screens seen by a coach (scope.coach), titled with the athlete's
     first name. « ‹ Activités » is the way back of an installed app older than the native Coaching tab only. The part
-    swapped in place on every tap is partials/coaching_main.html: the page is the calendar — the debrief asked first,
-    the weeks, the day opened in them, the plan's chart behind a fold. Under it, two more rows: the rules in one fold,
-    and « Options du plan » — everything else (« Ma séance fixe », the form option, the calendar feed, « Mon agenda », sharing, redo,
-    stop), closed until asked for. `open`: what the options open on when the
-    page comes back from one of their forms (?outil=…). -#}
+    swapped in place on every tap is partials/coaching_main.html: the road to the race, the debrief, the week as a
+    board, the day as tickets. The round button opens the options (the athlete's only): with JavaScript a bottom
+    sheet (coaching-sheet.js), without it the same section at the end of the page, which the round button and every
+    ?outil=…#… address reach. `open`: the tool the page comes back on from one of their forms. -#}
 {% from "partials/_icons.html" import icon %}
 
 {% block title %}{{ athlete_name ~ " · " if scope.coach }}Coaching — PaceForge{% endblock title %}
@@ -15,30 +14,22 @@
     {% if scope.coach %}<a href="/coaching/athletes" class="pf-back">{{ icon("chev-l", "w-4 h-4") }}Plans suivis</a>
     {% else %}<a href="/activities" class="pf-back pf-old-shell-only">{{ icon("chev-l", "w-4 h-4") }}Activités</a>{% endif %}
     <div class="pf-head pf-coach-head">
-        <div>
-            <h1 class="pf-h1">{{ athlete_name if scope.coach else "Coaching" }} <span class="pf-tag">bêta</span></h1>
-            {#- the time the plan runs on, said once: the race page's objective, else the simulator's estimate -#}
-            <p class="pf-coach-goal"><b>{{ head.goal }}</b>{% if head.time %}{% if head.time.href %}<a class="pf-coach-goal-time" href="{{ head.time.href }}">{{ head.time.label }}</a>{% else %}<span class="pf-coach-goal-time">{{ head.time.label }}</span>{% endif %}{% endif %}</p>
-            {#- the level read from the history, with its reason: the athlete's own, never a follower's -#}
-            {% if head.level %}<p class="pf-coach-level"><b>{{ head.level.lead }}</b>&nbsp;: {{ head.level.text }}{% if head.level.why %} <small>{{ head.level.why }}</small>{% endif %}</p>{% endif %}
-            {% for note in head.notes %}<p class="pf-coach-level">{{ note }}</p>{% endfor %}
-        </div>
+        <h1 class="pf-h1">{{ athlete_name if scope.coach else "Coaching" }} <span class="pf-tag">bêta</span></h1>
+        {% if not scope.coach %}<a class="pf-coach-optbtn" id="coach-options-btn" href="/coaching?outil=options#coach-options" aria-controls="coach-options" aria-haspopup="dialog" aria-label="Options du plan">{{ icon("sliders", "w-6 h-6", "1.8") }}</a>{% endif %}
     </div>
-    {% if head.ended %}<p class="pf-coach-reason pf-coach-ended">{{ head.ended }}</p>{% endif %}
 
     {% include "partials/coaching_main.html" %}
 
     {% if not scope.coach %}
-    <div class="pf-coach-more">
-        <details class="pf-coach-tool pf-method pf-coach-how">
-            <summary class="pf-tool"><span>{{ icon("info") }}<span>Comment ça marche</span></span>{{ icon("chev-r", "pf-chev") }}</summary>
-            <ul>{% for line in method %}<li>{{ line }}</li>{% endfor %}</ul>
-        </details>
-        <details class="pf-coach-tool pf-coach-opts" id="coach-options"{% if open %} open{% endif %}>
-            <summary class="pf-tool" id="coach-options-toggle"><span>{{ icon("sliders") }}<span>Options du plan <small>Calendrier, agenda, partage, refaire le plan</small></span></span>{{ icon("chev-r", "pf-chev") }}</summary>
-            {% include "partials/coaching_tools.html" %}
-        </details>
-    </div>
+    <section id="coach-options" class="pf-coach-sheet" aria-labelledby="coach-options-h">
+        <div class="pf-coach-sheet-grab" aria-hidden="true"></div>
+        <div class="pf-coach-sheet-head">
+            <button type="button" class="pf-coach-sheet-back" id="coach-sheet-back" hidden>{{ icon("chev-l", "w-5 h-5", "2.2") }}<span>Options</span></button>
+            <h2 id="coach-options-h" class="pf-coach-sheet-title">Options du plan</h2>
+            <button type="button" class="pf-coach-sheet-close" id="coach-sheet-close" hidden aria-label="Fermer les options">{{ icon("close", "w-5 h-5", "2.2") }}</button>
+        </div>
+        {% include "partials/coaching_tools.html" %}
+    </section>
     {% else %}
     <form method="post" action="{{ scope.base }}/leave" class="pf-coach-leave" onsubmit="event.preventDefault(); var f = this; var msg = 'Ne plus suivre {{ athlete_name|e }} ? Tu ne verras plus son plan.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Ne plus suivre'); } else if (confirm(msg)) { f.submit(); }">
         <button type="submit" class="pf-btn pf-btn-ghost pf-btn-sm text-danger">Ne plus suivre {{ athlete_name }}</button>
@@ -48,13 +39,13 @@
 {% endblock content %}
 
 {% block scripts %}
-<script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id }}"></script>
 <script defer src="/static/js/coaching-calendar.js?v={{ request.app.state.build_id }}"></script>
-{% if not scope.coach %}<script defer src="/static/js/coaching-fixed.js?v={{ request.app.state.build_id }}"></script>{% endif %}
+{% if not scope.coach %}<script defer src="/static/js/coaching-sheet.js?v={{ request.app.state.build_id }}"></script>
+<script defer src="/static/js/coaching-fixed.js?v={{ request.app.state.build_id }}"></script>{% endif %}
 {% if not scope.coach and tools and tools.agenda.accounts %}<script defer src="/static/js/coaching-agenda.js?v={{ request.app.state.build_id }}"></script>{% endif %}
 <script>
 // Instant feedback before the server answers: the ressenti tapped is shown as chosen at once; « Copier » copies the
-// calendar address. The server's answer then replaces the calendar part (htmx).
+// calendar address. The server's answer then replaces the swapped part (htmx).
 document.addEventListener("click", function (event) {
     var feel = event.target.closest && event.target.closest("[data-feel]");
     if (feel) feel.parentNode.querySelectorAll("[data-feel]").forEach(function (b) { b.setAttribute("aria-pressed", String(b === feel)); });
@@ -67,22 +58,7 @@ document.addEventListener("click", function (event) {
         else { field.select(); try { document.execCommand("copy"); done(); } catch (_) {} }
     }
 });
-{% if not scope.coach %}
-// A link to one of the options (/coaching#coach-form, the address a form comes back to) lands on it, opened: the
-// options are a closed fold, which a fragment alone does not open.
-(function () {
-    function reveal() {
-        var target = location.hash.length > 1 && document.getElementById(location.hash.slice(1));
-        var options = document.getElementById("coach-options");
-        if (!target || !options || !options.contains(target)) return;
-        for (var el = target; el && el !== options.parentNode; el = el.parentNode) if (el.tagName === "DETAILS") el.open = true;
-        target.scrollIntoView({ block: "start" });
-    }
-    reveal();
-    addEventListener("hashchange", reveal);
-})();
-{% endif %}
-// « Déplacer »: the days become the targets — the calendar comes into view, the instruction takes the focus.
+// « Déplacer »: the days become the targets — the board comes into view, the instruction takes the focus.
 document.addEventListener("htmx:afterSettle", function () {
     var moving = document.getElementById("coach-moving");
     if (!moving || moving.dataset.seen) return;
@@ -90,14 +66,5 @@ document.addEventListener("htmx:afterSettle", function () {
     moving.closest(".pf-coach-cal-main").scrollIntoView({ block: "nearest" });  // its scroll margins clear the bars
     if (!document.activeElement || document.activeElement === document.body) moving.focus({ preventScroll: true });
 });
-// « Le plan » stays open across the taps that redraw the calendar (it is part of what they swap).
-(function () {
-    var open = false;
-    document.addEventListener("toggle", function (event) { if (event.target.id === "coach-plan") open = event.target.open; }, true);
-    document.addEventListener("htmx:afterSwap", function () {
-        var fold = document.getElementById("coach-plan");
-        if (fold && open) fold.open = true;
-    });
-})();
 </script>
 {% endblock scripts %}
