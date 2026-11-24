@@ -1,5 +1,5 @@
-"""Coaching › « Mon agenda » (docs/coaching.md): private calendar addresses, kept encrypted and shown masked, read by
-a worker and never by a web request; only busy intervals are kept (never a title, a description, a place or an
+"""Coaching › « Mon agenda » (docs/coaching.md): private calendar addresses pasted before 24 Nov 2026 (none can be
+added since; those kept are still read), encrypted and shown masked, read by a worker and never by a web request; only busy intervals are kept (never a title, a description, a place or an
 attendee); each session gets a free time, a full day sends its session elsewhere; the feed emits timed events under
 the same UID; a coach reads the times, never the calendar; without an address nothing changes."""
 import io
@@ -90,6 +90,14 @@ async def _read(db, athlete, clock, net, body: str) -> int:
     return await task.read_agenda(db, athlete.id, _dawn(clock))
 
 
+async def _address(db, athlete, url: str = GOOGLE) -> CoachingCalendar:
+    """An address the athlete pasted before 24 Nov 2026, as it is stored (nobody can add one any more)."""
+    row = CoachingCalendar(user_id=athlete.id, url=url)
+    db.add(row)
+    await db.flush()
+    return row
+
+
 async def _everything(db) -> str:
     """Every row of every table, as text: what « never stored » is checked against."""
     out = []
@@ -101,53 +109,54 @@ async def _everything(db) -> str:
 
 # ── the addresses ───────────────────────────────────────────────────────────
 
-async def test_an_address_is_checked_kept_encrypted_shown_masked_and_never_fetched_by_the_page(
-        client, people, db_session, clock, queued, monkeypatch):
+async def test_no_address_can_be_added_any_more(client, people, db_session, clock, queued):
+    """Owner, 24 Nov 2026: « on ne va pas rentrer d'URL à la main » — the field and its route are gone (the only place
+    a user gave the server an address to fetch)."""
     athlete = people.athlete
     _as(client, athlete)
     await _monday_plan(client, db_session, athlete, clock)
+    page = (await client.get("/coaching?outil=agenda")).text
+    fold = page.split('id="coach-tool-agenda"')[1].split("</section>")[0]
+    for gone in ('name="url"', "coach-cal-url", "coach-cal-add", "Où trouver l’adresse", "Adresse secrète",
+                 'action="/coaching/agenda"'):
+        assert gone not in fold, gone
+    r = await client.post("/coaching/agenda", data={"url": GOOGLE})
+    assert r.status_code in (404, 405)
+    assert queued == [] and (await db_session.execute(select(func.count()).select_from(CoachingCalendar))).scalar() == 0
+    assert "coaching_agenda_save" not in __import__("app.services.auth", fromlist=["QUOTAS"]).QUOTAS
+
+
+async def test_an_address_pasted_before_is_kept_encrypted_shown_masked_read_by_the_worker_and_removable(
+        client, people, db_session, clock, queued, net, monkeypatch):
+    athlete = people.athlete
+    _as(client, athlete)
+    await _monday_plan(client, db_session, athlete, clock)
+    row = await _address(db_session, athlete)
+    await _address(db_session, athlete, "https://p12-caldav.icloud.com/published/2/MTIzNDU2Nzg5")
 
     async def never(*a, **k):
         raise AssertionError("a web request fetched a user-typed address")
+    fetch = sf.fetch
     monkeypatch.setattr(sf, "fetch", never)
-    monkeypatch.setattr(sf, "_resolve", never)
-    page = (await client.get("/coaching")).text
-    assert 'id="coach-tool-agenda"' in page and "Où trouver l’adresse" in page and "Adresse secrète au format iCal" in page
-    for bad, said in (("http://calendar.google.com/x.ics", "https://"), ("https://127.0.0.1/x.ics", "pas acceptée"),
-                      ("https://169.254.169.254/latest", "pas acceptée"), ("https://localhost/x.ics", "pas acceptée"),
-                      ("javascript:alert(1)", "https://"), ("", "https://"),
-                      ("https://test/coaching/cal/abc.ics", "pas acceptée")):
-        r = await client.post("/coaching/agenda", data={"url": bad})
-        assert r.status_code == 200 and said in r.text and 'class="pf-coach-panel is-asked" id="coach-tool-agenda"' in r.text, bad
-        assert "pf-coach-error" in r.text.split('id="coach-tool-agenda"')[1]
-    assert queued == [] and (await db_session.execute(select(func.count()).select_from(CoachingCalendar))).scalar() == 0
-    r = await client.post("/coaching/agenda", data={"url": GOOGLE})
-    assert r.status_code == 303 and r.headers["location"] == "/coaching?outil=agenda#coach-tool-agenda"
-    assert queued == [athlete.id], "read by a worker, once saved"
-    (row,) = (await db_session.execute(select(CoachingCalendar))).scalars().all()
-    assert row.url == GOOGLE and row.status is None and row.fetched_at is None
-    raw = (await db_session.execute(text("SELECT url FROM coaching_calendars"))).scalar()
+    raw = (await db_session.execute(text("SELECT url FROM coaching_calendars ORDER BY id"))).scalars().first()
     assert "google" not in raw and "private-0a1b2c3d4e5f" not in raw and raw != GOOGLE, "encrypted at rest"
     page = (await client.get("/coaching?outil=agenda")).text
-    assert "<b>calendar.google.com/….ics</b>" in page and "Lecture en cours…" in page
+    assert "<b>calendar.google.com/….ics</b>" in page and "Lecture en cours…" in page and "<b>p12-caldav.icloud.com/" in page
     assert "private-0a1b2c3d4e5f" not in page and "stella%40x.fr" not in page, "never shown whole again"
-    # the same again, a webcal:// address, a third, and no room for a fourth
-    assert "déjà dans ton agenda" in (await client.post("/coaching/agenda", data={"url": GOOGLE})).text
-    assert (await client.post("/coaching/agenda", data={"url": ICLOUD})).status_code == 303
-    assert (await client.post("/coaching/agenda", data={"url": "https://outlook.office365.com/owa/calendar/a/b/calendar.ics"})).status_code == 303
-    urls = [c.url for c in await ag.calendars_of(db_session, athlete.id)]
-    assert urls[1] == "https://p12-caldav.icloud.com/published/2/MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEy"
-    page = (await client.get("/coaching?outil=agenda")).text
-    assert 'id="coach-cal-url"' not in page, "three addresses: no field for a fourth"
-    r = await client.post("/coaching/agenda", data={"url": "https://example.org/four.ics"})
-    assert r.status_code == 200 and "3 adresses au plus" in r.text and len(queued) == 3
-    # removable; another account's is not
+    assert f'id="coach-cal-remove-{row.id}"' in page and 'id="coach-cal-refresh"' in page
+    monkeypatch.setattr(sf, "fetch", fetch)
+    # still read by the worker, as before
+    net.body = _ics(clock.day).encode()
+    assert await task.read_agenda(db_session, athlete.id, _dawn(clock)) == 2
+    assert "Lu aujourd’hui à 5" in (await client.get("/coaching?outil=agenda")).text
+    # removable, with its busy time, at once; another account's is not
     other = CoachingCalendar(user_id=people.coach.id, url="https://example.org/theirs.ics")
     db_session.add(other)
     await db_session.flush()
     assert (await client.post(f"/coaching/agenda/{other.id}/remove")).status_code == 404
     assert (await client.post(f"/coaching/agenda/{row.id}/remove")).status_code == 303
-    assert len(await ag.calendars_of(db_session, athlete.id)) == 2 and await db_session.get(CoachingCalendar, other.id)
+    assert len(await ag.calendars_of(db_session, athlete.id)) == 1 and await db_session.get(CoachingCalendar, other.id)
+    assert not (await db_session.execute(select(CoachingBusy).where(CoachingBusy.calendar_id == row.id))).all()
 
 
 async def test_refresh_is_queued_once_a_minute_and_the_round_reads_only_plans_with_an_address(
@@ -162,13 +171,14 @@ async def test_refresh_is_queued_once_a_minute_and_the_round_reads_only_plans_wi
     await _monday_plan(client, db_session, athlete, clock)
     await _plan(client, db_session, people.outsider)  # a plan without an address
     db_session.add(CoachingCalendar(user_id=people.coach.id, url="https://example.org/noplan.ics"))  # no plan
-    assert (await _as(client, athlete).post("/coaching/agenda", data={"url": GOOGLE})).status_code == 303
+    await _address(db_session, athlete)
+    _as(client, athlete)
     r = await client.post("/coaching/agenda/refresh")
     assert r.status_code == 303 and r.headers["location"].startswith("/coaching?outil=agenda-lu")
     assert "Lecture demandée" in (await client.get("/coaching?outil=agenda-lu")).text
     r = await client.post("/coaching/agenda/refresh")
     assert r.status_code == 200 and "Une actualisation par minute" in r.text
-    assert queued == [athlete.id, athlete.id], "the second press within the minute queues nothing"
+    assert queued == [athlete.id], "the second press within the minute queues nothing"
     net.body = _ics(clock.day).encode()
     assert await task.run_agenda(db_session, _dawn(clock)) == 1, "only the athlete with a plan and an address"
     assert [str(r.url) for r in net.requests] == [
@@ -183,7 +193,7 @@ async def test_only_busy_intervals_are_kept_never_a_title_a_place_or_an_attendee
     athlete = people.athlete
     _as(client, athlete)
     await _monday_plan(client, db_session, athlete, clock)
-    await client.post("/coaching/agenda", data={"url": GOOGLE})
+    await _address(db_session, athlete)
     assert await _read(db_session, athlete, clock, net, _ics(clock.day)) == 1
     rows = (await db_session.execute(select(CoachingBusy).order_by(CoachingBusy.start_at))).scalars().all()
     assert len(rows) == 4 and {c.name for c in CoachingBusy.__table__.columns} == {
@@ -217,7 +227,7 @@ async def test_a_failed_reading_says_why_in_its_own_words_and_keeps_the_last_goo
     athlete = people.athlete
     _as(client, athlete)
     await _monday_plan(client, db_session, athlete, clock)
-    await client.post("/coaching/agenda", data={"url": GOOGLE})
+    await _address(db_session, athlete)
     assert await _read(db_session, athlete, clock, net, _ics(clock.day)) == 1
     net.status = status
     assert await _read(db_session, athlete, clock, net, body) == 0
@@ -236,7 +246,7 @@ async def test_each_outbound_read_is_counted_per_account(client, people, db_sess
     athlete = people.athlete
     _as(client, athlete)
     await _monday_plan(client, db_session, athlete, clock)
-    await client.post("/coaching/agenda", data={"url": GOOGLE})
+    await _address(db_session, athlete)
     for _ in range(2):
         assert await _read(db_session, athlete, clock, net, _ics(clock.day)) == 1
     assert await _read(db_session, athlete, clock, net, _ics(clock.day)) == 0 and len(net.requests) == 2
@@ -256,7 +266,7 @@ async def test_sessions_land_in_free_slots_and_a_full_day_sends_its_session_else
     tue = next(r for r in await _rows(db_session, athlete) if r.day == mon + timedelta(days=1))
     thu = next(r for r in await _rows(db_session, athlete) if r.day == mon + timedelta(days=3))
     assert all(r.slot_min is None and not r.slot_flag for r in await _rows(db_session, athlete)), "no address: no time"
-    await client.post("/coaching/agenda", data={"url": GOOGLE})
+    await _address(db_session, athlete)
     state = await co.sync(db_session, plan, athlete, _dawn(clock))
     assert state.agenda is None and all(r.slot_min is None for r in state.rows), "not read yet: nothing is guessed"
     assert await _read(db_session, athlete, clock, net, _ics(mon)) == 1
@@ -307,8 +317,9 @@ async def test_sessions_land_in_free_slots_and_a_full_day_sends_its_session_else
     assert "Séance déplacée de mardi à vendredi." in week and "est plein" not in week and "Journée chargée" not in week
     assert "calendar.google.com" not in week and "Mon agenda" not in week
     assert (await client.post(f"/coaching/athletes/{athlete.id}/sessions/{thu.id}/slot")).status_code == 404
-    for path in ("/coaching/agenda", "/coaching/agenda/refresh", "/coaching/agenda/moments"):
-        assert (await client.post(path, data={"url": GOOGLE})).status_code == 404, "the coach has no plan: no agenda"
+    for path in ("/coaching/agenda/refresh", "/coaching/agenda/moments"):
+        assert (await client.post(path)).status_code == 404, "the coach has no plan: no agenda"
+    assert (await client.post("/coaching/agenda/iphone", json={"intervals": []})).status_code == 404
 
 
 def cv_time(minutes: int) -> str:
@@ -322,7 +333,7 @@ async def test_another_slot_cycles_and_then_holds_whatever_the_calendar_says(cli
     athlete = people.athlete
     _as(client, athlete)
     plan = await _monday_plan(client, db_session, athlete, clock)
-    await client.post("/coaching/agenda", data={"url": GOOGLE})
+    await _address(db_session, athlete)
     await _read(db_session, athlete, clock, net, _ics(clock.day))
     fri = next(r for r in await _rows(db_session, athlete) if r.day == clock.day + timedelta(days=4))
     first, seq = fri.slot_min, fri.seq
@@ -366,7 +377,7 @@ async def test_the_feed_emits_timed_events_under_the_same_uid(client, people, db
     assert "DTSTART:" not in feed and feed.count("DTSTART;VALUE=DATE:") == feed.count("BEGIN:VEVENT") > 4
     assert feed.count("TRANSP:TRANSPARENT") == feed.count("BEGIN:VEVENT"), "without an address: all-day, shown as free"
     uids = re.findall(r"UID:(\S+)", feed)
-    await client.post("/coaching/agenda", data={"url": GOOGLE})
+    await _address(db_session, athlete)
     await _read(db_session, athlete, clock, net, _ics(clock.day))
     feed = (await client.get(f"/coaching/cal/{plan.feed_token}.ics")).text
     assert re.findall(r"UID:(\S+)", feed) == uids, "the same events: a calendar updates them in place"
@@ -400,7 +411,7 @@ async def test_the_moments_the_athlete_chose_hold_the_times(client, people, db_s
     assert r.status_code == 303
     plan = await co.get_plan(db_session, athlete.id)
     assert plan.moments == "midi,soir" and ag.moments_of(plan) == ("midi", "soir")
-    await client.post("/coaching/agenda", data={"url": GOOGLE})
+    await _address(db_session, athlete)
     await _read(db_session, athlete, clock, net, "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")
     placed = [r for r in await _rows(db_session, athlete) if r.slot_min is not None]
     assert placed and all(r.slot_min >= cs.WINDOWS["midi"][0] for r in placed), "never in the morning"
@@ -431,7 +442,7 @@ async def test_the_usual_hour_of_the_runs_places_the_quality_session(client, peo
         run.start_date = run.start_date.replace(hour=12, minute=10)
         db_session.add(run)
     await db_session.flush()
-    await client.post("/coaching/agenda", data={"url": GOOGLE})
+    await _address(db_session, athlete)
     await _read(db_session, athlete, clock, net, "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")
     rows = await _rows(db_session, athlete)
     quality = [r for r in rows if r.kind in (cp.QUALITY, cp.HILLS) and r.slot_min is not None]
@@ -452,7 +463,7 @@ async def test_removing_the_last_address_undoes_the_times_and_the_moves(client, 
     assert [d for _i, d in plain if d == wed], "the quality session is on Wednesday"
     full = "\r\n".join(["BEGIN:VEVENT", "UID:w@google.com", f"DTSTART:{wed:%Y%m%d}T000000Z",
                         f"DTEND:{wed:%Y%m%d}T235900Z", "END:VEVENT"])
-    await client.post("/coaching/agenda", data={"url": GOOGLE})
+    await _address(db_session, athlete)
     await _read(db_session, athlete, clock, net, _ics(clock.day, full))
     rows = await _rows(db_session, athlete)
     assert [r for r in rows if r.auto_day and r.day != r.auto_day] and [r for r in rows if r.slot_min is not None]
@@ -472,7 +483,7 @@ async def test_the_export_and_stopping_cover_the_agenda(client, people, db_sessi
     _as(client, athlete)
     await _monday_plan(client, db_session, athlete, clock)
     db_session.add(CoachingLink(athlete_id=athlete.id, coach_id=coach.id))
-    await client.post("/coaching/agenda", data={"url": GOOGLE})
+    await _address(db_session, athlete)
     await _read(db_session, athlete, clock, net, _ics(clock.day))
 
     async def export(user) -> dict:

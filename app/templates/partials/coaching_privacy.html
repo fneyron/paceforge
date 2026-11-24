@@ -7,15 +7,17 @@
     <td data-label="Base légale">Contrat. Partagé avec la personne avec qui tu partages ton plan (celle à qui tu donnes ton code), et elle seule, jusqu’à ce que tu lui retires l’accès.</td>
     <td data-label="Durée">Jusqu’à l’arrêt du coaching (le plan est supprimé) ou la suppression du compte</td>
 </tr>
-{#- Google Agenda and Outlook are named only while their connector is configured (agenda_accounts_active): without
-    one, the row reads word for word as before. -#}
+{#- Google Agenda and Outlook are named only while their connector is configured (agenda_accounts_active); the
+    iPhone's calendar always (the app reads it on the phone). No address can be added since 24 Nov 2026: the ones
+    pasted before are still kept, and said so. -#}
 {% set agenda_acc = agenda_accounts_active() if agenda_accounts_active is defined else [] %}
-{% set agenda_names = ([("google" in agenda_acc) and "Google Agenda", ("microsoft" in agenda_acc) and "Outlook"]|select|join(" ou ")) %}
+{% set agenda_n = [("google" in agenda_acc) and "Google Agenda", ("microsoft" in agenda_acc) and "Outlook", "le calendrier de ton iPhone"]|select|list %}
+{% set agenda_names = (agenda_n[:-1]|join(", ") ~ " ou " ~ agenda_n[-1]) if agenda_n|length > 1 else agenda_n[0] %}
 <tr>
     <th scope="row">Coaching (bêta) · ton agenda</th>
-    <td data-label="Données">Seulement si tu ajoutes une adresse{% if agenda_acc %} ou connectes {{ agenda_names }}{% endif %} dans «&nbsp;Mon agenda&nbsp;»&nbsp;: cette adresse (chiffrée){% if agenda_acc %}, l’accès à ce compte (chiffré, jamais ton mot de passe){% endif %}, tes heures occupées des 21 prochains jours — un début et une fin, jamais un titre, une description, un lieu ni un participant —, les moments où tu peux courir, l’heure donnée à chaque séance</td>
-    <td data-label="Base légale">Contrat (une option que tu actives en collant l’adresse{% if agenda_acc %} ou en connectant ton agenda{% endif %}). Jamais partagé&nbsp;: la personne avec qui tu partages ton plan voit l’heure de tes séances, jamais ton agenda.</td>
-    <td data-label="Durée">Jusqu’au retrait de l’adresse{% if agenda_acc %} ou de la connexion{% endif %}, l’arrêt du coaching ou la suppression du compte&nbsp;; les heures occupées sont remplacées à chaque lecture</td>
+    <td data-label="Données">Seulement si tu connectes {{ agenda_names }} dans «&nbsp;Mon agenda&nbsp;»&nbsp;: {% if agenda_acc %}l’accès à ce compte (chiffré, jamais ton mot de passe), {% endif %}tes heures occupées des 21 prochains jours — un début et une fin, jamais un titre, une description, un lieu ni un participant —, les moments où tu peux courir, l’heure donnée à chaque séance. Le calendrier de l’iPhone est lu sur le téléphone par l’app&nbsp;: elle n’envoie que ces heures occupées. Une adresse d’agenda collée avant le 24&nbsp;novembre&nbsp;2026 reste conservée, chiffrée, jusqu’à ce que tu la retires&nbsp;; il n’est plus possible d’en ajouter.</td>
+    <td data-label="Base légale">Contrat (une option que tu actives en connectant ton agenda). Jamais partagé&nbsp;: la personne avec qui tu partages ton plan voit l’heure de tes séances, jamais ton agenda.</td>
+    <td data-label="Durée">Jusqu’au retrait de la source («&nbsp;Retirer&nbsp;» efface aussitôt ses heures occupées), l’arrêt du coaching ou la suppression du compte&nbsp;; les heures occupées sont remplacées à chaque lecture</td>
 </tr>
 <tr>
     <th scope="row">Coaching (bêta) · ta forme</th>

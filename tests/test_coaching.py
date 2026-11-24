@@ -228,9 +228,11 @@ async def test_the_card_and_the_way_back_are_for_an_app_older_than_its_coaching_
     await _plan(client, db_session, people.athlete)
     page = (await client.get("/coaching")).text
     assert back in page
-    assert re.search(r'<a class="pf-btn pf-btn-primary pf-btn-sm pf-webcal" href="webcal://[^"/]+/coaching/cal/[\w-]{43}\.ics">',
+    assert re.search(r'<a class="pf-btn pf-btn-primary pf-btn-sm pf-webcal" id="coach-feed-apple" '
+                     r'href="webcal://[^"/]+/coaching/cal/[\w-]{43}\.ics">Calendrier Apple</a>',
                      page), "the subscription button, for a browser and an app that hands it to the system"
-    assert 'id="coach-feed-url"' in page, "the address to copy stays, whatever the shell"
+    assert 'id="coach-feed-copy"' in page and 'id="coach-feed-url"' not in page, \
+        "« Copier l’adresse » stays, whatever the shell; the address itself is never shown"
     athletes = (await client.get("/coaching/athletes")).text
     assert '<a href="/coaching" class="pf-back">' in athletes and back not in athletes, "with a plan: back to it"
     for html in (onboarding, page, athletes):

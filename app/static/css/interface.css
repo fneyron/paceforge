@@ -18,6 +18,10 @@ html { -webkit-text-size-adjust: 100%; }
 /* .pf-native-agenda: the shell opens « Connecter Google Agenda / Outlook » in the system's sign-in sheet (Google
    refuses a WebView). An installed app older than that keeps « Mon agenda » as it was: the address to paste. */
 .pf-native:not(.pf-native-agenda) [data-agenda-connect], .pf-native:not(.pf-native-agenda) .pf-coach-connect-note { display: none !important; }
+/* .pf-native-calendar: the shell reads the iPhone's calendar itself (EventKit) for « Mon agenda »: its button, its
+   « Ouvrir les réglages » and the note only then; everywhere else one quiet line says iCloud is linked from the app. */
+html:not(.pf-native-calendar) .pf-phone-calendar, html:not(.pf-native-calendar) .pf-coach-connect-note.is-phone-only { display: none !important; }
+.pf-native-calendar .pf-coach-icloud-note { display: none !important; }
 /* Older companions still navigate to provider anchors instead of native settings. */
 .pf-native .pf-settings-connections:has(:target) { display: block !important; }
 .pf-native { --pf-font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --pf-font-text: var(--pf-font-display); }
@@ -1935,11 +1939,14 @@ html.pf-coach-locked, html.pf-coach-locked body { overflow: hidden; }
 .pf-coach-connect { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; max-width: 560px; }
 .pf-coach-connect .pf-btn { min-height: 44px; flex: 1 1 12rem; justify-content: center; }
 .pf-coach-calrow a.pf-coach-textbtn { display: inline-flex; align-items: center; }
+.pf-coach-calrow button.pf-coach-textbtn:not([type="submit"]) { display: block; text-align: left; }
+.pf-coach-icloud-note .pf-icloud-old { display: none; }
+.pf-native .pf-coach-icloud-note .pf-icloud-web { display: none; }
+.pf-native .pf-coach-icloud-note .pf-icloud-old { display: inline; }
+/* « Dans mon calendrier »: three one-tap buttons side by side, wrapping rather than overflowing (320 px, 200 % text) */
+.pf-coach-subscribe { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; max-width: 560px; }
+.pf-coach-subscribe .pf-btn { min-height: 44px; flex: 1 1 9rem; justify-content: center; text-align: center; }
 .pf-coach-moments .pf-coach-q { margin-top: 4px; }
-.pf-coach-calhelp { width: 100%; max-width: 560px; }
-.pf-coach-copy { display: flex; gap: 8px; width: 100%; max-width: 560px; }
-.pf-coach-copy .pf-input { min-width: 0; flex: 1; min-height: 44px; font-size: 0.8125rem; color: rgb(var(--pf-gray-600)); }
-.pf-coach-copy .pf-btn { min-height: 44px; }
 .pf-coach-textbtn { min-height: 44px; padding: 0; background: none; border: 0; font: inherit; font-size: 0.875rem; font-weight: 600; color: rgb(var(--pf-accent-strong)); cursor: pointer; text-decoration: underline; }
 .dark .pf-coach-textbtn { color: rgb(var(--pf-accent)); }
 .pf-coach-textbtn.text-danger { color: rgb(var(--pf-danger)); }
