@@ -41,8 +41,14 @@ const SHELL = (() => {
   // one with the Coaching tab but from before that; `old` predates both)
   const agenda = /^\s*window\.paceforgeNativeAgenda = 1;\n\s*document\.documentElement\.classList\.add\('pf-native-agenda'\);\n/m;
   assert.ok(agenda.test(script), 'the shell announces its agenda sign-in sheet');
+  // the iPhone's calendar read on the phone (« Mon agenda »): announced by the iPhone app since (`nocal`: an app with
+  // everything above but from before that)
+  const phone = /export const phoneCalendarShellScript = `([^`]+)`;/.exec(
+    fs.readFileSync(path.resolve(__dirname, '../../mobile/src/phone-calendar.ts'), 'utf8'))[1];
+  assert.ok(/window\.paceforgeNativeCalendar = 1;/.test(phone), 'the iPhone app announces its calendar reading');
   const bind = (text, origin) => text.split('${JSON.stringify(ORIGIN)}').join(JSON.stringify(origin));
-  return { new: origin => bind(script, origin), old: origin => bind(script.replace(marker, '').replace(agenda, ''), origin),
+  return { new: origin => bind(script + phone, origin), nocal: origin => bind(script, origin),
+    old: origin => bind(script.replace(marker, '').replace(agenda, ''), origin),
     noagenda: origin => bind(script.replace(agenda, ''), origin) };
 })();
 
@@ -55,7 +61,8 @@ async function open(browser, { width, dark = false, app = false, height = 852 })
   page.errors = [];
   page.on('pageerror', error => page.errors.push(error.message));
   if (app) await page.addInitScript(([shell, origins]) => {
-    window.ReactNativeWebView = { postMessage() {} };
+    window.appMessages = [];
+    window.ReactNativeWebView = { postMessage(text) { try { window.appMessages.push(JSON.parse(text)); } catch (_) {} } };
     // as the WebView does: once at the document's start (its root element exists), once when it has loaded
     const run = () => { if (shell[location.origin]) new Function(shell[location.origin])(); };
     if (document.documentElement) run();
@@ -67,7 +74,7 @@ async function open(browser, { width, dark = false, app = false, height = 852 })
 
 // The three ways a page is seen at phone width, and what each one shows of the ways in and out.
 const SHELLS = [false, 'new', 'old'];
-const suffix = app => (app ? `-app${app === 'old' ? '-old' : ''}` : '');
+const suffix = app => (app ? `-app${app === 'old' ? '-old' : app === 'nocal' ? '-before-iphone' : ''}` : '');
 
 // One htmx tap: the request it sends has answered and the calendar part is swapped.
 async function swap(page, action) {
@@ -269,6 +276,10 @@ async function sheet(page) {
       // no talk-test sentence under it (owner, 24 Nov 2026: « on veut de vrai cible »)
       assert.deepEqual(await page.locator('.pf-coach-ticket .pf-coach-target-vals b').allInnerTexts(), ['5:40/km', '112–148bpm'], key);
       assert.equal(await page.locator('.pf-coach-s-guide').count(), 0, key + ': numbers, no feel sentence');
+      if (width === 393 && !app) {
+        await page.locator('.pf-coach-daycard').screenshot({ path: `${out}/cible-393-numbers-no-sentence${dark ? '-dark' : ''}.png` });
+        await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));  // the element's screenshot scrolled to it
+      }
       // ONE main action, « Pas faite » quiet beside it; « Déplacer », « Modifier » quiet under them
       assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), ['C’est fait'], key + ': one main action');
       const main = await page.locator('[id^="coach-done-"]').boundingBox();
@@ -442,13 +453,25 @@ async function sheet(page) {
       await page.locator('#coach-sheet-back').click();
       state = await sheet(page);
       assert.ok(state.open && !state.tool && state.focus === 'coach-opt-fixed', key + ': back on the tiles, on the tile opened ' + JSON.stringify(state));
-      // the calendar: a browser and the updated app get the subscription button (the app hands webcal:// to the
-      // system); an older app drops that link, so it only shows the address to copy
+      // « Dans mon calendrier »: three one-tap buttons, no address shown. « Calendrier Apple » in a browser and the
+      // updated app (the app hands webcal:// to the system; an older app drops that link: hidden there); Google Agenda
+      // and Outlook their own « add by URL » page — a new tab on the site, the system's browser in the app (its
+      // handler: tests/browser/native/check.cjs); « Copier l’adresse », quiet, for any other calendar app
       await page.locator('#coach-opt-feed').click();
-      assert.equal(await page.locator('#coach-tool-feed a[href^="webcal://"]').isVisible(), app !== 'old', key + ': « S’abonner au calendrier »');
-      assert.ok(await page.locator('#coach-feed-url').isVisible() && await page.locator('[data-copy="coach-feed-url"]').isVisible(), key + ': the address to copy');
+      const feedTool = page.locator('#coach-tool-feed');
+      assert.equal(await page.locator('#coach-feed-apple').isVisible(), app !== 'old', key + ': « Calendrier Apple »');
+      assert.match(await page.locator('#coach-feed-apple').getAttribute('href'), /^webcal:\/\/[^/]+\/coaching\/cal\/[\w-]{40,}\.ics$/);
+      const shown = (await feedTool.locator('.pf-coach-subscribe a').evaluateAll(all => all.filter(el => el.getClientRects().length).map(el => el.innerText.trim())));
+      assert.deepEqual(shown, app === 'old' ? ['Google Agenda', 'Outlook'] : ['Calendrier Apple', 'Google Agenda', 'Outlook'], key);
+      assert.match(await page.locator('#coach-feed-google').getAttribute('href'), /^https:\/\/calendar\.google\.com\/calendar\/render\?cid=webcal%3A%2F%2F/);
+      assert.match(await page.locator('#coach-feed-outlook').getAttribute('href'), /^https:\/\/outlook\.live\.com\/calendar\/0\/addfromweb\/\?url=webcal%3A%2F%2F.+&name=PaceForge/);
+      assert.equal(await page.locator('#coach-feed-google').getAttribute('target'), app ? null : '_blank', key + ': a new tab on the site only');
+      for (const b of await feedTool.locator('.pf-coach-subscribe a:visible, #coach-feed-copy').all()) assert.ok((await b.boundingBox()).height >= 44, key + ': a 44 px target');
+      assert.equal(await page.locator('#coach-feed-copy').innerText(), 'Copier l’adresse');
+      assert.equal(await feedTool.locator('input').count(), 0, key + ': the address is never shown');
+      assert.doesNotMatch(await feedTool.innerText(), /coaching\/cal|https?:|webcal:/, key + ': not even as text');
       await noOverflow(page, key + ' calendar');
-      if (width === 393 && !dark && app) await shot(page, `athlete-393-feed${suffix(app)}`);
+      await shot(page, `athlete-${width}-feed${suffix(app)}${dark ? '-dark' : ''}`);
       // Escape closes it, the focus back on the round button; the scrim too
       await page.keyboard.press('Escape');
       await page.waitForFunction(() => !document.documentElement.classList.contains('pf-coach-locked'));  // the close event
@@ -499,14 +522,16 @@ async function sheet(page) {
       let state = await sheet(page);
       assert.ok(state.open && state.tool === 'coach-tool-agenda' && state.focusInside, 'the sheet, on the tool asked ' + JSON.stringify(state));
       assert.equal(await page.evaluate(() => scrollY), 0, 'the page behind at its top');
-      // « Mon agenda »: the address masked, how its reading went, the three moments, the way to find the address
+      // « Mon agenda »: the address she pasted before 24 Nov 2026, still read, masked, how its reading went, the three
+      // moments; no field to paste one any more
       const agenda = page.locator('#coach-tool-agenda');
       assert.equal(await agenda.locator('.pf-coach-calrow b').innerText(), 'calendar.google.com/….ics');
       assert.match(await agenda.locator('.pf-coach-calrow small').innerText(), /^Lu aujourd’hui à 8\sh\s30$/);
       assert.doesNotMatch(await page.content(), /private-preview|stella%40example/, 'never the address itself');
       assert.equal(await agenda.locator('.pf-coach-moments input:checked').count(), 3);
-      assert.ok(await agenda.locator('#coach-cal-url').isVisible() && await agenda.locator('#coach-cal-refresh').isVisible());
-      for (const id of ['#coach-cal-add', '#coach-cal-refresh', `#coach-tool-agenda [id^="coach-cal-remove-"]`]) {
+      assert.equal(await agenda.locator('input[name="url"], #coach-cal-url, .pf-coach-calhelp').count(), 0, 'no address to paste');
+      assert.ok(await agenda.locator('#coach-cal-refresh').isVisible());
+      for (const id of ['#coach-cal-refresh', `#coach-tool-agenda [id^="coach-cal-remove-"]`]) {
         assert.ok((await page.locator(id).boundingBox()).height >= 44, id + ': a 44 px target');
       }
       await noOverflow(page, 'agenda');
@@ -526,23 +551,6 @@ async function sheet(page) {
         await swap(page, () => page.locator('[id^="coach-slot-"]').click());
         assert.match(await page.locator('.pf-coach-slot-time').innerText(), /^6\sh\s30 – /);
         assert.notEqual(await page.locator('.pf-coach-slot-time').innerText(), before);
-        await page.locator('#coach-options-btn').click();
-        await page.locator('#coach-opt-agenda').click();
-        await agenda.locator('.pf-coach-calhelp > summary').click();
-        assert.match(await agenda.locator('.pf-coach-calhelp').innerText(), /Adresse secrète au format iCal/);
-        await noOverflow(page, 'agenda help');
-        await page.screenshot({ path: `${out}/athlete-393-agenda-help.png` });
-        // a refused address says why, back in the sheet on « Mon agenda », and nothing is fetched
-        await page.locator('#coach-cal-url').fill('https://127.0.0.1/calendar.ics');
-        const posted = page.waitForResponse(r => r.url().endsWith('/coaching/agenda') && r.request().method() === 'POST');
-        await page.locator('#coach-cal-add').click();
-        assert.equal((await posted).status(), 200);
-        await page.locator('#coach-tool-agenda .pf-coach-error').waitFor();
-        state = await sheet(page);
-        assert.ok(state.open && state.tool === 'coach-tool-agenda', 'the form’s answer, in the sheet ' + JSON.stringify(state));
-        assert.match(await page.locator('#coach-tool-agenda .pf-coach-error').innerText(), /n’est pas acceptée/);
-        assert.equal(await page.locator('.pf-coach-calrow').count(), 1);
-        await page.screenshot({ path: `${out}/athlete-393-agenda-refused.png` });
       }
       assert.deepEqual(page.errors, [], 'agenda: browser errors');
       await page.close();
@@ -592,17 +600,18 @@ async function sheet(page) {
           await page.goto(`${athlete}/coaching?outil=agenda`, { waitUntil: 'networkidle' });
           const agenda = page.locator('#coach-tool-agenda');
           const buttons = agenda.locator('[data-agenda-connect]');
+          assert.equal(await agenda.locator('#coach-cal-url').count(), 0, key + ': no address to paste');
           if (app === 'noagenda') {
             assert.equal(await buttons.evaluateAll(all => all.filter(el => el.getClientRects().length).length), 0, key + ': hidden');
             assert.equal(await agenda.getByText('Jamais les titres').isVisible(), false, key);
-            assert.ok(await agenda.locator('#coach-cal-url').isVisible(), key + ': the address to paste stays');
           } else {
             assert.deepEqual((await buttons.allInnerTexts()).map(t => t.trim()), ['Connecter Google Agenda', 'Connecter Outlook'], key);
             assert.equal((await agenda.locator('.pf-coach-connect-note').innerText()).trim(), 'PaceForge lit seulement quand tu es occupé. Jamais les titres.');
             for (const b of await buttons.all()) assert.ok((await b.boundingBox()).height >= 44, key + ': a 44 px target');
             const above = await page.evaluate(() => document.querySelector('[data-agenda-connect]').getBoundingClientRect().bottom <=
-              document.querySelector('#coach-cal-url').getBoundingClientRect().top);
-            assert.ok(above, key + ': above the address');
+              document.querySelector('.pf-coach-calrow').getBoundingClientRect().top);
+            assert.ok(above, key + ': above the sources');
+            assert.equal(await agenda.locator('#coach-cal-connect-iphone').isVisible(), app === 'new', key + ': the iPhone, in the app that reads it');
             assert.equal(await page.locator('script[src*="coaching-agenda.js"]').count(), 1);
           }
           await noOverflow(page, key);
@@ -634,6 +643,88 @@ async function sheet(page) {
         }
       } finally {
         await turn('off');
+      }
+    }
+
+    // ── « Mon agenda » › « Calendrier de l’iPhone »: the button only in the iPhone app that reads the phone's calendar;
+    //    on the site and in an app from before it, one quiet line; then the source read, and refused (« À
+    //    reconnecter », « Ouvrir les réglages »); 320 and 393 px, light and dark. The address she pasted before stays. ──
+    {
+      const phone = async state => assert.equal((await fetch(`${athlete}/__preview/coaching/iphone/${state}`, { method: 'POST' })).status, 200);
+      try {
+        for (const width of [320, 393]) for (const dark of [false, true]) for (const app of [false, 'new', 'nocal']) {
+          const key = `iphone ${width}${dark ? ' dark' : ''}${suffix(app)}`;
+          const page = await open(browser, { width, dark, app });
+          await page.goto(`${athlete}/coaching?outil=agenda`, { waitUntil: 'networkidle' });
+          const agenda = page.locator('#coach-tool-agenda');
+          const button = agenda.locator('#coach-cal-connect-iphone');
+          const line = agenda.locator('.pf-coach-icloud-note');
+          assert.equal(await button.isVisible(), app === 'new', key + ': the button, in the app that reads the phone');
+          assert.equal(await line.isVisible(), app !== 'new', key + ': else one quiet line');
+          if (app !== 'new') {
+            assert.equal((await line.innerText()).trim(), app ? 'iCloud se relie depuis la dernière version de l’app iPhone.' : 'iCloud se relie depuis l’app iPhone.', key);
+            assert.ok((await line.boundingBox()).height < 60, key + ': one line, or two at 320 px');
+          } else {
+            assert.equal((await button.innerText()).trim(), 'Calendrier de l’iPhone');
+            assert.ok((await button.boundingBox()).height >= 44, key + ': a 44 px target');
+            assert.equal((await agenda.locator('.pf-coach-connect-note').innerText()).trim(), 'PaceForge lit seulement quand tu es occupé. Jamais les titres.');
+            assert.deepEqual(await page.evaluate(() => appMessages.filter(m => m.type === 'phone-calendar')), [], key + ': nothing read before a tap');
+            await button.click();
+            assert.deepEqual(await page.evaluate(() => appMessages.filter(m => m.type === 'phone-calendar').map(m => [m.action, m.state])), [['connect', 'none']], key + ': the tap asks the app');
+            assert.equal(await button.getAttribute('aria-busy'), 'true');
+          }
+          assert.equal(await agenda.locator('.pf-coach-calrow b').first().innerText(), 'calendar.google.com/….ics', key + ': the address pasted before, kept');
+          assert.equal(await agenda.locator('#coach-cal-url, input[name="url"]').count(), 0);
+          await noOverflow(page, key);
+          await shot(page, `athlete-${width}-agenda-iphone${suffix(app)}${dark ? '-dark' : ''}`);
+          assert.deepEqual(page.errors, [], key + ': browser errors');
+          await page.close();
+        }
+        // the app's reading, as the page posts it: intervals alone; the source listed, read; the page then fresh
+        {
+          const page = await open(browser, { width: 393, app: 'new' });
+          await page.goto(`${athlete}/coaching?outil=agenda`, { waitUntil: 'networkidle' });
+          const start = Date.parse(fixture.day + 'T08:30:00Z') / 1000 + 2 * 86400 + 3600;  // the preview's clock
+          const posted = page.waitForResponse(r => r.url().endsWith('/coaching/agenda/iphone'));
+          const reloaded = page.waitForEvent('load');
+          await page.evaluate(start => window.paceforgePhoneCalendar.send({ intervals: [{ start, end: start + 3600 }] }, true), start);
+          assert.equal((await posted).status(), 200);
+          await reloaded;
+          await page.waitForLoadState('networkidle');
+          assert.ok(page.url().endsWith('/coaching?outil=agenda#coach-tool-agenda'), page.url());
+          const row = page.locator('#coach-tool-agenda .pf-coach-calrow').filter({ hasText: 'Calendrier de l’iPhone' });
+          assert.match(await row.locator('small').innerText(), /^Lu aujourd’hui à 8\sh\s30$/);
+          assert.equal(await page.locator('#coach-cal-connect-iphone').count(), 0, 'connected: no button any more');
+          assert.equal(await page.locator('[data-phone-calendar-state]').getAttribute('data-phone-calendar-state'), 'fresh');
+          assert.deepEqual(await page.evaluate(() => appMessages.filter(m => m.type === 'phone-calendar')), [], 'fresh: no silent reading');
+          for (const dark of [false, true]) { await theme(page, dark); await shot(page, `athlete-393-agenda-iphone-read${dark ? '-dark' : ''}`); }
+          await page.close();
+        }
+        // refused: « À reconnecter », « Ouvrir les réglages » in the app (the phone's settings), the silent reading
+        // asked as the page loads (allowed again since?); on the site, the line without the button
+        await phone('refused');
+        for (const width of [320, 393]) for (const dark of [false, true]) for (const app of [false, 'new']) {
+          const key = `iphone refused ${width}${dark ? ' dark' : ''}${suffix(app)}`;
+          const page = await open(browser, { width, dark, app });
+          await page.goto(`${athlete}/coaching?outil=agenda`, { waitUntil: 'networkidle' });
+          const row = page.locator('#coach-tool-agenda .pf-coach-calrow').filter({ hasText: 'Calendrier de l’iPhone' });
+          assert.match(await row.locator('small').innerText(), /^À reconnecter\s:\sl’iPhone ne donne plus accès à son calendrier\.$/, key);
+          const settings = row.getByRole('button', { name: 'Ouvrir les réglages' });
+          assert.equal(await settings.isVisible(), app === 'new', key + ': the way to the settings, in the app');
+          assert.ok(await row.getByRole('button', { name: 'Retirer' }).isVisible(), key);
+          if (app === 'new') {
+            assert.ok((await settings.boundingBox()).height >= 44, key);
+            assert.deepEqual(await page.evaluate(() => appMessages.filter(m => m.type === 'phone-calendar').map(m => [m.action, m.state])), [['refresh', 'refused']], key + ': a silent reading asked');
+            await settings.click();
+            assert.deepEqual(await page.evaluate(() => appMessages.filter(m => m.type === 'phone-calendar').map(m => m.action)), ['refresh', 'settings'], key);
+          }
+          await noOverflow(page, key);
+          await shot(page, `athlete-${width}-agenda-iphone-refused${suffix(app)}${dark ? '-dark' : ''}`);
+          assert.deepEqual(page.errors, [], key + ': browser errors');
+          await page.close();
+        }
+      } finally {
+        await phone('off');
       }
     }
 
@@ -1428,6 +1519,8 @@ async function sheet(page) {
             assert.equal(await link.getAttribute('href'), '/settings#max-heart-rate');
             assert.ok((await link.boundingBox()).height >= 44, 'a 44 px target');
             assert.equal(await page.locator('.pf-coach-target-vals, .pf-coach-target-how').count(), 0, 'no value, nothing to explain');
+            // no number at all: the talk-test sentence stays under the ticket (owner, 24 Nov 2026)
+            assert.match(await page.locator('.pf-coach-s-guide').first().innerText(), /^(Très facile|Facile)\s?:/, 'no numbers: the sentence stays');
             for (const c of await ticketContrast(page)) assert.ok(c.ratio >= 4.5, 'no data: ' + JSON.stringify(c));
             await page.locator('.pf-coach-daycard').screenshot({ path: `${out}/cible-393-nodata.png` });
             await theme(page, true); await page.locator('.pf-coach-daycard').screenshot({ path: `${out}/cible-393-nodata-dark.png` }); await theme(page, false);

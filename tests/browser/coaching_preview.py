@@ -258,3 +258,22 @@ async def agenda_accounts(state: str):
             db.add(CoachingCalendar(user_id=athlete_id, provider="google", status="reauth"))
         await db.commit()
     return {"synthetic": True, "agenda_accounts": state}
+
+
+# « Mon agenda » › « Calendrier de l’iPhone »: the source the app sends (no app in this preview: the visual check posts
+# a reading as the page would, or sets the source here). « refused »: the phone refused access, never read; « off »:
+# no iPhone source.
+@app.post("/__preview/coaching/iphone/{state}")
+async def iphone(state: str):
+    if state not in {"refused", "off"}:
+        raise ValueError(state)
+    async with preview.factory() as db:
+        athlete_id = app.state.coaching_ids["athlete"]
+        await db.execute(delete(CoachingBusy).where(CoachingBusy.calendar_id.in_(
+            select(CoachingCalendar.id).where(CoachingCalendar.user_id == athlete_id, CoachingCalendar.provider == "iphone"))))
+        await db.execute(delete(CoachingCalendar).where(CoachingCalendar.user_id == athlete_id,
+                                                        CoachingCalendar.provider == "iphone"))
+        if state == "refused":
+            db.add(CoachingCalendar(user_id=athlete_id, provider="iphone", status="phone"))
+        await db.commit()
+    return {"synthetic": True, "iphone": state}
