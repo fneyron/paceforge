@@ -700,6 +700,21 @@ async function sheet(page) {
           for (const dark of [false, true]) { await theme(page, dark); await shot(page, `athlete-393-agenda-iphone-read${dark ? '-dark' : ''}`); }
           await page.close();
         }
+        // 200 % text at 320 px, in the app: both tools wrap, nothing leaves the sheet, targets stay 44 px
+        for (const tool of ['agenda', 'feed']) {
+          const page = await open(browser, { width: 320, app: 'new' });
+          await page.goto(`${athlete}/coaching?outil=${tool === 'feed' ? 'calendrier' : 'agenda'}`, { waitUntil: 'networkidle' });
+          await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+          await noOverflow(page, '200 % text ' + tool);
+          const panel = page.locator(`#coach-tool-${tool}`);
+          const box = await panel.boundingBox();
+          const out = await panel.locator('a, button, p, b, small').evaluateAll((all, right) => all.filter(el => el.getClientRects().length &&
+            el.getBoundingClientRect().right > right + 0.5).map(el => el.outerHTML.slice(0, 60)), box.x + box.width);
+          assert.deepEqual(out, [], '200 % text: inside the sheet ' + tool);
+          for (const b of await panel.locator('.pf-btn:visible').all()) assert.ok((await b.boundingBox()).height >= 44, '200 % text: 44 px ' + tool);
+          await shot(page, `athlete-320-${tool === 'feed' ? 'feed' : 'agenda-iphone'}-app-200pct`);
+          await page.close();
+        }
         // refused: « À reconnecter », « Ouvrir les réglages » in the app (the phone's settings), the silent reading
         // asked as the page loads (allowed again since?); on the site, the line without the button
         await phone('refused');
@@ -1146,7 +1161,10 @@ async function sheet(page) {
       state = await held(page);
       assert.deepEqual(state.over, [warnDay], 'the day under the finger');
       assert.ok(state.ghost.bottom < warnAt.y - 20 && state.ghost.top >= 0, 'above the finger ' + JSON.stringify(state.ghost));
-      assert.equal(await page.locator('#' + warnDay).evaluate(d => getComputedStyle(d).boxShadow.includes('rgb(199, 106, 0)')), true, 'the warning’s colour');
+      // read once the frame has settled (it failed now and then when read in the same instant as the last move)
+      const coloured = await page.waitForFunction(id => getComputedStyle(document.getElementById(id)).boxShadow.includes('rgb(199, 106, 0)'),
+        warnDay, { timeout: 2000 }).then(() => true, () => false);
+      assert.equal(coloured, true, 'the warning’s colour ' + await page.locator('#' + warnDay).evaluate(d => [d.className, getComputedStyle(d).boxShadow].join(' | ')));
       await page.screenshot({ path: `${out}/byhand-393-held.png` });
       await theme(page, true); await page.screenshot({ path: `${out}/byhand-393-held-dark.png` }); await theme(page, false);
       await finger.move(warnAt, await centre(page, '.pf-coach-period'));
