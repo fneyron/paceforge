@@ -20,6 +20,8 @@ import { DeviceDetail, DevicesScreen } from './src/DevicesScreen';
 import { Button, DeviceTheme } from './src/device-ui';
 import { useOfflinePlans } from './src/useOfflinePlans';
 import { OfflinePlansScreen } from './src/OfflinePlansScreen';
+import { busyIntervals, phoneCalendarShellScript, PhoneRequest, phoneRequest, phoneSendScript } from './src/phone-calendar';
+import { calendarAccess, openPhoneSettings, readPhoneEvents } from './src/phone-calendar-native';
 
 const random = () => Array.from(Crypto.getRandomBytes(32), b => b.toString(16).padStart(2, '0')).join('');
 
@@ -104,6 +106,9 @@ function Companion() {
   // screen on top of it and the history never ends, so the app could not be left any more.
   const documents = useRef(0);
   const lastDocument = useRef('');
+  // « Mon agenda » › « Calendrier de l’iPhone »: one reading at a time; back from the phone's settings, the page reads again.
+  const phoneReading = useRef(false);
+  const phoneSettingsOpened = useRef(false);
 
   // A locked phone (background launch) cannot read the keychain: this is never « not
   // paired ». The read is retried on the first return to the foreground.
@@ -489,6 +494,8 @@ function Companion() {
           setLoadError(''); onForeground(); return;
         }
         if (data?.type === 'appearance' && typeof data.dark === 'boolean') { webAppearance.current = true; setDark(data.dark); return; }
+        const phone = phoneRequest(event.nativeEvent.url, data);
+        if (phone) { void phoneCalendar(phone); return; }
       } catch { /* Other messages are validated by the account bridge below. */ }
     }
     if (refreshable(event.nativeEvent.url)) {
@@ -625,6 +632,39 @@ function Companion() {
       loadScreen(agendaReturnUrl(provider, outcome.type === 'success' ? outcome.url : null));
     } catch (e) { fail(e); }
   }
+  /** « Mon agenda » › « Calendrier de l’iPhone » (iPhone only): the page asks (connect, refresh, settings); the app
+   * reads the phone's calendars and hands the page ONLY busy intervals, which it posts in its own session. A refusal
+   * is sent as such: the source reads « À reconnecter » with the way to the settings, never a dead end. */
+  async function phoneCalendar(request: PhoneRequest) {
+    if (Platform.OS !== 'ios') return;
+    if (request.action === 'settings') {
+      phoneSettingsOpened.current = true;
+      openPhoneSettings().catch(() => setError('Ouvre Réglages › PaceForge › Calendriers pour redonner l’accès.'));
+      return;
+    }
+    if (phoneReading.current) return;
+    phoneReading.current = true;
+    const connect = request.action === 'connect';
+    try {
+      const access = await calendarAccess(connect);
+      if (access === 'undetermined') return;
+      if (access === 'denied') {
+        // said once: a refresh of a source already « À reconnecter » sends nothing more
+        if (connect || request.state !== 'refused') web.current?.injectJavaScript(phoneSendScript({ refused: true }, connect));
+        return;
+      }
+      const now = new Date();
+      const intervals = busyIntervals(await readPhoneEvents(now), now);
+      web.current?.injectJavaScript(phoneSendScript({ intervals }, connect || request.state === 'refused'));
+    } catch {
+      if (connect) setError('Le calendrier de l’iPhone n’a pas pu être lu. Réessaie dans un instant.');
+    } finally { phoneReading.current = false; }
+  }
+  const phoneSettingsReturn = useEffectEvent(() => {
+    if (!phoneSettingsOpened.current) return;
+    phoneSettingsOpened.current = false;
+    if (trusted(documentUrl.current) && new URL(documentUrl.current).pathname === '/coaching') web.current?.reload();
+  });
   async function disconnect() {
     if (!pair || !start()) return;
     cancelAccountWork();
@@ -664,6 +704,7 @@ function Companion() {
       else void rereadReceipt();
       if (!reconciled.current) reconcile();
       onForeground();
+      phoneSettingsReturn();
     };
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') active(); });
     // Already active before this listener existed (a tap during a HealthKit cold launch):
@@ -746,6 +787,8 @@ function Companion() {
   const visibleIssue = retryNavigation.current ? error : [consentNeeded ? consentNotice : healthIssue, refreshIssue].filter(Boolean).join('\n') || error;
   const night = dark;
   const textScaleScript = presentationScript(fontScale, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect');
+  // What the shell can do, said to the pages; the iPhone's calendar only where EventKit reads it (iPhone)
+  const shellScript = appShellScript + (Platform.OS === 'ios' ? phoneCalendarShellScript : '');
   return <DeviceTheme.Provider value={dark}><SafeAreaView style={[styles.root, night && styles.darkSurface]}>
     <StatusBar style={night ? 'light' : 'dark'} />
     <View style={[styles.header, night && styles.darkSurface]}><View style={styles.heading}><Text style={[styles.brand, night && styles.darkInk]}
@@ -779,7 +822,7 @@ function Companion() {
       {webStarted && <WebView ref={web} source={{ uri: url }} style={styles.web} sharedCookiesEnabled thirdPartyCookiesEnabled={false}
         pullToRefreshEnabled={Platform.OS === 'ios' && webVisible && !concealBridge && (refreshable(documentUrl.current) || reloadable(documentUrl.current)) && !busy && !pageRefreshing}
         bounces decelerationRate="normal" automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never"
-        injectedJavaScriptBeforeContentLoaded={appShellScript + textScaleScript} injectedJavaScript={appShellScript + textScaleScript}
+        injectedJavaScriptBeforeContentLoaded={shellScript + textScaleScript} injectedJavaScript={shellScript + textScaleScript}
         originWhitelist={['https://*', 'paceforge://*', calendarOrigin]} mixedContentMode="never" allowFileAccess={false} setSupportMultipleWindows
         onMessage={message} onError={() => pageFailed('Cet écran nécessite une connexion. Tes données déjà enregistrées restent conservées. Réessaie lorsque le réseau revient.')}
         onLoadStart={() => {

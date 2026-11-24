@@ -30,6 +30,11 @@ REQUIRED_REASON_APIS = {
 # Defaults written by Expo plugins when a purpose string is not configured.
 ENGLISH_DEFAULTS = ("Allow $(PRODUCT_NAME)", "Expo Dev Launcher")
 HEALTH = "NSPrivacyCollectedDataTypeHealth"
+# Coaching › « Mon agenda »: busy intervals read from the iPhone's calendars and sent to the account (no data type of
+# Apple's list names calendars: « Other Data Types »)
+OTHER = "NSPrivacyCollectedDataTypeOtherDataTypes"
+CALENDAR_KEYS = ("NSCalendarsUsageDescription", "NSCalendarsFullAccessUsageDescription")
+REMINDER_KEYS = ("NSRemindersUsageDescription", "NSRemindersFullAccessUsageDescription")
 APP_FUNCTIONALITY = "NSPrivacyCollectedDataTypePurposeAppFunctionality"
 
 
@@ -69,6 +74,7 @@ def check_info(info: dict, config: dict, built: bool) -> list[str]:
     configured = {
         "NSFaceIDUsageDescription": plugin_option(config, "expo-secure-store", "faceIDPermission"),
         "NSLocalNetworkUsageDescription": config["ios"].get("infoPlist", {}).get("NSLocalNetworkUsageDescription"),
+        **{key: plugin_option(config, "expo-calendar", "calendarPermission") for key in CALENDAR_KEYS},
     }
     for key, expected in configured.items():
         value = info.get(key)
@@ -80,6 +86,13 @@ def check_info(info: dict, config: dict, built: bool) -> list[str]:
             errors.append(f"{key} is not the text configured in app.json.")
     if info.get("NSFaceIDUsageDescription") is None:
         errors.append("Missing NSFaceIDUsageDescription (expo-secure-store).")
+    # the iPhone's calendar is read (full access: iOS 17+ needs NSCalendarsFullAccessUsageDescription); reminders never
+    for key in CALENDAR_KEYS:
+        if not isinstance(info.get(key), str) or not info[key].strip():
+            errors.append(f"Missing {key} (expo-calendar calendarPermission).")
+    for key in REMINDER_KEYS + ("NSCalendarsWriteOnlyAccessUsageDescription",):
+        if key in info:
+            errors.append(f"{key} is declared but PaceForge never asks for it (expo-calendar remindersPermission: false).")
     if info.get("CFBundleLocalizations") != ["fr"]:
         errors.append("CFBundleLocalizations must be exactly [\"fr\"] (the store lists the app as French).")
     if info.get("CFBundleDevelopmentRegion") != "fr":
@@ -118,6 +131,11 @@ def check_privacy(privacy: dict, info: dict) -> list[str]:
         elif (health.get("NSPrivacyCollectedDataTypeLinked") is not True or health.get("NSPrivacyCollectedDataTypeTracking") is not False
               or health.get("NSPrivacyCollectedDataTypePurposes") != [APP_FUNCTIONALITY]):
             errors.append(f"{HEALTH} must be linked to the account, never for tracking, for app functionality only.")
+    if any(key in info for key in CALENDAR_KEYS):
+        other = collected.get(OTHER)
+        if not other or other.get("NSPrivacyCollectedDataTypeLinked") is not True \
+                or other.get("NSPrivacyCollectedDataTypePurposes") != [APP_FUNCTIONALITY]:
+            errors.append(f"The app sends the calendar's busy intervals: {OTHER}, linked, for app functionality only.")
     for name, entry in collected.items():
         if entry.get("NSPrivacyCollectedDataTypeTracking") is not False:
             errors.append(f"{name} must not be collected for tracking.")
@@ -126,7 +144,8 @@ def check_privacy(privacy: dict, info: dict) -> list[str]:
 
 def checked_keys() -> str:
     return ("Info.plist: CFBundleShortVersionString, NSHealthShareUsageDescription, NSHealthUpdateUsageDescription, "
-            "NSFaceIDUsageDescription, NSLocalNetworkUsageDescription, CFBundleLocalizations, CFBundleDevelopmentRegion, "
+            "NSFaceIDUsageDescription, NSLocalNetworkUsageDescription, NSCalendarsUsageDescription, "
+            "NSCalendarsFullAccessUsageDescription, no reminders keys, CFBundleLocalizations, CFBundleDevelopmentRegion, "
             "UIUserInterfaceStyle, ITSAppUsesNonExemptEncryption, UIBackgroundModes, BGTaskSchedulerPermittedIdentifiers; "
             "PrivacyInfo.xcprivacy: NSPrivacyTracking, NSPrivacyTrackingDomains, NSPrivacyAccessedAPITypes, NSPrivacyCollectedDataTypes")
 

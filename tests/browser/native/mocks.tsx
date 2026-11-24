@@ -43,6 +43,16 @@ export const changedMetrics=async(tokens:any)=>({daysBack:3,tokens});
 export const collect=async()=>{w.collects++;if(w.holdHealth)await new Promise(resolve=>{w.releaseHealth=resolve});return{days:w.emptyHealth?[]:[{date:'2026-10-12',metric:'weight',value:64,unit:'kg',sources:['Fixture'],measured_at:'2026-10-12T08:00:00Z'}],complete:true,notices:[]}};
 export const collectSleep=async()=>({nights:[],notices:w.partialHealth?['Lecture du sommeil interrompue.']:[],complete:!w.partialHealth});
 w.fetch=async(url:string)=>{w.writes.push(url);if(w.failUpload)throw Error('Envoi de test interrompu');if(w.failStatus)return{ok:false,status:w.failStatus,headers:{get:()=>null},json:async()=>(w.failBody||{})};return{ok:true,json:async()=>url.endsWith('/exchange')?{token:'fixture',user_id:1,name:'Athlete'}:url.endsWith('/token')?{token:'r'.repeat(64),user_id:1}:{received:w.emptyHealth?0:1,checked_at:new Date().toISOString(),latest:{weight:{value:64,measured_at:'2026-10-12T08:00:00Z'}}}}};
+// expo-calendar (« Mon agenda » › « Calendrier de l’iPhone »): w.calendarAccess 'granted' | 'denied' | 'undetermined'
+// (asked: w.calendarAnswer), w.phoneEvents the phone's events — with titles and places the app must never send.
+w.calendarAccess='undetermined';w.calendarAnswer='granted';w.calendarAsks=0;w.phoneEvents=[];
+const permission=()=>({status:w.calendarAccess,granted:w.calendarAccess==='granted',canAskAgain:w.calendarAccess==='undetermined',expires:'never'});
+export const getCalendarPermissions=async()=>permission();
+export const requestCalendarPermissions=async()=>{w.calendarAsks++;w.calendarAccess=w.calendarAnswer;return permission();};
+export const EntityTypes={EVENT:'event',REMINDER:'reminder'};
+export const AttendeeStatus={DECLINED:'declined',ACCEPTED:'accepted'};
+export const getCalendars=async()=>[{id:'home',title:'Domicile'},{id:'feed',title:'PaceForge · Coaching'}];
+export const listEvents=async(calendars:any[])=>w.phoneEvents.filter((e:any)=>calendars.some(c=>c.id===e.calendarId)).map((e:any)=>({...e,getAttendees:async()=>e.attendees||[]}));
 export const SafeAreaProvider=({children}:any)=><View style={{flex:1}}>{children}</View>;
 export const SafeAreaView=({children,style}:any)=><View style={[style,{flex:1}]}>{children}</View>;
 export const StatusBar=()=>null;

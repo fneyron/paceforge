@@ -450,6 +450,41 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
    assert.equal(await coaching.evaluate(u=>followLink(u),url),false,url);
   assert.deepEqual(await coaching.evaluate(()=>opened),[feed],'no other scheme, host or path is opened by the app');
   assert.equal(await coaching.evaluate(()=>new URL(actual).pathname),'/coaching');
+  // « Calendrier de l’iPhone »: Google Agenda and Outlook's « add by URL » pages go to the system's browser
+  const google='https://calendar.google.com/calendar/render?cid=webcal%3A%2F%2Fpaceforge.fr%2Fcoaching%2Fcal%2Fx.ics';
+  // the page asks; the system prompt, then ONLY intervals handed back to the page (never a title, a place, a calendar)
+  await coaching.evaluate(()=>{const day=Date.now()+86400000;window.phoneEvents=[
+    {calendarId:'home',title:'Entretien confidentiel',location:'Salle Opéra',startDate:new Date(day),endDate:new Date(day+3600000),allDay:false,availability:'busy',status:'confirmed'},
+    {calendarId:'home',title:'Déjeuner avec Léa',startDate:new Date(day+7200000),endDate:new Date(day+9000000),allDay:false,availability:'free',status:'confirmed'},
+    {calendarId:'home',title:'Refusé',organizer:{name:'Paul'},attendees:[{isCurrentUser:true,status:'declined'}],startDate:new Date(day+10800000),endDate:new Date(day+14400000),allDay:false,availability:'busy',status:'confirmed'},
+    {calendarId:'feed',title:'Footing 45 min',startDate:new Date(day+18000000),endDate:new Date(day+20700000),allDay:false,availability:'busy'}];
+   window.scripts.length=0;});
+  await coaching.evaluate(()=>webMessage({type:'phone-calendar',action:'connect',state:'none'}));
+  await coaching.waitForFunction(()=>scripts.some(s=>s.includes('paceforgePhoneCalendar')));
+  const sent=await coaching.evaluate(()=>scripts.filter(s=>s.includes('paceforgePhoneCalendar')));
+  assert.equal(sent.length,1);
+  assert.equal(await coaching.evaluate(()=>calendarAsks),1,'the system prompt, once');
+  const body=JSON.parse(/send\((\{.*\}), true\)/.exec(sent[0])[1]);
+  assert.equal(body.intervals.length,1,'free, declined and the feed\'s own sessions are not busy');
+  assert.deepEqual(Object.keys(body.intervals[0]),['start','end']);
+  for(const secret of ['Entretien','Salle','Léa','Paul','Domicile','Footing','PaceForge · Coaching'])assert.ok(!sent[0].includes(secret),secret);
+  assert.ok(sent[0].includes("location.pathname !== '/coaching'"),'only on the Coaching page');
+  // a page that is not Coaching, or a refresh with nothing to read, gets nothing
+  await coaching.evaluate(()=>{window.scripts.length=0;webMessage({type:'phone-calendar',action:'refresh',state:'fresh'});});
+  await coaching.waitForTimeout(50);
+  assert.equal(await coaching.evaluate(()=>scripts.filter(s=>s.includes('paceforgePhoneCalendar')).length),0);
+  // refused: said once, with the way to the settings; never asked again by a refresh
+  await coaching.evaluate(()=>{window.calendarAccess='denied';window.scripts.length=0;webMessage({type:'phone-calendar',action:'refresh',state:'stale'});});
+  await coaching.waitForFunction(()=>scripts.some(s=>s.includes('"refused":true')));
+  await coaching.evaluate(()=>{window.scripts.length=0;webMessage({type:'phone-calendar',action:'refresh',state:'refused'});});
+  await coaching.waitForTimeout(50);
+  assert.equal(await coaching.evaluate(()=>[scripts.filter(s=>s.includes('paceforgePhoneCalendar')).length,calendarAsks]).then(String),'0,1');
+  await coaching.evaluate(()=>webMessage({type:'phone-calendar',action:'settings',state:'refused'}));
+  await coaching.waitForFunction(()=>opened.includes('app-settings:'));
+  await coaching.evaluate(()=>{const i=opened.indexOf('app-settings:');opened.splice(i,1);});
+  assert.equal(await coaching.evaluate(u=>followLink(u),google),false,'Google Agenda never loads in the WebView');
+  await coaching.evaluate(()=>{const i=opened.length-1;if(opened[i]&&opened[i].startsWith('https://calendar.google.com/'))opened.splice(i,1);else window.googleNotOpened=true;});
+  assert.notEqual(await coaching.evaluate(()=>window.googleNotOpened),true,'handed to the system browser');
   // a coach's page, an activity opened from a session, then back: each tab returns to its last screen
   await coaching.evaluate(()=>loadDocument('https://paceforge.fr/coaching/athletes/12'));
   assert.equal(await selectedTab(coaching),'Coaching');
@@ -483,6 +518,6 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   assert.equal(await unavailable.evaluate(()=>reloads),1);
   assert.equal(await unavailable.evaluate(()=>pull()),true,'offline retry must reload the document, not refresh an unavailable page');
   await unavailable.close();
-  console.log('Actual App: cold start, pull-only UI, error details, account safety, inline Settings/reentry/cancellation/login/account change, offline, process recovery, late bridge recovery, delayed dashboard loading, connection screens, the consent refusal and the Coaching tab (order, full load, pull, saved screen, calendar link) passed (native APIs mocked).');
+  console.log('Actual App: cold start, pull-only UI, error details, account safety, inline Settings/reentry/cancellation/login/account change, offline, process recovery, late bridge recovery, delayed dashboard loading, connection screens, the consent refusal and the Coaching tab (order, full load, pull, saved screen, calendar link, the iPhone calendar: intervals only, refusal, settings) passed (native APIs mocked).');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

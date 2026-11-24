@@ -40,6 +40,15 @@ les versions installées avant l’onglet affichent encore. « S’abonner au ca
 `webcal://paceforge.fr/coaching/cal/<jeton>.ics` (`calendarFeedUrl`) : Calendrier propose l’abonnement. Ce
 comportement n’a pas été essayé sur un appareil.
 
+**« Mon agenda » › « Calendrier de l’iPhone »** (sur iPhone seulement, [règles](../docs/coaching.md)) : l’app
+annonce qu’elle sait lire les calendriers du téléphone (`pf-native-calendar`, `phoneCalendarShellScript`) ; sur un
+toucher de la page, elle demande l’accès complet aux calendriers (`expo-calendar`, iOS 17+ :
+`NSCalendarsFullAccessUsageDescription`), lit les 21 prochains jours et remet à la page **seulement** des
+intervalles occupés en secondes UTC (`src/phone-calendar.ts`, testé), que la page envoie au serveur dans sa
+session. Titres, lieux, notes, participants et noms de calendrier restent sur le téléphone. Relue sans invite quand
+Coaching se charge et que la dernière lecture a plus de 3 heures ; un refus donne « Ouvrir les réglages »
+(`Linking.openSettings`). Les permissions Android du module sont bloquées. Pas essayé sur un appareil.
+
 ## Connexions par service
 
 L’écran Connexions regroupe les comptes COROS, Garmin et Strava, ainsi que

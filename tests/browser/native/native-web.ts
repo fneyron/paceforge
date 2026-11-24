@@ -9,4 +9,5 @@ const change=(state:string)=>{AppState.currentState=state;appListeners.forEach(c
 (window as any).foreground=()=>change('active');(window as any).background=()=>change('background');
 // Links handed to the system are recorded; ?nocalendar=1: no app takes them (openURL rejects).
 (window as any).opened=[];
-export const Linking = {getInitialURL:async()=>null,addEventListener:()=>({remove(){}}),openURL:async(url:string)=>{(window as any).opened.push(url);if(params.has('nocalendar'))throw Error('no handler');}};
+export const Linking = {getInitialURL:async()=>null,addEventListener:()=>({remove(){}}),openURL:async(url:string)=>{(window as any).opened.push(url);if(params.has('nocalendar'))throw Error('no handler');},
+ openSettings:async()=>{(window as any).opened.push('app-settings:');}};
