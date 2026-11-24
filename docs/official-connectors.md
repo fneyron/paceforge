@@ -338,7 +338,7 @@ et comment : `docs/coaching.md` › « Mon agenda ». Code : `app/services/coach
 
 Comme les connecteurs officiels, chacun est **actif** seulement si son drapeau est à `true` **et** son client id et
 son secret sont posés (`settings.google_calendar_ready`, `settings.microsoft_calendar_ready`) : sinon « Mon agenda »
-est l’écran d’avant, les routes répondent 404, la politique de confidentialité n’en dit rien, rien n’appelle le
+ne montre pas son bouton (le calendrier de l’iPhone reste, dans l’app), les routes répondent 404, la politique de confidentialité n’en dit rien, rien n’appelle le
 fournisseur.
 
 | Variable | Défaut | Rôle |
@@ -430,9 +430,11 @@ Avec un connecteur configuré, `/privacy` ajoute (`partials/agenda_privacy.html`
   PaceForge ; pour le retirer aussi chez Microsoft, passe par ton compte Microsoft. » ;
 - « Apple et Google ne reçoivent rien de PaceForge. » devient, Google configuré : « Apple ne reçoit rien de
   PaceForge, ni Google en dehors de Google Agenda si tu le connectes. » ;
-- la ligne « Coaching (bêta) · ton agenda » dit « une adresse ou connectes Google Agenda [ou Outlook] », « l’accès à
-  ce compte (chiffré, jamais ton mot de passe) », « en collant l’adresse ou en connectant ton agenda », « jusqu’au
-  retrait de l’adresse ou de la connexion ».
+- la ligne « Coaching (bêta) · ton agenda » dit « si tu connectes Google Agenda[, Outlook] ou le calendrier de ton
+  iPhone », « l’accès à ce compte (chiffré, jamais ton mot de passe) ». Depuis le 24 novembre 2026, plus aucune
+  adresse ne se colle : la ligne le dit, et dit que celles collées avant restent conservées, chiffrées, jusqu’à leur
+  retrait. Le calendrier de l’iPhone y est toujours nommé (il ne dépend d’aucun connecteur : l’app le lit sur le
+  téléphone et n’envoie que les heures occupées, docs/coaching.md › « Mon agenda »).
 
 À vérifier avec un juriste : l’entité Google à nommer pour des utilisateurs européens (Google Ireland Limited est le
 fournisseur des services Google dans l’EEE ; le texte nomme Google LLC comme pour les autres fournisseurs
@@ -442,5 +444,6 @@ américains), et les clauses de transfert hors UE.
 
 Une modification native, **livrée dans ce lot, à publier sur TestFlight** : l’app ouvre la connexion Google ou
 Outlook dans la feuille de connexion du système (Google refuse les WebView), et annonce qu’elle sait le faire
-(`.pf-native-agenda`). Une app installée plus ancienne ne montre pas les deux boutons : « Mon agenda » y reste l’écran
-d’avant, et une connexion faite depuis paceforge.fr y apparaît dans la liste, avec « Retirer ».
+(`.pf-native-agenda`). Une app installée plus ancienne ne montre pas les deux boutons ; depuis le 24 novembre 2026,
+plus aucune adresse ne s’y colle non plus : une connexion faite depuis paceforge.fr ou une app à jour y apparaît dans
+la liste, avec « Retirer ».
