@@ -641,20 +641,30 @@ semaine, et rien de l’option. Le flux calendrier dit seulement la séance tell
 Demande du propriétaire, 21 novembre 2026 : « C’est flexible aussi en fonction du calendrier, en mettant peut-être
 les créneaux hors réunion ou rendez-vous ».
 
-**D’où viennent les heures occupées.** Dans Coaching › « Mon agenda », l’athlète colle l’adresse iCalendar privée de
-son agenda : l’« adresse secrète au format iCal » de Google Agenda, le lien d’un calendrier public iCloud, un
-calendrier publié par Outlook. Trois adresses au plus. Chacune est stockée chiffrée (`EncryptedString`), affichée
-masquée (son hôte et ses 4 derniers caractères) et retirable. Un pli dit où trouver l’adresse dans Google, Apple et
-Outlook. Sans aucune adresse, rien ne change : pas d’heure, les séances restent des journées entières.
+**D’où viennent les heures occupées : des connexions directes, rien à taper.** Demande du propriétaire, 24
+novembre 2026 : « il faut virer dans mon calendrier ou mon agenda on ne va pas rentrer d'URL à la main donc tu
+connecte directement Outlook ou Google etc », puis « iCloud aussi ». Dans Coaching › « Mon agenda », trois sources,
+chacune en un ou deux touchers :
 
-**Ou un compte connecté : Google Agenda, Outlook** (23 novembre 2026, « On ne peut pas connecter les calendriers
-Microsoft, Google etc. simplement en API ? » puis « Lance les calendriers oui »). Au-dessus du champ de l’adresse,
-« Connecter Google Agenda » et « Connecter Outlook » — chacun montré seulement quand son connecteur est configuré
-(`GOOGLE_CALENDAR_*`, `MICROSOFT_CALENDAR_*` : drapeau, identifiant et secret ; sans eux, l’écran est celui d’avant et
-les routes répondent 404) —, une phrase : « PaceForge lit seulement quand tu es occupé. Jamais les titres. », puis les
-sources connectées, listées comme les adresses (« Google Agenda », « Outlook », l’état de la dernière lecture,
-« Retirer »). Une connexion de chaque au plus ; se reconnecter renouvelle la même. L’adresse à coller reste, pour
-Apple (aucune API de ce genre) et tout le reste. Code : `app/services/coaching_accounts.py`.
+- **Google Agenda** et **Outlook**, connectés par OAuth (ci-dessous) — chacun montré seulement quand son connecteur
+  est configuré (`GOOGLE_CALENDAR_*`, `MICROSOFT_CALENDAR_*` : drapeau, identifiant et secret ; sans eux, pas de
+  bouton et les routes répondent 404). Une connexion de chaque au plus ; se reconnecter renouvelle la même ;
+- **« Calendrier de l’iPhone »** : iCloud et tous les comptes que l’iPhone synchronise, lus **sur le téléphone** par
+  l’app (« Le calendrier de l’iPhone », plus bas). Apple n’offre aucune connexion web aux calendriers iCloud : le seul
+  chemin direct est l’app. Le bouton n’existe que dans l’app iPhone qui l’annonce (`.pf-native-calendar`) ; sur le
+  site et dans une app plus ancienne, une seule ligne discrète : « iCloud se relie depuis l’app iPhone. » (dans une
+  app plus ancienne : « … depuis la dernière version de l’app iPhone. »).
+
+Sous les boutons, une phrase : « PaceForge lit seulement quand tu es occupé. Jamais les titres. », puis les sources,
+chacune avec l’état de sa dernière lecture et « Retirer ». Sans aucune source, rien ne change : pas d’heure, les
+séances restent des journées entières.
+
+**Les adresses collées avant le 24 novembre 2026.** Le champ « adresse iCal privée », son pli « Où trouver
+l’adresse » et sa route (`POST /coaching/agenda`) sont retirés : c’était aussi le seul endroit où un utilisateur
+donnait au serveur une adresse à aller lire — moins de surface. Les adresses déjà enregistrées **restent** : listées
+masquées (leur hôte et leurs 4 derniers caractères) avec leur état et « Retirer », lues comme avant par le worker
+(`safe_fetch`, ci-dessous), chiffrées (`EncryptedString`). Aucune migration ne les supprime. Code :
+`app/services/coaching_agenda.py`, `app/services/coaching_accounts.py`.
 
 | | Google Agenda | Outlook (Microsoft) |
 |---|---|---|
@@ -678,7 +688,7 @@ Au retour du fournisseur, l’athlète retrouve « Mon agenda » ouvert, le rés
 connecté : lecture en cours. », « Connexion annulée. », « La connexion a expiré. Réessaie. », « Outlook a refusé la
 connexion. Réessaie. », « … ne répond pas pour l’instant. Réessaie dans quelques minutes. », et pour un compte pro dont
 l’administrateur n’a pas donné son accord : « Ton organisation n’autorise pas cette connexion : demande à ton
-administrateur, ou colle l’adresse de ton agenda. » Le résultat voyage en deux codes dans l’adresse
+administrateur. » Le résultat voyage en deux codes dans l’adresse
 (`?outil=agenda&connexion=google&resultat=ok`), jamais en message. Le `state` et le vérificateur PKCE voyagent scellés
 dans le cookie de session signé (10 minutes) : un retour dans un autre navigateur, ou avec un autre `state`, est
 refusé.
@@ -688,8 +698,29 @@ serveur (`POST /coaching/agenda/{google|microsoft}/app`) le lien de la feuille d
 ticket à usage unique que COROS et Strava utilisent déjà (2 minutes, dans le fragment du lien) ; l’app ouvre
 `/mobile/oauth/agenda/{google|microsoft}` dans `ASWebAuthenticationSession`, la page montre le compte PaceForge avant
 le consentement, et la feuille se ferme sur `paceforge://agenda?connexion=…&resultat=…` ; l’app rouvre « Mon agenda »
-avec sa ligne. Une app installée plus ancienne (sans `.pf-native-agenda`) ne montre pas les boutons : l’adresse à
-coller, comme avant.
+avec sa ligne. Une app installée plus ancienne (sans `.pf-native-agenda`) ne montre pas les boutons (depuis le 24
+novembre 2026, plus d’adresse à coller non plus) : ses sources se connectent depuis paceforge.fr ou une app à jour.
+
+**Le calendrier de l’iPhone** (24 novembre 2026). Code : `mobile/src/phone-calendar.ts` (les règles, pur, testé),
+`mobile/src/phone-calendar-native.ts` (EventKit par `expo-calendar`, SDK 57), `mobile/App.tsx` (le pont),
+`app/static/js/coaching-agenda.js` (la page), `coaching_agenda.phone_intervals` et `POST /coaching/agenda/iphone`
+(le serveur).
+
+| Étape | Ce qui se passe |
+|---|---|
+| Le toucher | La page demande à l’app (`postMessage` `{type: "phone-calendar", action: "connect"}`, accepté seulement depuis `/coaching` de ce site : `phoneRequest`). L’app montre l’invite du système (iOS 17+ : accès complet, `NSCalendarsFullAccessUsageDescription` ; la lecture ne marche pas avec l’accès en écriture seule), texte : « PaceForge lit quand tu es occupé dans tes calendriers pour placer tes séances en dehors. Jamais les titres, les lieux ni les participants : seules ces heures occupées sont envoyées à ton compte. » Les rappels ne sont jamais demandés. |
+| Ce qui est lu | Les événements des 21 prochains jours (l’horizon des autres sources) de tous les calendriers du téléphone, sauf celui qui s’appelle « PaceForge · Coaching » (le flux du plan, si l’athlète s’y est abonnée sur l’iPhone). Pour chaque événement, seulement : début, fin, journée entière, disponibilité, statut ; pour une invitation (un organisateur), la réponse du propriétaire du téléphone (150 invitations au plus, choix pratique `MAX_ATTENDEE_READS` ; au-delà, comptées occupées). Le titre, le lieu, les notes, les participants et le nom d’un calendrier ne quittent jamais le téléphone et ne sont pas journalisés. |
+| Occupé | Les règles des autres sources : « disponible » (`free`) et « provisoire » (`tentative`, disponibilité ou statut) ne comptent pas ; un événement annulé ou refusé non plus ; « occupé », « absent » (`unavailable`) et **une disponibilité non donnée** comptent — iCloud n’en donne le plus souvent aucune. Journée entière : un seul jour, ignoré ; 2 jours ou plus (`AWAY_DAYS`), envoyé d’un minuit local à l’autre, que le serveur lit « absent » comme les intervalles de Google. Une absence déjà commencée est coupée à maintenant et lue comme du temps occupé, les mêmes jours. |
+| Ce qui quitte le téléphone | **Seulement** `{"intervals": [{"start": s, "end": s}, …]}` : des secondes UTC, fusionnées, 1 500 au plus. L’app ne fait pas la requête elle-même : elle remet la lecture à la page (`phoneSendScript`, seulement sur `/coaching` de ce site), qui l’envoie dans la session de la WebView (`fetch` même origine : le middleware CSRF exige l’origine du site). Un refus envoie `{"refused": true}`. |
+| Le serveur | `POST /coaching/agenda/iphone` : 128 Kio au plus ; un objet avec la seule clé `intervals` (ou exactement `{"refused": true}`) ; chaque intervalle un objet aux deux seules clés `start` et `end`, des nombres (ni texte, ni booléen, ni NaN), `start < end`, dans l’horizon (maintenant − 1 h … + 21 jours + 1 h, choix pratique `PHONE_SKEW` pour l’horloge du téléphone), coupé à l’horizon ; 1 500 au plus. Un refus est un code (`shape`, `number`, `order`, `window`, `count`, 422 ; 413 ; 429). Les intervalles qui tombent exactement sur une séance du plan avec une heure sont ignorés (le flux vu par l’iPhone). 60 lectures par heure et par compte (`coaching_agenda_phone`). Gardé comme la source `iphone` (une par athlète), ses intervalles dans `coaching_busy` remplacés à chaque lecture ; les séances retrouvent aussitôt leur créneau. Le worker ne la lit jamais (rien à aller chercher). |
+| Relue sans rien demander | Chaque fois que la page Coaching se charge dans l’app et que la dernière lecture a plus de 3 heures (choix pratique `PHONE_STALE`, le rythme de la tournée des autres sources) : la page le dit (`data-phone-calendar-state="stale"`), l’app relit sans invite (`getCalendarPermissions`) et envoie en silence. La ligne de la source dit « Lu aujourd’hui à 14 h 05 » comme les autres. |
+| Refusé, ou retiré ensuite | La source lit « À reconnecter : l’iPhone ne donne plus accès à son calendrier. » avec « Ouvrir les réglages » (`Linking.openSettings`, la page de PaceForge dans Réglages, où se trouve l’accès aux calendriers) ; au retour, la page se recharge et relit. Les heures de la dernière lecture restent jusqu’à leur échéance, comme pour un compte connecté ; une source refusée avant toute lecture n’empêche pas les autres de placer les séances. Un refus n’est envoyé qu’une fois (une source déjà « À reconnecter » n’est pas réécrite). |
+| Retirer | Supprime la source et ses intervalles aussitôt ; les séances retrouvent leurs heures sans elle. |
+
+Ce bouton n’est pas sur Android (le drapeau n’est annoncé que sur iPhone) ; `READ_CALENDAR` et `WRITE_CALENDAR`,
+ajoutées d’office par le module, sont bloquées dans `app.json`. Rien de ceci n’a été essayé sur un vrai iPhone ni
+contre un vrai calendrier iCloud : les règles sont testées en Node (`mobile/src/phone-calendar.test.ts`), le pont dans
+le harnais natif (`tests/browser/native/check.cjs`), le serveur en Python (`tests/test_coaching_phone.py`).
 
 **Lire une adresse saisie par quelqu’un** est une surface de requête forgée côté serveur (SSRF). Un seul module le
 fait, `app/services/safe_fetch.py` (aucune aide de ce genre n’existait : les autres appels sortants vont à des hôtes
@@ -712,8 +743,8 @@ fixes), et jamais pendant une requête web :
   lecture »…), **jamais** le corps, la ligne d’état ni les en-têtes de la réponse ;
 - chaque lecture sortante est comptée par compte (`coaching_agenda_fetch`, 30 par heure).
 
-**Quand.** Dans Celery seulement (`app/tasks/coaching.py`) : à l’enregistrement d’une adresse ou d’une connexion
-(`paceforge.coaching_agenda`), toutes les 3 heures à :47 pour les comptes qui ont un plan et une adresse ou un compte
+**Quand.** Dans Celery seulement (`app/tasks/coaching.py`) — le calendrier de l’iPhone excepté, lu par l’app : à
+l’enregistrement d’une connexion (`paceforge.coaching_agenda`), toutes les 3 heures à :47 pour les comptes qui ont un plan et une adresse ou un compte
 connecté (`paceforge.coaching_agenda_round`), et sur « Actualiser » (une fois par minute au plus, `coaching_agenda`) ;
 un compte connecté est compté comme une adresse (`coaching_agenda_fetch`). Après
 chaque lecture, le plan est relu : chaque séance retrouve son créneau.
@@ -756,18 +787,19 @@ Souissi 2012, revue). D’où « l’heure habituelle, sinon le soir ».
 | Au-delà de 21 jours | Les heures occupées ne sont pas connues : pas d’heure. |
 
 Le placement est refait à chaque lecture du plan (les heures occupées, les moments ou une durée ont pu changer). Tant
-qu’une adresse n’a jamais été lue, rien n’est placé : une heure donnée sur la moitié des agendas serait un pari.
-Retirer la dernière adresse efface les heures et remet à leur jour les séances que l’agenda avait déplacées.
+qu’une source n’a jamais été lue, rien n’est placé : une heure donnée sur la moitié des agendas serait un pari (un
+calendrier de l’iPhone refusé avant toute lecture n’en est pas une). Retirer la dernière source efface les heures et
+remet à leur jour les séances que l’agenda avait déplacées.
 
 **Ce que voit l’athlète.** Sur la carte du jour, le créneau : « 12 h 15 – 13 h 05 » (une heure s’écrit « 12 h 15 »,
 une durée « 1h05 »), et « Autre créneau ». Les barres de la semaine restent telles quelles.
 
 **Ce que voit le coach.** L’heure des séances, et « Séance déplacée de mardi à mercredi. » ; jamais les heures
-occupées, ni qu’un jour est plein, ni « Journée chargée », ni les adresses, ni les comptes connectés, ni « Autre
-créneau ».
+occupées, ni qu’un jour est plein, ni « Journée chargée », ni les adresses, ni les comptes connectés, ni le
+calendrier de l’iPhone, ni « Autre créneau ».
 
 **Export et suppression.** « Télécharger mes données » donne chaque adresse par son hôte et chaque compte connecté
-par son service (« Google Agenda », « Outlook »), avec leurs dates et leur état — jamais une adresse ni un jeton —, et
+par son service (« Google Agenda », « Outlook », « Calendrier de l’iPhone »), avec leurs dates et leur état — jamais une adresse ni un jeton —, et
 les heures occupées. « Arrêter le coaching » et la suppression du compte révoquent l’accès Google et effacent tout ;
 le retrait du consentement aux données de santé n’y touche pas (l’agenda n’en est pas).
 
@@ -918,6 +950,15 @@ tableau, le jour en ticket, les options dans une feuille.
    dans la feuille, « ‹ Options » revient aux tuiles. Le focus reste dans la feuille (Tab tourne), Échap et un
    toucher sur le fond la ferment et rendent le focus au bouton rond ; la page derrière ne défile pas ; la feuille
    défile en elle-même quand un outil est long ; une marge pour la barre du bas de l’iPhone.
+   - **« Dans mon calendrier »** : trois boutons d’un toucher — « Calendrier Apple », « Google Agenda », « Outlook »
+     (« Le calendrier synchronisé ») —, puis « Copier l’adresse » et « Régénérer le lien », discrets ; aucune
+     adresse affichée. **« Mon agenda »** : « Connecter Google Agenda », « Connecter Outlook » (quand configurés) et,
+     dans l’app iPhone qui le sait, « Calendrier de l’iPhone » ; ailleurs une ligne, « iCloud se relie depuis l’app
+     iPhone. » ; la phrase « PaceForge lit seulement quand tu es occupé. Jamais les titres. » ; les sources (les
+     adresses collées avant le 24 novembre 2026 comprises) avec leur état, « Reconnecter » ou « Ouvrir les
+     réglages », « Retirer » ; « Actualiser » ; « Quand peux-tu courir ? ». Plus aucun champ d’adresse. Boutons de
+     44 px, rien ne déborde à 320 px ni à 200 % de texte, 4,5:1 dans les deux thèmes
+     (`tests/browser/coaching-visuals.cjs`, site, app à jour, app plus ancienne).
    - **Un formulaire d’un outil revient dans la feuille**, ouverte sur cet outil, avec son message :
      `/coaching?outil=agenda#coach-tool-agenda`, `?outil=fixe#coach-tool-fixed`, `?outil=forme#coach-form`,
      `?outil=calendrier#coach-tool-feed`, `?outil=partage#coach-tool-share`, `?outil=methode#coach-tool-how` ; une
@@ -1011,8 +1052,23 @@ les routes et les tables gardent « coach » pour le rôle : la personne qui sui
   changements, `DTSTAMP` et `LAST-MODIFIED` son dernier changement : une modification arrive dans le calendrier
   abonné à son prochain rafraîchissement. Une séance supprimée ou annulée n’est plus dans le flux.
 - Lignes CRLF, pliées à 75 octets, texte échappé (RFC 5545).
-- La page propose le lien `webcal://` (« S’abonner au calendrier ») et l’adresse à copier ; « Régénérer le lien » en
-  crée un nouveau, l’ancien ne répond plus.
+- La page propose trois boutons, un toucher chacun, et aucune adresse visible (propriétaire, 24 novembre 2026 : « on
+  ne va pas rentrer d'URL à la main ») : **« Calendrier Apple »** (le lien `webcal://`, que l’app remet au
+  système), **« Google Agenda »** et **« Outlook »**, la page « ajouter par URL » de chaque fournisseur avec l’adresse
+  du flux dans le lien (`routers/coaching.feed_urls`) ; puis, discret, « Copier l’adresse » pour une autre
+  application de calendrier (l’adresse est copiée sans être affichée). « Régénérer le lien » en crée un nouveau,
+  l’ancien ne répond plus.
+
+| Bouton | Lien | D’où vient le format | Rafraîchissement |
+|---|---|---|---|
+| Calendrier Apple | `webcal://paceforge.fr/coaching/cal/<jeton>.ics` | le schéma `webcal` ouvre l’abonnement de Calendrier (iPhone, Mac) | celui du client, qui suit à peu près `REFRESH-INTERVAL` |
+| Google Agenda | `https://calendar.google.com/calendar/render?cid=<webcal://… encodé>` | non documenté par Google ; publié par Simon Willison (« Providing a "subscribe in Google Calendar" link for an ics feed », til.simonwillison.net) et repris par les widgets d’ajout au calendrier ; vérifié le 24 novembre 2026 : l’adresse renvoie vers la connexion Google en gardant `cid` | celui de Google, qui n’en publie aucun ; plusieurs sources rapportent moins d’une fois par 24 h |
+| Outlook | `https://outlook.live.com/calendar/0/addfromweb/?url=<webcal://… encodé>&name=PaceForge%20%C2%B7%20Coaching` | non documenté par Microsoft (« Subscribe from web » prérempli) ; décrit par « One calendar URL, five subscribe links… » (dev.to) et repris par les widgets ; Outlook.com (comptes personnels) — un compte pro ou scolaire (`outlook.office.com`) passe par « Copier l’adresse » | celui de Microsoft : « This update can take more than 24 hours, although updates should happen approximately every 3 hours » (support Microsoft, Outlook.com ; « approximately every 6 hours » pour Outlook sur le web d’une organisation) |
+
+  Sur le site, Google Agenda et Outlook s’ouvrent dans un nouvel onglet (`target` posé par `coaching-agenda.js`) ;
+  dans l’app, un lien `https://` hors de paceforge.fr n’est jamais chargé dans la WebView : l’app le remet au
+  navigateur du système (`Linking.openURL`, `onShouldStartLoadWithRequest`). Ces deux pages demandent d’être connecté
+  au compte Google ou Microsoft dans ce navigateur. Rien de cela n’a été essayé avec un vrai compte.
 - 404 quand la fonction est éteinte, quand le jeton est inconnu ou régénéré, ou quand une liste restreint la fonction
   et que son propriétaire n’y est pas.
 
@@ -1027,9 +1083,9 @@ l’app le remet au système (`Linking.openURL`), et Calendrier sur iPhone propo
 acceptée, vérifiée caractère par caractère (`calendarFeedUrl`, `mobile/src/navigation.ts`) :
 `webcal://paceforge.fr/coaching/cal/<jeton>.ics` — cet hôte exact, sans port ni identifiants, ce chemin exact, sans
 paramètre ni fragment. Tout autre lien `webcal://` et tout autre schéma restent ignorés. Si aucune application ne
-prend le lien (Android sans application de calendrier qui s’y abonne), l’app le dit et l’adresse reste à copier. Une
-app plus ancienne n’affiche pas le bouton : l’adresse se copie (Réglages iOS › Calendrier › Comptes › Ajouter un
-calendrier avec abonnement).
+prend le lien (Android sans application de calendrier qui s’y abonne), l’app le dit et « Copier l’adresse » reste.
+Une app plus ancienne n’affiche pas « Calendrier Apple » : Google Agenda, Outlook et « Copier l’adresse » restent
+(Réglages iOS › Calendrier › Comptes › Ajouter un calendrier avec abonnement).
 
 **L’envoi des séances à la montre n’est pas construit.** Il demande un accès en écriture chez les marques (Garmin
 Training API, écriture COROS côté partenaire) que PaceForge n’a pas. Aucun écran ne le propose.
@@ -1043,7 +1099,11 @@ champs sortent dans l’export de leur propriétaire et partent avec l’option,
 Migration `p7e8f9a0b1c2` : `coaching_calendars` (les adresses, chiffrées), `coaching_busy` (les heures occupées),
 `coaching_plans.moments`, `coaching_sessions.slot_min`, `slot_chosen`, `slot_flag`. L’export donne l’hôte de chaque
 adresse (jamais l’adresse : c’est le secret d’un autre service) et les heures occupées ; « Arrêter le coaching » et
-la suppression du compte retirent adresses et heures occupées. Migration `q8f9a0b1c2d3` :
+la suppression du compte retirent adresses et heures occupées. Migration `u6e7f8a9b0c1` : `coaching_calendars.provider`
+et les jetons chiffrés des comptes connectés. Le calendrier de l’iPhone (24 novembre 2026) n’a demandé aucune
+migration : une source `provider = "iphone"` (la colonne est un texte), ses intervalles dans `coaching_busy`, son
+état « phone » quand le téléphone refuse l’accès ; rien d’autre n’est stocké (ni nom de calendrier, ni appareil).
+Migration `q8f9a0b1c2d3` :
 `coaching_plans.race_name`, `race_date`, `race_km`, `race_target_s` (une course sans fichier), dans l’export.
 Migration `t5d6e7f8a9b0` : `coaching_plans.fixed` (la séance fixe : jour, durée, nom), dans l’export ; ses séances
 sont des lignes ordinaires de `coaching_sessions`. Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
@@ -1058,10 +1118,16 @@ d’activation, les matins où l’indice de récupération de Santé est bas (l
 les séances allégées ces matins-là ; base « Consentement explicite, donné à part dans Coaching » ; jamais partagé
 (le coach voit qu’une séance a été adaptée, jamais pourquoi) ; gardé jusqu’à la désactivation de l’option, le
 retrait de l’accord sur les données de santé, l’arrêt du coaching ou la suppression du compte. Une troisième,
-« Coaching (bêta) · ton agenda » : seulement si une adresse est ajoutée — cette adresse (chiffrée), les heures
-occupées des 21 prochains jours (un début et une fin, jamais un titre, une description, un lieu ni un participant),
-les moments où courir, l’heure donnée à chaque séance ; base « Contrat » ; jamais partagé (le coach voit l’heure des
-séances, jamais l’agenda) ; gardé jusqu’au retrait de l’adresse, l’arrêt du coaching ou la suppression du compte.
+« Coaching (bêta) · ton agenda » : seulement si l’athlète connecte Google Agenda ou Outlook (nommés seulement quand
+leur connecteur est configuré) ou le calendrier de son iPhone — l’accès au compte (chiffré, jamais le mot de passe),
+les heures occupées des 21 prochains jours (un début et une fin, jamais un titre, une description, un lieu ni un
+participant), les moments où courir, l’heure donnée à chaque séance ; le calendrier de l’iPhone lu sur le téléphone,
+l’app n’envoyant que ces heures ; une adresse collée avant le 24 novembre 2026 conservée, chiffrée, jusqu’à son
+retrait, et plus aucune à ajouter ; base « Contrat » ; jamais partagé (le coach voit l’heure des séances, jamais
+l’agenda) ; gardé jusqu’au retrait de la source (« Retirer » efface aussitôt ses heures occupées), l’arrêt du
+coaching ou la suppression du compte. La page « Confidentialité de l’app » (`/mobile/privacy`) a sa section
+« Calendrier de l’iPhone » : ce qui est lu, ce qui est envoyé, la relecture à l’ouverture de Coaching (au plus toutes
+les 3 heures), « Retirer », et Réglages › PaceForge › Calendriers.
 
 ## Mise en service
 
@@ -1076,6 +1142,16 @@ séances, jamais l’agenda) ; gardé jusqu’au retrait de l’adresse, l’arr
 5. Pour restreindre : `COACHING_BETA_USERS=<e-mails>`. Pour tout éteindre : `COACHING_BETA_USERS=off`. Redéployer.
    Les données restent en base, invisibles ; elles partent avec « Arrêter le coaching » (une fois la fonction
    rallumée) ou avec le compte.
+6. « Mon agenda » › « Calendrier de l’iPhone » demande une version native de l’app (le module `expo-calendar`, son
+   texte d’autorisation, le drapeau `.pf-native-calendar`), publiée sur TestFlight comme l’onglet ; d’ici là, l’app
+   installée montre la ligne « … depuis la dernière version de l’app iPhone. ». Les trois boutons de « Dans mon
+   calendrier » marchent déjà dans l’app installée (le lien `webcal://` et les liens `https://` qu’elle remet au
+   système). App Store : le texte d’autorisation des calendriers est dans `app.json` (plugin
+   `expo-calendar`, `NSCalendarsUsageDescription` et `NSCalendarsFullAccessUsageDescription`, aucun texte pour les
+   rappels) ; le manifeste de confidentialité déclare « Other Data Types » (lié au compte, fonctionnement de l’app,
+   jamais de suivi) — aucune catégorie de la liste d’Apple ne nomme les calendriers — et les réponses « App Privacy »
+   d’App Store Connect doivent ajouter la même ligne avant la soumission. Les athlètes qui avaient collé une adresse
+   n’ont rien à faire : elle reste lue.
 
 ## Sources
 
