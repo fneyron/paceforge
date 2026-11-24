@@ -382,8 +382,7 @@ async def let_go(row) -> None:
 
 APP_RETURN = "paceforge://agenda"
 RESULTS = ("ok", "annule", "expire", "refus", "organisation", "panne")
-ORGANISATION = "Ton organisation n’autorise pas cette connexion : demande à ton administrateur, ou colle l’adresse " \
-               "de ton agenda."
+ORGANISATION = "Ton organisation n’autorise pas cette connexion : demande à ton administrateur."
 
 
 def result_line(provider: str | None, result: str | None) -> tuple[str, bool] | None:

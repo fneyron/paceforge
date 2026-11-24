@@ -199,13 +199,16 @@ async def test_nothing_configured_nothing_changes_and_every_route_answers_404(cl
     monkeypatch.setattr(base, "_transport", httpx.MockTransport(never))
     before = (await client.get("/coaching?outil=agenda")).text
     fold = _fold(before)
-    assert "coach-cal-url" in fold and "Où trouver l’adresse" in fold, "the address to paste, as before"
-    for absent in ("data-agenda-connect", "Connecter Google", "Connecter Outlook", "Jamais les titres", "pf-coach-connect"):
+    assert "coach-cal-url" not in fold and "Où trouver l’adresse" not in fold, "no address to paste any more"
+    for absent in ('data-agenda-connect="', "Connecter Google", "Connecter Outlook"):
         assert absent not in fold, absent
-    assert "coaching-agenda.js" not in before
+    # the iPhone's calendar is the app's (its button hidden elsewhere: .pf-native-calendar), the note with it
+    assert 'id="coach-cal-connect-iphone"' in fold and 'pf-coach-connect-note is-phone-only' in fold
+    assert "iCloud se relie depuis l’app iPhone." in fold
     privacy = (await client.get("/privacy")).text
     assert "Apple et Google ne reçoivent rien de PaceForge." in privacy and "Google Agenda" not in privacy
-    assert "Microsoft" not in privacy and "Seulement si tu ajoutes une adresse dans «&nbsp;Mon agenda&nbsp;»&nbsp;: cette adresse (chiffrée), tes heures" in privacy
+    assert "Microsoft" not in privacy and \
+        "Seulement si tu connectes le calendrier de ton iPhone dans «&nbsp;Mon agenda&nbsp;»&nbsp;: tes heures" in privacy
     # half configured is not configured: a flag without its secret, a secret without its flag
     monkeypatch.setattr(settings, "GOOGLE_CALENDAR_ENABLED", True)
     monkeypatch.setattr(settings, "GOOGLE_CALENDAR_CLIENT_ID", "g-client")
@@ -235,7 +238,7 @@ async def test_google_sign_in_round_trip_state_pkce_encrypted_tokens_never_logge
     assert 'href="/coaching/agenda/google/connect"' in fold and 'href="/coaching/agenda/microsoft/connect"' in fold
     assert ">Connecter Google Agenda<" in fold and ">Connecter Outlook<" in fold
     assert "PaceForge lit seulement quand tu es occupé. Jamais les titres." in fold
-    assert fold.index("Connecter Google Agenda") < fold.index("coach-cal-url"), "above the address"
+    assert fold.index("Connecter Google Agenda") < fold.index("Calendrier de l’iPhone") and "coach-cal-url" not in fold
     assert "coaching-agenda.js" in page
     async with AsyncClient(transport=client._transport, base_url="https://test") as web:
         r = await web.get("/coaching/agenda/google/connect")
@@ -416,7 +419,7 @@ async def test_a_refusal_comes_back_as_one_plain_line(client, athlete, db_sessio
         fake.token_error = "invalid_grant"
         r = await _connect(web, fake, "google")
         said["token"] = (await client.get(r.headers["location"].split("#")[0])).text
-    assert "Ton organisation n’autorise pas cette connexion : demande à ton administrateur, ou colle l’adresse de ton agenda." in _fold(said["org"])
+    assert "Ton organisation n’autorise pas cette connexion : demande à ton administrateur." in _fold(said["org"])
     assert "Connexion annulée." in _fold(said["cancel"])
     assert "Outlook a refusé la connexion. Réessaie." in _fold(said["other"])
     assert "Google Agenda a refusé la connexion. Réessaie." in _fold(said["token"])
@@ -540,10 +543,11 @@ async def test_the_privacy_policy_names_google_and_microsoft_only_once_configure
     assert "<strong>Google</strong> (Google LLC, États-Unis, hors UE), si tu connectes Google Agenda" in privacy
     assert "<strong>Microsoft</strong> (Microsoft Corporation, États-Unis, hors UE), si tu connectes Outlook" in privacy
     assert "Apple ne reçoit rien de PaceForge, ni Google en dehors de Google Agenda si tu le connectes." in privacy
-    assert "ou connectes Google Agenda ou Outlook dans" in privacy
+    assert "si tu connectes Google Agenda, Outlook ou le calendrier de ton iPhone dans" in privacy
     monkeypatch.setattr(settings, "GOOGLE_CALENDAR_ENABLED", False)
     privacy = (await client.get("/privacy")).text
-    assert "<strong>Google</strong> (Google LLC" not in privacy and "ou connectes Outlook dans" in privacy
+    assert "<strong>Google</strong> (Google LLC" not in privacy
+    assert "si tu connectes Outlook ou le calendrier de ton iPhone dans" in privacy
     assert "Apple et Google ne reçoivent rien de PaceForge." in privacy
     monkeypatch.setattr(settings, "COACHING_BETA_USERS", "off")
     privacy = (await client.get("/privacy")).text

@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, timedelta, timezone
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -180,12 +180,24 @@ async def _row(db: AsyncSession, scope: Scope, session_id: int) -> tuple[Coachin
 
 # ── the calendar feed (no session: the token is the key) ────────────────────
 
+# « Dans mon calendrier »: each provider's own « add by URL » web link, the feed's address in it (docs/coaching.md ›
+# « Le calendrier synchronisé », where each format comes from). Google reads the webcal:// form in `cid`; Outlook.com's
+# « Subscribe from web » page takes it in `url`, with the calendar's `name`.
+GOOGLE_SUBSCRIBE = "https://calendar.google.com/calendar/render?cid={webcal}"
+OUTLOOK_SUBSCRIBE = "https://outlook.live.com/calendar/0/addfromweb/?url={webcal}&name={name}"
+
+
 def feed_urls(plan: CoachingPlan) -> dict | None:
+    """The feed's addresses: https (to copy), webcal (Apple's Calendar, and what the iPhone app hands to the system),
+    and the Google Agenda and Outlook links that add it in one tap."""
     if not plan.feed_token:
         return None
     base = settings.BASE_URL.rstrip("/")
     https = f"{base}/coaching/cal/{plan.feed_token}.ics"
-    return {"https": https, "webcal": "webcal://" + https.split("://", 1)[-1]}
+    webcal = "webcal://" + https.split("://", 1)[-1]
+    return {"https": https, "webcal": webcal,
+            "google": GOOGLE_SUBSCRIBE.format(webcal=quote(webcal, safe="")),
+            "outlook": OUTLOOK_SUBSCRIBE.format(webcal=quote(webcal, safe=""), name=quote(ics.NAME, safe=""))}
 
 
 @router.get("/coaching/cal/{token}.ics", include_in_schema=False)
@@ -431,19 +443,25 @@ def _read_word(row, c: co.Clock) -> str:
 
 
 async def _agenda(db: AsyncSession, plan: CoachingPlan, c: co.Clock) -> dict:
-    """« Mon agenda »: the connected accounts, then the addresses, masked, with how their last reading went; the
-    buttons of the services configured and not connected yet (none while no connector is: the screen of before);
-    the moments chosen."""
+    """« Mon agenda »: the connected sources, then the addresses pasted before (masked), with how their last reading
+    went; the buttons of the services configured and not connected yet; the iPhone's calendar (its button shown by
+    an app that reads it); the moments chosen."""
     calendars = sorted(await ag.calendars_of(db, plan.user_id), key=lambda row: row.provider == ag.ICAL)
     chosen = ag.moments_of(plan)
     connected = {row.provider for row in calendars}
+    iphone = next((row for row in calendars if row.provider == ag.IPHONE), None)
+    phone = {"id": iphone.id if iphone else None, "refused": bool(iphone and iphone.status == "phone"),
+             "stale": bool(iphone and ag.phone_stale(iphone, c.now))}
     return {"calendars": [{"id": row.id, "masked": ag.label(row), "word": _read_word(row, c),
                            "ok": row.status in (None, ag.OK), "account": row.provider != ag.ICAL,
+                           "phone": row.provider == ag.IPHONE, "settings": row.status == "phone",
                            "reconnect": row.provider if row.status == "reauth" and accounts.ready(row.provider)
                            else None} for row in calendars],
             "connect": [{"key": p, "name": accounts.NAMES[p]} for p in accounts.active() if p not in connected],
             "accounts": bool(accounts.active()),
-            "room": sum(1 for row in calendars if row.provider == ag.ICAL) < ag.MAX_CALENDARS,
+            # the iPhone's calendar, read by the app (EventKit): its button in an app that says it can, its state for
+            # the app's silent reading as the page loads (coaching-agenda.js)
+            "phone": phone,
             "moments": [(m, cs.MOMENT_WORDS[m], m in chosen) for m in cs.MOMENTS]}
 
 
@@ -601,7 +619,8 @@ async def coaching_fixed_remove(scope: Scope = Depends(own_scope), db: AsyncSess
     return RedirectResponse(FIXED, status_code=303)
 
 
-# ── « Mon agenda »: the athlete's calendar addresses (never fetched in a request: app.tasks.coaching) ──
+# ── « Mon agenda »: the athlete's sources (an address pasted before is never fetched in a request: app.tasks.coaching);
+# since 24 Nov 2026 no address can be added (owner: « on ne va pas rentrer d'URL à la main ») ──
 
 AGENDA = "/coaching?outil=agenda#coach-tool-agenda"
 # ?outil=…: what the options' sheet opens on when the page comes back from one of its forms (without JavaScript: the
@@ -610,7 +629,6 @@ TOOLS = {"agenda": "agenda", "agenda-lu": "agenda", "forme": "form", "options": 
          "calendrier": "feed", "partage": "share", "methode": "how"}
 AGENDA_ASKED = "Lecture demandée : recharge la page dans un instant."
 AGENDA_WAIT = "Une actualisation par minute : réessaie dans un instant."
-AGENDA_BUSY = "Trop de changements pour l’instant. Réessaie dans une heure."
 
 
 async def _agenda_plan(db: AsyncSession, scope: Scope) -> CoachingPlan:
@@ -618,30 +636,6 @@ async def _agenda_plan(db: AsyncSession, scope: Scope) -> CoachingPlan:
     if plan is None:
         raise HTTPException(status_code=404)
     return plan
-
-
-@router.post("/coaching/agenda")
-async def coaching_agenda_add(request: Request, url: str = Form(default=""), scope: Scope = Depends(own_scope),
-                              db: AsyncSession = Depends(get_db)):
-    """A calendar address added: checked as typed (https, a public host name), stored encrypted, then read by a
-    worker. A refusal is said in the fold (answered 200: the app's shell replaces a 4xx document)."""
-    from app.services.auth import over_quota
-
-    await _agenda_plan(db, scope)
-    error = None
-    if await over_quota("coaching_agenda_save", user=scope.athlete.id):
-        error = AGENDA_BUSY
-    else:
-        try:
-            await ag.add_calendar(db, scope.athlete.id, url)
-        except ag.Invalid as e:
-            error = str(e)
-    if error:
-        return await _page(request, db, scope, None, None, None, tool="agenda", tool_error=error)
-    await db.commit()  # the worker reads the address from its own session
-    _queue_agenda(scope.athlete.id)
-    logger.info("Coaching: calendar address added for user %d", scope.athlete.id)
-    return RedirectResponse(AGENDA, status_code=303)
 
 
 @router.post("/coaching/agenda/refresh")
@@ -655,6 +649,57 @@ async def coaching_agenda_refresh(request: Request, scope: Scope = Depends(own_s
         return await _page(request, db, scope, None, None, None, tool="agenda", tool_error=AGENDA_WAIT)
     _queue_agenda(scope.athlete.id)
     return RedirectResponse("/coaching?outil=agenda-lu#coach-tool-agenda", status_code=303)
+
+
+PHONE_BODY_MAX = 128 * 1024  # bytes: PHONE_MAX intervals of two epoch seconds fit in about half
+
+
+@router.post("/coaching/agenda/iphone")
+async def coaching_agenda_iphone(request: Request, scope: Scope = Depends(own_scope),
+                                 db: AsyncSession = Depends(get_db)):
+    """The iPhone's calendar, read by the app on the phone (EventKit) and sent from the page it shows, in the
+    WebView's own session (same origin: middleware.security): {"intervals": [{"start": s, "end": s}…]} in UTC epoch
+    seconds — busy intervals and nothing else —, or {"refused": true} when the phone refuses access. Checked
+    (ag.phone_intervals: numbers only, bounded, within the horizon), kept as the « iphone » source, the times found
+    again at once. JSON in, JSON out; a refusal is a code, never a message."""
+    import json
+
+    from fastapi.responses import JSONResponse
+
+    from app.services.auth import over_quota
+
+    def answer(body: dict, status: int = 200) -> JSONResponse:
+        return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store"})
+
+    plan = await _agenda_plan(db, scope)
+    raw = await request.body()
+    if len(raw) > PHONE_BODY_MAX:
+        return answer({"error": "too_big"}, 413)
+    try:
+        body = json.loads(raw or b"null")
+    except ValueError:
+        return answer({"error": "shape"}, 422)
+    if not isinstance(body, dict) or not (set(body) == {"intervals"} or body == {"refused": True}):
+        return answer({"error": "shape"}, 422)
+    if await over_quota("coaching_agenda_phone", user=scope.athlete.id):
+        return answer({"error": "rate"}, 429)
+    c = await co.clock(db, scope.athlete)
+    if body.get("refused") is True:
+        await ag.phone_refused(db, scope.athlete.id, c.now)
+        await co.sync(db, plan, scope.athlete)
+        await db.commit()
+        logger.info("Coaching: iPhone calendar refused for user %d", scope.athlete.id)
+        return answer({"ok": True, "state": "refused"})
+    try:
+        busy = ag.phone_intervals(body["intervals"], c.zone, c.now,
+                                  own=ag.own_slots(await co.sessions_of(db, plan), c.zone))
+    except ag.Invalid as e:
+        return answer({"error": str(e)}, 422)
+    await ag.receive_phone(db, scope.athlete.id, busy, c.now)
+    await co.sync(db, plan, scope.athlete)
+    await db.commit()
+    logger.info("Coaching: iPhone calendar read for user %d (%d intervals)", scope.athlete.id, len(busy))
+    return answer({"ok": True, "state": "read"})
 
 
 @router.post("/coaching/agenda/moments")
@@ -671,7 +716,8 @@ async def coaching_agenda_moments(request: Request, scope: Scope = Depends(own_s
 @router.post("/coaching/agenda/{calendar_id}/remove")
 async def coaching_agenda_remove(calendar_id: int, scope: Scope = Depends(own_scope),
                                  db: AsyncSession = Depends(get_db)):
-    """An address removed, with the busy time read from it; the times are found again without it."""
+    """A source removed (an address, a connected account, the iPhone's calendar), with the busy time read from it, at
+    once; the times are found again without it."""
     plan = await _agenda_plan(db, scope)
     if not await ag.remove_calendar(db, scope.athlete.id, calendar_id):
         raise HTTPException(status_code=404)

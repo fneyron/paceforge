@@ -59,48 +59,49 @@
         <h3 class="pf-coach-panel-h" id="coach-tool-feed-h" tabindex="-1">Dans mon calendrier <small>Tes séances dans l’agenda de ton téléphone</small></h3>
         <div class="pf-coach-tool-body">
             {% if tools.feed %}
-            {#- a browser follows webcal:// by itself; the app hands it to the system since it has the native Coaching
-                tab (.pf-native-coaching). An older installed app drops the link: the address to copy is all it shows -#}
-            <a class="pf-btn pf-btn-primary pf-btn-sm pf-webcal" href="{{ tools.feed.webcal }}">S’abonner au calendrier</a>
-            <div class="pf-coach-copy">
-                <label class="sr-only" for="coach-feed-url">Adresse du calendrier</label>
-                <input id="coach-feed-url" class="pf-input" readonly value="{{ tools.feed.https }}" onfocus="this.select()">
-                <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" data-copy="coach-feed-url">Copier</button>
+            {#- one tap each, no address to type (owner, 24 Nov 2026): Apple's Calendar takes the webcal:// link (a
+                browser follows it; the app hands it to the system since its native Coaching tab, .pf-native-coaching:
+                an older app drops it, so it is hidden there); Google Agenda and Outlook their own « add by URL » page,
+                the feed's address in the link (routers/coaching.feed_urls), opened outside the app. « Copier
+                l’adresse », quiet, for any other calendar app: the address itself is never shown. -#}
+            <div class="pf-coach-subscribe">
+                <a class="pf-btn pf-btn-primary pf-btn-sm pf-webcal" id="coach-feed-apple" href="{{ tools.feed.webcal }}">Calendrier Apple</a>
+                <a class="pf-btn pf-btn-secondary pf-btn-sm" id="coach-feed-google" href="{{ tools.feed.google }}" rel="noopener noreferrer" data-feed-provider>Google Agenda</a>
+                <a class="pf-btn pf-btn-secondary pf-btn-sm" id="coach-feed-outlook" href="{{ tools.feed.outlook }}" rel="noopener noreferrer" data-feed-provider>Outlook</a>
             </div>
+            <button type="button" id="coach-feed-copy" class="pf-coach-textbtn" data-copy-value="{{ tools.feed.https }}">Copier l’adresse</button>
             {% endif %}
             <form method="post" action="/coaching/feed/regenerate" hx-post="/coaching/feed/regenerate" {{ swap|safe }} hx-confirm="Régénérer le lien ? L’ancien ne fonctionnera plus.">
                 <button type="submit" id="coach-feed-new" class="pf-coach-textbtn">Régénérer le lien</button>
             </form>
         </div>
     </section>
-    {#- « Mon agenda »: Google Agenda and Outlook connected by OAuth (their buttons only while their connector is
-        configured: none, the screen of before), the athlete's private calendar addresses (masked), when they can run,
-        how to find the address. Plain forms: the page comes back with the times found again. In the app the buttons
-        open the system's sign-in sheet (coaching-agenda.js; an older app, without .pf-native-agenda, hides them). -#}
+    {#- « Mon agenda »: direct connections only (owner, 24 Nov 2026: « on ne va pas rentrer d'URL à la main »). Google
+        Agenda and Outlook by OAuth (their buttons only while their connector is configured; in the app they open the
+        system's sign-in sheet, coaching-agenda.js; an older app, without .pf-native-agenda, hides them); the iPhone's
+        calendar read on the phone, its button only in an app that says it can (.pf-native-calendar; elsewhere one
+        quiet line). The addresses pasted before stay listed, masked, and keep being read. Plain forms: the page comes
+        back with the times found again. -#}
+    {% set phone_state = "refused" if a.phone.refused else "stale" if a.phone.stale else "fresh" if a.phone.id else "none" %}
     <section class="pf-coach-panel{% if opened == 'agenda' %} is-asked{% endif %}" id="coach-tool-agenda" aria-labelledby="coach-tool-agenda-h">
         <h3 class="pf-coach-panel-h" id="coach-tool-agenda-h" tabindex="-1">Mon agenda <small>Des séances hors réunions et rendez-vous</small></h3>
-        <div class="pf-coach-tool-body pf-coach-agenda">
+        <div class="pf-coach-tool-body pf-coach-agenda" data-phone-calendar-state="{{ phone_state }}">
             {% if agenda_error %}<p class="pf-coach-error" role="alert">{{ agenda_error }}</p>{% endif %}
             {% if agenda_note %}<p class="pf-label" role="status">{{ agenda_note }}</p>{% endif %}
-            {% if a.connect %}
+            {% if a.connect or not a.phone.id %}
             <div class="pf-coach-connect" data-agenda-connect-row>
                 {% for p in a.connect %}<a class="pf-btn pf-btn-secondary pf-btn-sm" id="coach-cal-connect-{{ p.key }}" href="/coaching/agenda/{{ p.key }}/connect" data-agenda-connect="{{ p.key }}">Connecter {{ p.name }}</a>{% endfor %}
+                {% if not a.phone.id %}<button type="button" class="pf-btn pf-btn-secondary pf-btn-sm pf-phone-calendar" id="coach-cal-connect-iphone" data-phone-calendar="connect">Calendrier de l’iPhone</button>{% endif %}
             </div>
             {% endif %}
-            {% if a.accounts %}<p class="pf-label pf-coach-connect-note">PaceForge lit seulement quand tu es occupé. Jamais les titres.</p>{% endif %}
+            <p class="pf-label pf-coach-connect-note{% if not a.accounts %} is-phone-only{% endif %}">PaceForge lit seulement quand tu es occupé. Jamais les titres.</p>
+            {% if not a.phone.id %}<p class="pf-label pf-coach-icloud-note"><span class="pf-icloud-web">iCloud se relie depuis l’app iPhone.</span><span class="pf-icloud-old">iCloud se relie depuis la dernière version de l’app iPhone.</span></p>{% endif %}
             {% for c in a.calendars %}
             <form class="pf-coach-calrow" method="post" action="/coaching/agenda/{{ c.id }}/remove" onsubmit="event.preventDefault(); var f = this; var msg = 'Retirer {{ 'cette connexion' if c.account else 'cette adresse' }} ? Tes séances n’en tiendront plus compte.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Retirer'); } else if (confirm(msg)) { f.submit(); }">
-                <span><b>{{ c.masked }}</b><small{% if not c.ok %} class="text-danger"{% endif %}>{{ c.word }}</small>{% if c.reconnect %}<a class="pf-coach-textbtn" id="coach-cal-reconnect-{{ c.id }}" href="/coaching/agenda/{{ c.reconnect }}/connect" data-agenda-connect="{{ c.reconnect }}">Reconnecter</a>{% endif %}</span>
+                <span><b>{{ c.masked }}</b><small{% if not c.ok %} class="text-danger"{% endif %}>{{ c.word }}</small>{% if c.reconnect %}<a class="pf-coach-textbtn" id="coach-cal-reconnect-{{ c.id }}" href="/coaching/agenda/{{ c.reconnect }}/connect" data-agenda-connect="{{ c.reconnect }}">Reconnecter</a>{% endif %}{% if c.settings %}<button type="button" class="pf-coach-textbtn pf-phone-calendar" id="coach-cal-settings-{{ c.id }}" data-phone-calendar="settings">Ouvrir les réglages</button>{% endif %}</span>
                 <button type="submit" id="coach-cal-remove-{{ c.id }}" class="pf-coach-textbtn text-danger">Retirer</button>
             </form>
             {% endfor %}
-            {% if a.room %}
-            <form class="pf-coach-copy" method="post" action="/coaching/agenda">
-                <label class="sr-only" for="coach-cal-url">Adresse privée de ton agenda (iCal)</label>
-                <input id="coach-cal-url" name="url" type="url" inputmode="url" class="pf-input" placeholder="Adresse iCal privée (https://…)" maxlength="1024" autocomplete="off" autocapitalize="off" spellcheck="false" required>
-                <button type="submit" id="coach-cal-add" class="pf-btn pf-btn-secondary pf-btn-sm">Ajouter</button>
-            </form>
-            {% endif %}
             {% if a.calendars %}
             <form method="post" action="/coaching/agenda/refresh">
                 <button type="submit" id="coach-cal-refresh" class="pf-coach-textbtn">Actualiser</button>
@@ -113,15 +114,6 @@
                 </div>
                 <noscript><button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm">Enregistrer</button></noscript>
             </form>
-            <details class="pf-fold pf-method pf-coach-calhelp">
-                <summary>Où trouver l’adresse</summary>
-                <ul>
-                    <li><b>Google Agenda</b> (sur ordinateur)&nbsp;: Paramètres › ton agenda › «&nbsp;Adresse secrète au format iCal&nbsp;».</li>
-                    <li><b>Apple</b>&nbsp;: Calendrier › le «&nbsp;i&nbsp;» de ton agenda › Calendrier public › copie le lien.</li>
-                    <li><b>Outlook</b>&nbsp;: Paramètres › Calendrier › Calendriers partagés › Publier un calendrier › lien ICS.</li>
-                    <li>PaceForge n’en garde que tes heures occupées&nbsp;: jamais un titre, un lieu ni un participant.</li>
-                </ul>
-            </details>
         </div>
     </section>
     <section class="pf-coach-panel{% if opened == 'share' %} is-asked{% endif %}" id="coach-tool-share" aria-labelledby="coach-tool-share-h">

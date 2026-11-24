@@ -42,20 +42,27 @@
 <script defer src="/static/js/coaching-calendar.js?v={{ request.app.state.build_id }}"></script>
 {% if not scope.coach %}<script defer src="/static/js/coaching-sheet.js?v={{ request.app.state.build_id }}"></script>
 <script defer src="/static/js/coaching-fixed.js?v={{ request.app.state.build_id }}"></script>{% endif %}
-{% if not scope.coach and tools and tools.agenda.accounts %}<script defer src="/static/js/coaching-agenda.js?v={{ request.app.state.build_id }}"></script>{% endif %}
+{% if not scope.coach and tools %}<script defer src="/static/js/coaching-agenda.js?v={{ request.app.state.build_id }}"></script>{% endif %}
 <script>
-// Instant feedback before the server answers: the ressenti tapped is shown as chosen at once; « Copier » copies the
-// calendar address. The server's answer then replaces the swapped part (htmx).
+// Instant feedback before the server answers: the ressenti tapped is shown as chosen at once; « Copier l’adresse »
+// copies the calendar address. The server's answer then replaces the swapped part (htmx).
 document.addEventListener("click", function (event) {
     var feel = event.target.closest && event.target.closest("[data-feel]");
     if (feel) feel.parentNode.querySelectorAll("[data-feel]").forEach(function (b) { b.setAttribute("aria-pressed", String(b === feel)); });
-    var copy = event.target.closest && event.target.closest("[data-copy]");
+    // « Copier l’adresse »: the feed's address for another calendar app, never shown on the page
+    var copy = event.target.closest && event.target.closest("[data-copy-value]");
     if (copy) {
-        var field = document.getElementById(copy.getAttribute("data-copy"));
-        if (!field) return;
+        var value = copy.getAttribute("data-copy-value");
         var done = function () { if (window.pfToast) pfToast("Adresse copiée"); };
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(field.value).then(done, function () { field.select(); });
-        else { field.select(); try { document.execCommand("copy"); done(); } catch (_) {} }
+        var fallback = function () {
+            var area = document.createElement("textarea");
+            area.value = value; area.setAttribute("readonly", ""); area.style.position = "fixed"; area.style.opacity = "0";
+            document.body.appendChild(area); area.select();
+            try { if (document.execCommand("copy")) done(); } catch (_) {}
+            document.body.removeChild(area);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(value).then(done, fallback);
+        else fallback();
     }
 });
 // « Déplacer »: the days become the targets — the board comes into view, the instruction takes the focus.

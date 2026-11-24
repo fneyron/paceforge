@@ -1,15 +1,17 @@
-"""Coaching › « Mon agenda » (docs/coaching.md): the athlete's private calendar addresses and connected accounts
-(Google Agenda, Outlook: services/coaching_accounts), the busy time read from them, and the time each session is
-given. The reading itself is pure (coaching_ical), the placement too
-(coaching_slots); the fetch is safe_fetch's, the only code that requests a user-typed address.
+"""Coaching › « Mon agenda » (docs/coaching.md): where the athlete's busy time comes from — Google Agenda and Outlook
+connected by OAuth (services/coaching_accounts), the iPhone's own calendar read on the phone (« iphone »), and the
+private calendar addresses pasted before 24 Nov 2026 (« ical », still read: nobody can add one any more) —, the busy
+time read from them, and the time each session is given. The reading itself is pure (coaching_ical), the placement
+too (coaching_slots); the fetch is safe_fetch's, the only code that requests a user-typed address.
 
-- an address is checked when it is typed (safe_fetch.clean_url: https, a public host name, never this site's),
-  stored encrypted, shown masked; 3 at most per athlete;
-- it is NEVER fetched in a web request: app.tasks.coaching reads it once saved, every 3 hours, and on « Actualiser »
-  (once a minute at most), each fetch counted per account (auth.QUOTAS); a connected account is read in the same
-  round, under the same counts;
+- an address pasted before is stored encrypted, shown masked; it is NEVER fetched in a web request:
+  app.tasks.coaching reads it every 3 hours and on « Actualiser » (once a minute at most), each fetch counted per
+  account (auth.QUOTAS); a connected account is read in the same round, under the same counts;
+- the iPhone's calendar is never fetched by the server: the app reads it with EventKit and sends busy intervals
+  alone, numbers (phone_intervals checks them), when the athlete connects it and when the Coaching page loads and
+  the last reading is older than PHONE_STALE;
 - what is kept of a calendar is its busy intervals for the next 21 days — a start, an end, away or not: never a
-  title, a description, a place or an attendee (coaching_ical never reads them);
+  title, a description, a place or an attendee (coaching_ical never reads them, the app never sends them);
 - a coach is never shown any of it: only the time a session was given.
 """
 import logging
@@ -28,7 +30,6 @@ from app.services import safe_fetch
 
 logger = logging.getLogger(__name__)
 
-MAX_CALENDARS = 3
 OK = "ok"
 # why a calendar could not be read, as the page says it (never the response's own words)
 STATUS = {
@@ -45,13 +46,19 @@ STATUS = {
     "rate": "Trop de lectures pour l’instant : nouvel essai plus tard.",
     "reauth": "À reconnecter : l’accès a expiré ou a été retiré.",
     "off": "Connexion indisponible pour l’instant.",
+    "phone": "À reconnecter : l’iPhone ne donne plus accès à son calendrier.",
 }
 ICAL = "ical"
+IPHONE = "iphone"  # the iPhone's calendar, read on the phone (iCloud and every account the phone syncs)
+PHONE_NAME = "Calendrier de l’iPhone"
+PHONE_STALE = timedelta(hours=3)  # choix pratique: the app reads again once the last reading is older (the round's 3 h)
+PHONE_MAX = ical.MAX_INTERVALS  # intervals in one reading, as an address's
+PHONE_SKEW = timedelta(hours=1)  # choix pratique: a phone's clock may run a little off the server's
 PENDING = "Lecture en cours…"
 
 
 class Invalid(ValueError):
-    """What the athlete typed cannot be kept; its message is shown as is."""
+    """What the phone sent cannot be kept: `str(e)` is a code, never shown."""
 
 
 def own_host() -> str:
@@ -62,6 +69,8 @@ def label(row: CoachingCalendar) -> str:
     """What the page calls a source: a connected account by its service's name, an address masked."""
     from app.services import coaching_accounts as accounts
 
+    if row.provider == IPHONE:
+        return PHONE_NAME
     return accounts.NAMES.get(row.provider) or mask(row.url)
 
 
@@ -86,24 +95,6 @@ async def calendars_of(db: AsyncSession, user_id: int) -> list[CoachingCalendar]
                                   .order_by(CoachingCalendar.id))).scalars().all())
 
 
-async def add_calendar(db: AsyncSession, user_id: int, raw: str | None) -> CoachingCalendar:
-    """A new address, checked (never fetched here), kept encrypted."""
-    try:
-        url = safe_fetch.clean_url(raw, own_host())
-    except safe_fetch.Refused as e:
-        raise Invalid("Colle une adresse de calendrier en https:// (ou webcal://)." if e.code == "url"
-                      else STATUS["host"]) from e
-    existing = [c for c in await calendars_of(db, user_id) if c.provider == ICAL]
-    if any(c.url == url for c in existing):
-        raise Invalid("Cette adresse est déjà dans ton agenda.")
-    if len(existing) >= MAX_CALENDARS:
-        raise Invalid(f"{MAX_CALENDARS} adresses au plus : retires-en une d’abord.")
-    row = CoachingCalendar(user_id=user_id, url=url)
-    db.add(row)
-    await db.flush()
-    return row
-
-
 async def connect_account(db: AsyncSession, user_id: int, provider: str, tokens: dict) -> CoachingCalendar:
     """A Google Agenda or Outlook account connected (one of each per athlete: connecting again renews its tokens),
     its tokens kept encrypted; read by a worker next."""
@@ -123,7 +114,7 @@ async def _let_go(row: CoachingCalendar) -> None:
     """A connected account's access withdrawn at the provider where it can be (best effort), its tokens forgotten."""
     from app.services import coaching_accounts as accounts
 
-    if row.provider != ICAL:
+    if row.provider in accounts.PROVIDERS:
         await accounts.revoke(row)
         accounts.forget_tokens(row)
 
@@ -155,6 +146,8 @@ async def read_calendar(db: AsyncSession, row: CoachingCalendar, zone: tzinfo, n
     from app.services import coaching_accounts as accounts
     from app.services.auth import over_quota
 
+    if row.provider == IPHONE:  # read on the phone (receive_phone): nothing for the server to fetch
+        return row.status or OK
     row.checked_at = now
     try:
         if await over_quota("coaching_agenda_fetch", user=row.user_id):
@@ -198,6 +191,96 @@ async def read_all(db: AsyncSession, user_id: int, zone: tzinfo, now: datetime |
     return out
 
 
+# ── the iPhone's calendar: busy intervals the app read on the phone ──────────
+
+def phone_intervals(raw, zone: tzinfo, now: datetime, own: frozenset = frozenset()) -> list[ical.Busy]:
+    """What the app sent (`raw`: a list of {"start": seconds, "end": seconds}, UTC epoch seconds) as busy intervals,
+    or Invalid(code). Numbers only, nothing else in an interval; at most PHONE_MAX; each start before its end and
+    within the horizon (now − PHONE_SKEW … now + 21 days + PHONE_SKEW), then cut to it. The rules of the other
+    sources: an interval from one local midnight to another (the app sends an all-day event so) is « away » when it
+    covers AWAY_DAYS days or more, ignored for a single day. `own`: (start, end) pairs of PaceForge's own timed
+    sessions — an athlete subscribed to the plan's feed on the iPhone sees them there: never busy time."""
+    from app.services import coaching_accounts as accounts
+
+    if not isinstance(raw, list):
+        raise Invalid("shape")
+    if len(raw) > PHONE_MAX:
+        raise Invalid("count")
+    lo = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+    hi = lo + timedelta(days=ical.HORIZON_DAYS)
+    out = []
+    for item in raw:
+        if not isinstance(item, dict) or set(item) != {"start", "end"}:
+            raise Invalid("shape")
+        a, b = item["start"], item["end"]
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (a, b)):
+            raise Invalid("number")
+        if not all(-1e11 < v < 1e11 for v in (a, b)):  # also NaN and infinities (no comparison holds for them)
+            raise Invalid("number")
+        start = datetime.fromtimestamp(a, timezone.utc)
+        end = datetime.fromtimestamp(b, timezone.utc)
+        if end <= start:
+            raise Invalid("order")
+        if start < lo - PHONE_SKEW or end > hi + PHONE_SKEW:
+            raise Invalid("window")
+        if (int(a), int(b)) in own:
+            continue
+        days = accounts._whole_days(start, end, zone)
+        if days and days < ical.AWAY_DAYS:
+            continue  # a single all-day event: a reminder, a birthday
+        start, end = max(start, lo), min(end, hi)
+        if end > start:
+            out.append(ical.Busy(start, end, days >= ical.AWAY_DAYS))
+    return ical.merge(out)[:PHONE_MAX]
+
+
+def own_slots(rows: list[CoachingSession], zone: tzinfo) -> frozenset:
+    """(start, end) in UTC epoch seconds of the plan's timed sessions, as the feed writes them (coaching_ics.when)."""
+    out = set()
+    for row in rows:
+        if row.slot_min is None or row.status == "cancelled" or row.kind == cp.RACE or not 0 <= row.slot_min < 1440:
+            continue
+        start = datetime.combine(row.day, time(row.slot_min // 60, row.slot_min % 60), zone).astimezone(timezone.utc)
+        out.add((int(start.timestamp()), int((start + timedelta(minutes=int(row.minutes))).timestamp())))
+    return frozenset(out)
+
+
+async def _phone_row(db: AsyncSession, user_id: int) -> CoachingCalendar:
+    row = next((c for c in await calendars_of(db, user_id) if c.provider == IPHONE), None)
+    if row is None:
+        row = CoachingCalendar(user_id=user_id, provider=IPHONE)
+        db.add(row)
+        await db.flush()
+    return row
+
+
+async def receive_phone(db: AsyncSession, user_id: int, busy: list[ical.Busy], now: datetime) -> CoachingCalendar:
+    """A reading of the iPhone's calendar (one source per athlete): its busy intervals replace the ones kept."""
+    row = await _phone_row(db, user_id)
+    await db.execute(delete(CoachingBusy).where(CoachingBusy.calendar_id == row.id))
+    db.add_all(CoachingBusy(user_id=user_id, calendar_id=row.id, start_at=b.start, end_at=b.end, away=b.away)
+               for b in busy)
+    row.status, row.fetched_at, row.checked_at = OK, now, now
+    await db.flush()
+    return row
+
+
+async def phone_refused(db: AsyncSession, user_id: int, now: datetime) -> CoachingCalendar:
+    """The iPhone refused access to its calendar (at the prompt, or withdrawn since in its settings): « À
+    reconnecter », with the way to the phone's settings. The intervals of the last reading stay until their horizon,
+    as a connected account's (« Retirer » deletes them at once)."""
+    row = await _phone_row(db, user_id)
+    row.status, row.checked_at = "phone", now
+    await db.flush()
+    return row
+
+
+def phone_stale(row: CoachingCalendar, now: datetime) -> bool:
+    """Whether the app should read the iPhone's calendar again as the page loads: never read, refused (the athlete may
+    have allowed it since in the phone's settings), or read more than PHONE_STALE ago."""
+    return row.fetched_at is None or row.status != OK or now - _utc(row.fetched_at) >= PHONE_STALE
+
+
 # ── the busy time, as the placement reads it ────────────────────────────────
 
 def _utc(moment: datetime) -> datetime:
@@ -229,9 +312,11 @@ def by_day(intervals: list[tuple[datetime, datetime, bool]], zone: tzinfo, today
 
 
 async def agenda_of(db: AsyncSession, user_id: int, zone: tzinfo, today: date) -> tuple[cs.Agenda | None, bool]:
-    """(the athlete's busy time, whether they have any address). None while there is nothing to place on: no
-    address, or one not read yet (a time given on half the calendars would be a guess)."""
-    calendars = await calendars_of(db, user_id)
+    """(the athlete's busy time, whether they have any source). None while there is nothing to place on: no
+    source, or one not read yet (a time given on half the calendars would be a guess). An iPhone calendar the phone
+    refused before it was ever read is no source yet: it waits for the athlete, the others place."""
+    calendars = [c for c in await calendars_of(db, user_id)
+                 if not (c.provider == IPHONE and c.fetched_at is None and c.status == "phone")]
     if not calendars:
         return None, False
     if any(c.fetched_at is None for c in calendars):

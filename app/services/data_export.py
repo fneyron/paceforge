@@ -195,7 +195,8 @@ async def coaching(db: AsyncSession, user: User) -> dict[str, Any]:
     invites = (await db.scalars(select(CoachingInvite).where(CoachingInvite.athlete_id == user.id)
                                 .order_by(CoachingInvite.id))).all()
     # « Mon agenda »: the calendars by their host and dates (an address is a secret of another service: never
-    # written), a connected Google Agenda or Outlook by its service and dates (never its tokens), and the busy time
+    # written), a connected Google Agenda or Outlook, or the iPhone's calendar, by its service and dates (never its
+    # tokens), and the busy time
     # read from them (a start and an end: nothing else was ever kept)
     from urllib.parse import urlsplit
 
@@ -205,7 +206,8 @@ async def coaching(db: AsyncSession, user: User) -> dict[str, Any]:
         CoachingBusy.user_id == user.id).order_by(CoachingBusy.start_at, CoachingBusy.id))).all()
     return {
         "agenda": [{**({"hote": urlsplit(c.url or "").hostname} if c.provider == "ical" else
-                       {"service": {"google": "Google Agenda", "microsoft": "Outlook"}.get(c.provider, c.provider)}),
+                       {"service": {"google": "Google Agenda", "microsoft": "Outlook",
+                                    "iphone": "Calendrier de l’iPhone"}.get(c.provider, c.provider)}),
                     "ajoute_le": _plain(c.created_at), "lu_le": _plain(c.fetched_at), "etat": c.status}
                    for c in calendars],
         "heures_occupees": [{"debut": _plain(a), "fin": _plain(b), "absence": bool(w)} for a, b, w in busy],
