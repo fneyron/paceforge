@@ -208,14 +208,18 @@ def test_nothing_known_shows_nothing_but_what_a_maximum_would_give():
 def test_the_calendar_feed_says_the_target_in_one_line():
     inter = cp.quality_session("intervalles", 5)[2]
     line = cv.guidance(cp.QUALITY, inter, 186, C)
-    assert line == ("Efforts vifs : parler devient impossible. Cible pendant les efforts : "
-                    "4:00–4:15 /km sur le plat, 168–177 bpm.")
-    assert cv.guidance(cp.FOOTING, cp.steady(40, 2), None, C).endswith("Cible : pas plus vite que 5:30 /km "
-                                                                        "sur le plat.")
+    # with a number, the target alone (owner, 24 Nov 2026: « on veut de vrai cible »)
+    assert line == "Cible pendant les efforts : 4:00–4:15 /km sur le plat, 168–177 bpm."
+    assert cv.guidance(cp.FOOTING, cp.steady(40, 2), None, C) == (
+        "Cible : pas plus vite que 5:30 /km sur le plat.")
+    # no number at all: the talk test, as before
     assert cv.guidance(cp.FOOTING, cp.steady(40, 2)) == "Facile : tu peux tenir une conversation."
     said = cv.guidance(cp.QUALITY, cp.quality_session("fartlek", 5)[2], 186, C)
     assert "4:00–4:15" in said and "bpm" not in said and said.endswith(cv.rp.fr(cv.TARGET_SHORT_PACED))
-    assert cv.guidance(cp.QUALITY, cp.quality_session("fartlek", 5)[2], 186).endswith(cv.rp.fr(cv.TARGET_SHORT))
+    assert not said.startswith(cv.feel(cp.QUALITY, cp.quality_session("fartlek", 5)[2])), "numbers: no feel"
+    short = cv.guidance(cp.QUALITY, cp.quality_session("fartlek", 5)[2], 186)
+    assert short.endswith(cv.rp.fr(cv.TARGET_SHORT)) and short.startswith(cv.feel(cp.QUALITY,
+                                                                                  cp.quality_session("fartlek", 5)[2]))
 
 
 def test_paces_are_said_to_five_seconds():
@@ -240,7 +244,8 @@ def _ticket(page: str, session_id: int) -> str:
     return page[start:page.index("</article>", start)]
 
 
-async def test_the_ticket_shows_the_target_large_and_the_feel_under_it(client, people, beta, db_session, same_today):
+async def test_the_ticket_shows_the_target_large_and_no_feel_beside_numbers(client, people, beta, db_session,
+                                                                             same_today):
     athlete = people.athlete
     athlete.max_heart_rate = 186
     await _runner(db_session, athlete, same_today)
@@ -248,13 +253,13 @@ async def test_the_ticket_shows_the_target_large_and_the_feel_under_it(client, p
     easy = next(r for r in await _rows(db_session, athlete) if r.day > same_today and r.kind == cp.FOOTING)
     page = (await _as(client, athlete).get(f"/coaching?d={easy.day}")).text
     ticket = _ticket(page, easy.id)
-    block = ticket[ticket.index('class="pf-coach-ticket"'):ticket.index('class="pf-coach-s-guide"')]
+    block = ticket[ticket.index('class="pf-coach-ticket"'):]
     assert 'class="pf-coach-target"' in block, "inside the coloured block"
     assert re.search(r">Cible</p>", block) and "pendant les efforts" not in block, "a steady run: no efforts"
     assert ">Pas plus vite que, sur le plat<" in block and ">5:30<small>/km</small>" in block
     assert ">112–148<small>bpm</small>" in block and "Cardio : 112 à 148 bpm" in block
     assert page.count("112–148") == 1, "the old line under the ticket is gone: once"
-    assert re.search(r'class="pf-coach-s-guide">Facile\s: tu peux tenir une conversation\.</p>', ticket)
+    assert "pf-coach-s-guide" not in ticket and "conversation" not in ticket, "numbers: no talk test under it"
     assert 'href="/coaching?outil=methode#coach-tool-how" data-tool-open="coach-tool-how"' in block
     assert "Les allures valent sur le plat" in page.split('id="coach-tool-how"')[1], "« Comment ça marche » says it"
     assert not re.search(r"Hunter|Nixon|Billat|Smyth|\(H\)", page), "sources stay in the docs"
@@ -264,7 +269,7 @@ async def test_the_ticket_shows_the_target_large_and_the_feel_under_it(client, p
     await client.post(f"/coaching/sessions/{q.id}/edit", data={"kind": cp.QUALITY, "minutes": "50"}, headers=HTMX)
     ticket = _ticket((await client.get(f"/coaching?d={q.day}")).text, q.id)
     assert "Cible<span> · pendant les efforts</span>" in ticket and ">4:40–4:50<small>/km</small>" in ticket
-    assert ">149–167<small>bpm</small>" in ticket
+    assert ">149–167<small>bpm</small>" in ticket and "pf-coach-s-guide" not in ticket
     # done: the ticket says what was run, no target
     done = await _past_session(db_session, plan, same_today - timedelta(days=1), status=co.DONE, done_minutes=45,
                               manual=True)
@@ -287,6 +292,7 @@ async def test_the_person_who_follows_the_plan_never_reads_a_heart_rate(client, 
     page = (await _as(client, coach).get(f"/coaching/athletes/{athlete.id}?d={easy.day}")).text
     ticket = _ticket(page, easy.id)
     assert ">5:30<small>/km</small>" in ticket, "the pace, from the runs whose summary they already read"
+    assert "pf-coach-s-guide" not in ticket, "their pace is a number: no talk test either"
     assert "bpm" not in page and "112–148" not in page and "Cardio" not in page
     assert "Confirme ta FC max" not in page and "D’où viennent" not in page and "/settings" not in ticket
     # nothing known of the pace either: no Cible at all for them
@@ -305,6 +311,8 @@ async def test_without_data_one_quiet_line_leads_to_the_maximum(client, people, 
     assert '<a class="pf-coach-target-link" href="/settings#max-heart-rate">Confirme ta FC max pour voir ta zone</a>' \
         in ticket
     assert "/km" not in ticket and "bpm" not in ticket and "D’où viennent" not in ticket
+    # no number at all: the talk test stays, so nobody is left without guidance
+    assert re.search(r'class="pf-coach-s-guide">Facile\s: tu peux tenir une conversation\.</p>', ticket)
 
 
 async def test_the_feed_carries_the_target(client, people, beta, db_session, same_today):

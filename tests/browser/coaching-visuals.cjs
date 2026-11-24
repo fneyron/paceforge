@@ -265,9 +265,10 @@ async function sheet(page) {
       assert.equal(await gauge.getAttribute('aria-label'), 'Effort facile : niveau 2 sur 4', key);
       assert.deepEqual(await gauge.locator('i').evaluateAll(all => all.map(i => getComputedStyle(i).backgroundColor)).then(c => [c[0] === c[1], c[1] === c[2], c[2] === c[3]]), [true, false, true], key + ': two steps of four are filled');
       assert.equal(await page.locator('.pf-coach-session svg.pf-effort').count(), 0, key + ': no profile for a steady session');
-      // la cible, inside the ticket: her pace on flat ground (her critical speed) and her heart-rate range; the feel under it
+      // la cible, inside the ticket: her pace on flat ground (her critical speed) and her heart-rate range; with numbers,
+      // no talk-test sentence under it (owner, 24 Nov 2026: « on veut de vrai cible »)
       assert.deepEqual(await page.locator('.pf-coach-ticket .pf-coach-target-vals b').allInnerTexts(), ['5:40/km', '112–148bpm'], key);
-      assert.match(await page.locator('.pf-coach-s-guide').innerText(), /^Facile\s: tu peux tenir une conversation\.$/, key);
+      assert.equal(await page.locator('.pf-coach-s-guide').count(), 0, key + ': numbers, no feel sentence');
       // ONE main action, « Pas faite » quiet beside it; « Déplacer », « Modifier » quiet under them
       assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), ['C’est fait'], key + ': one main action');
       const main = await page.locator('[id^="coach-done-"]').boundingBox();
@@ -722,9 +723,9 @@ async function sheet(page) {
           });
           for (const l of looks) assert.ok(l.ratio >= 4.5, key + ': contrast ' + JSON.stringify(l));
           for (const l of looks.filter(x => x.el === 'B')) assert.ok(l.size >= 26 && /tabular-nums/.test(l.tabular), key + ': large and tabular ' + JSON.stringify(l));
-          // « D’où viennent ces chiffres ? » under the values, a 44 px target; the feel under the ticket, once
+          // « D’où viennent ces chiffres ? » under the values, a 44 px target; numbers: no feel sentence under the ticket
           assert.ok((await target.locator('.pf-coach-target-how').boundingBox()).height >= 44, key);
-          if (name !== 'race') assert.match(await page.locator('.pf-coach-session').first().locator('.pf-coach-s-guide').innerText(), /^(Très facile|Facile|Efforts)/, key);
+          assert.equal(await page.locator('.pf-coach-session').first().locator('.pf-coach-s-guide').count(), 0, key + ': numbers, no feel sentence');
           const said = await page.locator('.pf-coach-daycard').innerText();
           for (const v of shown) assert.equal(said.split(v.replace(/\/km|bpm/, '')).length - 1, 1, key + ': each number once ' + v);
           await noOverflow(page, key);
@@ -910,7 +911,9 @@ async function sheet(page) {
       await page.locator(`#coach-day-${fri}`).focus();
       await swap(page, () => page.keyboard.press('Enter'));
       assert.equal(await page.evaluate(() => document.activeElement.id), `coach-day-${fri}`, 'the focus stays on the day chosen');
-      assert.ok(await page.locator('.pf-coach-s-guide').isVisible(), 'the guidance line');
+      // the guidance: numbers when the target has some, else the talk-test sentence (never neither)
+      if (await page.locator('.pf-coach-session').first().locator('.pf-coach-target-vals').count()) assert.equal(await page.locator('.pf-coach-s-guide').count(), 0, 'numbers: no sentence');
+      else assert.ok(await page.locator('.pf-coach-s-guide').isVisible(), 'no numbers: the guidance line');
       await page.locator('[id^="coach-move-"]:not(#coach-move-cancel)').focus();
       await swap(page, () => page.keyboard.press('Enter'));
       assert.match(await page.locator('.pf-coach-moving').innerText(), /^Où placer «\s?Côtes 45 min\s?»\s?\? Touche un jour\.\s+Annuler$/);

@@ -148,7 +148,7 @@
                     </div>
                     {% endif %}
                 </div>
-                {% if s.status in ("planned", "missed") %}<p class="pf-coach-s-guide">{{ s.feel }}</p>{% endif %}
+                {% if s.feel and s.status in ("planned", "missed") %}<p class="pf-coach-s-guide">{{ s.feel }}</p>{% endif %}
                 {#- the agenda: the time the session was given; the athlete may ask for another free one -#}
                 {% if s.slot or s.full %}
                 <div class="pf-coach-slot">

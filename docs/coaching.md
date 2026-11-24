@@ -483,9 +483,14 @@ intervalles courts en vitesse (`BESIDE_FIXED`, (H)).
 
 Demande du propriétaire, 23 novembre 2026, devant le ticket : « Tu ne met pas les zones cibles ? HR vitesse ou
 autre ? ». Chaque séance a **une cible** lue dans les données de l’athlète : une allure (depuis sa vitesse critique),
-une plage de fréquence cardiaque (depuis sa FC maximale), ou les deux. La sensation reste dite d’abord (le test de la
-parole : Persinger 2004 ; Foster 2008) ; la cible la précise. **Quand les données ne suffisent pas, rien n’est
-affiché** : jamais d’allure ni de FC par défaut.
+une plage de fréquence cardiaque (depuis sa FC maximale), ou les deux. **Une cible chiffrée remplace la phrase de
+sensation** : dès que la ligne « Cible » porte un nombre (une allure ou une FC), la phrase du test de la parole
+(Persinger 2004 ; Foster 2008 ; « Efforts vifs : parler devient impossible. ») n’est plus dite, ni sous le ticket ni
+dans le flux calendrier. Elle reste seulement quand la séance n’a aucun nombre (ni allure ni FC connue, la séance
+fixe du club, les côtes courtes « À la sensation… ») : personne ne reste sans consigne. **Changé le 24 novembre
+2026** (propriétaire : « Retire effort vif parler devient impossible on veut de vrai cible ») : la phrase était dite
+d’abord, la cible la précisait. **Quand les données ne suffisent pas, aucun chiffre n’est affiché** : jamais
+d’allure ni de FC par défaut.
 
 **La FC maximale** : confirmée dans Réglages (`#max-heart-rate`), sinon le repère observé de Santé
 (`heart_rate_reference`). Les plages des niveaux 1 à 3 reprennent les cinq zones de l’app (`heart_rate_zones`). Leur
@@ -891,7 +896,8 @@ tableau, le jour en ticket, les options dans une feuille.
      marche » dans la feuille. Seulement tant que la séance est à faire (et pour une séance manquée) : une fois
      faite, le ticket dit ce qui a été couru. Texte à l’encre du ticket (4,5:1 sur chaque couleur), cibles de
      44 px ; les valeurs passent à la ligne plutôt que de déborder à 320 px et à 200 % de texte ;
-   - sous lui : la consigne (le test de la parole), le créneau et « Autre créneau » (ou « Journée chargée »), les lignes
+   - sous lui : la consigne (le test de la parole) **seulement quand la cible n’a aucun chiffre** (avec une allure ou
+     une FC, la cible suffit ; la personne qui suit le plan suit la même règle, son allure compte), le créneau et « Autre créneau » (ou « Journée chargée »), les lignes
      de la forme (« Séance allégée… », « Alléger aujourd’hui »), l’activité liée et son lien, « 3h17 au lieu de
      45 min », la durée réelle d’une coche à la main, le ressenti (les mêmes boutons ronds ; demandé en haut tant
      qu’il manque), la note et le commentaire, signés ;
@@ -998,9 +1004,9 @@ les routes et les tables gardent « coach » pour le rôle : la personne qui sui
 - Un événement par séance, des 30 derniers jours à la fin du plan : **avec une heure** (`DTSTART`/`DTEND` en UTC,
   affiché « occupé ») quand la séance a un créneau (« Mon agenda »), sinon d’une journée entière (`VALUE=DATE`,
   `TRANSP:TRANSPARENT`). L’`UID` ne change pas quand une séance reçoit ou perd son heure : le calendrier la met à
-  jour sur place. `SUMMARY` « Footing 45 min » ; `DESCRIPTION` la structure, le dénivelé à viser s’il y en a un, la consigne et,
-  pour une séance à faire, la cible en une ligne (« Cible pendant les efforts : 4:00–4:15 /km sur le plat,
-  168–177 bpm. »).
+  jour sur place. `SUMMARY` « Footing 45 min » ; `DESCRIPTION` la structure, le dénivelé à viser s’il y en a un et,
+  pour une séance à faire, la cible seule en une ligne quand elle a un chiffre (« Cible pendant les efforts :
+  4:00–4:15 /km sur le plat, 168–177 bpm. ») ; sans chiffre, la consigne (le test de la parole) comme avant.
 - `UID` stable (l’identifiant de la séance : une régénération réécrit la ligne en place), `SEQUENCE` son nombre de
   changements, `DTSTAMP` et `LAST-MODIFIED` son dernier changement : une modification arrive dans le calendrier
   abonné à son prochain rafraîchissement. Une séance supprimée ou annulée n’est plus dans le flux.
