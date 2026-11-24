@@ -139,7 +139,8 @@ def hr_rows(reference: float | None) -> list[dict] | None:
 
 
 def feel(kind: str, structure: dict | None) -> str:
-    """What to feel, by the talk test (it stays under the ticket, whatever the target)."""
+    """What to feel, by the talk test: said only when the session has no number to aim at (owner, 24 Nov 2026:
+    « on veut de vrai cible »), so nobody is left without guidance."""
     level = cp.main_level(kind, structure)
     text = cp.FEEL.get(level, cp.FEEL[2])
     if kind in (cp.QUALITY, cp.HILLS):
@@ -284,9 +285,13 @@ def target_line(t: dict | None) -> str | None:
 
 def guidance(kind: str, structure: dict | None, reference: float | None = None,
              critical: pace.Critical | None = None, goal: cp.Goal | None = None) -> str:
-    """One line: the feel, then the target when there is one (the calendar feed's description)."""
+    """One line (the calendar feed's description): the target alone when it carries a number (a pace, a heart
+    rate); without one, the feel, then the target's note when there is one."""
+    t = target(kind, structure, reference=reference, critical=critical, goal=goal)
+    line = target_line(t)
+    if t and t["vals"] and line:
+        return line
     text = feel(kind, structure)
-    line = target_line(target(kind, structure, reference=reference, critical=critical, goal=goal))
     return f"{text} {line}" if line else text
 
 
@@ -456,6 +461,7 @@ def _session(row, state: co.State, reference, runs_by_id: dict, coach: bool, nam
     did = (run.minutes if run is not None else row.done_minutes) if row.status == co.DONE else None
     shown = int(round(did)) if did else row.minutes
     timed_race = row.kind == cp.RACE and goal_time(state.goal) is not None
+    aim = _target(row, state, reference, critical, coach)
     return {
         "id": row.id, "kind": row.kind, "title": cp.title(row.kind, row.structure),
         # the race's time is the header's (« Objectif 6h30 »): printed once
@@ -466,8 +472,9 @@ def _session(row, state: co.State, reference, runs_by_id: dict, coach: bool, nam
         "text": text[:1].upper() + text[1:], "profile": None if steady else profile,
         "gauge": {"level": level, "aria": f"Effort {cp.LEVELS.get(level, '')} : niveau {level} sur 4"} if steady
         else None,
-        "feel": feel(row.kind, row.structure),
-        "target": _target(row, state, reference, critical, coach),
+        # the talk test only when the target has no number (a pace, a heart rate): numbers are the guidance
+        "feel": None if aim and aim.get("vals") else feel(row.kind, row.structure),
+        "target": aim,
         "edited": {"coach": f"Modifiée par {follower or FOLLOWER}", "athlete": "Modifiée par toi"}.get(row.origin)
         if not coach else {"coach": "Modifiée par toi", "athlete": f"Modifiée par {athlete}"}.get(row.origin),
         "comment_by": follower or COMMENT,
