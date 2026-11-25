@@ -135,7 +135,9 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   assert.equal(await delayed.locator('[data-testid="mock-webview"]').locator('..').evaluate(el=>getComputedStyle(el).opacity),'0','bridge must stay hidden while the dashboard is loading');
   await delayed.evaluate(()=>{window.holdNavigation=false;finishNavigation();});
   await delayed.waitForFunction(()=>new URL(actual).pathname==='/sante');
-  assert.equal(await delayed.locator('[data-testid="mock-webview"]').locator('..').evaluate(el=>getComputedStyle(el).opacity),'1');
+  // the bridge shows once the dashboard has loaded: React paints it a moment after the navigation ends (read at once, a
+  // slow runner saw '0'); an app that stayed hidden still fails here, on the wait
+  await delayed.waitForFunction(()=>getComputedStyle(document.querySelector('[data-testid="mock-webview"]').parentElement).opacity==='1');
   assert.equal(await delayed.evaluate(()=>collects),2);
   await delayed.close();
   const pairing=await page(true);
