@@ -388,7 +388,8 @@ async def test_an_activity_marks_its_session_done_and_another_is_out_of_the_plan
     assert rows[yesterday.id].status == "missed" and rows[before.id].status == "missed", "a ride is not a run"
     assert "Footing du jour" in page and f'href="/activity/{rows[today_row.id].activity_id}"' in page
     assert "Hors plan · Retour à pied" in page
-    # the run arrived and its ressenti is not said yet: the calendar asks first
+    # the run arrived and its ressenti is not said yet: the calendar asks first (a second, short run the same day is
+    # not asked about: the day had its session)
     assert "<b>Ta sortie d’aujourd’hui est arrivée.</b> C’était comment" in page and page.count('id="coach-ask-') == 5
     state = await co.sync(db_session, plan, athlete)
     done = co.done_by_week(state.runs, state.rows)

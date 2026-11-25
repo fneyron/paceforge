@@ -427,9 +427,23 @@ def clean_fixed(day, minutes, name, days: tuple[int, ...], long_day: int) -> cp.
     return cp.Fixed(day, minutes, name)
 
 
-def fixed_state(fixed: cp.Fixed | None) -> dict | None:
-    """What the plan keeps of it (coaching_plans.fixed)."""
-    return None if fixed is None else {"day": fixed.day, "minutes": fixed.minutes, "name": fixed.name}
+def fixed_state(fixed: cp.Fixed | None, plan: CoachingPlan | None = None) -> dict | None:
+    """What the plan keeps of it (coaching_plans.fixed), with the weekdays the athlete said « Non, juste cette fois »
+    to (`declined`: « Tous les mercredis ? » is never asked again for them, docs/coaching.md › « La séance fixe »)."""
+    declined = declined_days(plan) if plan is not None else []
+    out = {} if fixed is None else {"day": fixed.day, "minutes": fixed.minutes, "name": fixed.name}
+    if declined:
+        out["declined"] = declined
+    return out or None
+
+
+def declined_days(plan: CoachingPlan) -> list[int]:
+    """The weekdays « Tous les mercredis ? » was answered « Non » for."""
+    out = set()
+    for value in (plan.fixed or {}).get("declined") or []:
+        if isinstance(value, int) and 0 <= value <= 6:
+            out.add(value)
+    return sorted(out)
 
 
 FIXED_NEXT = {-1: "la veille", 1: "le lendemain"}
@@ -450,7 +464,7 @@ async def set_fixed(db: AsyncSession, plan: CoachingPlan, user: User, fixed: cp.
     """« Ma séance fixe » set, changed or removed: kept on the plan, then the plan read again — the one regeneration
     path (`sync`): the sessions still to come that the plan may rewrite follow, from today; what a person pinned,
     moved, edited or did stays."""
-    plan.fixed = fixed_state(fixed)
+    plan.fixed = fixed_state(fixed, plan)
     return await sync(db, plan, user)
 
 
@@ -555,9 +569,9 @@ async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | N
         ag.set_moments(plan, moments)
     kept = fixed_of(plan)
     if fixed is not KEEP:
-        plan.fixed = fixed_state(fixed)
+        plan.fixed = fixed_state(fixed, plan)
     elif kept is not None and (kept.day == long_day or len(set(days) | {kept.day}) > 6):
-        plan.fixed = None  # the days changed under it on a screen that did not ask: it no longer fits
+        plan.fixed = fixed_state(None, plan)  # the days changed under it on a screen that did not ask: it no longer fits
     await db.flush()
     return plan
 
@@ -676,7 +690,14 @@ def read_adaptations(plan: CoachingPlan, rows: list, done: dict[date, float], to
 def replaceable(row: CoachingSession, today: date) -> bool:
     """What a regeneration may rewrite: a generated session still to come that nobody edited, did or missed."""
     return (row.origin == "auto" and not row.pinned and row.status == PLANNED and row.day >= today
-            and not row.form)  # what a low morning lightened or moved stays (services/coaching.lighten)
+            and not row.form  # what a low morning lightened or moved stays (services/coaching.lighten)
+            and not marked(row))  # … and what a run declared « une séance dure » changed (coaching_runs)
+
+
+def marked(row: CoachingSession) -> bool:
+    """A session a run's answer changed (services/coaching_runs): eased, moved, postponed — kept as it is by every
+    later reading, until « Annuler »."""
+    return bool((row.structure or {}).get("why"))
 
 
 async def apply(db: AsyncSession, plan: CoachingPlan, rows: list[CoachingSession], weeks: list[cp.Week], today: date,
@@ -1060,10 +1081,18 @@ def set_done(row: CoachingSession, today: date, minutes=None) -> None:
 
 
 def set_missed(row: CoachingSession, today: date) -> None:
-    """« Pas faite »: the run matched to it, if any, goes back out of the plan."""
+    """« Pas faite »: the run matched to it, if any, goes back out of the plan — and is kept as « not this session »
+    (`not`): the card that asks about a run that is not the session planned does not ask about it (coaching_runs)."""
     if row.day > today:
         raise Invalid("Cette séance est à venir.")
+    if row.activity_id is not None:
+        row.structure = {**(row.structure or {}), "not": sorted({*not_runs(row), row.activity_id})}
     row.status, row.manual, row.activity_id, row.done_minutes, row.ressenti = MISSED, True, None, None, None
+
+
+def not_runs(row: CoachingSession) -> set[int]:
+    """The runs said « Ce n’est pas cette séance » for this session."""
+    return {v for v in (row.structure or {}).get("not") or [] if isinstance(v, int)}
 
 
 def reset_status(row: CoachingSession) -> None:
