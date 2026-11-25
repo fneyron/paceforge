@@ -33,6 +33,13 @@ nuit) and `timeline` (last night on a clock axis, or its hypnogram). The race
 page and Activités keep `band_chart`, `bars`, `lines` and `dots`. No mark
 without a label or a legend: the ring says its value and a word names it,
 the cards' bars and lines have a legend or labelled lines.
+
+An activity's page adds « Intervalles » (activity_laps.lap_chart, drawn by
+viz_laps): one bar per lap across the session's time, its height its pace (a
+bike's power, else its speed) above a floor taken from the session, the
+efforts in the accent. Its bars differ in width, so its data adds `e` (each
+bar's left edge: pf-viz.js selects the bar under the finger, not the nearest
+centre) and `rows` (the laps' table, whose rows follow the selection).
 """
 import json
 import math

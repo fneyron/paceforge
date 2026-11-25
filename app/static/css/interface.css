@@ -264,6 +264,14 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-viz-long.is-warn { fill: rgb(var(--pf-warn)); }
 @media (forced-colors: active) { .pf-viz-line.is-accent { stroke: CanvasText; } .pf-viz-long.is-warn { fill: CanvasText; }
     .pf-viz-avg { stroke: CanvasText; } .pf-item-flag { color: CanvasText; } }
+/* an activity's « Intervalles » (activity_laps.py, viz_laps): the efforts in the accent, the other laps soft (the kit's
+   mark), the selected one in ink (the kit's .is-sel); its table row marked too, by a bar on its left as well as a tint */
+.pf-laps-chart { margin-bottom: 8px; }
+.pf-laps-chart .pf-viz { margin-top: 0; }
+.pf-lap.is-effort { fill: rgb(var(--pf-accent)); }
+.pf-lap-at { fill: rgb(var(--pf-ink)); }   /* the caret over the selected bar */
+.pf-lap-row.is-sel { background: rgb(var(--pf-accent-soft)); box-shadow: inset 3px 0 0 rgb(var(--pf-accent)); }
+@media (forced-colors: active) { .pf-lap:not(.is-effort) { fill: GrayText; } .pf-lap-at { fill: Highlight; } .pf-lap-row.is-sel { outline: 2px solid Highlight; outline-offset: -2px; } }
 
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }

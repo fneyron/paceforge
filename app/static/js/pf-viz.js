@@ -18,7 +18,10 @@
                             to the default; aria-valuetext = D.a[k]
      [data-live] .......... polite live region: speaks once after a pointer scrub or a step, only in the
                             figure being touched
-     script.pf-viz-data ... {x, y, d (ISO dates), r, a, h, sel, link, rest?, restA?, back?, t?}
+     script.pf-viz-data ... {x, y, d (ISO dates), r, a, h, sel, link, rest?, restA?, back?, t?, e?, rows?}
+                            e: each mark's left edge, for marks of unequal widths (an activity's laps): the
+                            pointer selects the mark it is over, not the nearest centre; rows: a selector outside
+                            the figure whose [data-i] children are marked with the selection (the laps' table)
    Figures of one data-viz-group follow each other by date (silently); a figure without that date shows « — ».
    The readout's height is reserved for its tallest line (measured once the figure is laid out, again when
    its width changes), so selecting never moves the plot. A touch selects on a tap or a horizontal drag only:
@@ -62,7 +65,8 @@
         // D.back: where ‹ (or ←) from the resting readout lands, the latest point already lived (not a future slot)
         back = rest && D.back != null ? D.back : END - 1;
     if (rest) dflt = END;
-    var byI = {};
+    var byI = {}, rowBox = D.rows ? document.querySelector(D.rows) : null;
+    if (rowBox) marks = Array.prototype.slice.call(marks).concat(Array.prototype.slice.call(rowBox.querySelectorAll("[data-i]")));
     for (var m = 0; m < marks.length; m++) {
       var k = marks[m].getAttribute("data-i");
       (byI[k] = byI[k] || []).push(marks[m]);
@@ -259,7 +263,13 @@
       if (!ctm) return cur;
       var p = svg.createSVGPoint();
       p.x = e.clientX; p.y = e.clientY;
-      return nearest(D.x, p.matrixTransform(ctm.inverse()).x);
+      var x = p.matrixTransform(ctm.inverse()).x;
+      if (D.e) {   // the last mark whose left edge is at or before x (a mark without width shares the next one's)
+        var lo = 0, hi = D.e.length - 1;
+        while (lo < hi) { var mid = (lo + hi + 1) >> 1; if (D.e[mid] <= x) lo = mid; else hi = mid - 1; }
+        return lo;
+      }
+      return nearest(D.x, x);
     }
 
     function from(dir) {   // where a step starts after following a date this figure lacks
