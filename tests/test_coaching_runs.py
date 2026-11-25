@@ -1,12 +1,15 @@
-"""Coaching: a recorded run that is not plainly the day's session (docs/coaching.md › « Les séances et les activités »;
-the owner, 25 Nov 2026: « je n'ai pas fait ma séance du jour mais une vma club je fais quoi il se passe quoi ? C'est
-recalculé automatiquement ? »). One card at the top says what was understood, asks « C’était quoi ? », says what the
-plan changed; « Une séance dure » applies the fixed session's rules to that week only (the quality count, the hard
-budget, never two hard days in a row) on the sessions nobody touched; « Une sortie tranquille » rebuilds nothing and
-offers once to postpone a quality session; « Tous les mercredis ? » sets « Ma séance fixe »; « Annuler » puts
-everything back; a reading of the plan never applies anything again; the follower sees no card."""
+"""Coaching: a recorded run that is not the day's session (docs/coaching.md › « Une sortie qui n’est pas la séance
+prévue »; the owner, 25 Nov 2026: « je n'ai pas fait ma séance du jour mais une vma club je fais quoi il se passe
+quoi ? C'est recalculé automatiquement ? », then « ne fait pas en préventif pas d'actions utilisateurs quand tu vois
+que ce n'est pas la séance attendu car tu ne peux pas la rapprocher alors tu met à jour »). Every reading of the plan
+(the page, the follower's page, the daily round) reads such a run by itself — a hard session by its laps, its heart
+rate or its pace on flat ground, else an easy outing — and updates the plan: a hard session applies the fixed
+session's rules to that week only on the sessions nobody touched; an easy one rebuilds nothing and postpones a quality
+session not done. One notice says what happened and what the plan did; one link corrects the reading and puts back
+what it changed; « Tous les mercredis ? » stays the only optional tap; a reading is never applied twice; the follower
+sees no notice."""
 import re
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +18,7 @@ from sqlalchemy import select
 from app.models.activity import Activity
 from app.models.coaching import CoachingLink, CoachingPlan, CoachingSession
 from app.services import coaching as co
+from app.services import coaching_pace as pace
 from app.services import coaching_plan as cp
 from app.services import coaching_runs as cr
 from app.services import coaching_start as cst
@@ -29,21 +33,26 @@ INTERVALS = ([{"distance": 2000, "moving_time": 720}] + [{"distance": 300, "movi
              + [{"distance": 1500, "moving_time": 540}])  # 16 × 300 m at 5 m/s, jogged back at 2.7 m/s
 
 
-def _club(user, day: date, n: int, minutes: int = 95, laps=None) -> Activity:
+def _club(user, day: date, n: int, minutes: int = 95, laps=None, hr=None) -> Activity:
     run = _run(user, day, minutes, n, name="VMA club")
     run.distance, run.average_speed, run.laps = 16500, 16500 / (minutes * 60), laps
+    run.average_heartrate = hr
     return run
 
 
-def _state_of(rows) -> list[tuple]:
-    """What « Annuler » must give back: every live field of every session (not the calendar's counters, nor whether
-    a card answered is still shown)."""
-    def kept(structure):
-        if not isinstance((structure or {}).get("answer"), dict):
-            return structure
-        return {**structure, "answer": {k: v for k, v in structure["answer"].items() if k != "open"}}
-    return sorted((r.id, r.day, r.kind, r.minutes, kept(r.structure), r.status, r.activity_id, r.done_minutes,
-                   r.manual, r.ressenti, r.pinned, r.origin, r.auto_day) for r in rows)
+def _plain(structure):
+    return {k: v for k, v in structure.items() if k != "answer"} if isinstance(structure, dict) else structure
+
+
+def _state_of(rows, answers=True) -> list[tuple]:
+    """Every live field of every session (not the calendar's counters); `answers`: with the reading each keeps."""
+    return sorted((r.id, r.day, r.kind, r.minutes, r.structure if answers else _plain(r.structure), r.status,
+                   r.activity_id, r.done_minutes, r.manual, r.ressenti, r.pinned, r.origin, r.auto_day)
+                  for r in rows if answers or not cr.is_note(r))
+
+
+def _card(text: str) -> str:
+    return text.split('<section class="pf-coach-debrief pf-coach-runcard"')[1].split("</section>")[0]
 
 
 def _held(sessions, today, free=True) -> list[cp.Held]:
@@ -56,6 +65,12 @@ def _week(days, base=300, intent=None, level=None):
     week = cp.build(inp, MONDAY)[0]
     return inp, week, cp.week_quality(week.monday, inp, {"target": week.target, "light": week.light, "easy": False},
                                       week.phase, week.index)
+
+
+async def _before(db, athlete) -> list[tuple]:
+    """The plan read as it stands without its runs read (what a correction must give back, the readings aside)."""
+    state = await co.sync(db, await co.get_plan(db, athlete.id), athlete, settle=False)
+    return _state_of(state.rows, answers=False)
 
 
 # ── the rules (pure) ────────────────────────────────────────────────────────
@@ -85,20 +100,16 @@ def test_a_hard_run_takes_a_quality_place_and_the_next_day_eases():
     changes = cp.after_hard(TUE, 95, held, wanted, TUE, (1, 2, 4, 5, 6))
     wed = next(h for h in held if h.day == WED)
     assert changes == [cp.Change("recup", wed.id, WED, wed.minutes, cp.steady(wed.minutes, 1))]
-    # one quality session a week (180 min, three days): the run is it — Thursday's fartlek becomes a récup
     _inp, week, wanted = _week((1, 3, 6), 180)
     held = _held(week.sessions, WED)
     thu = next(h for h in held if h.day == THU)
     assert wanted == 1 and cp.after_hard(WED, 95, held, wanted, WED, (1, 3, 6)) == [
         cp.Change("recup", thu.id, THU, thu.minutes, cp.steady(thu.minutes, 1))]
-    # … on Monday instead, nothing beside it: Thursday's fartlek is not next to it but the week has one: a footing
     assert cp.after_hard(MONDAY, 95, held, wanted, MONDAY, (1, 3, 6)) == [
         cp.Change("eased", thu.id, THU, thu.minutes, cp.steady(thu.minutes, 2))]
 
 
 def test_a_hard_session_the_day_after_moves_to_a_day_the_plan_may_use():
-    """Two quality sessions in the week, the one kept is the day after: it goes to the next available day that is
-    not beside a hard day (move_day, the low morning's own rule), the easy session there takes its day."""
     _inp, week, wanted = _week((0, 1, 2, 3, 6))
     assert [(s.day, s.kind) for s in week.sessions] == [(MONDAY, cp.RECUP), (TUE, cp.FOOTING), (WED, cp.QUALITY),
                                                         (THU, cp.RECUP), (SUN, cp.LONG)] and wanted == 2
@@ -106,16 +117,12 @@ def test_a_hard_session_the_day_after_moves_to_a_day_the_plan_may_use():
     wed, thu = (next(h for h in held if h.day == d) for d in (WED, THU))
     assert cp.after_hard(TUE, 95, held, wanted, TUE, (0, 1, 2, 3, 6)) == [
         cp.Change("moved", wed.id, WED, wed.minutes, to=THU, swap=thu.id)]
-    # nothing may move or change what a person touched (`free` False): the fixed session, an edit, a coach's
     touched = _held([s for s in week.sessions if s.day != TUE], TUE, free=False)
     assert cp.after_hard(TUE, 95, touched, wanted, TUE, (0, 1, 2, 3, 6)) == []
-    # a week the plan no longer writes (behind): no count to keep, only the next day's rule
     assert cp.after_hard(TUE, 95, held, None, TUE, (0, 1, 2, 3, 6))[0].what == "moved"
 
 
 def test_the_hard_budget_keeps_fewer_repetitions_or_eases():
-    """HARD_SHARE of the week, the run counted as FIXED_HARD_SHARE of its duration: a session that no longer fits
-    keeps fewer repetitions at its own duration (its fewest at least), else becomes a footing."""
     _k, minutes, intervals = cp.quality_session("intervalles", 8)  # 8 × 3 min: 24 min of hard effort
     fewer = cp.fewer_reps(intervals, minutes, 15)
     assert fewer is not None and cp.hard_minutes(fewer) == 15 and sum(
@@ -124,32 +131,25 @@ def test_the_hard_budget_keeps_fewer_repetitions_or_eases():
     assert cp.fewer_reps(intervals, minutes, 11) is None, "under the fewest (4 × 3 min): no"
     session = cp.Held(9, FRI, cp.QUALITY, minutes, intervals, "planned", True)
     easy = cp.Held(8, THU, cp.FOOTING, 40, cp.steady(40, 2), "planned", True)
-    # a week of 40 + 65 min and a run of 3 h 20: 20 % of 305 min is 61, the run counts for 50: 11 left — too little
     changes = cp.after_hard(TUE, 200, [easy, session], 2, TUE, (1, 3, 4))
     assert [(c.what, c.id) for c in changes] == [("eased", 9)]
-    # a 90-minute run: 20 % of 195 is 39, the run counts for 22: 17 left — five repetitions
     changes = cp.after_hard(TUE, 90, [easy, session], 2, TUE, (1, 3, 4))
     assert [(c.what, c.id) for c in changes] == [("reps", 9)] and cp.hard_minutes(changes[0].structure) == 15
+
+
+def test_a_long_run_the_day_after_that_cannot_move_stays_a_footing_of_its_duration():
+    _inp, week, wanted = _week((0, 1, 2, 3), 240)
+    assert [(s.day, s.kind) for s in week.sessions][-1] == (THU, cp.LONG)
+    held = _held([s for s in week.sessions if s.day != WED], THU)
+    long = next(h for h in held if h.day == THU)
+    assert cp.after_hard(WED, 95, held, wanted, THU, (0, 1, 2, 3)) == [
+        cp.Change("eased", long.id, THU, long.minutes, cp.steady(long.minutes, 2))]
 
 
 def test_a_declared_run_is_the_fixed_session_s_shape():
     s = cp.declared_structure(95)
     assert cp.is_declared(s) and not cp.is_fixed(s) and cp.title(cp.QUALITY, s) == "Séance dure"
     assert cp.hard_minutes(s) == cp.fixed_hard(95) == 24 and cp.main_level(cp.QUALITY, s) == 4
-
-
-def test_the_laps_hint_is_conservative():
-    """Several laps clearly faster than the run's typical lap, separated by slower ones: « On dirait des
-    intervalles. » — never for steady laps, auto kilometres with a fast finish, or too few laps."""
-    assert cr.looks_like_intervals(INTERVALS)
-    steady = [{"distance": 1000, "moving_time": 330 + 5 * (i % 3)} for i in range(12)]
-    assert not cr.looks_like_intervals(steady)
-    finish = [{"distance": 1000, "moving_time": 330} for _ in range(10)] + [{"distance": 1000, "moving_time": 250}] * 2
-    assert not cr.looks_like_intervals(finish), "one fast block is not repeated efforts"
-    assert not cr.looks_like_intervals(INTERVALS[:5]) and not cr.looks_like_intervals(None)
-    assert not cr.looks_like_intervals([{"distance": "x"}, "nope", {"distance": 50, "moving_time": 5}] * 4)
-    # a lap pressed twice (a few metres, a few seconds) is left out
-    assert cr.looks_like_intervals(INTERVALS + [{"distance": 3, "moving_time": 2}])
 
 
 def test_the_weekly_habit_reads_most_of_the_eight_weeks_before():
@@ -163,7 +163,47 @@ def test_the_weekly_habit_reads_most_of_the_eight_weeks_before():
                                 day), "older than eight weeks"
 
 
-def test_the_card_says_what_happened_with_the_numbers():
+# ── the reading (pure): the plan's own definitions of intensity, one criterion at a time ──
+
+def test_laps_of_repeated_efforts_read_hard_and_steady_laps_do_not():
+    assert cr.looks_like_intervals(INTERVALS) and cr.reading(laps=INTERVALS) == (cr.HARD, "tours")
+    steady = [{"distance": 1000, "moving_time": 330 + 5 * (i % 3)} for i in range(12)]
+    assert not cr.looks_like_intervals(steady) and cr.reading(laps=steady) == (cr.EASY, None)
+    finish = [{"distance": 1000, "moving_time": 330} for _ in range(10)] + [{"distance": 1000, "moving_time": 250}] * 2
+    assert not cr.looks_like_intervals(finish), "one fast block is not repeated efforts"
+    assert not cr.looks_like_intervals(INTERVALS[:5]) and not cr.looks_like_intervals(None)
+    assert not cr.looks_like_intervals([{"distance": "x"}, "nope", {"distance": 50, "moving_time": 5}] * 4)
+    assert cr.looks_like_intervals(INTERVALS + [{"distance": 3, "moving_time": 2}]), "a lap pressed twice: left out"
+
+
+def test_the_average_heart_rate_reads_hard_from_the_soutenu_zone():
+    """Level 3 (« soutenu ») is zone 4 of the app's zones (coaching_plan.HR_ZONES): from 80 % of a known maximum."""
+    assert cp.HR_ZONES[cr.HR_LEVEL] == (4, 4)
+    assert cr.hr_floor(190) == 152 and cr.hr_floor(None) is None
+    assert cr.reading(hr=152, hr_max=190) == (cr.HARD, "cardio")
+    assert cr.reading(hr=151, hr_max=190) == (cr.EASY, None), "zone 3: an easy outing"
+    assert cr.reading(hr=175) == (cr.EASY, None), "no known maximum: the heart rate says nothing"
+
+
+def test_the_pace_reads_hard_from_the_threshold_on_flat_ground_only():
+    """The lower bound of the threshold paces (coaching_pace.THRESHOLD: 93 % of the critical speed), on a run of at
+    most FLAT_CLIMB metres of climb per km."""
+    cs = 4.0
+    at = pace.THRESHOLD[0] * cs
+    assert cr.reading(speed=at, km=10, dplus=50, cs=cs) == (cr.HARD, "allure")
+    assert cr.reading(speed=at - 0.01, km=10, dplus=50, cs=cs) == (cr.EASY, None), "under the threshold"
+    assert cr.reading(speed=at, km=10, dplus=10 * cr.FLAT_CLIMB + 1, cs=cs) == (cr.EASY, None), "hilly: no pace"
+    assert cr.reading(speed=at, km=10, dplus=10 * cr.FLAT_CLIMB, cs=cs)[0] == cr.HARD, "the bound is flat"
+    assert cr.reading(speed=at, km=10, dplus=0) == (cr.EASY, None), "no critical speed"
+    assert cr.reading(speed=at, km=0, cs=cs) == (cr.EASY, None), "no distance"
+
+
+def test_no_data_is_an_easy_outing():
+    assert cr.reading() == (cr.EASY, None)
+    assert cr.reading(laps=[], hr=None, hr_max=190, speed=None, km=0, dplus=None, cs=4.0) == (cr.EASY, None)
+
+
+def test_the_notice_names_the_day_and_the_session():
     today = THU
     assert [cv.run_when(today - timedelta(days=k), today) for k in (0, 1, 2, 7)] == [
         "Aujourd’hui", "Hier", "Mardi", "Jeudi dernier"]
@@ -173,12 +213,13 @@ def test_the_card_says_what_happened_with_the_numbers():
         == "des côtes courtes de 45 min"
     assert cv._of_session({"kind": cp.QUALITY, "minutes": 75, "structure": cp.fixed_structure(cp.Fixed(2, 75))}) \
         == "de ta séance club de 1h15"
-    assert cv._of_session({"kind": cp.QUALITY, "minutes": 75,
-                           "structure": cp.fixed_structure(cp.Fixed(2, 75, "Piste du mercredi"))}) \
-        == "de ta séance « Piste du mercredi » de 1h15"
+    assert cv._your_session({"kind": cp.QUALITY, "structure": cp.quality_session("intervalles", 6)[2]}) == (
+        "tes intervalles", "ils passent", "les ")
+    assert cv._your_session({"kind": cp.QUALITY, "structure": cp.quality_session("fartlek", 6)[2]})[:2] == (
+        "ton fartlek", "il passe")
 
 
-# ── the page and its answers ────────────────────────────────────────────────
+# ── the page: read and applied at once ──────────────────────────────────────
 
 async def _owner(client, db, people, clock, *, minutes=95, laps=INTERVALS, weeks_before=0):
     """The owner's week: Tuesday, Wednesday, Friday, Saturday, Sunday (two quality sessions: Wednesday's fartlek,
@@ -191,61 +232,47 @@ async def _owner(client, db, people, clock, *, minutes=95, laps=INTERVALS, weeks
     clock.day = TUE
     db.add(_club(athlete, TUE, 1, minutes, laps))
     await db.flush()
-    await client.get("/coaching/calendar", headers=HTMX)  # the plan read: the run linked to Tuesday's footing
     return athlete, plan
 
 
-async def test_the_owner_s_club_run_is_asked_about_then_said_what_it_changed(client, people, db_session, clock):
+async def test_the_owner_s_club_run_is_read_hard_on_the_page_and_said(client, people, db_session, clock):
     athlete, plan = await _owner(client, db_session, people, clock)
+    before = await _before(db_session, athlete)
     page = _main((await client.get("/coaching")).text)
-    rows = await _rows(db_session, athlete)
-    tue = next(r for r in rows if r.day == TUE)
-    wed = next(r for r in rows if r.day == WED)
-    assert (tue.kind, tue.minutes, tue.status, tue.done_minutes) == (cp.FOOTING, 55, co.DONE, 95)
-    run_id = tue.activity_id
-    # one card at the top, in the debrief's place: the sentence with its numbers, the hint, one question, two answers
-    card = page.split('<section class="pf-coach-debrief pf-coach-runcard"')[1].split("</section>")[0]
-    assert page.index("pf-coach-runcard") < page.index("pf-coach-calendar") and page.count("pf-coach-debrief ") == 1
-    assert ' id="debrief" role="group" aria-labelledby="coach-run-h"' in card
-    assert (f'<b>Aujourd’hui, tu as couru 1h35 (16,5{NNBSP}km) au lieu du footing de 55 min.</b> C’était quoi{NBSP}?'
-            in card)
-    assert '<p class="pf-coach-run-hint">On dirait des intervalles.</p>' in card
-    assert re.findall(r'<button type="submit" name="value" value="(\w+)" id="coach-run-\w+" class="pf-coach-run-kind">'
-                      r'<b>([^<]+)</b>(?:<small>([^<]+)</small>)?</button>', card) == [
-        ("dure", "Une séance dure", "intervalles, club, côtes"), ("facile", "Une sortie tranquille", "")]
-    assert 'aria-pressed="true"' not in card, "nothing pre-selected"
-    assert '>Ce n’est pas cette séance</button>' in card and "data-feel" not in card, "not asked twice"
-    assert f'action="/coaching/runs/{run_id}/reponse"' in card
-    # the day's ticket still says « Fait autrement », its ressenti is the card's to ask
-    day = _main((await client.get("/coaching?d=2026-11-17")).text)
-    assert "Fait autrement" in day and f'id="coach-r-{tue.id}-' not in day
-    before = _state_of(await _rows(db_session, athlete))
-
-    r = await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "dure", "w": "2026-11-16",
-                                                                     "back": "2026-11-17"}, headers=HTMX)
-    assert r.status_code == 200
     rows = {x.id: x for x in await _rows(db_session, athlete)}
-    tue, wed = rows[tue.id], rows[wed.id]
-    # the run is the day's hard session; the fartlek the day after cannot stay: a récup of its duration
-    assert (tue.kind, tue.minutes, tue.status, tue.activity_id) == (cp.QUALITY, 95, co.DONE, run_id)
-    assert cp.is_declared(tue.structure) and cp.title(tue.kind, tue.structure) == "Séance dure"
+    tue = next(r for r in rows.values() if r.day == TUE)
+    wed = next(r for r in rows.values() if r.day == WED)
+    fri = next(r for r in rows.values() if r.day == FRI)
+    run_id = tue.activity_id
+    # read by its laps, applied with no tap: the run is the day's hard session, the fartlek the day after a récup
+    assert (tue.kind, tue.minutes, tue.status, tue.done_minutes) == (cp.QUALITY, 95, co.DONE, 95)
+    assert cp.is_declared(tue.structure) and cr.answer_of(tue)["what"] == cr.HARD
     assert (wed.kind, wed.minutes, wed.status) == (cp.RECUP, 45, co.PLANNED) and co.marked(wed)
-    fri = next(x for x in rows.values() if x.day == FRI)
     assert fri.kind == cp.HILLS and not co.marked(fri), "Friday's short hills stay beside it"
-    card = r.text.split('pf-coach-runcard"')[1].split("</section>")[0]
-    assert ('<p class="pf-coach-run-said" id="coach-run-said" tabindex="-1"><span class="sr-only">Une séance dure. '
-            '</span>C’est noté. Ta séance de mercredi devient une récup de 45 min ; le reste ne bouge pas.</p>') in card
+    # one notice at the top, in the debrief's place: what happened, what the plan did, with the numbers
+    card = _card(page)
+    assert page.index("pf-coach-runcard") < page.index("pf-coach-calendar") and page.count("pf-coach-debrief ") == 1
+    assert ' id="debrief" role="group" aria-labelledby="coach-run-h"' in page
+    assert (f'<h2 id="coach-run-h" class="pf-coach-debrief-h" tabindex="-1"><b>Aujourd’hui, tu as couru 1h35 '
+            f'(16,5{NNBSP}km) au lieu du footing de 55 min{NBSP}: comptée comme une séance dure.</b></h2>') in card
+    assert ('<p class="pf-coach-run-said" id="coach-run-said">Ta séance de mercredi devient une récup de 45 min ; le '
+            'reste ne bouge pas.</p>') in card
+    # no question: the ressenti (the debrief for that run), one correction link, the quiet way out, « Fermer »
+    assert "C’était quoi" not in page and "pf-coach-run-kind" not in card and "Annuler" not in card
     assert f'action="/coaching/sessions/{tue.id}/ressenti"' in card and card.count("data-feel") == 5
-    assert 'id="coach-run-undo"' in card and 'id="coach-run-close"' in card and "coach-run-yes" not in card
+    assert f'action="/coaching/runs/{run_id}/corriger"' in card
+    assert '>C’était une sortie tranquille</button>' in card and '>Ce n’est pas cette séance</button>' in card
+    assert 'id="coach-run-close"' in card and "coach-run-yes" not in card and "Reporter" not in card
+    assert "coach" not in re.sub(r"<[^>]+>", " ", card.split(">", 1)[1]).lower(), "never « coach » in the words"
     # the week says it, and Wednesday's ticket too
     assert (f'<p class="pf-coach-reason pf-coach-moves">Mercredi devient une récup{NBSP}: c’est le lendemain de la '
-            'séance dure de mardi.</p>') in r.text
+            'séance dure de mardi.</p>') in page
     wed_page = (await client.get("/coaching/calendar?d=2026-11-18", headers=HTMX)).text
     assert f'<p class="pf-coach-formline">Récup{NBSP}: lendemain de la séance dure de mardi.</p>' in wed_page
 
-    # the ressenti, in the card, one more tap, stored as the debrief stores it; the card stays
+    # the ressenti, in the notice, stored as the debrief stores it; the notice stays (something changed)
     r = await client.post(f"/coaching/sessions/{tue.id}/ressenti",
-                          data={"value": "4", "w": "2026-11-16", "back": "2026-11-17", "r": str(run_id)}, headers=HTMX)
+                          data={"value": "4", "w": "2026-11-16", "back": "2026-11-17"}, headers=HTMX)
     assert (await db_session.get(CoachingSession, tue.id)).ressenti == 4
     assert 'id="coach-run-r-4" data-feel aria-pressed="true"' in r.text and "pf-coach-runcard" in r.text
 
@@ -255,31 +282,54 @@ async def test_the_owner_s_club_run_is_asked_about_then_said_what_it_changed(cli
     after = _state_of(await _rows(db_session, athlete))
     await client.get("/coaching/calendar?d=2026-11-17", headers=HTMX)
     await task.run(db_session)
-    await client.get("/coaching?r=" + str(run_id))
+    await client.get("/coaching")
     assert _state_of(await _rows(db_session, athlete)) == after
-    # the next visit closes the card; the plan stays as it is
-    page = _main((await client.get("/coaching")).text)
-    assert "pf-coach-runcard" not in page and _state_of(await _rows(db_session, athlete)) == after
 
-    # the follower: no card, never; the sessions and their lines
+    # the follower: no notice, never; the sessions and their lines
     db_session.add(CoachingLink(athlete_id=athlete.id, coach_id=people.coach.id))
     await db_session.flush()
     theirs = (await _as(client, people.coach).get(f"/coaching/athletes/{athlete.id}?d=2026-11-18")).text
-    assert "pf-coach-runcard" not in theirs and "C’était quoi" not in theirs and "coach-run-" not in theirs.split("<script")[0]
-    assert "lendemain de la séance dure de mardi" in theirs
-    r = await client.post(f"/coaching/runs/{run_id}/annuler", data={})
-    assert r.status_code == 404, "a follower's page has no such route"
-
-    # « Annuler » (the card reopened by the link a page without JavaScript gets): everything as it was
+    assert "pf-coach-runcard" not in theirs and "comptée comme" not in theirs
+    assert "coach-run-" not in theirs.split("<script")[0] and "lendemain de la séance dure de mardi" in theirs
+    assert (await client.post(f"/coaching/runs/{run_id}/corriger", data={})).status_code == 404, "the athlete's"
     _as(client, athlete)
-    page = _main((await client.get(f"/coaching?r={run_id}")).text)
-    assert "pf-coach-runcard" not in page, "closed by the visit before"
-    holder = await db_session.get(CoachingSession, tue.id)
-    cr._set_answer(holder, {**cr.answer_of(holder), "open": True})
-    await db_session.flush()
-    r = await client.post(f"/coaching/runs/{run_id}/annuler", data={"w": "2026-11-16"}, headers=HTMX)
-    assert _state_of(await _rows(db_session, athlete)) == before
-    assert "C’était quoi" in r.text and "devient une récup" not in r.text, "the card asks again"
+
+    # « C’était une sortie tranquille »: what the reading changed put back, the other reading applied, the ressenti
+    # kept; the notice says it, its link now says the other way
+    r = await client.post(f"/coaching/runs/{run_id}/corriger", data={"w": "2026-11-16"}, headers=HTMX)
+    rows = await _rows(db_session, athlete)
+    assert _state_of(rows, answers=False) == [x if x[0] != tue.id else x[:9] + (4,) + x[10:] for x in before]
+    tue = next(x for x in rows if x.id == tue.id)
+    assert (tue.kind, tue.minutes, tue.ressenti, cr.answer_of(tue)["what"]) == (cp.FOOTING, 55, 4, cr.EASY)
+    card = _card(r.text)
+    assert (f'<b>Aujourd’hui, tu as couru 1h35 (16,5{NNBSP}km) au lieu du footing de 55 min{NBSP}: comptée comme une '
+            'sortie tranquille ; rien d’autre ne change.</b>') in card
+    assert '>C’était une séance dure</button>' in card and 'aria-pressed="true"' in card
+    # … and back: the hard reading again, exactly as the first time
+    await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
+    assert _state_of(await _rows(db_session, athlete), answers=False) == [
+        x[:4] + (_plain(x[4]),) + x[5:] for x in after]
+    # « Fermer »: the notice goes; the plan stays as it is, a reading never brings it back
+    r = await client.post(f"/coaching/runs/{run_id}/fermer", data={}, headers=HTMX)
+    assert "pf-coach-runcard" not in r.text and "pf-coach-runcard" not in (await client.get("/coaching")).text
+    assert cp.is_declared((await db_session.get(CoachingSession, tue.id)).structure)
+
+
+async def test_the_daily_round_reads_and_applies_without_the_page(client, people, db_session, clock):
+    """A run synced at night: the daily round reads the plan (coaching.sync) — the run is read and the plan updated
+    before the athlete opens anything; the page then says it."""
+    from app.tasks import coaching as task
+
+    athlete, _p = await _owner(client, db_session, people, clock)
+    assert await task.run(db_session) >= 1
+    rows = await _rows(db_session, athlete)
+    assert cp.is_declared(next(r for r in rows if r.day == TUE).structure)
+    assert next(r for r in rows if r.day == WED).kind == cp.RECUP
+    first = _state_of(rows)
+    await task.run(db_session)
+    assert _state_of(await _rows(db_session, athlete)) == first, "idempotent"
+    page = _main((await client.get("/coaching")).text)
+    assert "comptée comme une séance dure" in _card(page)
 
 
 async def test_a_hard_session_the_day_after_is_moved_and_put_back(client, people, db_session, clock):
@@ -287,120 +337,147 @@ async def test_a_hard_session_the_day_after_is_moved_and_put_back(client, people
     _as(client, athlete)
     await _plan(client, db_session, athlete, days=("0", "1", "2", "3", "6"), base="300")
     clock.day = TUE
-    db_session.add(_club(athlete, TUE, 1, laps=None))
+    db_session.add(_club(athlete, TUE, 1, laps=INTERVALS))
     db_session.add(_run(athlete, MONDAY, 50, 2))  # Monday's récup, done
     await db_session.flush()
+    before = await _before(db_session, athlete)
     page = _main((await client.get("/coaching")).text)
-    assert "On dirait des intervalles" not in page, "no laps, no hint"
-    before = _state_of(await _rows(db_session, athlete))
     rows = await _rows(db_session, athlete)
     run_id = next(r for r in rows if r.day == TUE).activity_id
     wed, thu = (next(r for r in rows if r.day == d) for d in (WED, THU))
-    assert (wed.kind, thu.kind) == (cp.QUALITY, cp.RECUP)
-    r = await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "dure"}, headers=HTMX)
-    await db_session.refresh(wed)
-    await db_session.refresh(thu)
     # the content moved, each session kept on its day (its calendar event follows its day)
     assert (wed.kind, wed.minutes, thu.kind, thu.minutes) == (cp.RECUP, 50, cp.QUALITY, 45)
-    assert "C’est noté. Ta séance de mercredi passe à jeudi ; le reste ne bouge pas." in r.text
-    assert (f"Mercredi est le lendemain de la séance dure de mardi{NBSP}: sa séance passe à jeudi." in r.text)
+    assert "Ta séance de mercredi passe à jeudi ; le reste ne bouge pas." in _card(page)
+    assert f"Mercredi est le lendemain de la séance dure de mardi{NBSP}: sa séance passe à jeudi." in page
     thu_page = (await client.get("/coaching/calendar?d=2026-11-19", headers=HTMX)).text
     assert "Séance reportée de mercredi, lendemain de la séance dure de mardi." in thu_page
     assert "Séance déplacée de jeudi." in (await client.get("/coaching/calendar?d=2026-11-18", headers=HTMX)).text
-    # no generated pair of hard days, and a regeneration leaves the moved sessions where they are
     state = await co.sync(db_session, await co.get_plan(db_session, athlete.id), athlete)
     assert not cv.hard_neighbours(state.rows, TUE)
-    assert (wed.kind, thu.kind) == (cp.RECUP, cp.QUALITY)
-    await client.post(f"/coaching/runs/{run_id}/annuler", data={}, headers=HTMX)
-    assert _state_of(await _rows(db_session, athlete)) == before
+    await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
+    rows = await _rows(db_session, athlete)
+    assert [x for x in _state_of(rows, answers=False) if x[1] != TUE] == [x for x in before if x[1] != TUE]
 
 
-async def test_an_easy_run_instead_of_a_quality_session_offers_to_postpone_it(client, people, db_session, clock):
-    """« Une sortie tranquille »: nothing is rebuilt; the quality session not done is offered once, to the first
-    day the move rules allow — one tap, or « Non »."""
+async def test_an_easy_run_instead_of_a_quality_session_postpones_it(client, people, db_session, clock):
+    """An easy outing instead of the fartlek (no laps, no heart rate, no pace): nothing is rebuilt, the fartlek goes
+    to the first day the move rules allow — at once, said in one sentence; corrected, it comes back."""
     athlete = people.athlete
     _as(client, athlete)
     await _plan(client, db_session, athlete, days=("1", "3", "4", "6"), base="200")  # Thursday's fartlek
     clock.day = THU
     db_session.add(_run(athlete, THU, 80, 1, name="Sortie avec Léa"))
     await db_session.flush()
+    before = await _before(db_session, athlete)
+    thu = next(r for r in await _rows(db_session, athlete) if r.day == THU)
     page = _main((await client.get("/coaching")).text)
-    rows = await _rows(db_session, athlete)
-    thu = next(r for r in rows if r.day == THU)
-    assert thu.kind == cp.QUALITY and thu.activity_id
-    assert f"Aujourd’hui, tu as couru 1h20 (12{NNBSP}km) au lieu du fartlek de 45 min." in page
-    before = _state_of(rows)
-    r = await client.post(f"/coaching/runs/{thu.activity_id}/reponse", data={"value": "facile"}, headers=HTMX)
-    assert [x[:4] for x in _state_of(await _rows(db_session, athlete))] == [x[:4] for x in before], "nothing rebuilt"
-    card = r.text.split('pf-coach-runcard"')[1].split("</section>")[0]
-    assert "C’est noté. Rien d’autre ne change cette semaine." in card
-    # Friday is the day after (a récup there): next to nothing hard — Saturday is free but before the long run;
-    # the first day the rules allow is said
-    offer = re.search(r'<p id="coach-run-offer-q" class="pf-coach-q">Reporter ta séance à (\w+)\xa0\?</p>', card)
-    assert offer, card
-    assert '>Reporter</button>' in card and '>Non</button>' in card
-    to = {"vendredi": FRI, "samedi": SAT}[offer.group(1)]
-    r = await client.post(f"/coaching/runs/{thu.activity_id}/reporter", data={"value": "oui"}, headers=HTMX)
     rows = {x.id: x for x in await _rows(db_session, athlete)}
+    first = sorted(x[1:] for x in _state_of(rows.values(), answers=False))
     assert (rows[thu.id].kind, rows[thu.id].minutes, rows[thu.id].status) == (cp.FOOTING, 80, co.DONE)
-    moved = next(x for x in rows.values() if x.day == to and x.status == co.PLANNED)
-    assert moved.kind == cp.QUALITY and (moved.structure or {}).get("key") == "fartlek" and co.marked(moved)
-    assert f"C’est noté. Ta séance de jeudi passe à {offer.group(1)} ; le reste ne bouge pas." in r.text
-    assert "coach-run-yes" not in r.text, "offered once"
-    page = (await client.get(f"/coaching/calendar?d={to.isoformat()}", headers=HTMX)).text
+    moved = next(x for x in rows.values() if x.day in (FRI, SAT) and x.status == co.PLANNED
+                 and (x.structure or {}).get("key") == "fartlek")
+    assert moved.kind == cp.QUALITY and co.marked(moved)
+    to = cv.JOURS_L[moved.day.weekday()]
+    card = _card(page)
+    assert (f"<b>Aujourd’hui, tu as couru 1h20 (12{NNBSP}km) tranquille au lieu de ton fartlek{NBSP}: il passe à "
+            f"{to}.</b>") in card
+    assert "pf-coach-run-said" not in card and ">C’était une séance dure</button>" in card and "Reporter" not in card
+    assert card.count("data-feel") == 5
+    page = (await client.get(f"/coaching/calendar?d={moved.day.isoformat()}", headers=HTMX)).text
     assert "Séance reportée de jeudi." in page
-    await client.post(f"/coaching/runs/{thu.activity_id}/annuler", data={}, headers=HTMX)
-    assert _state_of(await _rows(db_session, athlete)) == before
-    # « Non »: nothing moves, never asked again
-    await client.post(f"/coaching/runs/{thu.activity_id}/reponse", data={"value": "facile"}, headers=HTMX)
-    r = await client.post(f"/coaching/runs/{thu.activity_id}/reporter", data={"value": "non"}, headers=HTMX)
-    assert "coach-run-yes" not in r.text and "Rien d’autre ne change cette semaine." in r.text
-    assert [x[1:4] + x[5:] for x in _state_of(await _rows(db_session, athlete))] == [x[1:4] + x[5:] for x in before]
-    r = await client.post(f"/coaching/runs/{thu.activity_id}/reporter", data={"value": "oui"}, headers=HTMX)
-    assert "Rien à reporter." in r.text
+    # corrected: the fartlek back on Thursday, then the run read hard there (it was the fartlek, harder)
+    r = await client.post(f"/coaching/runs/{thu.activity_id}/corriger", data={}, headers=HTMX)
+    rows = await _rows(db_session, athlete)
+    t = next(x for x in rows if x.id == thu.id)
+    assert cp.is_declared(t.structure) and not any(((x.structure or {}).get("why") or {}).get("what") == "postponed"
+                                                   for x in rows if x.status != co.CANCELLED)
+    assert "comptée comme une séance dure" in _card(r.text)
+    await client.post(f"/coaching/runs/{thu.activity_id}/corriger", data={}, headers=HTMX)
+    rows = await _rows(db_session, athlete)
+    assert sorted(x[1:] for x in _state_of(rows, answers=False)) == first, "postponed again, as the first time"
+    assert sorted(x[1:] for x in before) != first
 
 
-async def test_a_run_outside_the_plan_becomes_a_session_once_answered(client, people, db_session, clock):
+async def test_with_no_day_the_quality_session_stays_not_done_and_it_is_said(client, people, db_session, clock,
+                                                                            monkeypatch):
+    athlete = people.athlete
+    _as(client, athlete)
+    await _plan(client, db_session, athlete, days=("1", "3", "4", "6"), base="200")
+    clock.day = THU
+    monkeypatch.setattr(cr, "report_day", lambda *a, **k: None)
+    db_session.add(_run(athlete, THU, 80, 1, name="Sortie avec Léa"))
+    await db_session.flush()
+    before = await _before(db_session, athlete)
+    page = _main((await client.get("/coaching")).text)
+    assert (f"tu as couru 1h20 (12{NNBSP}km) tranquille au lieu de ton fartlek{NBSP}: aucun autre jour ne peut "
+            "l’accueillir cette semaine.") in _card(page)
+    rows = await _rows(db_session, athlete)
+    assert _state_of(rows, answers=False) == before, "nothing moved"
+    assert next(r for r in rows if r.day == THU).kind == cp.QUALITY
+
+
+async def test_a_run_on_a_day_with_no_session_stays_outside_the_plan(client, people, db_session, clock):
+    """Read easy: nothing changes, the run stays « hors plan » (its ways kept), the notice says it with the link
+    that corrects it and « C’est ma séance de mardi »; read hard (corrected): a hard session that day."""
     athlete = people.athlete
     _as(client, athlete)
     await _plan(client, db_session, athlete, days=("1", "3", "6"), base="180")
     clock.day = WED
     db_session.add(_run(athlete, WED, 50, 1, name="Footing avec Léa"))
     await db_session.flush()
+    before = await _before(db_session, athlete)
     page = _main((await client.get("/coaching")).text)
     run_id = (await db_session.execute(select(Activity.id).where(Activity.user_id == athlete.id))).scalar_one()
-    assert f"<b>Aujourd’hui, tu as couru 50 min (7,5{NNBSP}km){NBSP}: rien n’était prévu.</b> C’était quoi" in page
-    card = page.split('pf-coach-runcard"')[1].split("</section>")[0]
-    assert "Ce n’est pas cette séance" not in card and "C’est ma séance de mardi" in card, "the quiet way out"
-    before = _state_of(await _rows(db_session, athlete))
-    r = await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "facile"}, headers=HTMX)
-    made = next(x for x in await _rows(db_session, athlete) if x.activity_id == run_id)
-    assert (made.day, made.kind, made.minutes, made.status, made.origin) == (WED, cp.FOOTING, 50, co.DONE, "athlete")
-    assert "Hors plan" not in r.text and "Rien d’autre ne change cette semaine." in r.text
-    assert f'action="/coaching/sessions/{made.id}/ressenti"' in r.text and r.text.count("data-feel") == 5
-    await client.post(f"/coaching/runs/{run_id}/annuler", data={}, headers=HTMX)
-    assert _state_of(await _rows(db_session, athlete)) == before
-    # declared hard: a hard session on Wednesday; Thursday's fartlek (the week's one) a récup
-    r = await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "dure"}, headers=HTMX)
+    card = _card(page)
+    assert (f"<b>Aujourd’hui, tu as couru 50 min (7,5{NNBSP}km){NBSP}: rien n’était prévu. Comptée comme une sortie "
+            "tranquille ; rien d’autre ne change.</b>") in card
+    assert "data-feel" not in card and "Ce n’est pas cette séance" not in card, "no session, no ressenti"
+    assert "C’est ma séance de mardi" in card and ">C’était une séance dure</button>" in card
+    rows = await _rows(db_session, athlete)
+    assert _state_of(rows, answers=False) == before and "Hors plan · Footing avec Léa" in page
+    assert [cr.answer_of(r)["what"] for r in rows if cr.is_note(r)] == [cr.EASY]
+    # corrected: a hard session on Wednesday; Thursday's fartlek (the week's one) a récup
+    r = await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
     rows = await _rows(db_session, athlete)
     made = next(x for x in rows if x.activity_id == run_id)
     thu = next(x for x in rows if x.day == THU)
     assert cp.is_declared(made.structure) and made.auto_day == WED and thu.kind == cp.RECUP
-    assert "C’est noté. Ta séance de jeudi devient une récup de 45 min ; le reste ne bouge pas." in r.text
-    await client.post(f"/coaching/runs/{run_id}/annuler", data={}, headers=HTMX)
-    assert _state_of(await _rows(db_session, athlete)) == before
+    assert not any(cr.is_note(x) for x in rows)
+    assert "Ta séance de jeudi devient une récup de 45 min ; le reste ne bouge pas." in _card(r.text)
+    await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
+    assert _state_of(await _rows(db_session, athlete), answers=False) == before
+    # « C’est ma séance de mardi »: Tuesday's missed session moved to Wednesday, the run linked to it
+    tue = next(x for x in await _rows(db_session, athlete) if x.day == TUE)
+    r = await client.post(f"/coaching/runs/{run_id}/seance", data={"value": str(tue.id)}, headers=HTMX)
+    await db_session.refresh(tue)
+    assert (tue.day, tue.status, tue.activity_id) == (WED, co.DONE, run_id)
+    assert not any(cr.is_note(x) for x in await _rows(db_session, athlete))
+
+
+async def test_a_note_goes_when_the_run_is_held_onto_a_session_by_hand(client, people, db_session, clock):
+    athlete = people.athlete
+    _as(client, athlete)
+    await _plan(client, db_session, athlete, days=("1", "3", "6"), base="180")
+    clock.day = WED
+    db_session.add(_run(athlete, WED, 50, 1, name="Footing avec Léa"))
+    await db_session.flush()
+    await client.get("/coaching")
+    tue = next(x for x in await _rows(db_session, athlete) if x.day == TUE)
+    await client.post(f"/coaching/sessions/{tue.id}/move", data={"to": WED.isoformat()}, headers=HTMX)
+    rows = await _rows(db_session, athlete)
+    assert not any(cr.is_note(x) for x in rows) and next(x for x in rows if x.id == tue.id).activity_id
 
 
 async def test_not_this_session_takes_the_run_out_once(client, people, db_session, clock):
     athlete, _plan_ = await _owner(client, db_session, people, clock, laps=None)
-    tue = next(r for r in await _rows(db_session, athlete) if r.day == TUE)
     await client.get("/coaching")
-    await db_session.refresh(tue)
+    tue = next(r for r in await _rows(db_session, athlete) if r.day == TUE)
     run_id = tue.activity_id
-    r = await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "pas_celle"}, headers=HTMX)
+    assert cr.answer_of(tue)["what"] == cr.EASY, "no laps, no heart rate: an easy outing"
+    r = await client.post(f"/coaching/runs/{run_id}/pas-celle", data={}, headers=HTMX)
     await db_session.refresh(tue)
-    assert (tue.status, tue.activity_id, tue.manual) == (co.MISSED, None, True)
-    assert "Hors plan · VMA club" in r.text and "pf-coach-runcard" not in r.text, "asked once: never again"
+    assert (tue.status, tue.activity_id, tue.manual, tue.kind) == (co.MISSED, None, True, cp.FOOTING)
+    assert "Hors plan · VMA club" in r.text and "pf-coach-runcard" not in r.text, "never read again"
     assert "pf-coach-runcard" not in _main((await client.get("/coaching")).text)
 
 
@@ -413,78 +490,118 @@ async def test_a_session_ticked_not_done_then_a_run_arrives(client, people, db_s
     await client.post(f"/coaching/sessions/{tue.id}/status", data={"value": "missed"}, headers=HTMX)
     db_session.add(_club(athlete, TUE, 1))
     await db_session.flush()
+    before = await _before(db_session, athlete)
     page = _main((await client.get("/coaching")).text)
-    assert "Aujourd’hui, tu as couru 1h35 (16,5 km) au lieu du footing de 55 min." in page
+    assert (f"Aujourd’hui, tu as couru 1h35 (16,5{NNBSP}km) au lieu du footing de 55 min{NBSP}: comptée comme une "
+            "sortie tranquille ; rien d’autre ne change.") in _card(page)
     run_id = (await db_session.execute(select(Activity.id).where(Activity.user_id == athlete.id))).scalar_one()
-    before = _state_of(await _rows(db_session, athlete))
-    await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "dure"}, headers=HTMX)
+    await db_session.refresh(tue)
+    assert (tue.status, tue.activity_id) == (co.MISSED, None), "easy: the session stays « Pas faite »"
+    await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
     await db_session.refresh(tue)
     assert (tue.status, tue.activity_id, tue.kind, tue.manual) == (co.DONE, run_id, cp.QUALITY, False)
-    await client.post(f"/coaching/runs/{run_id}/annuler", data={}, headers=HTMX)
-    assert _state_of(await _rows(db_session, athlete)) == before
-    # « Ce n’est pas cette séance »: the session stays « Pas faite », the run outside the plan, nothing asked again
-    await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "pas_celle"}, headers=HTMX)
-    await db_session.refresh(tue)
-    assert tue.status == co.MISSED and "pf-coach-runcard" not in _main((await client.get("/coaching")).text)
+    await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
+    assert _state_of(await _rows(db_session, athlete), answers=False) == before
 
 
-async def test_every_wednesday_sets_the_fixed_session_or_is_never_asked_again(client, people, db_session, clock):
-    """« Tu cours tous les mardis avec ton club ? » after « Une séance dure » on a weekday the athlete ran most of
-    the 8 weeks before: « Oui » sets « Ma séance fixe » (set_fixed: the run's duration to 5 min, the plan written
-    again around it); « Non » is kept, never asked again for that weekday; never asked with a fixed session."""
+@pytest.mark.parametrize("data,hard", [("laps", True), ("hr", True), ("pace", True), ("hilly", False), ("none", False)])
+async def test_a_run_of_its_duration_on_an_easy_session_reads_by_each_criterion(data, hard, client, people,
+                                                                                db_session, clock, monkeypatch):
+    """A run linked to Tuesday's 55-min footing, its duration within 20 %: only a hard reading changes anything —
+    by its laps alone, its heart rate alone, its pace on flat ground alone; hilly or without data: nothing, no
+    notice, the day's debrief asks its ressenti."""
+    athlete = people.athlete
+    _as(client, athlete)
+    await _plan(client, db_session, athlete, days=("1", "2", "4", "5", "6"), base="300")
+    clock.day = TUE
+    run = _run(athlete, TUE, 55, 1, name="Footing")  # 2.5 m/s, 8.25 km, 40 m of climb
+    if data == "laps":
+        run.laps = INTERVALS
+    if data == "hr":
+        athlete.max_heart_rate, run.average_heartrate = 190, 158
+    if data in ("pace", "hilly"):
+        async def critical(*a, **k):
+            return 2.6  # its threshold from 2.42 m/s: the run's 2.5 reach it
+        monkeypatch.setattr(cr, "_cs", critical)
+    if data == "hilly":
+        run.total_elevation_gain = 200
+    db_session.add(run)
+    await db_session.flush()
+    page = _main((await client.get("/coaching")).text)
+    tue = next(r for r in await _rows(db_session, athlete) if r.day == TUE)
+    assert cp.is_declared(tue.structure) is hard and (tue.kind == cp.QUALITY) is hard
+    if hard:
+        assert (f"<b>Aujourd’hui, tu as couru 55 min (8,2{NNBSP}km), plus soutenu que le footing prévu{NBSP}: comptée "
+                "comme une séance dure.</b>") in _card(page)
+        assert next(r for r in await _rows(db_session, athlete) if r.day == WED).kind == cp.RECUP
+    else:
+        assert "pf-coach-runcard" not in page and "Ta sortie d’aujourd’hui est arrivée" in page
+        assert cr.answer_of(tue)["open"] is False, "read once, never again"
+    assert "C’était quoi" not in page
+
+
+async def test_every_wednesday_is_the_only_optional_tap(client, people, db_session, clock):
+    """« Tu cours tous les mardis avec ton club ? » after a hard reading on a weekday the athlete ran most of the 8
+    weeks before: shown after the notice, never required; « Oui » sets « Ma séance fixe »; « Non » is kept, never
+    asked again for that weekday; never asked with a fixed session."""
     athlete, plan = await _owner(client, db_session, people, clock, minutes=93, weeks_before=6)
+    page = _main((await client.get("/coaching")).text)
+    card = _card(page)
     run_id = next(r for r in await _rows(db_session, athlete) if r.day == TUE).activity_id
-    r = await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "dure"}, headers=HTMX)
-    card = r.text.split('pf-coach-runcard"')[1].split("</section>")[0]
     assert f'<p id="coach-run-offer-q" class="pf-coach-q">Tu cours tous les mardis avec ton club{NBSP}?</p>' in card
     assert ">Oui, tous les mardis</button>" in card and ">Non, juste cette fois</button>" in card
-    assert f'action="/coaching/runs/{run_id}/chaque-semaine"' in card
-    before_yes = _state_of(await _rows(db_session, athlete))
+    assert card.index("coach-run-offer-q") > card.index("coach-run-h"), "after the notice"
     r = await client.post(f"/coaching/runs/{run_id}/chaque-semaine", data={"value": "oui"}, headers=HTMX)
     plan = (await db_session.execute(select(CoachingPlan).where(CoachingPlan.user_id == athlete.id)
                                      .execution_options(populate_existing=True))).scalar_one()
     assert co.fixed_of(plan) == cp.Fixed(1, 95, cp.FIXED_NAME), "the run's 93 min, to 5 min as the option rounds"
-    assert "C’est noté. Ta séance fixe : tous les mardis, 1h35. Le plan s’écrit autour." in r.text.replace(NBSP, " ")
+    assert "Ta séance fixe : tous les mardis, 1h35. Le plan s’écrit autour." in r.text.replace(NBSP, " ")
     rows = await _rows(db_session, athlete)
     nxt = [x for x in rows if x.day == TUE + timedelta(weeks=1)]
     assert len(nxt) == 1 and cp.is_fixed(nxt[0].structure) and nxt[0].minutes == 95, "next Tuesday: the club's"
-    assert not any(co.marked(x) for x in rows), "this week's own changes were put back: the fixed rules took over"
-    await client.post(f"/coaching/runs/{run_id}/annuler", data={}, headers=HTMX)
+    # corrected (an easy outing after all): the fixed session goes with the hard reading
+    await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
     plan = (await db_session.execute(select(CoachingPlan).where(CoachingPlan.user_id == athlete.id)
                                      .execution_options(populate_existing=True))).scalar_one()
     assert co.fixed_of(plan) is None
-    assert not any(cp.is_fixed(x.structure) for x in await _rows(db_session, athlete))
-    # « Non, juste cette fois »: stored; asked again after « Annuler »? never for that weekday
-    await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "dure"}, headers=HTMX)
+    # read hard again: offered again; « Non, juste cette fois »: stored, never asked again for that weekday
+    r = await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
+    assert "Tu cours tous les mardis" in r.text
     r = await client.post(f"/coaching/runs/{run_id}/chaque-semaine", data={"value": "non"}, headers=HTMX)
-    assert "coach-run-yes" not in r.text
+    assert "coach-run-yes" not in r.text and "pf-coach-runcard" in r.text
     plan = (await db_session.execute(select(CoachingPlan).where(CoachingPlan.user_id == athlete.id)
                                      .execution_options(populate_existing=True))).scalar_one()
-    assert plan.fixed == {"declined": [1]} and co.fixed_of(plan) is None and co.declined_days(plan) == [1]
-    await client.post(f"/coaching/runs/{run_id}/annuler", data={}, headers=HTMX)
-    r = await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "dure"}, headers=HTMX)
+    assert plan.fixed == {"declined": [1]} and co.declined_days(plan) == [1]
+    await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
+    r = await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
     assert "Tu cours tous les" not in r.text
-    assert before_yes  # (the state before « Oui » was read)
-    # a fixed session set, the declined days kept with it; never asked while one exists
-    await client.post(f"/coaching/runs/{run_id}/annuler", data={}, headers=HTMX)
-    plan.fixed = {"day": 3, "minutes": 60, "name": "Piste", "declined": [1]}
-    await db_session.flush()
-    assert co.fixed_of(plan) == cp.Fixed(3, 60, "Piste")
-    await co.set_fixed(db_session, plan, athlete, cp.Fixed(3, 65, "Piste"))
-    assert plan.fixed == {"day": 3, "minutes": 65, "name": "Piste", "declined": [1]}
+    r = await client.post(f"/coaching/runs/{run_id}/chaque-semaine", data={"value": "oui"}, headers=HTMX)
+    assert "Plus de question en attente." in r.text
 
 
-async def test_no_offer_with_a_fixed_session_or_on_the_long_run_s_day(client, people, db_session, clock):
+async def test_no_offer_with_a_fixed_session(client, people, db_session, clock):
     athlete, plan = await _owner(client, db_session, people, clock, weeks_before=6)
     await co.set_fixed(db_session, plan, athlete, cp.Fixed(4, 60))
-    run_id = next(r for r in await _rows(db_session, athlete) if r.day == TUE).activity_id
-    r = await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "dure"}, headers=HTMX)
-    assert r.status_code == 200 and "Tu cours tous les" not in r.text
+    page = (await client.get("/coaching")).text
+    assert "comptée comme une séance dure" in page and "Tu cours tous les" not in page
 
 
-async def test_the_card_waits_its_turn_with_the_debrief_and_never_for_a_follower(client, people, db_session, clock):
-    """One question at a time, the most recent first: a debrief more recent than the run waits behind nothing; the
-    card more recent goes first; a run older than DEBRIEF_DAYS, or before the plan's first day, is not asked."""
+async def test_no_notice_once_nothing_is_left_to_say(client, people, db_session, clock):
+    """An easy outing on the day's footing, too long to be it: nothing changed — the notice holds only its ressenti
+    and goes once it is said."""
+    athlete, _p = await _owner(client, db_session, people, clock, laps=None)
+    page = _main((await client.get("/coaching")).text)
+    tue = next(r for r in await _rows(db_session, athlete) if r.day == TUE)
+    assert (f"au lieu du footing de 55 min{NBSP}: comptée comme une sortie tranquille ; rien d’autre ne change."
+            in _card(page))
+    r = await client.post(f"/coaching/sessions/{tue.id}/ressenti", data={"value": "2"}, headers=HTMX)
+    assert "pf-coach-runcard" not in r.text and "pf-coach-debrief" not in r.text
+    assert (await db_session.get(CoachingSession, tue.id)).ressenti == 2
+
+
+async def test_the_notice_waits_its_turn_with_the_debrief_and_never_for_a_follower(client, people, db_session, clock):
+    """One at a time, the most recent first: a debrief more recent than the run goes first; a run older than
+    DEBRIEF_DAYS, or before the plan's first day, is not read."""
     athlete = people.athlete
     _as(client, athlete)
     await _plan(client, db_session, athlete, days=("1", "3", "6"), base="180")
@@ -500,17 +617,17 @@ async def test_the_card_waits_its_turn_with_the_debrief_and_never_for_a_follower
     page = _main((await client.get("/coaching")).text)
     assert "Hier, tu as couru 50 min" in page and "Avant le plan" not in page.split("pf-coach-calendar")[0]
     state = await co.sync(db_session, await co.get_plan(db_session, athlete.id), athlete)
-    assert [c.run.name for c in cr.pending(state)] == ["Footing avec Léa"]
-    assert cv.page(state, coach=True)["card"] is None and cv.page(state)["card"]["state"] == "ask"
+    assert [c.run.name for c in cr.notices(state)] == ["Footing avec Léa"] and not cr.candidates(state)
+    assert cv.page(state, coach=True)["card"] is None and cv.page(state)["card"]["flip"] == "C’était une séance dure"
     clock.day = THU + timedelta(days=7)
     state = await co.sync(db_session, await co.get_plan(db_session, athlete.id), athlete)
-    assert not cr.pending(state), "a week later: no longer asked"
+    assert not cr.notices(state), "a week later: no longer said"
 
 
-async def test_any_weekday_a_misfit_run_declared_hard_changes_only_untouched_sessions(client, people, db_session,
-                                                                                    same_today):
-    """Whatever today's weekday (the suite runs on shifted weekdays): a run on today's session declared hard never
-    touches a session done, edited or behind, never writes two hard days in a row, is applied once and put back."""
+async def test_any_weekday_a_misfit_run_read_hard_changes_only_untouched_sessions(client, people, db_session,
+                                                                                 same_today):
+    """Whatever today's weekday (the suite runs on shifted weekdays): a run on today's session read hard never
+    touches a session done, edited or behind, never writes two hard days in a row, is applied once and corrected."""
     athlete = people.athlete
     _as(client, athlete)
     await _plan(client, db_session, athlete, days=[str(d) for d in range(7) if d != (same_today.weekday() + 3) % 7],
@@ -520,17 +637,17 @@ async def test_any_weekday_a_misfit_run_declared_hard_changes_only_untouched_ses
     later = [r for r in rows if r.day > same_today and r.day <= same_today + timedelta(days=6)]
     if later:  # a person's edit on one of the days to come: left alone whatever the rules say
         co.edit(later[-1], datetime.now(timezone.utc), kind=cp.QUALITY, minutes=50, origin="athlete")
-    db_session.add(_club(athlete, same_today, 1, minutes=max(30, int(today.minutes * 2))))
+    db_session.add(_club(athlete, same_today, 1, minutes=max(30, int(today.minutes * 2)), laps=INTERVALS))
     await db_session.flush()
+    before = await _before(db_session, athlete)
     await client.get("/coaching")
     rows = await _rows(db_session, athlete)
-    before = _state_of(rows)
     run_id = next(r for r in rows if r.day == same_today).activity_id
-    await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "dure"}, headers=HTMX)
-    rows = await _rows(db_session, athlete)
+    assert cr.answer_of(next(r for r in rows if r.day == same_today))["what"] == cr.HARD
     was = {x[0]: x for x in before}
     for r in rows:
-        if r.id in was and was[r.id][2:6] != (r.kind, r.minutes, r.structure, r.status)[0:4] and r.day != same_today:
+        if r.id in was and was[r.id][2:6] != (r.kind, r.minutes, _plain(r.structure), r.status) \
+                and r.day != same_today:
             assert co.marked(r) and was[r.id][11] == "auto" and not was[r.id][10], "only sessions nobody touched"
     if later:
         assert (await db_session.get(CoachingSession, later[-1].id)).kind == cp.QUALITY
@@ -542,34 +659,24 @@ async def test_any_weekday_a_misfit_run_declared_hard_changes_only_untouched_ses
     first = _state_of(state.rows)
     await co.sync(db_session, state.plan, athlete)
     assert _state_of(await _rows(db_session, athlete)) == first
-    await client.post(f"/coaching/runs/{run_id}/annuler", data={}, headers=HTMX)
-    assert _state_of(await _rows(db_session, athlete)) == before
+    await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
+    rows = await _rows(db_session, athlete)
+    assert [x for x in _state_of(rows, answers=False) if x[1] != same_today] == [
+        x for x in before if x[1] != same_today], "everything else as it was"
 
 
-@pytest.mark.parametrize("value", ["", "autre"])
-async def test_an_unknown_answer_changes_nothing(value, client, people, db_session, clock):
+@pytest.mark.parametrize("action", ["reponse", "annuler", "reporter", "autre"])
+async def test_the_old_questions_are_gone_and_errors_change_nothing(action, client, people, db_session, clock):
     athlete, _p = await _owner(client, db_session, people, clock)
     await client.get("/coaching")
-    before = _state_of(await _rows(db_session, athlete))
     run_id = next(r for r in await _rows(db_session, athlete) if r.day == TUE).activity_id
-    r = await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": value}, headers=HTMX)
-    assert r.status_code == 200 and "Réponse inconnue." in r.text
-    assert _state_of(await _rows(db_session, athlete)) == before
-    r = await client.post("/coaching/runs/999999/reponse", data={"value": "dure"}, headers=HTMX)
-    assert "Cette sortie n’attend plus de réponse." in r.text
-    assert (await client.post(f"/coaching/runs/{run_id}/autre", data={})).status_code == 404
-    # without JavaScript: back to the page, the card kept open by its address
-    r = await client.post(f"/coaching/runs/{run_id}/reponse", data={"value": "dure", "w": "2026-11-16"})
-    assert r.status_code == 303 and r.headers["location"] == f"/coaching?w=2026-11-16&r={run_id}"
-    page = _main((await client.get(r.headers["location"])).text)
-    assert "C’est noté." in page
-    assert time  # (imported for the module's helpers)
-
-
-def test_a_long_run_the_day_after_that_cannot_move_stays_a_footing_of_its_duration():
-    _inp, week, wanted = _week((0, 1, 2, 3), 240)
-    assert [(s.day, s.kind) for s in week.sessions][-1] == (THU, cp.LONG)
-    held = _held([s for s in week.sessions if s.day != WED], THU)
-    long = next(h for h in held if h.day == THU)
-    assert cp.after_hard(WED, 95, held, wanted, THU, (0, 1, 2, 3)) == [
-        cp.Change("eased", long.id, THU, long.minutes, cp.steady(long.minutes, 2))]
+    after = _state_of(await _rows(db_session, athlete))
+    assert (await client.post(f"/coaching/runs/{run_id}/{action}", data={"value": "dure"})).status_code == 404
+    r = await client.post("/coaching/runs/999999/corriger", data={}, headers=HTMX)
+    assert r.status_code == 200 and "Cette sortie n’a pas été lue." in r.text
+    r = await client.post(f"/coaching/runs/{run_id}/seance", data={"value": "x"}, headers=HTMX)
+    assert "Cette séance ne se déplace pas." in r.text
+    assert _state_of(await _rows(db_session, athlete)) == after
+    # without JavaScript: back to the page
+    r = await client.post(f"/coaching/runs/{run_id}/fermer", data={"w": "2026-11-16"})
+    assert r.status_code == 303 and r.headers["location"] == "/coaching?w=2026-11-16"
