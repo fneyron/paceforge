@@ -90,7 +90,7 @@ POSTS = ("/coaching/plan", "/coaching/stop", "/coaching/share", "/coaching/feed/
 
 
 async def test_by_default_every_account_has_coaching(client: AsyncClient, people, db_session, same_today):
-    """Nothing set (production today): the switch reads « * », every signed-in account has the 4th entry and the
+    """Nothing set (production today): the switch reads « * », every signed-in account has the Coaching entry and the
     onboarding, the privacy row shows, the daily round is scheduled, the pages stay out of the crawl."""
     from app.celery_app import celery_app
     from app.config import Settings
@@ -108,7 +108,7 @@ async def test_by_default_every_account_has_coaching(client: AsyncClient, people
     top = page.split('class="pf-nav"')[1].split("</nav>")[0]
     bar = page.split('class="pf-tabbar is-four"')[1].split("</nav>")[0]
     for nav in (top, bar):
-        assert re.findall(r"<span>([^<]+)</span>", nav) == ["Courses", "Activités", "Santé", "Coaching"]
+        assert re.findall(r"<span>([^<]+)</span>", nav) == ["Santé", "Coaching", "Courses", "Activités"]
     onboarding = await client.get("/coaching")
     assert onboarding.status_code == 200 and "Créer mon plan" in onboarding.text
     assert 'href="/coaching" aria-current="page"' in onboarding.text

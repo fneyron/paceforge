@@ -388,7 +388,7 @@ async function sheet(page) {
       assert.equal(await page.locator('.pf-tabbar').isVisible(), !app, key);
       assert.equal(await page.evaluate(() => document.documentElement.classList.contains('pf-native-coaching')), app === 'new', key);
       assert.equal(await page.locator('a.pf-back[href="/activities"]').isVisible(), app === 'old', key + ': « ‹ Activités » in an older app only');
-      if (!app) assert.deepEqual(await page.locator('.pf-tabbar a').allInnerTexts(), ['Courses', 'Activités', 'Santé', 'Coaching'], key + ': a 4th tab');
+      if (!app) assert.deepEqual(await page.locator('.pf-tabbar a').allInnerTexts(), ['Santé', 'Coaching', 'Courses', 'Activités'], key + ': the Coaching tab');
       if (!app) assert.equal(await page.locator('.pf-tabbar a[aria-current="page"]').innerText(), 'Coaching', key);
       await noOverflow(page, key);
       await targets(page, key);
@@ -745,7 +745,7 @@ async function sheet(page) {
     for (const dark of [false, true]) {
       const page = await open(browser, { width: 1280, height: 900, dark });
       await page.goto(athlete + '/coaching', { waitUntil: 'networkidle' });
-      assert.deepEqual(await page.locator('.pf-nav a').allInnerTexts(), ['Courses', 'Activités', 'Santé', 'Coaching']);
+      assert.deepEqual(await page.locator('.pf-nav a').allInnerTexts(), ['Santé', 'Coaching', 'Courses', 'Activités']);
       assert.equal(await page.locator('.pf-nav a[aria-current="page"]').innerText(), 'Coaching');
       // the debrief above; the weeks, and the day opened beside them
       const [ask, cal, day] = [await page.locator('.pf-coach-debrief').boundingBox(), await page.locator('.pf-coach-cal-main').boundingBox(), await page.locator('.pf-coach-daycard').boundingBox()];
@@ -1289,7 +1289,7 @@ async function sheet(page) {
       // the entry card: only where nothing else leads to Coaching, an app from before its native tab
       assert.equal(await page.locator('a.pf-coach-entry').count(), 1);
       assert.equal(await page.locator('a.pf-coach-entry').isVisible(), app === 'old', `activities${suffix(app)}: the entry card`);
-      if (!app) assert.deepEqual(await page.locator('.pf-tabbar a').allInnerTexts(), ['Courses', 'Activités', 'Santé', 'Coaching']);
+      if (!app) assert.deepEqual(await page.locator('.pf-tabbar a').allInnerTexts(), ['Santé', 'Coaching', 'Courses', 'Activités']);
       await noOverflow(page, 'activities' + suffix(app));
       await shot(page, `activities-393${suffix(app) || '-site'}`);
       assert.deepEqual(page.errors, [], 'activities: browser errors');

@@ -64,8 +64,8 @@ async def test_app_shell_top_bar_and_tab_bar(as_user: AsyncClient):
     assert 'class="pf-top"' in page and 'class="pf-tabbar is-four"' in page
     tabbar = page.split('class="pf-tabbar is-four"')[1].split("</nav>")[0]
     labels = re.findall(r"<span>([^<]+)</span>", tabbar)
-    # the requested navigation order, then Coaching, every account's 4th entry since 21 November 2026
-    assert labels == ["Courses", "Activités", "Santé", "Coaching"]
+    # the owner's order (25 November 2026): Santé, Coaching (every account since 21 November 2026), Courses, Activités
+    assert labels == ["Santé", "Coaching", "Courses", "Activités"]
     assert "Vélo" not in tabbar and "Triathlon" not in tabbar
 
 
