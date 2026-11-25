@@ -40,7 +40,7 @@
     {% endif %}
     <div class="pf-viz-plot">
         <svg class="pf-viz-svg" viewBox="0 0 {{ c.W }} {{ c.H }}" aria-hidden="true" focusable="false">{{ caller() }}</svg>
-        {% if c.n %}<input type="range" class="pf-viz-range sr-only" aria-label="{{ title }} : choisis {{ 'un' if unit_word in ('jour', 'mois', 'point') else 'une' }} {{ unit_word }}" min="0" max="{{ top }}" step="1" value="{{ c.sel }}" aria-valuetext="{{ c.aria_now }}">{% endif %}
+        {% if c.n %}<input type="range" class="pf-viz-range sr-only" aria-label="{{ title }} : choisis {{ 'un' if unit_word in ('jour', 'mois', 'point', 'intervalle') else 'une' }} {{ unit_word }}" min="0" max="{{ top }}" step="1" value="{{ c.sel }}" aria-valuetext="{{ c.aria_now }}">{% endif %}
     </div>
     {% if legend and not legend_details %}{{ viz_legend(legend) }}{% endif %}
     {% if c.compact and not quiet and not central_details %}
@@ -234,6 +234,23 @@
     <div class="pf-phases-bar" aria-hidden="true">{% for p in ph.parts %}<span class="pf-phase-segment pf-ph is-{{ p.key }}" data-phase="{{ p.key }}" style="flex-grow: {{ p.min }}"><span class="pf-phase-tip">{{ p.name }} · {{ p.hm }}</span></span>{% endfor %}</div>
     <ul class="pf-phases-legend" aria-label="{{ ph.aria }}">{% for p in ph.parts %}<li><button type="button" class="pf-phase-label" data-phase="{{ p.key }}" aria-label="{{ p.name }} : {{ p.hm }}"><i class="pf-ph is-{{ p.key }}" aria-hidden="true"></i><span>{{ p.name }}</span> <b>{{ p.hm }}</b></button></li>{% endfor %}</ul>
 </div>
+{% endmacro %}
+
+{#- An activity's page -#}
+
+{# A1 laps (activity_laps.lap_chart): one bar per lap across the session's time, its height its speed (a pace on
+   foot, the power or the speed on a bike) above a floor taken from the session; the efforts in the accent, the
+   others soft; two or three dotted reference lines labelled on the right, the unit over them. The selected bar in
+   ink with a caret over it (ink on the accent is under 3:1: the caret says it), its table row (#laps-rows, data-i)
+   marked too; ‹ › and the arrow keys walk the laps #}
+{% macro viz_laps(c) %}
+{% call figure(c, "Intervalles", c.key, None, "intervalle", "Intervalle précédent", "Intervalle suivant", cls="pf-viz-laps") %}
+{% for t in c.refs %}<line x1="0" x2="{{ c.X1 }}" y1="{{ t.y }}" y2="{{ t.y }}" class="pf-viz-hair"/><text x="{{ c.W }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
+<text x="{{ c.W }}" y="{{ c.top - 8 }}" text-anchor="end">{{ c.unit }}</text>
+{% for b in c.bars %}<g class="pf-viz-col" data-i="{{ b.i }}"><rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="{{ [2, b.w / 2]|min|round(2) }}" class="pf-viz-bar pf-lap{% if b.effort %} is-effort{% endif %}"/></g>{% endfor %}
+<line x1="0" x2="{{ c.X1 }}" y1="{{ c.base }}" y2="{{ c.base }}" class="pf-viz-grid"/>
+<g class="pf-viz-cross" style="visibility: hidden"><path d="M-4.5 {{ c.top - 13 }}h9l-4.5 6z" class="pf-lap-at"/></g>
+{% endcall %}
 {% endmacro %}
 
 {#- Coaching -#}
