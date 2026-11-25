@@ -324,14 +324,12 @@ async function sheet(page) {
       const wednesday = week.locator('.pf-coach-day').nth(2);
       assert.match(await wednesday.getAttribute('aria-label'), /^mercredi \d+ \S+ : une sortie hors plan$/, key);
       assert.equal(await wednesday.locator('.pf-coach-tile.is-extra').count(), 1, key + ': a grey tile');
-      // the debrief: Tuesday's run arrived, its ressenti not said — one question at the top, five round numbered
-      // levels, a mark on its day
-      assert.equal(await page.locator('#debrief.pf-coach-debrief h2').innerText(), 'Ta sortie de mardi est arrivée. C’était comment ?', key);
-      assert.deepEqual(await page.locator('#debrief [data-feel]').allInnerTexts(), ['1\nTrès facile', '2\nFacile', '3\nBien', '4\nDur', '5\nTrès dur'], key);
-      const levels = await page.locator('#debrief [data-feel]').evaluateAll(all => all.map(b => { const i = b.querySelector('i'), r = i.getBoundingClientRect();
-        return [b.getBoundingClientRect().height, Math.round(r.width), Math.round(r.height), getComputedStyle(i).borderRadius, getComputedStyle(i).backgroundColor]; }));
-      for (const [h, w, ih, radius] of levels) assert.ok(h >= 44 && w === ih && w >= 34 && radius === '50%', key + ': round levels, 44 px targets ' + JSON.stringify(levels));
-      assert.equal(new Set(levels.map(l => l[4])).size, 5, key + ': from easy to very hard');
+      // the question at the top: yesterday's run outside the plan is the most recent — its card, in the debrief's
+      // place (« C’était quoi ? »); Tuesday's run waits for its ressenti behind it, a mark on its day
+      assert.equal(await page.locator('#debrief.pf-coach-runcard h2').innerText(), 'Hier, tu as couru 35 min (5,6\u202fkm)\u00a0: rien n’était prévu. C’était quoi\u00a0?', key);
+      assert.deepEqual(await page.locator('#debrief .pf-coach-run-kind').allInnerTexts(), ['Une séance dure\nintervalles, club, côtes', 'Une sortie tranquille'], key);
+      assert.equal(await page.locator('#debrief [data-feel]').count(), 0, key + ': one question at a time');
+      assert.match(await page.locator('#coach-run-attach').innerText(), /^C’est ma séance de \S+ · /, key + ': the quiet way out');
       const tuesday = week.locator('.pf-coach-day').nth(1);
       assert.equal(await tuesday.locator('.pf-coach-todo').count(), 1, key + ': a mark on Tuesday');
       assert.match(await tuesday.getAttribute('aria-label'), /, faite, à débriefer$/, key);
@@ -960,6 +958,12 @@ async function sheet(page) {
       assert.equal((await sheet(page)).open, false, 'the sheet stays closed');
       assert.match(await ask.locator('h2').innerText(), /^Ta sortie de mardi est arrivée\./);
       assert.match(await ask.locator('.pf-coach-debrief-line').innerText(), /^Footing \d+ min · [\d,]+\skm · /, 'what it was, the run’s own figures');
+      // five round numbered levels, 44 px targets, from easy to very hard
+      assert.deepEqual(await page.locator('#debrief [data-feel]').allInnerTexts(), ['1\nTrès facile', '2\nFacile', '3\nBien', '4\nDur', '5\nTrès dur']);
+      const levels = await page.locator('#debrief [data-feel]').evaluateAll(all => all.map(b => { const i = b.querySelector('i'), r = i.getBoundingClientRect();
+        return [b.getBoundingClientRect().height, Math.round(r.width), Math.round(r.height), getComputedStyle(i).borderRadius, getComputedStyle(i).backgroundColor]; }));
+      for (const [h, w, ih, radius] of levels) assert.ok(h >= 44 && w === ih && w >= 34 && radius === '50%', 'round levels, 44 px targets ' + JSON.stringify(levels));
+      assert.equal(new Set(levels.map(l => l[4])).size, 5, 'from easy to very hard');
       assert.equal(await page.locator(`#coach-day-${tue}.is-selected`).count(), 1, 'its day is open on the board');
       assert.equal(await page.locator('.pf-coach-daycard .pf-coach-feel-block').count(), 0, 'asked once, at the top');
       await noOverflow(page, 'debrief');
@@ -968,7 +972,8 @@ async function sheet(page) {
       await theme(page, true); await shot(page, 'athlete-393-debrief-dark'); await theme(page, false);
       // one tap answers it, in place: the question goes, the mark on its day too, the day shows what was said
       await swap(page, () => page.locator('#coach-ask-3').click());
-      assert.equal(await page.locator('.pf-coach-debrief').count(), 0, 'answered: the question is gone');
+      assert.equal(await page.locator('.pf-coach-debrief:not(.pf-coach-runcard)').count(), 0, 'answered: the question is gone');
+      assert.equal(await page.locator('.pf-coach-runcard').count(), 1, 'the run outside the plan is asked about next');
       assert.equal(await page.locator(`#coach-day-${tue} .pf-coach-todo`).count(), 0, 'its mark too');
       assert.doesNotMatch(await page.locator(`#coach-day-${tue}`).getAttribute('aria-label'), /débriefer/);
       assert.equal(await page.locator(`#coach-day-${tue}.is-selected`).count(), 1, 'the board stays on its day');
@@ -976,7 +981,7 @@ async function sheet(page) {
       await shot(page, 'athlete-393-debrief-answered');
       // the same link once answered: the day itself
       await page.goto(`${athlete}/coaching?d=${tue}#debrief`, { waitUntil: 'networkidle' });
-      assert.equal(await page.locator('#debrief').getAttribute('class'), 'pf-coach-daycard', 'nothing waits: the link lands on the day');
+      assert.equal(await page.locator('#debrief').getAttribute('class'), 'pf-coach-debrief pf-coach-runcard', 'the run’s card waits: the link lands on it');
       await page.waitForFunction(() => { const r = document.getElementById('debrief').getBoundingClientRect(); return r.top >= 0 && r.top < innerHeight; });
 
       // a run outside the plan: on its day, « Hors plan », nothing to answer
@@ -1105,7 +1110,9 @@ async function sheet(page) {
       const at = days => { const d = new Date(fixture.day + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
       const [wed, thu, sat, sun, nextTue] = [at(-1), fixture.day, at(2), at(3), at(5)];
       const moves = [], watch = p => p.on('request', r => { if (r.method() === 'POST' && r.url().endsWith('/move')) moves.push(r.postData()); });
-      const page = await open(browser, { width: 393 });
+      // yesterday's run outside the plan waits at the top in its card (« C’était quoi ? »): a taller screen keeps the
+      // week and the next row in view — the gestures are tested here, the first screen is above
+      const page = await open(browser, { width: 393, height: 1060 });
       watch(page);
       const finger = await fingerOf(page);
       await page.goto(athlete + '/coaching', { waitUntil: 'networkidle' });
@@ -1205,7 +1212,7 @@ async function sheet(page) {
       await page.close();
 
       // 320 px: the same, held over a day next to a hard session (Sunday's long run, the next days)
-      const small = await open(browser, { width: 320 });
+      const small = await open(browser, { width: 320, height: 1060 });
       watch(small);
       const smallFinger = await fingerOf(small);
       await small.goto(athlete + '/coaching', { waitUntil: 'networkidle' });
@@ -1561,6 +1568,186 @@ async function sheet(page) {
           await page.goto(fresh + '/coaching?refaire=1', { waitUntil: 'networkidle' });
           assert.equal(await page.locator('input[name="goal"][value="race"]').isChecked(), true, 'its race, chosen again');
           await shot(page, 'story-393-redo');
+        }
+        assert.deepEqual(page.errors, [], key + ': browser errors');
+        await page.close();
+      }
+      await as('new');
+    }
+
+    // ── a run that is not the planned session (docs/coaching.md › « Une sortie qui n’est pas la séance prévue »): the
+    //    card in each state at 320 and 393 px, light and dark, 200 % text, its contrast, its targets; the answer by
+    //    touch and by the keyboard, the focus on what the plan changed; « Annuler »; the follower never sees it ──
+    {
+      const as = who => fetch(`${fresh}/__preview/coaching/as/${who}`, { method: 'POST' }).then(r => r.json());
+      const card = page => page.locator('#debrief.pf-coach-runcard');
+      const said = page => card(page).locator('#coach-run-said').innerText().then(t => t.replace(/\s*\n\s*/g, ' '));  // its spoken answer first
+      // the contrast of every text of the card on the ground behind it (WCAG), read from the computed colours
+      const contrast = page => card(page).evaluate(root => {
+        const rgb = c => (c.match(/[\d.]+/g) || []).map(Number);
+        const lum = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
+          .reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+        const ground = el => { for (let e = el; e; e = e.parentElement) { const c = rgb(getComputedStyle(e).backgroundColor); if (c.length === 3 || c[3] > 0.95) return c.slice(0, 3); } return [255, 255, 255]; };
+        return [...root.querySelectorAll('h2, b, small, p, button, .pf-coach-quietbtn, [data-feel] span')].filter(el => el.getClientRects().length && el.innerText.trim() && !el.closest('.sr-only'))
+          .map(el => { const [a, b] = [lum(rgb(getComputedStyle(el).color)), lum(ground(el))]; return [el.innerText.trim().slice(0, 24), Math.round((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) * 100) / 100]; })
+          .filter(([, ratio]) => ratio < 4.5);
+      });
+      const check = async (page, key) => {
+        await noOverflow(page, key);
+        await targets(page, key);
+        assert.deepEqual(await contrast(page), [], key + ': 4.5:1 in the card');
+        assert.equal(await card(page).getAttribute('role'), 'group', key + ': a group…');
+        assert.equal(await card(page).getAttribute('aria-labelledby'), 'coach-run-h', key + ': …with its heading');
+      };
+      const ASK = 'Hier, tu as couru 1h35 (16,5 km) au lieu du fartlek de 45 min. C’était quoi ?';
+
+      // 1. what it understood and one question: the owner's club run (laps of repeated efforts), nothing pre-selected
+      assert.deepEqual(await as('club'), { synthetic: true, as: 'club' });
+      for (const width of [320, 393]) for (const dark of [false, true]) {
+        const key = `run card ${width}${dark ? ' dark' : ''}`;
+        const page = await open(browser, { width, dark });
+        await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
+        assert.equal(await card(page).locator('h2').innerText(), ASK, key);
+        assert.equal(await card(page).locator('.pf-coach-run-hint').innerText(), 'On dirait des intervalles.', key);
+        assert.deepEqual(await card(page).locator('.pf-coach-run-kind').allInnerTexts(), ['Une séance dure\nintervalles, club, côtes', 'Une sortie tranquille'], key);
+        for (const b of await card(page).locator('.pf-coach-run-kind').all()) assert.ok((await b.boundingBox()).height >= 56, key + ': two large buttons');
+        assert.equal(await card(page).locator('[aria-pressed="true"], [data-feel]').count(), 0, key + ': nothing chosen, no ressenti yet');
+        assert.equal(await card(page).locator('#coach-run-not').innerText(), 'Ce n’est pas cette séance', key);
+        assert.equal(await page.locator('.pf-coach-debrief').count(), 1, key + ': one question at a time');
+        const [top, board] = [await card(page).boundingBox(), await page.locator('.pf-coach-cal-main').boundingBox()];
+        assert.ok(top.y + top.height <= board.y, key + ': at the top, before the board');
+        assert.doesNotMatch(await card(page).innerText(), /\bcoach/i, key + ': never « coach »');
+        await check(page, key);
+        await shot(page, `run-${width}-ask${dark ? '-dark' : ''}`);
+        if (width === 320) {  // 200 % text: the two answers one under the other, nothing leaves the card
+          await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+          await noOverflow(page, key + ' 200 % text');
+          await targets(page, key + ' 200 % text');
+          const [a, b] = await card(page).locator('.pf-coach-run-kind').evaluateAll(all => all.map(el => el.getBoundingClientRect().toJSON()));
+          assert.ok(b.top >= a.bottom - 1, key + ' 200 % text: one under the other');
+          await shot(page, `run-320-ask-200${dark ? '-dark' : ''}`);
+        }
+        assert.deepEqual(page.errors, [], key + ': browser errors');
+        await page.close();
+      }
+
+      // 2. by touch (393): « Une séance dure » — the focus on what the plan changed, the offer, the ressenti, then
+      //    « Oui, tous les mercredis » and « Annuler »
+      {
+        const page = await open(browser, { width: 393 });
+        await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
+        await swap(page, () => page.tap('#coach-run-dure'));
+        assert.equal(await said(page), 'Une séance dure. C’est noté. Rien d’autre ne change cette semaine.', 'by touch');
+        assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.id), 'coach-run-said', 'the focus on what changed');
+        assert.equal(await card(page).locator('#coach-run-offer-q').innerText(), 'Tu cours tous les mercredis avec ton club ?');
+        assert.deepEqual(await card(page).locator('.pf-coach-run-yesno button').allInnerTexts(), ['Oui, tous les mercredis', 'Non, juste cette fois']);
+        assert.equal(await card(page).locator('[data-feel]').count(), 5, 'the ressenti, one more tap');
+        assert.deepEqual(await seen(page, '.pf-coach-run-quiet .pf-coach-quietbtn'), ['Annuler', 'Fermer']);
+        await check(page, 'run card said');
+        await shot(page, 'run-393-hard-said');
+        await theme(page, true); await check(page, 'run card said dark'); await shot(page, 'run-393-hard-said-dark'); await theme(page, false);
+        await swap(page, () => page.tap('#coach-run-r-3'));
+        assert.equal(await card(page).locator('#coach-run-r-3').getAttribute('aria-pressed'), 'true', 'the ressenti saved, the card stays');
+        await swap(page, () => page.tap('#coach-run-yes'));
+        assert.equal(await said(page), 'Une séance dure. C’est noté. Ta séance fixe : tous les mercredis, 1h35. Le plan s’écrit autour.');
+        assert.equal(await card(page).locator('#coach-run-yes').count(), 0, 'asked once');
+        await shot(page, 'run-393-every-wednesday');
+        // the next Wednesday is the club's now: « Ma séance fixe » set as the option sets it
+        const nextWed = new Date(fixture.day + 'T00:00:00Z'); nextWed.setUTCDate(nextWed.getUTCDate() + 6);
+        await swap(page, () => page.locator(`#coach-day-${nextWed.toISOString().slice(0, 10)}`).click());
+        assert.match(await page.locator('.pf-coach-s-title').first().innerText(), /^Séance club/);
+        await swap(page, () => page.tap('#coach-run-undo'));
+        assert.equal(await card(page).locator('h2').innerText(), ASK, '« Annuler »: the question again');
+        assert.deepEqual(page.errors, [], 'by touch: browser errors');
+        await page.close();
+      }
+
+      // 3. by the keyboard (393, a desktop browser's keys): Tab to « Une sortie tranquille », Enter, the focus on what
+      //    changed; Tab to the ressenti, Enter; « Fermer » by the keyboard
+      {
+        const page = await open(browser, { width: 393 });
+        await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
+        await page.locator('#coach-run-dure').focus();
+        await page.keyboard.press('Tab');
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'coach-run-facile', 'Tab: the second answer');
+        await swap(page, () => page.keyboard.press('Enter'));
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'coach-run-said', 'Enter: the focus on what changed');
+        assert.equal(await said(page), 'Une sortie tranquille. C’est noté. Rien d’autre ne change cette semaine.');
+        assert.equal(await card(page).locator('#coach-run-offer-q').count(), 0, 'a fartlek with no day the rules allow: no offer');
+        await page.keyboard.press('Tab');
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'coach-run-r-1', 'Tab: the ressenti');
+        await page.keyboard.press('Tab'); await page.keyboard.press('Tab');
+        await swap(page, () => page.keyboard.press('Enter'));
+        assert.equal(await card(page).locator('#coach-run-r-3').getAttribute('aria-pressed'), 'true', 'Enter: « Bien »');
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'coach-run-r-3', 'the focus stays on it');
+        await page.locator('#coach-run-close').focus();
+        await swap(page, () => page.keyboard.press('Enter'));
+        assert.equal(await page.locator('.pf-coach-runcard').count(), 0, '« Fermer »: the card goes');
+        assert.deepEqual(page.errors, [], 'keyboard: browser errors');
+        await page.close();
+      }
+
+      // 4. « Une séance dure » the day before a quality session: today's short hills become a récup — said on the
+      //    card, on today's ticket and in the week; 320 and 393, light and dark, 200 % text; « Annuler »
+      assert.deepEqual(await as('dure'), { synthetic: true, as: 'dure' });
+      for (const [width, dark] of [[393, false], [393, true], [320, false], [320, true]]) {
+        const key = `run card changed ${width}${dark ? ' dark' : ''}`;
+        const page = await open(browser, { width, dark });
+        await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
+        assert.equal(await card(page).locator('h2').innerText(), 'Hier, tu as couru 1h35 (16,5 km) au lieu de la récup de 55 min. C’était quoi ?', key);
+        assert.equal(await card(page).locator('.pf-coach-run-hint').count(), 0, key + ': no laps, no hint');
+        await swap(page, () => page.tap('#coach-run-dure'));
+        assert.equal(await said(page), 'Une séance dure. C’est noté. Ta séance de jeudi devient une récup de 45 min ; le reste ne bouge pas.', key);
+        assert.match(await page.locator('.pf-coach-s-title').first().innerText(), /^Récup/, key + ': today’s ticket');
+        assert.equal(await page.locator('.pf-coach-daycard .pf-coach-formline').first().innerText(), 'Récup : lendemain de la séance dure de mercredi.', key);
+        assert.ok((await page.locator('.pf-coach-week.is-board .pf-coach-reason').allInnerTexts()).includes('Jeudi devient une récup : c’est le lendemain de la séance dure de mercredi.'), key + ': the week says it');
+        await check(page, key);
+        await shot(page, `run-${width}-hard-changed${dark ? '-dark' : ''}`);
+        if (width === 320 && !dark) {
+          await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+          await noOverflow(page, key + ' 200 % text');
+          await targets(page, key + ' 200 % text');
+          await shot(page, 'run-320-hard-changed-200');
+          await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+        }
+        await swap(page, () => page.tap('#coach-run-undo'));
+        assert.match(await page.locator('.pf-coach-s-title').first().innerText(), /^Côtes/, key + ': « Annuler » puts the hills back');
+        assert.equal(await page.locator('.pf-coach-daycard .pf-coach-formline').count(), 0, key);
+        assert.deepEqual(page.errors, [], key + ': browser errors');
+        await page.close();
+      }
+
+      // 5. « Une sortie tranquille » instead of a fartlek: « Reporter ta séance à vendredi ? », one tap; then the
+      //    run of yesterday on a day with no session
+      assert.deepEqual(await as('tranquille'), { synthetic: true, as: 'tranquille' });
+      for (const [width, dark] of [[320, false], [320, true], [393, true], [393, false]]) {
+        const key = `run card easy ${width}${dark ? ' dark' : ''}`;
+        const page = await open(browser, { width, dark });
+        await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
+        assert.equal(await card(page).locator('h2').innerText(), 'Aujourd’hui, tu as couru 1h20 (12,4 km) au lieu du fartlek de 45 min. C’était quoi ?', key);
+        await swap(page, () => page.tap('#coach-run-facile'));
+        assert.equal(await card(page).locator('#coach-run-offer-q').innerText(), 'Reporter ta séance à vendredi ?', key);
+        assert.deepEqual(await card(page).locator('.pf-coach-run-yesno button').allInnerTexts(), ['Reporter', 'Non'], key);
+        await check(page, key);
+        await shot(page, `run-${width}-easy-offer${dark ? '-dark' : ''}`);
+        if (width === 393 && !dark) {
+          await swap(page, () => page.tap('#coach-run-yes'));
+          assert.equal(await said(page), 'Une sortie tranquille. C’est noté. Ta séance de jeudi passe à vendredi ; le reste ne bouge pas.');
+          assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.id), 'coach-run-said');
+          await shot(page, 'run-393-easy-postponed');
+          await swap(page, () => page.tap('#coach-run-close'));
+          // closed without a ressenti: today's run, now the day's easy session, is the most recent question — the
+          // debrief asks it, once
+          assert.match(await page.locator('#debrief.pf-coach-debrief h2').innerText(), /^Ta sortie d’aujourd’hui est arrivée\./);
+          await swap(page, () => page.tap('#coach-ask-3'));
+          // yesterday's run, on a day with no session: the next card, with the way out « C’est ma séance de … »
+          assert.equal(await card(page).locator('h2').innerText(), 'Hier, tu as couru 40 min (6,6 km) : rien n’était prévu. C’était quoi ?');
+          assert.match(await card(page).locator('#coach-run-attach').innerText(), /^C’est ma séance de \S+ · /);
+          await check(page, 'run card free');
+          await shot(page, 'run-393-free-ask');
+          await theme(page, true); await check(page, 'run card free dark'); await shot(page, 'run-393-free-ask-dark'); await theme(page, false);
+        } else {
+          await swap(page, () => page.tap('#coach-run-undo'));
         }
         assert.deepEqual(page.errors, [], key + ': browser errors');
         await page.close();

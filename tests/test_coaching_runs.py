@@ -169,6 +169,8 @@ def test_the_card_says_what_happened_with_the_numbers():
         "Aujourd’hui", "Hier", "Mardi", "Jeudi dernier"]
     assert cv._of_session({"kind": cp.FOOTING, "minutes": 40}) == "du footing de 40 min"
     assert cv._of_session({"kind": cp.LONG, "minutes": 105}) == "de la sortie longue de 1h45"
+    assert cv._of_session({"kind": cp.HILLS, "minutes": 45, "structure": cp.quality_session("cotes_courtes", 6)[2]}) \
+        == "des côtes courtes de 45 min"
     assert cv._of_session({"kind": cp.QUALITY, "minutes": 75, "structure": cp.fixed_structure(cp.Fixed(2, 75))}) \
         == "de ta séance club de 1h15"
     assert cv._of_session({"kind": cp.QUALITY, "minutes": 75,
@@ -326,7 +328,7 @@ async def test_an_easy_run_instead_of_a_quality_session_offers_to_postpone_it(cl
     rows = await _rows(db_session, athlete)
     thu = next(r for r in rows if r.day == THU)
     assert thu.kind == cp.QUALITY and thu.activity_id
-    assert f"Aujourd’hui, tu as couru 1h20 (12{NNBSP}km) au lieu de la séance de 45 min." in page
+    assert f"Aujourd’hui, tu as couru 1h20 (12{NNBSP}km) au lieu du fartlek de 45 min." in page
     before = _state_of(rows)
     r = await client.post(f"/coaching/runs/{thu.activity_id}/reponse", data={"value": "facile"}, headers=HTMX)
     assert [x[:4] for x in _state_of(await _rows(db_session, athlete))] == [x[:4] for x in before], "nothing rebuilt"
@@ -562,3 +564,12 @@ async def test_an_unknown_answer_changes_nothing(value, client, people, db_sessi
     page = _main((await client.get(r.headers["location"])).text)
     assert "C’est noté." in page
     assert time  # (imported for the module's helpers)
+
+
+def test_a_long_run_the_day_after_that_cannot_move_stays_a_footing_of_its_duration():
+    _inp, week, wanted = _week((0, 1, 2, 3), 240)
+    assert [(s.day, s.kind) for s in week.sessions][-1] == (THU, cp.LONG)
+    held = _held([s for s in week.sessions if s.day != WED], THU)
+    long = next(h for h in held if h.day == THU)
+    assert cp.after_hard(WED, 95, held, wanted, THU, (0, 1, 2, 3)) == [
+        cp.Change("eased", long.id, THU, long.minutes, cp.steady(long.minutes, 2))]

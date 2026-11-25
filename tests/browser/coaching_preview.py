@@ -23,6 +23,16 @@ the visual check adds « 10 km du lac d’Annecy » on 24 April 2027 without a G
 A sixth account (Rémi, POST /__preview/coaching/as/road) runs on the road: a 10 km in 33 days with a time aimed at,
 eight weeks of runs with Strava's best efforts and a confirmed maximum — every « Cible » of a road plan.
 
+Three accounts show the card of a run that is not the planned session (docs/coaching.md › « Une sortie qui n’est pas
+la séance prévue »), each made on this week's Monday, signed in on request (POST /__preview/coaching/as/<who>):
+- « club » (Marc, the owner's week: Tuesday, Wednesday, Friday, Saturday, Sunday): yesterday a 1 h 35 club run with
+  laps of repeated efforts instead of the 45-min fartlek, and a club run on six of the eight Wednesdays before — « On
+  dirait des intervalles. », then « Tu cours tous les mercredis avec ton club ? »;
+- « dure » (Inès: Tuesday to Saturday): yesterday 1 h 35 instead of a 55-min récup, today's short hills the day after
+  — « Une séance dure » makes them a récup, said on the card, the ticket and the week;
+- « tranquille » (Jules: Tuesday, Thursday, Friday, Sunday): today 1 h 20 easy instead of the fartlek — « Reporter ta
+  séance à vendredi ? » —, and yesterday a run on a day with no session (« rien n’était prévu »).
+
 A fourth account has no plan either but a habit (Hugo: Monday, Wednesday and Saturday for eight weeks, the long run
 on Saturday, a race in 40 days): what the onboarding proposes from a history. A fixture signs it in on request —
 POST /__preview/coaching/as/habit (and back: …/as/new) — so that no fourth server is needed.
@@ -206,14 +216,72 @@ async def lifespan(app):
                 base=260, race=("10 km de la Voie Verte", today + timedelta(days=33), 10.0, 45 * 60),
                 intent=cp.COURSE)
             await co.sync(db, road_plan, road, noon)
+            cards = await card_accounts(db, today, noon)
             await db.commit()
             ids = {"athlete": athlete.id, "coach": coach.id, "new": new.id, "habit": habit.id, "story": story.id,
-                   "road": road.id}
+                   "road": road.id, **cards}
             app.state.coaching_ids = ids
             app.state.user_id = ids[AS]
             app.state.coaching_feed = plan.feed_token
         app.state.coaching_day = today.isoformat()
         yield
+
+
+# 16 × 300 m at 5 m/s, jogged back at 2.7 m/s, between a warm-up and a cool-down: what a club's VMA evening records
+# when its laps are pressed at each effort
+CLUB_LAPS = ([{"distance": 2000, "moving_time": 720}] + [{"distance": 300, "moving_time": 60},
+                                                         {"distance": 200, "moving_time": 75}] * 16
+             + [{"distance": 1500, "moving_time": 540}])
+
+
+async def card_accounts(db, today, noon) -> dict:
+    """The three accounts of the run's card (see the module's docstring): their runs, their plans made on Monday (the
+    sessions of Monday to yesterday as the generator wrote them then), read again this morning."""
+    monday = cp.monday_of(today)
+    wed = monday + timedelta(days=2)
+    n = [900000]
+
+    def run(user, day, minutes, km, name, laps=None, hour=7):
+        n[0] += 1
+        return Activity(user_id=user.id, strava_activity_id=n[0], name=name, sport_type="Run",
+                        start_date=datetime.combine(day, time(hour), timezone.utc), distance=km * 1000,
+                        moving_time=minutes * 60, elapsed_time=minutes * 60 + 60, total_elevation_gain=40,
+                        average_speed=km * 1000 / (minutes * 60), average_heartrate=150, max_heartrate=184,
+                        raw_data={"utc_offset": 0}, laps=laps)
+
+    specs = {
+        "club": ("Marc", [1, 2, 4, 5, 6], 300,
+                 [(monday + timedelta(days=1), 52, 9.1, "Footing", None, 7), (wed, 95, 16.5, "VMA club", CLUB_LAPS, 19)]
+                 + [(wed - timedelta(weeks=w), 90 + w, 15.8, "VMA club", CLUB_LAPS, 19) for w in (1, 2, 3, 5, 6, 8)]
+                 + [(monday - timedelta(weeks=w) + timedelta(days=6), 100, 16.0, "Sortie longue", None, 9)
+                    for w in range(1, 9)]),
+        "dure": ("Inès", [1, 2, 3, 4, 5], 300,
+                 [(monday + timedelta(days=1), 47, 8.4, "Fractionné", None, 7), (wed, 95, 16.5, "Séance au stade", None, 19)]),
+        "tranquille": ("Jules", [1, 3, 4, 6], 200,
+                       [(monday + timedelta(days=1), 44, 7.6, "Footing", None, 7),
+                        (wed, 40, 6.6, "Footing avec Tom", None, 18), (today, 80, 12.4, "Sortie avec Tom", None, 7)]),
+    }
+    ids = {}
+    for key, (name, days, base, runs) in specs.items():
+        user = User(firstname=name, email=f"{key}@example.org", email_verified=True, timezone="UTC")
+        db.add(user)
+        await db.flush()
+        for day, minutes, km, title, laps, hour in runs:
+            db.add(run(user, day, minutes, km, title, laps, hour))
+        plan = await co.save_plan(db, user, co.Clock(noon - timedelta(days=today.weekday()), timezone.utc, monday),
+                                  route_id=None, days=days, long_day=max(days) if 6 not in days else 6, base=base)
+        for week in cp.build(co.inputs(plan, cp.Goal()), monday):
+            for s in week.sessions:
+                if monday <= s.day < today:
+                    db.add(CoachingSession(plan_id=plan.id, user_id=user.id, day=s.day, auto_day=s.day, kind=s.kind,
+                                           minutes=s.minutes, structure=s.structure))
+        await db.flush()
+        state = await co.sync(db, plan, user, noon)
+        for row in state.rows:  # the sessions done before yesterday have their ressenti
+            if row.status == co.DONE and row.day < wed:
+                row.ressenti = 3
+        ids[key] = user.id
+    return ids
 
 
 app = preview.app
