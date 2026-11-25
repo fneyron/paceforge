@@ -393,7 +393,7 @@ async def test_a_missed_session_is_reported_or_was_the_run_of_another_day(client
     # rate: an easy outing) and says so at the top, the ressenti asked there, once
     assert "Hors plan" not in r.text and "pf-coach-debrief is-" not in r.text
     assert (f"<b>Hier, tu as couru 38 min (5,7\u202fkm) au lieu du footing de {hm(tue.minutes)}\u00a0: comptée comme "
-            "une sortie tranquille ; rien d’autre ne change.</b>" in r.text) and tue.minutes > 38 / 0.8
+            "une sortie tranquille\u00a0; rien d’autre ne change.</b>" in r.text) and tue.minutes > 38 / 0.8
     # a missed session left on its day: « Reporter », to any day to come
     await client.post(f"/coaching/sessions/{tue.id}/status", data={"value": "missed"}, headers=HTMX)
     r = await client.get("/coaching/calendar?d=2026-11-18", headers=HTMX)
