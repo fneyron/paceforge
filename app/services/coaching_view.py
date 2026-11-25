@@ -539,7 +539,7 @@ def run_card(state: co.State, card: "runs_.Card") -> dict:
     run, today, a = card.run, state.clock.today, card.answer or {}
     km = f" ({viz.fr_num(run.km, 1).removesuffix(',0')}{NNBSP}km)" if run.km > 0 else ""
     head = f"{run_when(run.day, today)}, tu as couru {hm(run.minutes)}{km}"
-    what, case = a.get("what"), a.get("case") or card.case
+    what, case = str(a.get("what") or runs_.EASY), a.get("case") or card.case
     planned = (a.get("was") or (runs_.snapshot(card.row) if card.row is not None else None)) \
         if case in (runs_.MISFIT, runs_.MISSED, runs_.BRISK) else None
     report, recur = a.get("report") or {}, a.get("recur") or {}
@@ -576,7 +576,7 @@ def run_card(state: co.State, card: "runs_.Card") -> dict:
         offer = {"q": f"Tu cours tous les {plural} avec ton club{NBSP}?", "yes": f"Oui, tous les {plural}",
                  "no": "Non, juste cette fois"}
     holder = card.holder
-    out = None
+    out: dict | None = None
     if case in (runs_.MISFIT, runs_.BRISK) and card.row is not None:
         out = {"not": RUN_NOT}
     elif case == runs_.FREE:
@@ -585,7 +585,7 @@ def run_card(state: co.State, card: "runs_.Card") -> dict:
         out = {"attach": attach} if attach else None
     return {"run": run.id, "day": run.day.isoformat(), "title": _sentence(title),
             "said": (rp.fr(said) or said) if said else None, "offer": offer,
-            "flip": RUN_FLIP.get(str(what)), "out": out,
+            "flip": RUN_FLIP.get(what), "out": out,
             "row": holder.id if holder is not None and holder.status == co.DONE else None,
             "ressenti": holder.ressenti if holder is not None else None}
 
