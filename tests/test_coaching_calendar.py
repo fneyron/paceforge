@@ -255,7 +255,9 @@ async def test_a_link_opens_the_calendar_on_a_day_s_debrief(client, people, db_s
     athlete = people.athlete
     await _plan(client, db_session, athlete, days=("0", "2", "4"), base="180")
     clock.day = FRI
-    db_session.add_all([_run(athlete, MONDAY, 42, 1, name="Footing du lundi"), _run(athlete, WED, 50, 2)])
+    planned = {r.day: r.minutes for r in await _rows(db_session, athlete)}  # runs that look like their sessions
+    db_session.add_all([_run(athlete, MONDAY, planned[MONDAY] - 3, 1, name="Footing du lundi"),
+                        _run(athlete, WED, planned[WED] + 2, 2)])
     await db_session.flush()
     page = (await client.get("/coaching")).text
     main = _main(page)
@@ -387,7 +389,10 @@ async def test_a_missed_session_is_reported_or_was_the_run_of_another_day(client
                           headers=HTMX)
     await db_session.refresh(tue)
     assert (tue.day, tue.status, tue.done_minutes, tue.pinned) == (WED, "done", 38, True) and tue.activity_id
-    assert "Hors plan" not in r.text and "<b>Ta sortie d’hier est arrivée.</b> C’était comment" in r.text
+    # a 38-min run for a session of over 45 min: not plainly that session — the card asks what it was, once
+    assert "Hors plan" not in r.text and "C’était comment" not in r.text.split('id="coach-cal-h"')[0]
+    assert (f"<b>Hier, tu as couru 38 min (5,7\u202fkm) au lieu du footing de {hm(tue.minutes)}.</b> C’était quoi\u00a0?"
+            in r.text) and tue.minutes > 38 / 0.8
     # a missed session left on its day: « Reporter », to any day to come
     await client.post(f"/coaching/sessions/{tue.id}/status", data={"value": "missed"}, headers=HTMX)
     r = await client.get("/coaching/calendar?d=2026-11-18", headers=HTMX)
