@@ -691,12 +691,12 @@ def replaceable(row: CoachingSession, today: date) -> bool:
     """What a regeneration may rewrite: a generated session still to come that nobody edited, did or missed."""
     return (row.origin == "auto" and not row.pinned and row.status == PLANNED and row.day >= today
             and not row.form  # what a low morning lightened or moved stays (services/coaching.lighten)
-            and not marked(row))  # … and what a run declared « une séance dure » changed (coaching_runs)
+            and not marked(row))  # … and what a run read « une séance dure » changed (coaching_runs)
 
 
 def marked(row: CoachingSession) -> bool:
     """A session a run's answer changed (services/coaching_runs): eased, moved, postponed — kept as it is by every
-    later reading, until « Annuler »."""
+    later reading, until the reading is corrected."""
     return bool((row.structure or {}).get("why"))
 
 
@@ -742,10 +742,12 @@ class State:
     usual: str | None = None  # the moment they really train most often (their runs' start times)
 
 
-async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime | None = None) -> State:
+async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime | None = None, *,
+               settle: bool = True) -> State:
     """The plan brought up to date: the sessions matched with the runs, the missed ones marked, the adaptation read
-    again, the sessions to come regenerated (only those a regeneration may rewrite). Idempotent: a second call
-    writes nothing."""
+    again, the sessions to come regenerated (only those a regeneration may rewrite), then a run that is not the
+    planned session read and the plan updated by itself (services/coaching_runs.settle; the plan is then read once
+    more, as after any change). Idempotent: a second call writes nothing."""
     c = await clock(db, user, now)
     runs = await runs_of(db, user.id, c)
     # one reading at a time per plan (the page, the coach's, the daily round): the second waits, then sees what the
@@ -793,7 +795,13 @@ async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime |
     rows = sorted(rows, key=lambda r: (r.day, r.id or 0))
     match(rows, runs, c.today)  # a session made just now for today takes today's run at once
     await db.flush()
-    return State(plan, c, goal, rows, runs, weeks, inp, tuple(low), agenda, usual)
+    state = State(plan, c, goal, rows, runs, weeks, inp, tuple(low), agenda, usual)
+    if settle:
+        from app.services import coaching_runs
+
+        if await coaching_runs.settle(db, state, user):
+            return await sync(db, plan, user, c.now, settle=False)
+    return state
 
 
 # ── the form: Santé's index, for an athlete who turned the option on ────────

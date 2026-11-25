@@ -1,19 +1,28 @@
-"""Coaching: a recorded run that is not plainly the day's session (docs/coaching.md › « Les séances et les activités »).
+"""Coaching: a recorded run that is not the day's session (docs/coaching.md › « Une sortie qui n’est pas la séance
+prévue »).
 
 The owner, 25 Nov 2026: « je n'ai pas fait ma séance du jour mais une vma club je fais quoi il se passe quoi ? C'est
-recalculé automatiquement ? ». A card at the top of the athlete's page says what was understood, asks one thing, and
-says what the plan changed:
+recalculé automatiquement ? », then, on the card that asked: « simplifie encore ou alors ne fait pas en préventif pas
+d'actions utilisateurs quand tu vois que ce n'est pas la séance attendu car tu ne peux pas la rapprocher alors tu met
+à jour ». So nothing is asked: each reading of the plan (`coaching.sync`: the page, the follower's page, the daily
+round) reads such a run by itself and updates the plan, then the athlete's page says what it did.
 - which runs: within DEBRIEF_DAYS, from the plan's first day — a run linked to the day's session that does not look
-  like it (`coaching.misfit`), a run on a day whose session was ticked « Pas faite » by hand, a run on a day with no
-  session (« hors plan »); never the race, never a run already answered or said « Ce n’est pas cette séance »;
-- « Une séance dure »: the run becomes the day's hard session (`coaching_plan.declared_structure`) and one of the
-  week's quality sessions — the fixed session's rules for that week only (`coaching_plan.after_hard`): the changes
-  are written once, on the sessions the plan may change, each marked with why (`coaching.marked`: no later reading
-  rewrites them), and offered once « Tous les mercredis ? » when the athlete runs that weekday most weeks;
-- « Une sortie tranquille »: nothing is rebuilt; a quality session planned that day, not done, is offered once to
-  move to the first day the move rules allow (`coaching_plan.move_day`);
-- the answer is kept on the session that holds the run (`structure["answer"]`, with the state of every session it
-  changed before the change): « Annuler » puts everything back; a reading of the plan never applies it again.
+  like it (`coaching.misfit`), a run linked to an easy session whose duration fits but that reads as a hard session,
+  a run on a day whose session was ticked « Pas faite » by hand, a run on a day with no session (« hors plan »);
+  never the race, never a run already read or said « Ce n’est pas cette séance »;
+- the reading (`reading`): a hard session when its laps show repeated fast efforts, when its average heart rate
+  reaches the plan's « soutenu » zone, or when, on flat ground, its average speed reaches the plan's threshold pace;
+  else an easy outing (no data: the easy side, nothing rebuilt);
+- hard: the run becomes the day's hard session (`coaching_plan.declared_structure`) and one of the week's quality
+  sessions — the fixed session's rules for that week only (`coaching_plan.after_hard`): the changes are written once,
+  on the sessions the plan may change, each marked with why (`coaching.marked`: no later reading rewrites them), and
+  « Tous les mercredis ? » is offered once when the athlete runs that weekday most weeks;
+- easy: nothing is rebuilt; a quality session planned that day, not done, goes to the first day the move rules allow
+  (`coaching_plan.move_day`), or stays not done when none does; a run with no session that day stays « hors plan »
+  (its ways: held onto a session, « C’est ma séance de … »), its reading kept on a note (a cancelled row, `note`);
+- the reading is kept on the session that holds the run (`structure["answer"]`, with the state of every session it
+  changed before the change): a later reading never applies it again; the one correction link (« C’était une sortie
+  tranquille » / « C’était une séance dure ») puts everything back, then applies the other reading.
 The card is the athlete's: the person who follows the plan sees only the sessions and their lines. No AI.
 """
 from dataclasses import dataclass
@@ -25,19 +34,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.coaching import CoachingPlan, CoachingSession
 from app.models.user import User
 from app.services import coaching as co
+from app.services import coaching_pace as pace
 from app.services import coaching_plan as cp
 from app.services import coaching_start as cst
 from app.services import sante_training as st
 
-HARD, EASY, NOT = "dure", "facile", "pas_celle"  # the answers
-MISFIT, MISSED, FREE = "autrement", "pas_faite", "hors_plan"  # the cases
-ASK, YES, NO = "ask", "oui", "non"  # an offer's state
+HARD, EASY = "dure", "facile"  # the readings
+MISFIT, MISSED, FREE, BRISK = "autrement", "pas_faite", "hors_plan", "soutenue"  # the cases
+ASK, YES, NO, NONE = "ask", "oui", "non", "aucun"  # an offer's state (NONE: a postponement with no day)
+EASY_KINDS = (cp.FOOTING, cp.RECUP)  # the planned sessions a run may outdo in intensity at the same duration
 
 
 @dataclass
 class Card:
-    """One run to ask about, or answered and still shown (`answer`): its case, the session linked to it or ticked
-    « Pas faite » that day (`row`), and the session that holds the answer (`holder`)."""
+    """One run to read, or read and still said (`answer`): its case, the session linked to it or ticked « Pas faite »
+    that day (`row`), and the session that holds the reading (`holder`)."""
     run: st.Session
     case: str
     row: CoachingSession | None = None
@@ -60,13 +71,17 @@ def _answered(rows: list) -> set:
     return out
 
 
-def pending(state: co.State) -> list[Card]:
-    """The runs that wait for « C’était quoi ? », the most recent first."""
+def _since(state: co.State) -> date:
+    return max(state.clock.today - timedelta(days=co.DEBRIEF_DAYS), min(r.day for r in state.rows))
+
+
+def candidates(state: co.State) -> list[Card]:
+    """The runs a reading of the plan has to read, the most recent first."""
     today = state.clock.today
-    live = [r for r in state.rows if r.status != co.CANCELLED]
     if not state.rows:
         return []
-    since = max(today - timedelta(days=co.DEBRIEF_DAYS), min(r.day for r in state.rows))
+    live = [r for r in state.rows if r.status != co.CANCELLED]
+    since = _since(state)
     answered = _answered(state.rows)
     by_run = {r.activity_id: r for r in live if r.activity_id is not None}
     race_days = {r.day for r in live if r.kind == cp.RACE}
@@ -78,24 +93,49 @@ def pending(state: co.State) -> list[Card]:
         if row is not None:
             if co.misfit(row, run):
                 out.append(Card(run, MISFIT, row))
+            elif row.kind in EASY_KINDS and not cp.is_fixed(row.structure):
+                out.append(Card(run, BRISK, row))  # read: only a hard reading changes anything
             continue
         day = [r for r in live if r.day == run.day]
         missed = next((r for r in day if r.status == co.MISSED and r.manual), None)
         if missed is not None:
             out.append(Card(run, MISSED, missed))
-        elif not day:  # a day with a session done (a second run) or still to come is not asked about
+        elif not day:  # a day with a session done (a second run) or still to come is not read
             out.append(Card(run, FREE))
     return sorted(out, key=lambda c: (c.run.day, c.run.start), reverse=True)
 
 
-def shown(state: co.State) -> list[Card]:
-    """The cards answered and still open (until « Fermer » or the next visit), the most recent first."""
+def worth_saying(answer: dict) -> bool:
+    """A reading with something to say: a hard session (it counts for the week), a session changed or postponed, a
+    postponement with no day, a fixed session set, the one offer still open, a correction — or a run left outside
+    the plan (the notice is where its reading can be corrected: it has no ressenti to ask)."""
+    return bool(answer.get("what") == HARD or said_changes(answer) or (answer.get("report") or {}).get("state")
+                or (answer.get("recur") or {}).get("state") in (ASK, YES) or answer.get("corrected")
+                or answer.get("case") in (FREE, MISSED))
+
+
+def is_note(row: CoachingSession) -> bool:
+    """The note that keeps the reading of a run left outside the plan: a cancelled row, no run linked."""
+    a = answer_of(row)
+    return a is not None and row.status == co.CANCELLED and row.activity_id is None and a.get("case") == FREE
+
+
+def notices(state: co.State) -> list[Card]:
+    """The runs read whose notice the athlete's page shows, the most recent first: within DEBRIEF_DAYS, until
+    « Fermer », while it has something to say or the run still waits for its ressenti."""
+    if not state.rows:
+        return []
     runs = {run.id: run for run in state.runs}
+    since = state.clock.today - timedelta(days=co.DEBRIEF_DAYS)
     out = []
     for r in state.rows:
         a = answer_of(r)
-        if a is not None and a.get("open") and a.get("run") in runs:
-            out.append(Card(runs[a["run"]], a.get("case") or FREE, None, r, a))
+        run = runs.get((a or {}).get("run"))
+        if a is None or run is None or not a.get("open") or run.day < since:
+            continue
+        if worth_saying(a) or (r.status == co.DONE and r.ressenti is None):
+            row = next((x for x in state.rows if x.id == a.get("row")), None) if a.get("row") else None
+            out.append(Card(run, a.get("case") or FREE, row, r, a))
     return sorted(out, key=lambda c: (c.run.day, c.run.start), reverse=True)
 
 
@@ -103,21 +143,14 @@ def holder_of(state: co.State, run_id: int) -> CoachingSession | None:
     return next((r for r in state.rows if (answer_of(r) or {}).get("run") == run_id), None)
 
 
-def close_all(rows: list, keep: int | None = None) -> bool:
-    """The next visit: the cards answered are closed (but the one a page without JavaScript was sent back to show)."""
-    changed = False
-    for r in rows:
-        a = answer_of(r)
-        if a is not None and a.get("open") and a.get("run") != keep:
-            _set_answer(r, {**a, "open": False})
-            changed = True
-    return changed
-
-
-# ── the laps' hint ──────────────────────────────────────────────────────────
+# ── the reading: the plan's own definitions of intensity ────────────────────
 FAST_LAP = 1.2  # choix pratique: a lap 20 % faster than the run's typical lap (the median of its laps' speeds)…
-FAST_LAPS = 3  # …three times or more, each time after slower laps: « On dirait des intervalles. » — a hint, never a choice made for the athlete
+FAST_LAPS = 3  # …three times or more, each time after slower laps: repeated fast efforts
 LAP_MIN = (100, 20)  # choix pratique: laps shorter than 100 m or 20 s (a stop, a lap pressed twice) are left out
+HR_LEVEL = 3  # the plan's « soutenu » efforts: their heart-rate zone (coaching_plan.HR_ZONES[3]: zone 4)
+# choix pratique: the pace says something only on flat ground — at most 10 m of climb per km (1 % on average); a
+# hillier run is read by its laps and its heart rate only (the plan gives no pace on a climb either)
+FLAT_CLIMB = 10.0
 
 
 def looks_like_intervals(laps) -> bool:
@@ -144,14 +177,118 @@ def looks_like_intervals(laps) -> bool:
     return blocks >= FAST_LAPS and not all(fast)
 
 
-async def lap_hints(db: AsyncSession, run_ids: list[int]) -> set[int]:
-    """The runs among `run_ids` whose laps look like intervals (one read)."""
+def hr_floor(hr_max: float | None) -> int | None:
+    """The lowest heart rate of the zone the plan gives its « soutenu » efforts (the app's own zones,
+    heart_rate_zones, from a known maximum), else None."""
+    from app.services.heart_rate_zones import running_zones
+
+    if not hr_max:
+        return None
+    zones = running_zones(hr_max)
+    if not zones.get("ready"):
+        return None
+    return int(zones["rows"][cp.HR_ZONES[HR_LEVEL][0] - 1]["low"])
+
+
+def reading(*, laps=None, hr: float | None = None, hr_max: float | None = None, speed: float | None = None,
+            km: float = 0.0, dplus: float | None = None, cs: float | None = None) -> tuple[str, str | None]:
+    """A run read as « une séance dure » or « une sortie tranquille », and the criterion that decided (« tours »,
+    « cardio », « allure », None for an easy outing):
+    - its laps show repeated fast efforts (`looks_like_intervals`);
+    - its average heart rate reaches the « soutenu » zone (`hr_floor`, from the athlete's known maximum);
+    - on flat ground (FLAT_CLIMB), its average speed reaches the threshold pace (the lower bound of
+      coaching_pace.THRESHOLD × the athlete's critical speed).
+    Without laps, heart rate or a usable pace: an easy outing — nothing is rebuilt, the conservative side."""
+    if looks_like_intervals(laps):
+        return HARD, "tours"
+    floor = hr_floor(hr_max)
+    if hr and floor and hr >= floor:
+        return HARD, "cardio"
+    if speed and cs and km and km > 0 and (dplus or 0) / km <= FLAT_CLIMB and speed >= pace.THRESHOLD[0] * cs:
+        return HARD, "allure"
+    return EASY, None
+
+
+def _speed(run) -> float | None:
+    if run.speed:
+        return float(run.speed)
+    return run.km * 1000 / (run.minutes * 60) if run.km and run.minutes else None
+
+
+async def _hr_max(db: AsyncSession, user: User, c: co.Clock) -> float | None:
+    """The athlete's known maximum, the reference the page's heart-rate ranges read (a confirmed value, else one the
+    runs corroborate)."""
+    try:
+        from app.services import heart_rate_reference
+
+        return (await heart_rate_reference.for_athlete(db, user.id, c.today, zone=c.zone))["reference"]
+    except Exception:
+        co.logger.exception("Coaching: the heart-rate reference failed for user %d", user.id)
+        return user.max_heart_rate
+
+
+async def _cs(db: AsyncSession, user: User, c: co.Clock) -> float | None:
+    """The athlete's critical speed, the one the page's paces read; None when the runs do not give one."""
+    try:
+        critical = await pace.for_athlete(db, user.id, c.today)
+    except Exception:
+        co.logger.exception("Coaching: the critical speed failed for user %d", user.id)
+        return None
+    return critical.cs if critical is not None else None
+
+
+async def facts(db: AsyncSession, state: co.State, user: User, runs: list) -> dict[int, dict]:
+    """What `reading` reads of each run: its laps (one query), its average heart rate with the athlete's maximum,
+    its speed, distance and climb with the critical speed — the maximum and the critical speed read only when a run
+    still needs them."""
     from app.models.activity import Activity
 
-    if not run_ids:
-        return set()
-    rows = (await db.execute(select(Activity.id, Activity.laps).where(Activity.id.in_(run_ids)))).all()
-    return {i for i, laps in rows if looks_like_intervals(laps)}
+    if not runs:
+        return {}
+    ids = [run.id for run in runs]
+    laps = {i: v for i, v in (await db.execute(select(Activity.id, Activity.laps).where(Activity.id.in_(ids)))).all()}
+    out = {run.id: {"laps": laps.get(run.id), "hr": run.hr, "speed": _speed(run), "km": run.km, "dplus": run.dplus}
+           for run in runs}
+    left = [i for i, f in out.items() if not looks_like_intervals(f["laps"])]
+    if any(out[i]["hr"] for i in left):
+        hr_max = await _hr_max(db, user, state.clock)
+        for i in out:
+            out[i]["hr_max"] = hr_max
+        left = [i for i in left if reading(**out[i])[0] == EASY]
+    if any(out[i]["speed"] for i in left):
+        cs = await _cs(db, user, state.clock)
+        for i in out:
+            out[i]["cs"] = cs
+    return out
+
+
+async def settle(db: AsyncSession, state: co.State, user: User) -> bool:
+    """Every run of `candidates` read and applied, the oldest first (each week's rules see what came before): a hard
+    session as « Une séance dure » did, an easy one as « Une sortie tranquille » did, the postponement included. Called
+    by every reading of the plan (coaching.sync); idempotent — a run read is never read again. True when something
+    was written."""
+    linked = {r.activity_id for r in state.rows if r.activity_id is not None and r.status != co.CANCELLED}
+    stale = [r for r in state.rows if is_note(r) and (answer_of(r) or {}).get("run") in linked]
+    for r in stale:  # a run outside the plan since linked to a session (held onto it, « C’est ma séance de … »)
+        state.rows.remove(r)
+        await db.delete(r)
+    cards = candidates(state)
+    if not cards:
+        if stale:
+            await db.flush()
+        return bool(stale)
+    known = await facts(db, state, user, [c.run for c in cards])
+    seen: set[int] = set()
+    while True:
+        left = [c for c in candidates(state) if c.run.id not in seen and c.run.id in known]
+        if not left:
+            break
+        card = min(left, key=lambda c: (c.run.day, c.run.start))
+        seen.add(card.run.id)
+        value, _why = reading(**known[card.run.id])
+        await apply(db, state, user, card, value)
+    await db.flush()
+    return True
 
 
 # ── the state a change starts from, and back ────────────────────────────────
@@ -198,7 +335,7 @@ def _new_row(db: AsyncSession, plan: CoachingPlan, rows: list, day: date, kind: 
 
 def _run_row(db: AsyncSession, plan: CoachingPlan, rows: list, run, kind: str, structure: dict,
              now: datetime) -> CoachingSession:
-    """The session a run outside the plan becomes once answered: done, linked, the athlete's. It holds the day the
+    """The session a run outside the plan becomes once read: done, linked, the athlete's. It holds the day the
     generator would fill only when no session holds it already (a session made for today would sit beside it)."""
     minutes = int(round(run.minutes))
     held = any(r.auto_day == run.day for r in rows)
@@ -206,6 +343,13 @@ def _run_row(db: AsyncSession, plan: CoachingPlan, rows: list, run, kind: str, s
                    done_minutes=minutes, origin="athlete", pinned=True)
     row.auto_day = None if held else run.day
     return row
+
+
+def _note_row(db: AsyncSession, plan: CoachingPlan, rows: list, run, now: datetime) -> CoachingSession:
+    """The note a run left outside the plan keeps its reading on: a cancelled row (no calendar, no board, no feed, no
+    regeneration reads it), on the run's day."""
+    return _new_row(db, plan, rows, run.day, cp.FOOTING, max(1, int(round(run.minutes))), {}, now,
+                    status=co.CANCELLED, origin="athlete", pinned=True)
 
 
 def _held(state: co.State, holder: CoachingSession) -> list[cp.Held]:
@@ -226,7 +370,7 @@ def week_count(state: co.State, day: date) -> int | None:
 
 
 async def _apply(db: AsyncSession, state: co.State, changes: list[cp.Change], decl: date) -> list[dict]:
-    """The changes written on the sessions, each marked with why; returns what « Annuler » reads: every session
+    """The changes written on the sessions, each marked with why; returns what the correction reads: every session
     touched, its state before (`was`) and after (`now`), a session made here (`new`), and what the card says."""
     now, rows = state.clock.now, state.rows
     by_id = {r.id: r for r in rows}
@@ -259,7 +403,7 @@ async def _apply(db: AsyncSession, state: co.State, changes: list[cp.Change], de
                 for r in (row, there):
                     r.slot_min, r.slot_chosen, r.slot_flag = None, False, None
                     co.touch(r, now)
-            else:  # an empty day: the session goes there, its own day stays free (kept, cancelled, until « Annuler »)
+            else:  # an empty day: the session goes there, its own day stays free (kept, cancelled, until corrected)
                 new = _new_row(db, state.plan, rows, to, content[0], content[1], _why(content[2], moved), now)
                 await db.flush()
                 records[new.id] = {"id": new.id, "new": True}
@@ -272,10 +416,6 @@ async def _apply(db: AsyncSession, state: co.State, changes: list[cp.Change], de
     for rec in records.values():
         out.append({**rec, "now": _now(next(r for r in rows if r.id == rec["id"]))})
     return out + ([{"said": said}] if said else [])
-
-
-def _said(answer: dict) -> list[dict]:
-    return [x for rec in answer.get("changes") or [] for x in rec.get("said", [])]
 
 
 async def _revert(db: AsyncSession, state: co.State, records: list[dict]) -> None:
@@ -294,14 +434,7 @@ async def _revert(db: AsyncSession, state: co.State, records: list[dict]) -> Non
     await db.flush()
 
 
-# ── the answers ─────────────────────────────────────────────────────────────
-
-def _card(state: co.State, run_id: int) -> Card:
-    card = next((c for c in pending(state) if c.run.id == run_id), None)
-    if card is None:
-        raise co.Invalid("Cette sortie n’attend plus de réponse.")
-    return card
-
+# ── the readings applied ────────────────────────────────────────────────────
 
 def report_day(state: co.State, row: CoachingSession, origin: date) -> date | None:
     """Where a quality session planned on `origin` and not done may go: the first day from tomorrow (from today for
@@ -318,24 +451,21 @@ def _quality(row: CoachingSession | None) -> bool:
             and not cp.is_declared(row.structure))
 
 
-async def answer(db: AsyncSession, state: co.State, user: User, run_id: int, value: str) -> None:
-    """« C’était quoi ? » answered: « Une séance dure », « Une sortie tranquille », or « Ce n’est pas cette séance »."""
-    card = _card(state, run_id)
+async def apply(db: AsyncSession, state: co.State, user: User, card: Card, value: str, *,
+                corrected: bool = False) -> None:
+    """A run read (`value`: HARD or EASY) and the plan updated as that reading says. An easy run on an easy
+    session whose duration fits (BRISK) changes nothing: it is kept as read, the day's debrief asks its ressenti."""
     if value == HARD:
-        await _hard(db, state, card)
-    elif value == EASY:
-        await _easy(db, state, card)
-    elif value == NOT and card.row is not None:
-        if card.case == MISFIT:
-            co.set_missed(card.row, state.clock.today)
-        else:
-            card.row.structure = {**(card.row.structure or {}), "not": sorted(co.not_runs(card.row) | {run_id})}
+        await _hard(db, state, card, corrected)
+    elif card.case == BRISK and not corrected and card.row is not None:
+        _set_answer(card.row, {"run": card.run.id, "what": EASY, "case": BRISK, "row": card.row.id, "open": False,
+                               "was": None, "created": False, "changes": []})
     else:
-        raise co.Invalid("Réponse inconnue.")
+        await _easy(db, state, card, corrected)
     await db.flush()
 
 
-async def _hard(db: AsyncSession, state: co.State, card: Card) -> None:
+async def _hard(db: AsyncSession, state: co.State, card: Card, corrected: bool) -> None:
     run, plan, now = card.run, state.plan, state.clock.now
     minutes = int(round(run.minutes))
     structure = cp.declared_structure(minutes)
@@ -359,55 +489,43 @@ async def _hard(db: AsyncSession, state: co.State, card: Card) -> None:
             recur = {"day": fixed.day, "minutes": fixed.minutes, "state": ASK}
         except co.Invalid:
             recur = None  # its long run's day, or a seventh day: not offered (« Ma séance fixe » would refuse it)
-    _set_answer(holder, {"run": run.id, "what": HARD, "case": card.case, "open": True, "was": was,
-                         "created": created, "changes": records, "recur": recur})
+    _set_answer(holder, {"run": run.id, "what": HARD, "case": card.case, "row": card.row.id if card.row else None,
+                         "open": True, "corrected": corrected, "was": was, "created": created, "changes": records,
+                         "recur": recur})
 
 
-async def _easy(db: AsyncSession, state: co.State, card: Card) -> None:
+async def _easy(db: AsyncSession, state: co.State, card: Card, corrected: bool) -> None:
     run, plan, now = card.run, state.plan, state.clock.now
-    offer = None
-    if card.case == MISFIT and card.row is not None:  # the run stays the day's session (the day's run is the
-        holder, was, created = card.row, snapshot(card.row), False  # day's load): nothing rebuilt
-    else:
-        minutes = int(round(run.minutes))
-        holder = _run_row(db, plan, state.rows, run, cp.FOOTING, cp.steady(minutes, 2), now)
-        was, created = None, True
-    await db.flush()
     planned = card.row
-    if _quality(planned) and planned is not None:
+    if planned is not None:  # linked: the run stays the day's session (the day's run is the day's load); ticked
+        holder, was, created = planned, snapshot(planned), False  # « Pas faite »: it keeps the reading
+    else:  # no session that day: the run stays « hors plan », its reading on a note
+        holder, was, created = _note_row(db, plan, state.rows, run, now), None, True
+    await db.flush()
+    answer = {"run": run.id, "what": EASY, "case": card.case, "row": planned.id if planned else None, "open": True,
+              "corrected": corrected, "was": was, "created": created, "changes": [], "report": None}
+    if card.case in (MISFIT, MISSED) and _quality(planned) and planned is not None:
         to = report_day(state, planned, run.day)
+        answer["report"] = {"id": planned.id, "state": NONE}
         if to is not None:
-            offer = {"id": planned.id, "to": to.isoformat(), "state": ASK}
-    _set_answer(holder, {"run": run.id, "what": EASY, "case": card.case, "open": True, "was": was,
-                         "created": created, "changes": [], "report": offer})
+            answer["report"] = {"id": planned.id, "to": to.isoformat(), "state": YES}
+            answer["changes"] = await _postpone(db, state, planned, to)
+    _set_answer(holder, answer)
 
 
-async def report(db: AsyncSession, state: co.State, run_id: int, yes: bool) -> None:
-    """« Reporter ta séance à vendredi ? »: once, one tap. Yes: the quality session goes to that day (an easy
-    session there gives it its place) and the run stays the day's easy session."""
-    holder = holder_of(state, run_id)
-    a = answer_of(holder) if holder is not None else None
-    offer = (a or {}).get("report")
-    if holder is None or a is None or not offer or offer.get("state") != ASK:
-        raise co.Invalid("Rien à reporter.")
-    if not yes:
-        _set_answer(holder, {**a, "report": {**offer, "state": NO}})
-        return
-    row = next((r for r in state.rows if r.id == offer["id"]), None)
-    to = report_day(state, row, row.day) if row is not None else None
-    if row is None or to is None:
-        raise co.Invalid("Plus de jour libre pour cette séance cette semaine.")
+async def _postpone(db: AsyncSession, state: co.State, row: CoachingSession, to: date) -> list[dict]:
+    """The quality session not done goes to `to` (an easy session there gives it its place); the run stays the day's
+    easy session. Returns the records the correction reads."""
     now, by_day = state.clock.now, [r for r in state.rows if r.day == to and r.status == co.PLANNED]
     content = (row.kind, row.minutes, {k: v for k, v in (row.structure or {}).items()
                                        if k not in ("answer", "why", "not")})
     why = {"what": "postponed", "from": row.day.isoformat(), "to": to.isoformat()}
     records: dict[int, dict] = {}
-    if row is holder:  # the run kept the session: it becomes the day's easy run, the session goes
+    if row.status == co.DONE:  # the run kept the session: it becomes the day's easy run, the session goes
         records[row.id] = {"id": row.id, "was": snapshot(row)}
         minutes = int(round(row.done_minutes or row.minutes))
-        row.kind, row.minutes = cp.FOOTING, minutes
-        row.structure = {**cp.steady(minutes, 2), "answer": a}
-    else:  # ticked « Pas faite »: it leaves its day (kept, cancelled, until « Annuler »)
+        row.kind, row.minutes, row.structure = cp.FOOTING, minutes, cp.steady(minutes, 2)
+    else:  # ticked « Pas faite »: it leaves its day (kept, cancelled, until corrected)
         records[row.id] = {"id": row.id, "was": snapshot(row)}
         row.status, row.structure = co.CANCELLED, _why(row.structure, {"what": "gone", "to": to.isoformat()})
     co.touch(row, now)
@@ -423,39 +541,12 @@ async def report(db: AsyncSession, state: co.State, run_id: int, yes: bool) -> N
         records[new.id] = {"id": new.id, "new": True}
     await db.flush()
     out = [{**rec, "now": _now(next(r for r in state.rows if r.id == rec["id"]))} for rec in records.values()]
-    a = answer_of(holder) or a
-    _set_answer(holder, {**a, "report": {**offer, "state": YES},
-                         "changes": out + [{"said": [{"what": "postponed", "day": why["from"], "to": why["to"]}]}]})
+    return out + [{"said": [{"what": "postponed", "day": why["from"], "to": why["to"]}]}]
 
 
-async def recur(db: AsyncSession, state: co.State, user: User, run_id: int, yes: bool) -> None:
-    """« Tu cours tous les mercredis avec ton club ? »: once. « Oui, tous les mercredis »: « Ma séance fixe » on that
-    weekday at the run's duration (coaching.set_fixed and its checks: the plan written again around it, as the
-    option does — this week's changes are put back first, the fixed session's rules take this week too). « Non,
-    juste cette fois »: never asked again for that weekday."""
-    holder = holder_of(state, run_id)
-    a = answer_of(holder) if holder is not None else None
-    offer = (a or {}).get("recur")
-    if holder is None or a is None or not offer or offer.get("state") != ASK:
-        raise co.Invalid("Plus de question en attente.")
-    plan = state.plan
-    if not yes:
-        plan.fixed = {**(plan.fixed or {}), "declined": sorted(set(co.declined_days(plan)) | {int(offer["day"])})}
-        _set_answer(holder, {**a, "recur": {**offer, "state": NO}})
-        return
-    fixed = co.clean_fixed(offer["day"], offer["minutes"], None, plan.weekdays, plan.long_day)
-    await _revert(db, state, [r for r in a.get("changes") or [] if "id" in r])
-    _set_answer(holder, {**a, "changes": [], "recur": {**offer, "state": YES, "was": plan.fixed}})
-    await co.set_fixed(db, plan, user, fixed)
-
-
-async def undo(db: AsyncSession, state: co.State, user: User, run_id: int) -> None:
-    """« Annuler »: the sessions the answer changed, the session that holds the run (its kind, its link) and a fixed
-    session set by « Oui, tous les mercredis », back as they were; the card asks again."""
-    holder = holder_of(state, run_id)
-    a = answer_of(holder) if holder is not None else None
-    if holder is None or a is None:
-        raise co.Invalid("Rien à annuler.")
+async def _undo(db: AsyncSession, state: co.State, holder: CoachingSession, a: dict) -> None:
+    """A reading taken back: the sessions it changed, the session that holds the run (its kind, its link) and a
+    fixed session set by « Oui, tous les mercredis », back as they were."""
     await _revert(db, state, [r for r in a.get("changes") or [] if "id" in r])
     if (a.get("recur") or {}).get("state") == YES:
         kept = (a["recur"].get("was") or {})
@@ -472,8 +563,79 @@ async def undo(db: AsyncSession, state: co.State, user: User, run_id: int) -> No
     await db.flush()
 
 
+def _read(state: co.State, run_id: int) -> tuple[CoachingSession, dict, Card]:
+    holder = holder_of(state, run_id)
+    a = answer_of(holder) if holder is not None else None
+    run = next((s for s in state.runs if s.id == run_id), None)
+    if holder is None or a is None or run is None:
+        raise co.Invalid("Cette sortie n’a pas été lue.")
+    row = next((r for r in state.rows if r.id == a.get("row")), None) if a.get("row") else None
+    return holder, a, Card(run, a.get("case") or FREE, row, holder, a)
+
+
+async def correct(db: AsyncSession, state: co.State, user: User, run_id: int) -> None:
+    """« C’était une sortie tranquille » / « C’était une séance dure »: the reading flipped — what the first one
+    changed put back, then the other one applied; the ressenti already said stays."""
+    holder, a, card = _read(state, run_id)
+    feel = holder.ressenti
+    await _undo(db, state, holder, a)
+    if card.row is not None:  # the session as the run found it (restored above when it held the reading)
+        card = Card(card.run, card.case, card.row)
+    else:
+        card = Card(card.run, card.case)
+    await apply(db, state, user, card, EASY if a.get("what") == HARD else HARD, corrected=True)
+    now_holder = holder_of(state, run_id)
+    if feel is not None and now_holder is not None and now_holder.status == co.DONE:
+        now_holder.ressenti = feel
+    await db.flush()
+
+
+async def not_this(db: AsyncSession, state: co.State, run_id: int) -> None:
+    """« Ce n’est pas cette séance »: the reading taken back; the session « Pas faite », the run outside the plan,
+    never read again."""
+    holder, a, card = _read(state, run_id)
+    if card.row is None or card.case not in (MISFIT, BRISK):
+        raise co.Invalid("Cette sortie n’est liée à aucune séance.")
+    await _undo(db, state, holder, a)
+    co.set_missed(card.row, state.clock.today)
+    await db.flush()
+
+
+async def attach(db: AsyncSession, state: co.State, run_id: int, session_id: int) -> None:
+    """« C’est ma séance de mardi » (a run on a day with no session): the reading taken back, that session moved to
+    the run's day — the next reading links them."""
+    holder, a, card = _read(state, run_id)
+    row = next((r for r in state.rows if r.id == session_id), None)
+    if card.case != FREE or row is None:
+        raise co.Invalid("Cette séance ne se déplace pas.")
+    await _undo(db, state, holder, a)
+    co.move(state.rows, row, card.run.day, state.clock.today, state.clock.now, "athlete", free={card.run.day})
+    await db.flush()
+
+
+async def recur(db: AsyncSession, state: co.State, user: User, run_id: int, yes: bool) -> None:
+    """« Tu cours tous les mercredis avec ton club ? »: once, never required. « Oui, tous les mercredis »: « Ma séance
+    fixe » on that weekday at the run's duration (coaching.set_fixed and its checks: the plan written again around
+    it, as the option does — this week's changes are put back first, the fixed session's rules take this week too).
+    « Non, juste cette fois »: never asked again for that weekday."""
+    holder = holder_of(state, run_id)
+    a = answer_of(holder) if holder is not None else None
+    offer = (a or {}).get("recur")
+    if holder is None or a is None or not offer or offer.get("state") != ASK:
+        raise co.Invalid("Plus de question en attente.")
+    plan = state.plan
+    if not yes:
+        plan.fixed = {**(plan.fixed or {}), "declined": sorted(set(co.declined_days(plan)) | {int(offer["day"])})}
+        _set_answer(holder, {**a, "recur": {**offer, "state": NO}})
+        return
+    fixed = co.clean_fixed(offer["day"], offer["minutes"], None, plan.weekdays, plan.long_day)
+    await _revert(db, state, [r for r in a.get("changes") or [] if "id" in r])
+    _set_answer(holder, {**a, "changes": [], "recur": {**offer, "state": YES, "was": plan.fixed}})
+    await co.set_fixed(db, plan, user, fixed)
+
+
 def close(state: co.State, run_id: int) -> None:
-    """« Fermer »: the card answered goes."""
+    """« Fermer »: the notice goes (the plan stays as it is)."""
     holder = holder_of(state, run_id)
     a = answer_of(holder) if holder is not None else None
     if holder is not None and a is not None:
@@ -482,4 +644,4 @@ def close(state: co.State, run_id: int) -> None:
 
 def said_changes(answer: dict) -> list[dict]:
     """What the card says changed, in order."""
-    return _said(answer)
+    return [x for rec in answer.get("changes") or [] for x in rec.get("said", [])]
