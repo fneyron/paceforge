@@ -1674,8 +1674,14 @@ async function sheet(page) {
         const page = await open(browser, { width: 393 });
         await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
         await page.locator('#coach-run-r-5').focus();
+        // after the ressenti: the optional « Tous les mercredis ? » (its two quiet buttons), then the correction
         await page.keyboard.press('Tab');
-        assert.equal(await focused(page), 'coach-run-flip', 'Tab: after the ressenti, the correction');
+        assert.equal(await focused(page), 'coach-run-yes', 'Tab: after the ressenti, the optional question');
+        assert.equal(await page.locator('#coach-run-yes').evaluate(el => el.classList.contains('pf-btn-primary')), false, 'nothing in the notice looks required');
+        await page.keyboard.press('Tab');
+        assert.equal(await focused(page), 'coach-run-no');
+        await page.keyboard.press('Tab');
+        assert.equal(await focused(page), 'coach-run-flip', 'Tab: then the correction');
         await swap(page, () => page.keyboard.press('Enter'));
         assert.equal(await focused(page), 'coach-run-h', 'Enter: the focus on the notice');
         assert.equal(await title(page), EASY);
