@@ -7,9 +7,9 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, time, timedelta, timezone
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
-from tests.browser import preview_app as preview
+from tests.browser import laps_fixture, preview_app as preview
 from app.models.activity import Activity
 
 
@@ -52,7 +52,24 @@ async def lifespan(app):
                         average_speed=distance / duration if distance else None,
                         raw_data={"utc_offset": 0},
                     ))
+                # three sessions with laps (their page draws « Intervalles »): a club track session, a 30/30 of
+                # 240 laps, a ride with power
+                for k, (age, sport, name, laps) in enumerate((
+                        (8, "Run", "Piste · 2 × (8 × 300 m)", laps_fixture.track_session()),
+                        (9, "Run", "30/30 sur piste", laps_fixture.thirty_thirty()),
+                        (10, "Ride", "Vélo · 2 × 10 min au seuil", laps_fixture.ride()))):
+                    distance, duration = laps_fixture.totals(laps)
+                    db.add(Activity(
+                        user_id=app.state.user_id, strava_activity_id=990000 + k, name=name, sport_type=sport,
+                        start_date=datetime.combine(today - timedelta(days=age), time(18), timezone.utc),
+                        distance=distance, moving_time=duration, elapsed_time=duration + 120,
+                        total_elevation_gain=10, average_heartrate=150, max_heartrate=181,
+                        average_speed=distance / duration, laps=laps, raw_data={"utc_offset": 0},
+                    ))
             await db.commit()
+            ids = dict((await db.execute(select(Activity.strava_activity_id, Activity.id)
+                                         .where(Activity.strava_activity_id >= 990000))).all())
+        app.state.laps_ids = {"track": ids.get(990000), "many": ids.get(990001), "ride": ids.get(990002)}
         app.state.activities_preview_day = today.isoformat()
         yield
 
@@ -63,4 +80,5 @@ app.router.lifespan_context = lifespan
 
 @app.get("/__preview/activities")
 async def fixture():
-    return {"synthetic": True, "scenario": SCENARIO, "day": app.state.activities_preview_day}
+    return {"synthetic": True, "scenario": SCENARIO, "day": app.state.activities_preview_day,
+            "laps": app.state.laps_ids}

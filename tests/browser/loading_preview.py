@@ -18,7 +18,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, event
-from tests.browser import preview_app as preview
+from tests.browser import laps_fixture, preview_app as preview
 from app.models.activity import Activity
 from app.models.health import HealthMetric
 from app.models.user import User
@@ -153,7 +153,18 @@ async def lifespan(app):
                         )
                     )
                     COUNTS["activities"] += 1
+            # a club track session with its laps: its page draws « Intervalles » (chart-readouts.cjs)
+            laps = laps_fixture.track_session()
+            distance, duration = laps_fixture.totals(laps)
+            track = Activity(user_id=user.id, strava_activity_id=990000, name="Piste · 2 × (8 × 300 m)",
+                             sport_type="Run", start_date=now.replace(hour=18, minute=0, second=0, microsecond=0)
+                             - timedelta(days=8), distance=distance, moving_time=duration,
+                             elapsed_time=duration + 120, average_heartrate=150, average_speed=distance / duration,
+                             max_heartrate=181, total_elevation_gain=10, raw_data={"utc_offset": 7200}, laps=laps)
+            db.add(track)
+            COUNTS["activities"] += 1
             await db.commit()
+            COUNTS["laps_activity"] = track.id
         SQL.clear()
         yield
 
