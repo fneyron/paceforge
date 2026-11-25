@@ -9,6 +9,10 @@ const output = process.env.PF_PREVIEW_OUTPUT || '/tmp';
 assert.ok(['127.0.0.1', 'localhost'].includes(new URL(base).hostname), 'Use a local synthetic fixture');
 (async () => {
   fs.mkdirSync(output, { recursive: true });
+  const fixture = await (await fetch(base + '/__preview/performance')).json();
+  assert.equal(fixture.synthetic, true);
+  assert.ok(fixture.laps_activity, 'The fixture has a session with laps');
+  const lapsPath = '/activity/' + fixture.laps_activity;
   const browser = await chromium.launch({ headless: true });
   const measurements = [];
   try {
@@ -16,7 +20,7 @@ assert.ok(['127.0.0.1', 'localhost'].includes(new URL(base).hostname), 'Use a lo
       const page = await browser.newPage({ viewport: { width, height: 700 }, isMobile: true, hasTouch: true });
       await page.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; });
       await page.addInitScript(coachingTab);
-      for (const path of ['/sante?r=90', '/activities']) {
+      for (const path of ['/sante?r=90', '/activities', lapsPath]) {
         await page.goto(base + path, { waitUntil: 'networkidle' });
         await page.evaluate(scale => {
           document.documentElement.style.fontSize = 16 * scale + 'px';
@@ -47,6 +51,7 @@ assert.ok(['127.0.0.1', 'localhost'].includes(new URL(base).hostname), 'Use a lo
         // readout of its own to reserve there, Activités keeps the step-and-reserve ones (the re-audit of
         // 2026-10-31 found the cards' plot can still move at 200 % text: reported, not covered here)
         if (path === '/activities') assert.ok(figures.length, `${path} ${width}px ${scale}x: no sized readouts checked`);
+        else if (path === lapsPath) assert.deepEqual(figures.map(f => f.key), ['intervalles'], `${path} ${width}px ${scale}x: the laps' chart`);
         else assert.ok(await page.locator('figure[data-viz].pf-viz-quiet').count(), `${path} ${width}px ${scale}x: no Santé card`);
         for (const fig of figures) {
           assert.ok(fig.plot_movement_px <= 1, `${path} ${width}px ${scale}x ${fig.key}: chart moved ${fig.plot_movement_px}px while selecting`);
@@ -54,11 +59,11 @@ assert.ok(['127.0.0.1', 'localhost'].includes(new URL(base).hostname), 'Use a lo
         }
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Horizontal overflow');
         measurements.push({ path, width, scale, figures });
-        if (scale === 2) await page.screenshot({ path: `${output}/chart-readouts-${path.startsWith('/sante') ? 'health' : 'activities'}-${width}-2x.png` });
+        if (scale === 2) await page.screenshot({ path: `${output}/chart-readouts-${path.startsWith('/sante') ? 'health' : path === lapsPath ? 'laps' : 'activities'}-${width}-2x.png` });
       }
       await page.close();
     }
     fs.writeFileSync(output + '/chart-readouts-verification.json', JSON.stringify({ synthetic: true, measurements }, null, 2));
-    console.log('Chart readouts: 320/393px, 100/200% text, every selection, stable plot position passed.');
+    console.log('Chart readouts (Santé, Activités, an activity\'s laps): 320/393px, 100/200% text, every selection, stable plot position passed.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
