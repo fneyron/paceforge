@@ -3,6 +3,7 @@
 {% block title %}{{ activity.name }} — PaceForge{% endblock %}
 
 {% block head %}<script defer src="/static/vendor/alpine-3.14.8.min.js?v={{ request.app.state.build_id }}"></script>{% endblock %}
+{% import "partials/_viz.html" as vz %}
 
 {% block content %}
 <div class="space-y-6">
@@ -96,7 +97,7 @@
 
     <!-- Laps -->
     {% set is_cycling = activity.sport_group == 'bike' %}
-    {% set show_laps = activity.laps and activity.laps|length > 2 and activity.laps|length != (activity.distance / 1000)|round|int %}
+    {#- show_laps: more than two laps, unless one per km (the watch's auto-laps): activity.py -#}
     {% if show_laps %}
     <div class="rounded-xl border border-gray-200 bg-white shadow-sm" x-data="{ open: true }">
         <button @click="open = !open" class="w-full flex items-center justify-between p-5">
@@ -104,6 +105,9 @@
             <svg width="16" height="16" class="w-4 h-4 text-gray-400 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
         </button>
         <div x-show="open" x-transition class="px-5 pb-5">
+        {#- the session drawn (activity_laps.py): one bar per lap, its width its time, its height its pace (on a bike
+            its power, else its speed); a tap, a drag or the arrows read a lap and mark its row below -#}
+        {% if laps_chart %}<div class="pf-laps-chart">{{ vz.viz_laps(laps_chart) }}</div>{% endif %}
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead>
@@ -123,12 +127,12 @@
                         {% endif %}
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-50">
+                <tbody id="laps-rows" class="divide-y divide-gray-50">
                     {% for lap in activity.laps %}
-                    {% set lap_dist = lap.get('distance', 0) %}
-                    {% set lap_time = lap.get('moving_time', 0) %}
+                    {% set lap_dist = lap.get('distance') or 0 %}
+                    {% set lap_time = lap.get('moving_time') or 0 %}
                     {% set lap_watts = lap.get('average_watts') %}
-                    <tr class="hover:bg-gray-50/50">
+                    <tr class="pf-lap-row hover:bg-gray-50/50" data-i="{{ loop.index0 }}">
                         <td class="py-2 pr-4 font-medium tabular-nums">{{ loop.index }}</td>
                         <td class="text-right py-2 px-4 tabular-nums">
                             {% set l_min = (lap_time // 60)|int %}
@@ -232,6 +236,7 @@
 {% endblock %}
 
 {% block scripts %}
+{% if laps_chart %}<script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id }}"></script>{% endif %}
 <script>
 // « ‹ »: opened from one of the lists on this site (Activités, Santé), go back in the history, so the list comes
 // back as it was left (its filter, its loaded weeks, its scroll), in a browser and in the app's web view alike. The

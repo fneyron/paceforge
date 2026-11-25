@@ -1,4 +1,4 @@
-"""Activity detail page — light version (laps, splits).
+"""Activity detail page — light version (laps drawn and listed, splits).
 
 The AI-analysis flow that used to live here is gone; this page must never
 promise it. What it does offer: a bridge to the simulator
@@ -21,6 +21,7 @@ from app.models.route import Route
 from app.models.user import User
 from app.schemas.activity import ActivityDetail
 from app.services.activity_dedupe import sport_group
+from app.services.activity_laps import lap_chart
 from app.services.viz import fr_int, fr_num
 
 logger = logging.getLogger(__name__)
@@ -74,12 +75,20 @@ async def activity_detail(
         candidates.sort(key=lambda r: abs(r.total_distance_km - dist_km))
         compare_routes = candidates[:_COMPARE_MAX]
 
+    # « Intervalles » (the table and its chart): more than two laps, unless they are the watch's auto-laps, one per
+    # kilometre (then « Par kilomètre » says it)
+    laps = detail.laps or []
+    show_laps = len(laps) > 2 and len(laps) != round(detail.distance / 1000)
+
     return templates.TemplateResponse(
         request, "activity_detail.html",
         context={
             "user": user,
             "activity": detail,
             "compare_routes": compare_routes,
+            "show_laps": show_laps,
+            # the laps as bars above their table, shown with it
+            "laps_chart": lap_chart(detail.laps, detail.sport_group) if show_laps else None,
             "back": _back(request),
         },
     )
