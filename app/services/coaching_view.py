@@ -86,9 +86,10 @@ QUALITY_PAIR = "Tu peux courir la séance en footing."
 METHOD = (
     "Ton plan est en temps, pas en kilomètres. Il part de ton volume habituel et monte d’environ 10 % par semaine ; "
     "une semaine sur quatre est plus légère.",
-    "Une sortie qui n’est pas la séance prévue (un club, une sortie en plus) : la page te demande si c’était une "
-    "séance dure ou une sortie tranquille, puis te dit ce qui change. Une séance dure compte comme la séance de "
-    "qualité de la semaine : une autre peut devenir un footing ou changer de jour.",
+    "Une sortie qui n’est pas la séance prévue (un club, une sortie en plus) : le plan la lit tout seul, séance "
+    "dure ou sortie tranquille, d’après tes tours, ton cardio et ton allure, se met à jour et te dit ce qu’il a fait. "
+    "Une séance dure compte comme une séance de qualité de la semaine : une autre peut devenir un footing ou changer "
+    "de jour. Un lien te permet de le corriger.",
     "Le plan se recalcule tout seul, à chaque ouverture de la page et chaque nuit : il relie tes sorties aux séances, "
     "allège la semaine suivante quand il le faut et réécrit les séances à venir que personne n’a touchées. Ce que tu "
     "as fait, modifié ou déplacé, il n’y touche jamais.",
@@ -425,13 +426,13 @@ def _form(row, state: co.State, coach: bool) -> dict | None:
 # a run that was not the session planned (docs/coaching.md › « Les séances et les activités »): the card's words, the
 # line a session it changed carries on its ticket, and the line of the week it concerns (the follower reads the two
 # last, never the card)
-RUN_ASK = "C’était quoi\u00a0?"
-RUN_HINT = "On dirait des intervalles."
-RUN_KINDS = ((runs_.HARD, "Une séance dure", "intervalles, club, côtes"), (runs_.EASY, "Une sortie tranquille", None))
 RUN_NOT = "Ce n’est pas cette séance"
-RUN_SAME = "C’est noté. Rien d’autre ne change cette semaine."
+RUN_AS = {runs_.HARD: "comptée comme une séance dure", runs_.EASY: "comptée comme une sortie tranquille"}
+RUN_FLIP = {runs_.HARD: "C’était une sortie tranquille", runs_.EASY: "C’était une séance dure"}
 RUN_REST = " ; le reste ne bouge pas."
-RUN_FIXED = "C’est noté. Ta séance fixe : tous les {days}, {minutes}. Le plan s’écrit autour."
+RUN_STILL = "Le reste de la semaine ne bouge pas."
+RUN_NOTHING = " ; rien d’autre ne change."
+RUN_FIXED = "Ta séance fixe : tous les {days}, {minutes}. Le plan s’écrit autour."
 RUN_SAID = {"eased": "ta séance de {day} devient un footing de {minutes}",
             "recup": "ta séance de {day} devient une récup de {minutes}",
             "reps": "ta séance de {day} garde moins de répétitions",
@@ -449,6 +450,15 @@ OF_KIND = {cp.FOOTING: "du footing", cp.RECUP: "de la récup", cp.LONG: "de la s
            cp.QUALITY: "de la séance", cp.HILLS: "de la séance de côtes", cp.RACE: "de la course"}
 OF_KEY = {"fartlek": "du fartlek", "seuil": "de la séance au seuil", "intervalles": "des intervalles",
           "cotes_courtes": "des côtes courtes", "cotes_longues": "des côtes longues", "rappels": "des rappels"}
+# a quality session by its own name, after « au lieu de » — and the pronoun that says where it goes:
+# (« tes intervalles », « ils passent », « les »)
+YOUR_KEY = {"fartlek": ("ton fartlek", "il passe", "l’"), "seuil": ("ta séance au seuil", "elle passe", "l’"),
+            "intervalles": ("tes intervalles", "ils passent", "les "),
+            "cotes_courtes": ("tes côtes courtes", "elles passent", "les "),
+            "cotes_longues": ("tes côtes longues", "elles passent", "les "),
+            "rappels": ("tes rappels", "ils passent", "les ")}
+YOUR_SESSION = ("ta séance", "elle passe", "l’")
+THE_EASY = {cp.FOOTING: "le footing prévu", cp.RECUP: "la récup prévue"}  # a run of its duration, read hard
 WEEKDAYS_PLURAL = ("lundis", "mardis", "mercredis", "jeudis", "vendredis", "samedis", "dimanches")
 
 
@@ -509,47 +519,74 @@ def run_when(day: date, today: date) -> str:
     return day_word_title(day, today)
 
 
-def run_card(state: co.State, card: "runs_.Card", hint: bool = False) -> dict:
-    """The card at the top for a run that is not plainly the day's session: what was understood, in one sentence
-    with the numbers; « C’était quoi ? » and its two answers (the laps' hint above them, never a choice made); the
-    quiet way out; once answered, what the plan changed, the one offer it makes, the ressenti, « Annuler »."""
-    run, today, a = card.run, state.clock.today, card.answer
+def _your_session(was: dict) -> tuple[str, str, str]:
+    structure = was.get("structure") or {}
+    if was.get("kind") == cp.HILLS and structure.get("key") not in YOUR_KEY:
+        return ("ta séance de côtes", "elle passe", "l’")
+    return YOUR_KEY.get(str(structure.get("key")), YOUR_SESSION)
+
+
+def _sentence(text: str) -> str:
+    text = text[:1].upper() + text[1:]
+    return rp.fr(text) or text
+
+
+def run_card(state: co.State, card: "runs_.Card") -> dict:
+    """The notice at the top for a run the plan read by itself: what happened and what the plan did, in one or two
+    sentences with the numbers; the ressenti; the one correction link; « Tous les mercredis ? » once after a hard
+    session; « Ce n’est pas cette séance » (a run linked to the day's session) or « C’est ma séance de … » (a run on
+    a day with no session); « Fermer »."""
+    run, today, a = card.run, state.clock.today, card.answer or {}
     km = f" ({viz.fr_num(run.km, 1).removesuffix(',0')}{NNBSP}km)" if run.km > 0 else ""
     head = f"{run_when(run.day, today)}, tu as couru {hm(run.minutes)}{km}"
-    planned = (a or {}).get("was") or (runs_.snapshot(card.row) if card.row is not None else None)
-    case = (a or {}).get("case") or card.case
-    if case in (runs_.MISFIT, runs_.MISSED) and planned:
-        title = f"{head} au lieu {_of_session(planned)}."
+    what, case = a.get("what"), a.get("case") or card.case
+    planned = (a.get("was") or (runs_.snapshot(card.row) if card.row is not None else None)) \
+        if case in (runs_.MISFIT, runs_.MISSED, runs_.BRISK) else None
+    report, recur = a.get("report") or {}, a.get("recur") or {}
+    said = None
+    if what == runs_.EASY and planned and report.get("state") in (runs_.YES, runs_.NONE):
+        mine, goes, them = _your_session(planned)
+        if report.get("state") == runs_.YES:
+            title = f"{head} tranquille au lieu de {mine} : {goes} à {_wd(report['to'])}."
+        else:
+            title = f"{head} tranquille au lieu de {mine} : aucun autre jour ne peut {them}accueillir cette semaine."
     else:
-        title = f"{head} : rien n’était prévu."
-    out = {"run": run.id, "day": run.day.isoformat(), "title": rp.fr(title) or title, "ask": RUN_ASK,
-           "kinds": RUN_KINDS, "state": "said" if a else "ask"}
-    if a is None:
-        live = [r for r in state.rows if r.status != co.CANCELLED]
-        return {**out, "hint": RUN_HINT if hint else None,
-                "out": {"not": RUN_NOT} if card.row is not None else {"attach": _attach(run, live, today)}}
-    recur, report = a.get("recur") or {}, a.get("report") or {}
-    if recur.get("state") == runs_.YES:
-        said = RUN_FIXED.format(days=WEEKDAYS_PLURAL[int(recur["day"])], minutes=hm(int(recur["minutes"])))
-    else:
-        parts = [RUN_SAID[x["what"]].format(day=_wd(x["day"]), to=_wd(x.get("to") or x["day"]),
-                                            minutes=hm(int(x.get("minutes") or 0)))
-                 for x in runs_.said_changes(a) if x.get("what") in RUN_SAID]
-        joined = " ; ".join(parts)
-        said = "C’est noté. " + joined[:1].upper() + joined[1:] + RUN_REST if parts else RUN_SAME
+        if case == runs_.BRISK and what == runs_.HARD and planned:
+            first = f"{head}, plus soutenu que {THE_EASY.get(str(planned.get('kind')), 'la séance prévue')} : {RUN_AS[what]}"
+        elif case == runs_.BRISK:
+            first = f"{head} : {RUN_AS[what]}"
+        elif planned:
+            first = f"{head} au lieu {_of_session(planned)} : {RUN_AS[what]}"
+        else:
+            first = f"{head} : rien n’était prévu. {_sentence(RUN_AS[what])}"
+        if what == runs_.HARD:
+            title = first + "."
+            if recur.get("state") == runs_.YES:
+                said = RUN_FIXED.format(days=WEEKDAYS_PLURAL[int(recur["day"])], minutes=hm(int(recur["minutes"])))
+            else:
+                parts = [RUN_SAID[x["what"]].format(day=_wd(x["day"]), to=_wd(x.get("to") or x["day"]),
+                                                    minutes=hm(int(x.get("minutes") or 0)))
+                         for x in runs_.said_changes(a) if x.get("what") in RUN_SAID]
+                said = _sentence(" ; ".join(parts)) + RUN_REST if parts else RUN_STILL
+        else:
+            title = first + RUN_NOTHING
     offer = None
     if recur.get("state") == runs_.ASK:
         plural = WEEKDAYS_PLURAL[int(recur["day"])]
-        offer = {"kind": "recur", "q": f"Tu cours tous les {plural} avec ton club{NBSP}?", "yes": f"Oui, tous les {plural}",
+        offer = {"q": f"Tu cours tous les {plural} avec ton club{NBSP}?", "yes": f"Oui, tous les {plural}",
                  "no": "Non, juste cette fois"}
-    elif report.get("state") == runs_.ASK:
-        offer = {"kind": "report", "q": f"Reporter ta séance à {_wd(report['to'])}{NBSP}?", "yes": "Reporter",
-                 "no": "Non"}
     holder = card.holder
-    return {**out, "said": rp.fr(said) or said, "offer": offer,
-            "answer": next(word for key, word, _sub in RUN_KINDS if key == a.get("what")) if a.get("what") in
-            (runs_.HARD, runs_.EASY) else None,
-            "row": holder.id if holder is not None else None,
+    out = None
+    if case in (runs_.MISFIT, runs_.BRISK) and card.row is not None:
+        out = {"not": RUN_NOT}
+    elif case == runs_.FREE:
+        live = [r for r in state.rows if r.status != co.CANCELLED and r is not holder]
+        attach = _attach(run, live, today)
+        out = {"attach": attach} if attach else None
+    return {"run": run.id, "day": run.day.isoformat(), "title": _sentence(title),
+            "said": (rp.fr(said) or said) if said else None, "offer": offer,
+            "flip": RUN_FLIP.get(str(what)), "out": out,
+            "row": holder.id if holder is not None and holder.status == co.DONE else None,
             "ressenti": holder.ressenti if holder is not None else None}
 
 
@@ -656,7 +693,8 @@ def bar_height(minutes: float, scale: float) -> int:
 def tile_top(rows: list) -> int:
     """The duration that fills a day's slot on the board: the plan's longest session, the race aside (1 h 30 at least,
     so that a plan of short footings does not draw them all tall)."""
-    return max([TILE_TOP] + [int(r.minutes) for r in rows if r.kind != cp.RACE and r.minutes])
+    return max([TILE_TOP] + [int(r.minutes) for r in rows if r.kind != cp.RACE and r.minutes
+                                   and getattr(r, "status", None) != co.CANCELLED])
 
 
 def tile_height(minutes: float, top: float = TILE_TOP) -> int:
@@ -928,7 +966,7 @@ def day_word_title(day: date, today: date) -> str:
 
 def page(state: co.State, *, d: date | None = None, w: date | None = None, move: int | None = None,
          coach: bool = False, hr_reference: float | None = None, names: dict | None = None,
-         critical: pace.Critical | None = None, hints: frozenset | set = frozenset()) -> dict:
+         critical: pace.Critical | None = None) -> dict:
     """Everything the swapped part draws: the road and its heading (`road`, `head`), the board (`cal`: the week shown
     with its line and its seven days, then the next week as a compact row), the day opened as tickets, the session
     waiting for a debrief (`debrief`; `waiting`: how many do — what a notification may count). `names`: the first
@@ -948,20 +986,18 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, move:
     done = co.done_by_week(state.runs, state.rows)
     runs_by_id = {run.id: run for run in state.runs}
     moving = next((r for r in live if r.id == move and co.movable(r, today)), None) if move else None
-    # a run that is not plainly the day's session (coaching_runs): its card replaces the debrief for that run — one
-    # question at a time, the most recent first; a card answered stays until « Fermer » or the next visit. The
-    # athlete's only: a follower sees the sessions and their lines
-    opened = [] if coach else runs_.shown(state)
-    asking = [] if coach else runs_.pending(state)
-    in_card = {c.row.id for c in asking if c.row is not None and c.case == runs_.MISFIT} | {
-        c.holder.id for c in opened if c.holder is not None}
+    # a run the plan read by itself (coaching_runs): its notice replaces the debrief for that run — one at a time,
+    # the most recent first, until « Fermer » (or nothing left to say); the athlete's only: a follower sees the
+    # sessions and their lines
+    notes = [] if coach else runs_.notices(state)
+    in_card = {c.holder.id for c in notes if c.holder is not None}
     waiting = [] if coach else [r for r in co.awaiting_debrief(live, today) if r.id not in in_card]
     waiting_ids = frozenset(r.id for r in waiting)
     ask = debrief(state, waiting, d, runs_by_id)
-    card = opened[0] if opened else None
-    if card is None and asking and (ask is None or (asking[0].run.day >= date.fromisoformat(ask["day"])
-                                                    and d != date.fromisoformat(ask["day"]))):
-        card = asking[0]
+    card = None
+    if notes and (ask is None or (notes[0].run.day >= date.fromisoformat(ask["day"])
+                                  and d != date.fromisoformat(ask["day"]))):
+        card = notes[0]
     if card is not None:
         ask = None
     # the next week's row only while the plan has one
@@ -1017,7 +1053,7 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, move:
         "cal": {**nav, "weeks": weeks, "by_hand": any(x["to"] for x in by_hand.values()),
                 "has_today": board <= today <= board + timedelta(days=6)},
         "debrief": ask, "waiting": len(waiting),
-        "card": run_card(state, card, card.run.id in hints) if card is not None else None,
+        "card": run_card(state, card) if card is not None else None,
         "next": {"iso": coming.day.isoformat(), "title": cp.title(coming.kind, coming.structure),
                  "duration": "" if coming.kind == cp.RACE else hm(coming.minutes),
                  "cls": KIND_CLASS.get(coming.kind, "easy"),

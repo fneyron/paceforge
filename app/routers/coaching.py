@@ -129,13 +129,6 @@ async def _targets(db: AsyncSession, scope: Scope, state: co.State) -> dict:
             "hr_reference": None if scope.coach else await _hr_reference(db, scope.athlete, state.clock)}
 
 
-async def _hints(db: AsyncSession, scope: Scope, state: co.State) -> set[int]:
-    """The runs waiting for « C’était quoi ? » whose laps look like intervals (the athlete's page only)."""
-    if scope.coach:
-        return set()
-    return await cr.lap_hints(db, [c.run.id for c in cr.pending(state)][:5])
-
-
 async def _state(db: AsyncSession, scope: Scope) -> co.State:
     plan = await co.get_plan(db, scope.athlete.id)
     if plan is None:
@@ -157,25 +150,23 @@ async def _main(request: Request, db: AsyncSession, scope: Scope, state: co.Stat
     """The swapped part (partials/coaching_main.html), for an htmx swap. `v`: the address of the « Mois » view of
     before, still answered — with the week board (the road took its place)."""
     p = cv.page(state, d=d, w=w, move=move, coach=scope.coach, **await _targets(db, scope, state),
-                names=await _names(db, scope), hints=await _hints(db, scope, state))
+                names=await _names(db, scope))
     return templates.TemplateResponse(request, "partials/coaching_main.html", status_code=status_code, context={
         "p": p, "scope": scope, "error": error})
 
 
 async def _after(request: Request, db: AsyncSession, scope: Scope, *, d: date | None, v: str | None,
-                 error: str | None = None, card: int | None = None) -> Response:
+                 error: str | None = None) -> Response:
     """After a change: the plan read again (matching, adaptation, regeneration), then the swapped part in place, or
     the page for a browser without JavaScript. Every form of the board says which week it was showing (`w`); the
     debrief asked at the top says which day was open (`back`): the board stays where it was."""
     form = await request.form()
     w, back = _day(str(form.get("w") or "")), _day(str(form.get("back") or ""))
     d = back or d
-    card = card or _int(form.get("r"))  # an answer given inside a run's card: the card stays open
     state = await _state(db, scope)
     await db.commit()
-    if not _htmx(request):  # `r`: the card just answered, kept open by the page it comes back to
-        query = "&".join(x for x in (f"d={d.isoformat()}" if d else "", f"w={w.isoformat()}" if w else "",
-                                     f"r={card}" if card else "") if x)
+    if not _htmx(request):
+        query = "&".join(x for x in (f"d={d.isoformat()}" if d else "", f"w={w.isoformat()}" if w else "") if x)
         return RedirectResponse(scope.base + (f"?{query}" if query else ""), status_code=303)
     return await _main(request, db, scope, state, d=d, w=w, v=v, error=error)
 
@@ -487,16 +478,12 @@ def _queue_agenda(user_id: int) -> None:
 
 
 async def _page(request: Request, db: AsyncSession, scope: Scope, d: str | None, w: str | None, v: str | None,
-                tool: str | None = None, tool_error: str | None = None, tool_note: str | None = None,
-                card: int | None = None):
-    """`tool`: what the options' sheet opens on (« agenda », « forme »…), with the agenda's error or note. A visit
-    closes the cards answered before (but `card`, the one a page without JavaScript was sent back to show)."""
+                tool: str | None = None, tool_error: str | None = None, tool_note: str | None = None):
+    """`tool`: what the options' sheet opens on (« agenda », « forme »…), with the agenda's error or note."""
     state = await _state(db, scope)
-    if not scope.coach:
-        cr.close_all(state.rows, keep=card)
     await db.commit()
     p = cv.page(state, d=_day(d), w=_day(w), coach=scope.coach, **await _targets(db, scope, state),
-                names=await _names(db, scope), hints=await _hints(db, scope, state))
+                names=await _names(db, scope))
     return templates.TemplateResponse(request, "coaching.html", context={
         "user": scope.viewer, "scope": scope, "p": p,
         "athlete_name": scope.athlete.firstname or "Athlète", "error": None, "open": tool,
@@ -508,7 +495,7 @@ async def _page(request: Request, db: AsyncSession, scope: Scope, d: str | None,
 @router.get("/coaching", response_class=HTMLResponse)
 async def coaching_page(request: Request, d: str | None = None, w: str | None = None, v: str | None = None,
                         refaire: str | None = None, course: str | None = None, outil: str | None = None,
-                        connexion: str | None = None, resultat: str | None = None, r: str | None = None,
+                        connexion: str | None = None, resultat: str | None = None,
                         scope: Scope = Depends(own_scope), db: AsyncSession = Depends(get_db)):
     plan = await co.get_plan(db, scope.athlete.id)
     if plan is None and refaire != "1" and await co.athletes_of(db, scope.viewer.id):
@@ -519,8 +506,7 @@ async def coaching_page(request: Request, d: str | None = None, w: str | None = 
     said = accounts.result_line(connexion, resultat) if outil == "agenda" else None
     return await _page(request, db, scope, d, w, v, tool=TOOLS.get(outil or ""),
                        tool_error=said[0] if said and not said[1] else None,
-                       tool_note=AGENDA_ASKED if outil == "agenda-lu" else said[0] if said and said[1] else None,
-                       card=_int(r))
+                       tool_note=AGENDA_ASKED if outil == "agenda-lu" else said[0] if said and said[1] else None)
 
 
 @router.get("/coaching/apercu", response_class=HTMLResponse)
@@ -601,40 +587,43 @@ async def coaching_form(value: str = Form(default=""), scope: Scope = Depends(ow
     return RedirectResponse("/coaching?outil=forme#coach-form", status_code=303)
 
 
-# ── a run that is not plainly the day's session (docs/coaching.md › « Les séances et les activités ») ──
-# The athlete's own: never a follower's route. Each answer is written once (services/coaching_runs), then the plan is
-# read again and the part swapped in place; without JavaScript, back to the page with the card kept open (`r`).
+# ── a run the plan read by itself (docs/coaching.md › « Une sortie qui n’est pas la séance prévue ») ──
+# The athlete's own: never a follower's route. Nothing here is required: the plan was updated on reading; these are
+# the notice's quiet taps (services/coaching_runs), then the plan is read again and the part swapped in place.
 
-RUN_ACTIONS = ("reponse", "reporter", "chaque-semaine", "annuler", "fermer")
+RUN_ACTIONS = ("corriger", "chaque-semaine", "pas-celle", "seance", "fermer")
 
 
 @router.post("/coaching/runs/{run_id}/{action}", response_class=HTMLResponse)
 async def coaching_run(run_id: int, action: str, request: Request, scope: Scope = Depends(own_scope),
                        db: AsyncSession = Depends(get_db)):
-    """« C’était quoi ? » (`reponse`: dure, facile, pas_celle), « Reporter ta séance à … ? » (`reporter`: oui, non),
-    « Tu cours tous les mercredis… ? » (`chaque-semaine`: oui, non), « Annuler », « Fermer »."""
+    """« C’était une sortie tranquille » / « C’était une séance dure » (`corriger`), « Tu cours tous les mercredis… ? »
+    (`chaque-semaine`: oui, non), « Ce n’est pas cette séance » (`pas-celle`), « C’est ma séance de … » (`seance`:
+    the session's id), « Fermer »."""
     if action not in RUN_ACTIONS:
         raise HTTPException(status_code=404)
     value = str((await request.form()).get("value") or "")
     state = await _state(db, scope)
     error = None
     try:
-        if action == "reponse":
-            await cr.answer(db, state, scope.athlete, run_id, value)
-        elif action == "reporter":
-            await cr.report(db, state, run_id, value == "oui")
+        if action == "corriger":
+            await cr.correct(db, state, scope.athlete, run_id)
         elif action == "chaque-semaine":
             await cr.recur(db, state, scope.athlete, run_id, value == "oui")
-        elif action == "annuler":
-            await cr.undo(db, state, scope.athlete, run_id)
+        elif action == "pas-celle":
+            await cr.not_this(db, state, run_id)
+        elif action == "seance":
+            session_id = _int(value)
+            if session_id is None:
+                raise co.Invalid("Cette séance ne se déplace pas.")
+            await cr.attach(db, state, run_id, session_id)
         else:
             cr.close(state, run_id)
     except co.Invalid as e:
         error = str(e)
     if not error:
         logger.info("Coaching: run %s %s for user %d", action, value or "-", scope.athlete.id)
-    return await _after(request, db, scope, d=None, v=None, error=error,
-                        card=run_id if action not in ("fermer", "annuler") else None)
+    return await _after(request, db, scope, d=None, v=None, error=error)
 
 
 # ── « Ma séance fixe » (docs/coaching.md › « La séance fixe ») ──────────────
