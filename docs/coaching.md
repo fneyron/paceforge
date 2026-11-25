@@ -1027,8 +1027,9 @@ tableau, le jour en ticket, les options dans une feuille.
    - **À sa place, l’avis d’une sortie qui n’est pas la séance prévue** (voir « Une sortie qui n’est pas la séance
      prévue ») : la même carte teintée, un groupe titré (`role="group"`, son titre est la première phrase, en
      gras : ce qui s’est passé et la lecture ; la seconde, dessous, ce que le plan a changé). Aucune question,
-     aucun bouton à toucher pour que le plan se mette à jour. Puis « Tous les mercredis ? » en deux boutons de
-     44 px quand il est proposé, le ressenti, et une rangée de liens discrets de 44 px : la correction (soulignée,
+     aucun bouton à toucher pour que le plan se mette à jour. Puis le ressenti, « Tous les mercredis ? » quand il est
+     proposé — deux boutons discrets de 44 px, sous le ressenti : rien n’y est demandé —, et une rangée de liens
+     discrets de 44 px : la correction (soulignée,
      ses mots disent ce qu’elle fait), « Ce n’est pas cette séance » ou « C’est ma séance de … », « Fermer ».
      Après la correction ou « Tous les mercredis ? », le focus va au titre de l’avis, qui dit la nouvelle lecture
      (comme la consigne de « Déplacer ») ; le ressenti garde son propre focus. Sans JavaScript, chaque lien est un
