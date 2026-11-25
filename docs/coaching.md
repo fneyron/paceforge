@@ -417,17 +417,18 @@ retirer** passe par le seul chemin de régénération (`coaching.set_fixed` → 
 peut réécrire suivent, à partir d’aujourd’hui ; ce qu’une personne a épinglé, déplacé, modifié ou fait reste.
 
 **Proposée au bon moment** (25 novembre 2026 : l’option existait, le propriétaire ne l’avait pas trouvée). Après
-« Une séance dure » sur une sortie (voir « Une sortie qui n’est pas la séance prévue »), quand l’historique montre une
+une sortie lue comme une séance dure (voir « Une sortie qui n’est pas la séance prévue »), quand l’historique montre une
 sortie ce jour de la semaine dans **5 des 8 semaines complètes** qui précèdent la semaine de la sortie
 (`coaching_start.weekly_habit`, `RECUR_FROM`, choix pratique : la plupart des semaines, sur la fenêtre de la durée
-proposée), la carte demande une fois : « Tu cours tous les mercredis avec ton club ? » → **« Oui, tous les
+proposée), la carte le propose une fois, après ce qu’elle dit — le seul toucher facultatif, qui ne bloque rien : « Tu
+cours tous les mercredis avec ton club ? » → **« Oui, tous les
 mercredis »** pose « Ma séance fixe » ce jour-là, à la durée de la sortie arrondie comme l’outil arrondit (5 min,
 30 min à 3 h), par `set_fixed` et ses vérifications (`clean_fixed`) : le plan s’écrit autour exactement comme par
-l’option, et les changements que la réponse avait faits cette semaine sont d’abord remis (la règle de la séance fixe
-prend la semaine) ; la carte dit « C’est noté. Ta séance fixe : tous les mercredis, 1h35. Le plan s’écrit autour. »
+l’option, et les changements que la lecture avait faits cette semaine sont d’abord remis (la règle de la séance fixe
+prend la semaine) ; la carte dit « Ta séance fixe : tous les mercredis, 1h35. Le plan s’écrit autour. »
 / **« Non, juste cette fois »** : gardé (`coaching_plans.fixed.declined`), jamais redemandé pour ce jour de la
 semaine. Jamais proposé quand une séance fixe existe, ni quand l’outil la refuserait (le jour de la sortie longue,
-un septième jour). « Annuler » retire la séance fixe posée ainsi.
+un septième jour). « C’était une sortie tranquille » retire la séance fixe posée ainsi.
 
 **Le cas du propriétaire** (mardi, mercredi, vendredi, samedi, dimanche ; mercredi fixe 1 h 15 ; sortie longue le
 dimanche ; trail avec temps visé ; base 5 h) : chaque semaine la séance club le mercredi, un footing le mardi, la
@@ -823,12 +824,13 @@ le retrait du consentement aux données de santé n’y touche pas (l’agenda n
   même jour : la durée la plus proche d’abord. Les minutes faites sont celles de l’activité.
 - Une sortie liée dont la durée s’écarte de plus de 20 % de la durée prévue ne ressemble pas à la séance
   (`coaching.FIT`, choix pratique, aucune étude) : elle reste liée — la sortie du jour est la charge du jour — mais la
-  séance dit « **Fait autrement** » et l’écart (« 3h17 au lieu de 45 min »), au lieu de « Fait », et une carte
-  demande ce que c’était (voir « Une sortie qui n’est pas la séance prévue »). Jamais pour la course. Sous toute
+  séance dit « **Fait autrement** » et l’écart (« 3h17 au lieu de 45 min »), au lieu de « Fait », et le plan la lit
+  tout seul, séance dure ou sortie tranquille, puis se met à jour (voir « Une sortie qui n’est pas la séance
+  prévue »). Jamais pour la course. Sous toute
   séance faite avec une sortie, « **Ce n’est pas cette séance** » la détache : la sortie redevient
   « hors plan », la séance « Pas faite » (elle peut être reportée), et une lecture suivante ne la reprend pas.
 - Une sortie sans séance ce jour-là apparaît « hors plan » dans le calendrier et compte dans le temps fait de la
-  semaine ; la même carte demande ce que c’était.
+  semaine ; le plan la lit de la même façon (lue tranquille, elle reste hors plan).
 - Sans montre : « C’est fait » (durée réelle modifiable) et « Pas faite ». Un « Pas faite » coché à la main n’est
   jamais défait par une sortie ; un « C’est fait » coché à la main prend la sortie quand elle arrive. « Annuler »
   défait l’un comme l’autre.
@@ -862,91 +864,122 @@ sur route en phase spécifique, « *n* × 3 min vite » à la place de « souten
 
 Message du propriétaire, 25 novembre 2026 : « Pour la partie coaching je suis dsl mais ce n'est pas user friendly on
 ne sait pas où cliquer et quoi faire exemple simple je n'ai pas fait ma séance du jour mais une vma club je fais quoi
-il se passe quoi ? C'est recalculé automatiquement ? ». Avant ce changement, sa sortie de club (1h35, des
-intervalles) se liait en silence au footing du jour (« Fait autrement · 1h35 au lieu de 55 min »), le débrief ne
-demandait que le ressenti, le reste de la semaine ne bougeait pas (une séance dure prévue le lendemain restait là),
-et rien ne disait ce qui avait été fait de la sortie. **Maintenant la page dit ce qu’elle a compris, demande une
-chose, et dit ce que le plan a changé** (`services/coaching_runs.py`).
+il se passe quoi ? C'est recalculé automatiquement ? ». Une première version posait une question (« C’était quoi ? »,
+deux boutons). Sa réponse, le même jour : « Oui mais simplifie encore ou alors ne fait pas en préventif pas d'actions
+utilisateurs quand tu vois que ce n'est pas la séance attendu car tu ne peux pas la rapprocher alors tu met à jour ».
+**Maintenant rien n’est demandé : le plan lit la sortie tout seul, se met à jour, puis la page dit ce qu’il a fait**
+(`services/coaching_runs.py`).
 
-**La carte.** Une seule, en haut, à la place et dans le style du débrief (elle le remplace pour cette sortie : rien
-n’est demandé deux fois ; le ticket du jour ne montre pas non plus l’échelle du ressenti tant que la carte la
-porte). Une sortie à la fois, la plus récente d’abord (devant un débrief plus ancien ; un lien `?d=…#debrief` vers
-le jour d’un débrief garde ce débrief). Pour l’athlète seulement : la personne qui suit le plan ne voit jamais la
-carte, seulement les séances qui en résultent, avec leur ligne. Elle s’affiche pour une sortie enregistrée dans les
-`DEBRIEF_DAYS` = 7 derniers jours, à partir du premier jour du plan, jamais pour la course :
+**Quelles sorties.** Une sortie enregistrée dans les `DEBRIEF_DAYS` = 7 derniers jours, à partir du premier jour du
+plan, jamais la course, jamais une sortie déjà lue ou détachée par « Ce n’est pas cette séance » :
 
-| Cas | Ce que la carte dit |
+| Cas | Ce que la sortie est |
 |---|---|
-| (a) Liée à la séance du jour mais sans lui ressembler (`misfit` : plus de 20 % d’écart de durée) | « Mercredi, tu as couru 1h35 (16,5 km) au lieu du footing de 55 min. » |
-| (a) Le jour d’une séance cochée « Pas faite » à la main, la sortie arrivée ensuite | la même phrase |
-| (b) Un jour sans séance (« hors plan ») | « Mercredi, tu as couru 1h35 (16,5 km) : rien n’était prévu. » |
+| (a) Liée à la séance du jour sans lui ressembler (`misfit` : plus de 20 % d’écart de durée) | « au lieu du footing de 55 min » |
+| (b) Liée à une séance facile (footing, récup) dont la durée colle, mais lue comme une séance dure | « plus soutenu que le footing prévu » |
+| (c) Le jour d’une séance cochée « Pas faite » à la main, la sortie arrivée ensuite | « au lieu du footing de 55 min » |
+| (d) Un jour sans séance (« hors plan ») | « rien n’était prévu » |
 
-Le jour se dit « Aujourd’hui », « Hier », le jour de la semaine, « Jeudi dernier » il y a sept jours ; la séance se
-nomme par son type (« du footing », « de la sortie longue », « de la séance », « de la séance de côtes », « de la
-récup », « de ta séance club »). Les durées s’écrivent comme partout dans l’app (« 1h35 », « 55 min »). Une seconde
-sortie un jour dont la séance est faite n’a pas de carte : le jour avait sa séance (elle reste « hors plan », comme
-avant).
+Une seconde sortie un jour dont la séance est faite n’est pas lue : le jour avait sa séance (elle reste « hors
+plan », comme avant).
 
-- **Une question, deux grands boutons** : « C’était quoi ? » → **« Une séance dure »** (« intervalles, club,
-  côtes » dessous) / **« Une sortie tranquille »**. Rien n’est présélectionné. Quand les tours de l’activité montrent
-  clairement des efforts répétés, une ligne le dit au-dessus des boutons : « On dirait des intervalles. » — jamais
-  plus : c’est l’athlète qui répond.
-- **La sortie discrète**, pour les autres cas : « Ce n’est pas cette séance » (cas a : la sortie redevient hors plan,
-  la séance « Pas faite », et rien n’est redemandé pour elle) ; « C’est ma séance de … » (cas b, le bouton qui
-  existait sous le ticket).
-- **Après la réponse**, dans la même carte : ce que le plan a changé, dans ses mots (« C’est noté. Ta séance de
-  mercredi devient une récup de 45 min ; le reste ne bouge pas. », « C’est noté. Ta séance de mercredi passe à
-  jeudi ; le reste ne bouge pas. », ou « C’est noté. Rien d’autre ne change cette semaine. ») ; l’offre unique s’il
-  y en a une ; puis le ressenti habituel en cinq niveaux, un toucher de plus, enregistré comme le débrief
-  l’enregistre (sur la séance qui porte la sortie) ; enfin « Annuler » et « Fermer ». La carte reste jusqu’à
-  « Fermer » ou la visite suivante (un chargement de la page ; les touchers sur la page la gardent).
-- **« Annuler »** remet exactement l’état d’avant : les séances changées, la séance qui porte la sortie (son type,
-  sa durée, son lien, son ressenti), une séance fixe posée par « Oui, tous les mercredis » ; la carte repose sa
-  question. Une séance changée que l’athlète a déplacée, modifiée ou faite depuis est à lui : elle reste.
+**La lecture : séance dure ou sortie tranquille** (`coaching_runs.reading`, une fonction pure). Une séance dure dès
+qu’un de ces trois critères tient — chacun reprend une définition du plan, aucune physiologie nouvelle :
 
-**Ce que fait la réponse** — chaque règle reprend une règle du plan déjà sourcée, ou porte sa marque :
-
-| Réponse | Ce que fait le plan | Source |
+| Critère | Règle | Source |
 |---|---|---|
-| « Une séance dure » | La sortie devient la séance dure du jour (« Séance dure », sa durée réelle, la forme de la séance fixe : aucune répétition écrite, `declared_structure`) et compte pour **une des séances de qualité de la semaine** : les règles de la séance fixe, pour cette semaine seulement (`after_hard`). Une séance prévue facile ce jour-là est simplement faite par cette sortie ; une sortie hors plan devient une séance du jour (faite, liée). | La séance fixe (ci-dessus) : choix pratique pour la forme, (H) `FIXED_HARD_SHARE` pour son poids. |
+| Les tours | Des efforts vite répétés : la vitesse de chaque tour (distance sur temps de déplacement ; les tours de moins de 100 m ou 20 s, un tour pressé deux fois, laissés de côté), la vitesse typique de la sortie (la médiane de ses tours) ; un tour « vite » va 20 % plus vite qu’elle (`FAST_LAP`), il faut trois blocs de tours vite séparés par des tours plus lents (`FAST_LAPS`), sur six tours au moins (`looks_like_intervals`). Prudent : des tours automatiques d’un kilomètre le montrent rarement, des tours pressés à chaque effort le montrent. | choix pratique |
+| Le cardio | La fréquence cardiaque moyenne de la sortie atteint la zone que le plan donne à ses efforts « soutenus » : niveau 3 = zone 4 (`coaching_plan.HR_ZONES`), soit 80 % de la FC max connue de l’athlète (`hr_floor` ; les zones de l’app, `heart_rate_zones`), la référence que la page lit déjà pour ses fourchettes de cardio (confirmée, sinon corroborée par les sorties). Rien de cardiaque n’est affiché : la règle de la personne qui suit le plan ne change pas. | « L’intensité » : Persinger 2004 pour le niveau, les zones de l’app (H) |
+| L’allure, sur le plat | La vitesse moyenne de la sortie atteint l’allure seuil du plan : la borne basse de `coaching_pace.THRESHOLD` (93 %) × la vitesse critique de l’athlète, quand elle est connue, et seulement si la sortie a peu de dénivelé : **10 m de montée par kilomètre au plus** (1 % en moyenne, `FLAT_CLIMB`, choix pratique : le plan ne donne pas d’allure en côte non plus ; une sortie plus vallonnée se lit par ses tours et son cardio). | Nixon 2021 pour le seuil ; le dénivelé : choix pratique |
+
+Sans tours, sans cardio et sans allure utilisable : une **sortie tranquille** — rien n’est reconstruit, le côté
+prudent. La FC max et la vitesse critique ne sont lues que si une sortie en a encore besoin (une seule requête pour
+les tours).
+
+**Ce que fait le plan, aussitôt** — à chaque lecture du plan (`coaching.sync` : la page de l’athlète, celle de la
+personne qui suit le plan, la tâche quotidienne), avant tout affichage ; puis le plan est relu une fois, comme après
+tout changement. Les sorties se lisent de la plus ancienne à la plus récente (les règles d’une semaine voient ce qui
+précède). Chaque règle reprend une règle du plan déjà sourcée, ou porte sa marque :
+
+| Lecture | Ce que fait le plan | Source |
+|---|---|---|
+| Séance dure | La sortie devient la séance dure du jour (« Séance dure », sa durée réelle, la forme de la séance fixe : aucune répétition écrite, `declared_structure`) et compte pour **une des séances de qualité de la semaine** : les règles de la séance fixe, pour cette semaine seulement (`after_hard`). La séance du jour (liée, ou cochée « Pas faite ») devient cette séance ; une sortie hors plan devient une séance du jour (faite, liée). | La séance fixe (ci-dessus) : choix pratique pour la forme, (H) `FIXED_HARD_SHARE` pour son poids. |
 | … le nombre | Des séances de qualité du plan encore à faire cette semaine, il en reste autant que le nombre de la semaine (`week_quality` : le compte même que le générateur écrit, `TWO_QUALITY` au plus) en laisse à côté d’elle et des séances faites, fixes ou touchées par une personne ; la séance de la phase qui n’est pas des intervalles courts en vitesse d’abord (`BESIDE_FIXED`), puis la plus tôt. Les autres deviennent **un footing de leur durée**. | Deux au plus : Seiler & Tønnessen 2009 ; l’ordre (H) `BESIDE_FIXED`, **aucune étude**. |
 | … le budget dur | Au plus 20 % de la semaine en efforts durs, la sortie comptée pour un quart de sa durée : une séance qui ne tient plus garde moins de répétitions (sa plus petite valeur au moins), à sa durée, le retour au calme prenant le reste (`fewer_reps`) ; sinon un footing de sa durée. | Seiler 2010 ; Muñoz 2014 `HARD_SHARE` ; le quart : (H) `FIXED_HARD_SHARE`, **aucune étude**. |
 | … le lendemain | Une séance dure que le plan peut changer, le lendemain, va au jour suivant de la semaine que le plan peut utiliser — un jour disponible, vide ou portant une séance facile du plan (qui prend sa place), jamais à côté d’un jour dur, pas de sortie longue à J-3 (`move_day`, la règle du matin de récupération basse) ; sinon elle devient un footing de sa durée — une « Récup » puisque c’est le lendemain d’un jour dur (la règle « Jours » du générateur), sauf une sortie longue, qui reste un footing (une récup est courte). | Stanley 2013 (au moins 48 h après un effort intense) ; la récup du lendemain : Stanley 2013, comme le générateur. |
 | … jamais | Une séance faite, manquée, passée, modifiée, déplacée à la main, écrite par la personne qui suit le plan, allégée par la forme, ou la séance fixe : rien n’y touche. | choix pratique : ce qu’une personne décide reste. |
-| « Une sortie tranquille » | Rien n’est reconstruit. Si la séance prévue ce jour-là était une séance de qualité (pas la séance fixe), donc pas faite, la carte propose une fois : « Reporter ta séance à vendredi ? » — le premier jour que les règles de déplacement permettent (`move_day`, à partir de demain : un jour disponible de la semaine, vide ou portant une séance facile du plan, jamais à côté d’un jour dur) ; un toucher, ou « Non ». Reportée, la sortie reste la séance facile du jour ; sans jour possible, rien n’est proposé. | Stanley 2013 ; le report lui-même : choix pratique (une séance prévue, pas une charge de plus). |
-| Le temps en plus | La sortie compte dans le temps fait de la semaine (`done_by_week`, comme toute sortie). Pour les semaines suivantes, deux règles la lisent déjà : la progression d’une séance (la plus longue sortie réelle des 30 derniers jours, `recent_runs` : les séances à venir peuvent atteindre 10 % de plus qu’elle) et la reprise après deux semaines manquées (le volume des 4 dernières semaines). L’adaptation au ressenti lit les statuts et le ressenti, pas les minutes ; le volume de la semaine, lui, suit sa progression sans lire le temps fait. **Aucune règle de volume n’est ajoutée** : rien ne retire des minutes au reste de la semaine pour compenser. | Frandsen 2025 pour la progression d’une séance ; compenser : **aucune étude**. |
+| Sortie tranquille | Rien n’est reconstruit. Si la séance prévue ce jour-là était une séance de qualité (pas la séance fixe), donc pas faite, elle est **reportée** au premier jour que les règles de déplacement permettent (`report_day` → `move_day`, à partir de demain : un jour disponible de la semaine, vide ou portant une séance facile du plan qui lui laisse sa place, jamais à côté d’un jour dur) ; la sortie reste la séance facile du jour. Sans jour possible, elle reste non faite et la page le dit. Une sortie liée garde sa séance ; une sortie un jour « Pas faite » ou sans séance reste **hors plan** (la tuile grise, la tenir sur une séance, « C’est ma séance de … » : rien ne change pour elle). | Stanley 2013 ; le report lui-même : choix pratique (une séance prévue, pas une charge de plus). |
+| … cas (b) | Une sortie de la durée d’un footing, lue tranquille, est simplement ce footing : rien n’est écrit d’autre que sa lecture, aucune carte ; le débrief demande son ressenti. | — |
+| Le temps en plus | La sortie compte dans le temps fait de la semaine (`done_by_week`, comme toute sortie). Pour les semaines suivantes, deux règles la lisent déjà : la progression d’une séance (la plus longue sortie réelle des 30 derniers jours, `recent_runs`) et la reprise après deux semaines manquées. **Aucune règle de volume n’est ajoutée** : rien ne retire des minutes au reste de la semaine pour compenser. | Frandsen 2025 pour la progression d’une séance ; compenser : **aucune étude**. |
 
-**L’indice des tours** (`looks_like_intervals`, choix pratique) : la vitesse de chaque tour (distance sur temps de
-déplacement ; les tours de moins de 100 m ou 20 s, un tour pressé deux fois, laissés de côté), la vitesse typique de
-la sortie (la médiane de ses tours) ; un tour « vite » va 20 % plus vite qu’elle (`FAST_LAP`) ; il faut trois blocs
-de tours vite séparés par des tours plus lents (`FAST_LAPS`), sur six tours au moins. Prudent : des tours
-automatiques d’un kilomètre le montrent rarement, des tours pressés à chaque effort le montrent. Une phrase, jamais
-une réponse choisie.
+**Écrit une fois.** La lecture est gardée sur la séance qui porte la sortie (`coaching_sessions.structure` :
+`answer`, avec l’état d’avant de chaque séance changée) — pour une sortie restée hors plan, sur une note (une ligne
+annulée, sans sortie liée : ni le tableau, ni le calendrier abonné, ni la régénération ne la lisent ; elle disparaît
+si la sortie est ensuite tenue sur une séance). Chaque séance changée porte pourquoi (`structure.why`) et aucune
+lecture suivante ne la réécrit (`coaching.replaceable` l’exclut, comme une séance allégée par la forme) : la page, la
+page de la personne qui suit le plan, la tâche quotidienne relisent le plan sans rien rejouer ni défaire. **Aucune
+migration** : les colonnes JSON existantes suffisent (`coaching_sessions.structure`, et `coaching_plans.fixed` pour
+les jours où « Tous les mercredis ? » a reçu « Non ») ; une réponse donnée par la version qui posait la question (il
+n’y en a pas en production) se lit comme une lecture.
 
-**Écrit une fois.** La réponse est gardée sur la séance qui porte la sortie (`coaching_sessions.structure` :
-`answer`, avec l’état d’avant de chaque séance changée) ; chaque séance changée porte pourquoi (`structure.why`) et
-aucune lecture suivante ne la réécrit (`coaching.replaceable` l’exclut, comme une séance allégée par la forme) : la
-page, la page de la personne qui suit le plan, la tâche quotidienne relisent le plan sans rien rejouer ni défaire.
-**Aucune migration** : les colonnes JSON existantes suffisent (`coaching_sessions.structure`, et
-`coaching_plans.fixed` pour les jours où « Tous les mercredis ? » a reçu « Non »).
+**La carte : un avis, pas une question.** Une seule, en haut, à la place et dans le style du débrief (le ressenti de
+la sortie y est demandé, une fois : le ticket du jour ne le redemande pas). Une sortie à la fois, la plus récente
+d’abord (devant un débrief plus ancien ; un lien `?d=…#debrief` vers le jour d’un débrief garde ce débrief). Pour
+l’athlète seulement : la personne qui suit le plan ne voit jamais la carte, seulement les séances qui en résultent,
+avec leur ligne. Ce qu’elle dit, en une ou deux phrases avec les chiffres :
+
+| Cas | La carte |
+|---|---|
+| Séance dure, une séance changée | « Mercredi, tu as couru 1h35 (16,5 km) au lieu du fartlek de 45 min : comptée comme une séance dure. » puis « Ta séance de jeudi devient une récup de 45 min ; le reste ne bouge pas. » (« … passe à vendredi », « … devient un footing de 45 min », « … garde moins de répétitions ») |
+| Séance dure, rien d’autre | « … : comptée comme une séance dure. » puis « Le reste de la semaine ne bouge pas. » |
+| Séance dure, cas (b) | « Mardi, tu as couru 55 min (8,2 km), plus soutenu que le footing prévu : comptée comme une séance dure. » |
+| Séance dure, cas (d) | « Mercredi, tu as couru 50 min (7,5 km) : rien n’était prévu. Comptée comme une séance dure. » |
+| Tranquille, séance reportée | « Mardi, tu as couru 1h10 (11 km) tranquille au lieu de tes intervalles : ils passent à jeudi. » (« ton fartlek : il passe », « tes côtes courtes : elles passent », « ta séance au seuil : elle passe ») |
+| Tranquille, sans jour possible | « … tranquille au lieu de tes intervalles : aucun autre jour ne peut les accueillir cette semaine. » |
+| Tranquille, rien d’autre | « Mercredi, tu as couru 1h35 (16,5 km) au lieu du footing de 55 min : comptée comme une sortie tranquille ; rien d’autre ne change. » ; un jour sans séance : « Mercredi, tu as couru 40 min (6,6 km) : rien n’était prévu. Comptée comme une sortie tranquille ; rien d’autre ne change. » |
+
+Le jour se dit « Aujourd’hui », « Hier », le jour de la semaine, « Jeudi dernier » il y a sept jours ; la séance se
+nomme par son format (« du fartlek », « des intervalles », « des côtes courtes », « de la séance au seuil », « du
+footing », « de la sortie longue », « de ta séance club »). Puis, dans la même carte :
+
+- **le ressenti** habituel en cinq niveaux, quand la sortie est portée par une séance faite (c’est le débrief de
+  cette sortie : demandé une fois, jamais deux) — une sortie restée hors plan n’en a pas, comme avant ;
+- **« Tous les mercredis ? »** après une séance dure, le seul toucher facultatif (voir « La séance fixe ») : il ne
+  bloque rien, la carte se ferme sans lui ;
+- **un lien discret qui dit ce qu’il fait** : « C’était une sortie tranquille » (après une séance dure) ou « C’était
+  une séance dure » (après une sortie tranquille). Il remet exactement ce que la première lecture avait changé (les
+  séances changées, la séance qui porte la sortie — son type, sa durée, son lien —, une séance fixe posée par « Oui,
+  tous les mercredis », le report) puis applique l’autre lecture, avec ses règles ; le ressenti déjà dit reste. Une
+  séance changée que l’athlète a déplacée, modifiée ou faite depuis est à lui : elle reste. La carte dit la
+  nouvelle lecture et son lien dit l’inverse ;
+- **la sortie discrète**, où elle existait : « Ce n’est pas cette séance » (cas a et b : la lecture est reprise, la
+  sortie redevient hors plan, la séance « Pas faite », et rien n’est relu pour elle) ; « C’est ma séance de … » (cas
+  d : la lecture est reprise, cette séance de la semaine va au jour de la sortie, la lecture suivante les lie) ;
+- **« Fermer »**.
+
+**Quand il n’y a pas de carte.** Elle reste jusqu’à « Fermer » (ou la sortie plus vieille que 7 jours) tant qu’elle a
+quelque chose à dire : une séance dure, une séance changée ou reportée, un report sans jour, la question « Tous les
+mercredis ? » encore ouverte, une lecture corrigée, une sortie restée hors plan (la carte est le seul endroit où sa
+lecture se corrige). Sinon — rien n’a changé — elle ne reste que tant que le ressenti manque ; une fois dit, plus de
+carte. Le cas (b) lu tranquille n’en a jamais.
 
 **Les lignes.** Chaque séance changée le dit sur son ticket, comme « Séance reportée de jeudi » : « Récup :
 lendemain de la séance dure de mardi. », « Footing : la séance dure de mardi compte pour la semaine. », « Moins de
 répétitions : la séance dure de mardi compte pour la semaine. », « Séance reportée de mercredi, lendemain de la
 séance dure de mardi. », « Séance déplacée de jeudi. » (la séance facile qui a pris l’autre jour), « Séance
-reportée de jeudi. » (un report choisi). Et la semaine qu’ils concernent, en cartouche sous sa rangée, comme
-« Mardi est plein : séance déplacée à vendredi. » : « Mercredi devient une récup : c’est le lendemain de la séance
-dure de mardi. », « Mercredi est le lendemain de la séance dure de mardi : sa séance passe à jeudi. ». Les mêmes
-mots pour la personne qui suit le plan (« la séance dure », jamais « ta »).
+reportée de jeudi. » (une séance de qualité reportée après une sortie tranquille). Et la semaine qu’ils concernent,
+en cartouche sous sa rangée, comme « Mardi est plein : séance déplacée à vendredi. » : « Mercredi devient une
+récup : c’est le lendemain de la séance dure de mardi. », « Mercredi est le lendemain de la séance dure de mardi :
+sa séance passe à jeudi. ». Les mêmes mots pour la personne qui suit le plan (« la séance dure », jamais « ta »).
 
 **Le cas du propriétaire** (mardi, mercredi, vendredi, samedi, dimanche ; deux séances de qualité : le fartlek du
-mercredi, les côtes courtes du vendredi) : mardi, 1h35 de VMA en club au lieu du footing de 55 min. La carte :
-« Aujourd’hui, tu as couru 1h35 (16,5 km) au lieu du footing de 55 min. C’était quoi ? », « On dirait des
-intervalles. ». « Une séance dure » : la sortie est la séance dure du mardi ; les côtes du vendredi restent (ce ne
-sont pas des intervalles courts en vitesse, et le budget tient) ; le fartlek du mercredi, le lendemain, ne peut pas
-rester ni aller samedi (veille de la sortie longue) : « C’est noté. Ta séance de mercredi devient une récup de
-45 min ; le reste ne bouge pas. » Puis, s’il court le mardi la plupart des semaines : « Tu cours tous les mardis
-avec ton club ? » (voir « La séance fixe »).
+mercredi, les côtes courtes du vendredi) : mardi, 1h35 de VMA en club au lieu du footing de 55 min, des tours pressés
+à chaque effort. À la lecture suivante, sans un toucher : la sortie est la séance dure du mardi ; les côtes du
+vendredi restent (ce ne sont pas des intervalles courts en vitesse, et le budget tient) ; le fartlek du mercredi, le
+lendemain, ne peut pas rester ni aller samedi (veille de la sortie longue) : une récup. La carte : « Aujourd’hui, tu
+as couru 1h35 (16,5 km) au lieu du footing de 55 min : comptée comme une séance dure. Ta séance de mercredi devient
+une récup de 45 min ; le reste ne bouge pas. », le ressenti, « C’était une sortie tranquille », « Ce n’est pas cette
+séance », « Fermer » — et, s’il court le mardi la plupart des semaines, « Tu cours tous les mardis avec ton club ? ».
 
 ## Les écrans
 
@@ -991,13 +1024,15 @@ tableau, le jour en ticket, les options dans une feuille.
    - **Pas de notification envoyée d’ici** (c’est un autre chantier) : `coaching_view.page` donne `waiting`, le
      nombre de séances qui attendent leur débrief, et `services/coaching.awaiting_debrief` la liste, la plus récente
      d’abord.
-   - **À sa place, la carte d’une sortie qui n’est pas la séance prévue** (voir « Une sortie qui n’est pas la séance
-     prévue ») : la même carte teintée, un groupe titré (`role="group"`, son titre est la phrase) ; la phrase avec
-     les chiffres et « C’était quoi ? », l’indice des tours, deux grands boutons (64 px de haut, l’un sous l’autre
-     quand la largeur ou le texte agrandi l’exigent), la sortie discrète ; après la réponse, la ligne « C’est
-     noté. … » sur fond clair, qui prend le focus (comme la consigne de « Déplacer »), l’offre en deux boutons de
-     44 px, le ressenti, « Annuler » et « Fermer ». Sans JavaScript, chaque bouton est un formulaire qui revient à
-     la page, la carte gardée ouverte par l’adresse (`?r=<sortie>`).
+   - **À sa place, l’avis d’une sortie qui n’est pas la séance prévue** (voir « Une sortie qui n’est pas la séance
+     prévue ») : la même carte teintée, un groupe titré (`role="group"`, son titre est la première phrase, en
+     gras : ce qui s’est passé et la lecture ; la seconde, dessous, ce que le plan a changé). Aucune question,
+     aucun bouton à toucher pour que le plan se mette à jour. Puis « Tous les mercredis ? » en deux boutons de
+     44 px quand il est proposé, le ressenti, et une rangée de liens discrets de 44 px : la correction (soulignée,
+     ses mots disent ce qu’elle fait), « Ce n’est pas cette séance » ou « C’est ma séance de … », « Fermer ».
+     Après la correction ou « Tous les mercredis ? », le focus va au titre de l’avis, qui dit la nouvelle lecture
+     (comme la consigne de « Déplacer ») ; le ressenti garde son propre focus. Sans JavaScript, chaque lien est un
+     formulaire qui revient à la page.
 4. **La semaine en tableau** — la semaine affichée, ses sept jours en colonnes :
    - son titre (« Cette semaine », « Semaine prochaine », « Semaine dernière » ou ses dates), « 1h17 sur 2h55 » fait
      sur prévu et la phase, une fine barre de progression ; ‹ › font glisser d’une semaine, « Aujourd’hui » ramène
@@ -1062,8 +1097,9 @@ tableau, le jour en ticket, les options dans une feuille.
    modal) : **« Adapter à ma forme »** en interrupteur avec une ligne courte (le texte d’accord derrière « En savoir
    plus »), puis une grille de tuiles — **« Ma séance fixe »**, **« Dans mon calendrier »**, **« Mon agenda »**,
    **« Partager mon plan »**, **« Suivre un plan »** (la liste des plans suivis), **« Comment ça marche »** (les
-   règles ; ses deuxième et troisième phrases répondent à « C’est recalculé automatiquement ? » : ce qui se passe
-   quand une sortie n’est pas la séance prévue, puis ce que le plan recalcule seul — à chaque ouverture de la page
+   règles ; ses deuxième et troisième phrases répondent à « C’est recalculé automatiquement ? » : une sortie qui
+   n’est pas la séance prévue, le plan la lit tout seul et se met à jour, et un lien permet de le corriger ; puis ce
+   que le plan recalcule seul — à chaque ouverture de la page
    et chaque nuit, les séances à venir que personne n’a touchées — et ce qu’il ne touche jamais) — et en bas « Refaire le plan » et, petit et rouge, « Arrêter le coaching ». Une tuile ouvre son outil
    dans la feuille, « ‹ Options » revient aux tuiles. Le focus reste dans la feuille (Tab tourne), Échap et un
    toucher sur le fond la ferment et rendent le focus au bouton rond ; la page derrière ne défile pas ; la feuille
@@ -1224,10 +1260,11 @@ migration : une source `provider = "iphone"` (la colonne est un texte), ses inte
 Migration `q8f9a0b1c2d3` :
 `coaching_plans.race_name`, `race_date`, `race_km`, `race_target_s` (une course sans fichier), dans l’export.
 Migration `t5d6e7f8a9b0` : `coaching_plans.fixed` (la séance fixe : jour, durée, nom), dans l’export ; ses séances
-sont des lignes ordinaires de `coaching_sessions`. La carte d’une sortie qui n’est pas la séance prévue (25 novembre
-2026) n’a demandé aucune migration : la réponse et l’état d’avant des séances qu’elle a changées dans
-`coaching_sessions.structure` (`answer`, `why`, `not`), les jours répondus « Non » dans `coaching_plans.fixed`
-(`declined`) ; tout sort dans l’export avec la séance ou le plan. Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
+sont des lignes ordinaires de `coaching_sessions`. La lecture d’une sortie qui n’est pas la séance prévue (25
+novembre 2026) n’a demandé aucune migration : la lecture et l’état d’avant des séances qu’elle a changées dans
+`coaching_sessions.structure` (`answer`, `why`, `not` ; pour une sortie restée hors plan, une ligne annulée qui ne
+porte que sa lecture), les jours répondus « Non » dans `coaching_plans.fixed` (`declined`) ; tout sort dans l’export
+avec la séance ou le plan. Tout part avec le compte (`ON DELETE CASCADE`) et sort dans l’export de Réglages
 (`coaching.json`, `coaching_seances.json` : jamais le jeton du flux ni un code).
 
 Politique de confidentialité, ligne affichée tant que la fonction n’est pas éteinte : « Coaching (bêta) » —
@@ -1585,13 +1622,19 @@ Dit sans détour, pour que cette page reste vraie :
   l’affûtage (`FIXED_HALF`), l’ordre de la seconde séance (`BESIDE_FIXED`), la semaine de la course sans elle et
   1 h 15 sans historique (`FIXED_DEFAULT`) sont (H) chiffre ; pour la semaine légère, **aucune étude**.
 - **Une sortie qui n’est pas la séance prévue** : aucune étude n’a été trouvée sur la façon de réécrire une semaine
-  après une séance dure imprévue. La réponse « Une séance dure » applique les règles de la séance fixe pour une
+  après une séance dure imprévue, ni sur la façon de reconnaître une séance dure d’après une sortie enregistrée. La
+  lecture reprend les définitions du plan (le niveau « soutenu » et sa zone cardiaque, l’allure seuil de Nixon
+  2021) ; sur une moyenne de sortie entière, c’est un choix pratique : une séance de club avec un long échauffement
+  peut rester sous la zone 4 en moyenne (ses tours la montrent alors), une longue sortie par forte chaleur peut y
+  monter (la correction le reprend). L’indice des tours (20 % plus vite, trois blocs, six tours) et le plat à 10 m de
+  montée par kilomètre (`FLAT_CLIMB`) sont des choix pratiques ; sans données, le côté prudent (une sortie
+  tranquille). Une séance dure applique les règles de la séance fixe pour une
   semaine (Seiler & Tønnessen 2009 pour le nombre, Seiler 2010 et Muñoz 2014 pour le budget, Stanley 2013 pour le
   lendemain) ; le quart de sa durée compté en efforts durs (`FIXED_HARD_SHARE`), l’ordre de la séance gardée
   (`BESIDE_FIXED`) et un footing « de la même durée » sont (H) ; ne rien retrancher au reste de la semaine pour le
-  temps couru en plus : **aucune étude** ; l’écart de 20 % (`FIT`), les 7 jours de la carte, l’indice des tours
-  (20 % plus vite, trois blocs, six tours) et « 5 semaines sur 8 » pour « Tous les mercredis ? » sont des choix
-  pratiques — l’indice et la question ne décident jamais à la place de l’athlète.
+  temps couru en plus : **aucune étude** ; l’écart de 20 % (`FIT`), les 7 jours de la carte et « 5 semaines sur 8 »
+  pour « Tous les mercredis ? » sont des choix pratiques. Le plan décide seul, à la demande du propriétaire ; un
+  lien de la carte permet toujours à l’athlète de corriger la lecture.
 - **Aucune étude du tout** : le plafond hebdomadaire, le rythme d’une répétition de plus toutes les 2 semaines, les
   deux séances manquées qui allègent la semaine suivante. Le retour au calme de 10 min n’a pas de bénéfice
   démontré. Ces règles ne font que limiter ou enlever de la charge ; elles restent marquées.
