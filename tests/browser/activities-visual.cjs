@@ -80,7 +80,7 @@ async function lapsPage(browser, fixture, width, scale, dark) {
   assert.equal(await input.inputValue(), '1', key + ': a tap selects the bar under the finger');
   assert.equal(await input.getAttribute('aria-valuetext'), data.a[1]);
   const read = await fig.locator('.pf-viz-read').innerText();
-  assert.match(read, /Intervalle 2\s·\s1'0\d"\s·\s300\sm/, key + ': ' + read);
+  assert.match(read, /Intervalle\s2\s·\s1'0\d"\s·\s300\sm/, key + ': ' + read);
   assert.match(read, /3:\d\d\/km/);
   assert.match(read, /1\d\d\sbpm/);
   assert.ok(await page.locator('#laps-rows [data-i="1"]').evaluate(row => row.classList.contains('is-sel')), key + ': its row is marked');
@@ -96,7 +96,7 @@ async function lapsPage(browser, fixture, width, scale, dark) {
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('ArrowLeft');
   assert.equal(await input.inputValue(), '0', key + ': the left arrow walks back');
-  assert.match(await fig.locator('.pf-viz-read').innerText(), /Intervalle 1\s·\s16'30"\s·\s3,00\skm/);
+  assert.match(await fig.locator('.pf-viz-read').innerText(), /Intervalle\s1\s·\s16'30"\s·\s3,00\skm/);
   let moved = 0, heights = new Set();
   for (let i = 0; i <= data.r.length; i++) {
     await input.evaluate((el, i) => { el.value = i; el.dispatchEvent(new Event('input')); }, i);
@@ -118,7 +118,7 @@ async function lapsPage(browser, fixture, width, scale, dark) {
   fig = await open(fixture.laps.ride);
   assert.equal(await fig.locator('svg text').last().textContent(), 'W');
   await tap(fig, 1);
-  assert.match(await fig.locator('.pf-viz-read').innerText(), /Intervalle 2\s·\s10'00"\s·\s6,00\skm\s+290\sW\s+36,0\skm\/h\s·\s158\sbpm/);
+  assert.match(await fig.locator('.pf-viz-read').innerText(), /Intervalle\s2\s·\s10'00"\s·\s6,00\skm\s+290\sW\s+36,0\skm\/h\s·\s158\sbpm/);
   await overflow(key + ' ride');
   if (width === 393 && scale === 1) await page.screenshot({ path: `${lapsOutput}/laps-ride-${key}.png` });
   assert.deepEqual(errors, [], key + ': browser errors on the activity pages');
