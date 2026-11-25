@@ -55,16 +55,17 @@
 <body class="min-h-full bg-canvas text-ink antialiased{% if user is defined and user %} pf-app{% endif %}">
     {% if user is defined and user %}
     <a href="#main-content" class="pf-skip-link">Aller au contenu</a>
-    {#- Coaching (beta): a 4th entry for every account (app.features.coaching_for; nothing once it is switched off) -#}
+    {#- The order: Santé, Coaching, Courses, Activités (owner, 25 Nov. 2026), the app's native bar too (mobile/src/navigation.ts).
+        Coaching (beta): the 2nd entry for every account (app.features.coaching_for; nothing once it is switched off) -#}
     {% set _coaching = request is defined and request and request.app.state.coaching_for(user) %}
     <header class="pf-top">
         <div class="pf-wrap pf-top-in">
             <a href="/sante" class="pf-logo" aria-label="PaceForge — Santé">{% include "partials/_logo_mark.html" %}<span>PaceForge</span></a>
             <nav aria-label="Navigation principale" class="pf-nav">
-                {% set _on = request.url.path.startswith('/simulator') %}<a href="/simulator"{% if _on %} aria-current="page"{% endif %}><span>Courses</span></a>
-                {% set _on = request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}<a href="/activities"{% if _on %} aria-current="page"{% endif %}><span>Activités</span></a>
                 {% set _on = request.url.path.startswith('/sante') %}<a href="/sante"{% if _on %} aria-current="page"{% endif %}><span>Santé</span></a>
                 {% if _coaching %}{% set _on = request.url.path.startswith('/coaching') %}<a href="/coaching"{% if _on %} aria-current="page"{% endif %}><span>Coaching</span></a>{% endif %}
+                {% set _on = request.url.path.startswith('/simulator') %}<a href="/simulator"{% if _on %} aria-current="page"{% endif %}><span>Courses</span></a>
+                {% set _on = request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}<a href="/activities"{% if _on %} aria-current="page"{% endif %}><span>Activités</span></a>
             </nav>
             <div class="pf-top-right">
                 <button type="button" data-theme-toggle aria-label="Activer le mode sombre" aria-pressed="false" onclick="toggleDarkMode()" class="pf-ibtn">
@@ -88,10 +89,10 @@
     </main>
 
     <nav aria-label="Navigation mobile" class="pf-tabbar{% if _coaching %} is-four{% endif %}">
-        {% set _on = request.url.path.startswith('/simulator') %}<a href="/simulator"{% if _on %} aria-current="page"{% endif %}><svg width="20" height="20" class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22V4"/><path d="M4 4h12l-2 4 2 4H4"/></svg><span>Courses</span></a>
-        {% set _on = request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}<a href="/activities"{% if _on %} aria-current="page"{% endif %}><svg width="20" height="20" class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Activités</span></a>
         {% set _on = request.url.path.startswith('/sante') %}<a href="/sante"{% if _on %} aria-current="page"{% endif %}><svg width="20" height="20" class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg><span>Santé</span></a>
         {% if _coaching %}{% set _on = request.url.path.startswith('/coaching') %}<a href="/coaching"{% if _on %} aria-current="page"{% endif %}><svg width="20" height="20" class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M8.5 15l2.3 2.3 4.7-4.8"/></svg><span>Coaching</span></a>{% endif %}
+        {% set _on = request.url.path.startswith('/simulator') %}<a href="/simulator"{% if _on %} aria-current="page"{% endif %}><svg width="20" height="20" class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22V4"/><path d="M4 4h12l-2 4 2 4H4"/></svg><span>Courses</span></a>
+        {% set _on = request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}<a href="/activities"{% if _on %} aria-current="page"{% endif %}><svg width="20" height="20" class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Activités</span></a>
     </nav>
     {% else %}
     {% block content_public %}{% endblock %}

@@ -157,14 +157,14 @@ async def test_the_old_views_land_on_the_one_page(as_user: AsyncClient, db_sessi
 # ── Daily dashboard first ─────────────────────────────────────────────────────────────
 
 async def test_sante_remains_in_both_navs(as_user: AsyncClient):
-    """Courses · Activités · Santé, in both navs (owner, 2026-10-22); then Coaching, for every account (owner,
+    """Santé · Coaching · Courses · Activités, in both navs (owner, 2026-11-25; Coaching for every account since
     2026-11-21)."""
     page = (await as_user.get("/activities")).text
     top = page.split('class="pf-nav"')[1].split("</nav>")[0]
     tabbar = page.split('class="pf-tabbar is-four"')[1].split("</nav>")[0]
     for nav in (top, tabbar):
-        assert re.findall(r'href="(/[a-z]+)"', nav) == ["/simulator", "/activities", "/sante", "/coaching"]
-        assert [m for m in re.findall(r"<span>([^<]+)</span>", nav)] == ["Courses", "Activités", "Santé", "Coaching"]
+        assert re.findall(r'href="(/[a-z]+)"', nav) == ["/sante", "/coaching", "/simulator", "/activities"]
+        assert [m for m in re.findall(r"<span>([^<]+)</span>", nav)] == ["Santé", "Coaching", "Courses", "Activités"]
     assert '<a href="/sante" class="pf-logo"' in page  # the logo goes home
     page = (await as_user.get("/sante")).text
     assert page.count('href="/sante" aria-current="page"') == 2

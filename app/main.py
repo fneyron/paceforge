@@ -220,7 +220,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.state.build_id = BUILD_ID
-    # Coaching (beta, every account by default): base.html's 4th menu entry and Activités' card ask it per request
+    # Coaching (beta, every account by default): base.html's 2nd menu entry and Activités' card ask it per request
     from app import features
 
     app.state.coaching_for = features.coaching_for
