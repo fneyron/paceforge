@@ -101,3 +101,21 @@ def fixed_proposals(runs, today: date) -> list[dict]:
                     "why": f"Lu sur tes {WEEKDAYS_PLURAL[wd]}." if read
                     else f"Sans sortie ce jour-là : {default} par défaut."})
     return out
+
+
+# ── « Tous les mercredis ? »: a run declared « une séance dure » on a weekday the athlete runs most weeks ──
+RECUR_FROM = 5  # choix pratique: a run on that weekday in 5 of the FIXED_WEEKS complete weeks before the run's week (most of them) — a habit worth asking about, never set by itself
+
+
+def runs_that_weekday(runs, day: date) -> int:
+    """How many of the FIXED_WEEKS complete weeks before `day`'s week hold a run on `day`'s weekday."""
+    m0 = day - timedelta(days=day.weekday())
+    first = m0 - timedelta(weeks=FIXED_WEEKS)
+    return len({run.day for run in runs if first <= run.day < m0 and run.day.weekday() == day.weekday()
+                and run.minutes > 0})
+
+
+def weekly_habit(runs, day: date) -> bool:
+    """Whether the athlete runs on `day`'s weekday in most recent weeks (RECUR_FROM of FIXED_WEEKS): « Tu cours tous
+    les mercredis avec ton club ? » may be asked."""
+    return runs_that_weekday(runs, day) >= RECUR_FROM

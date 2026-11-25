@@ -152,6 +152,14 @@ FIXED_NOTE = {"affutage": "Affûtage : la moitié des répétitions suffit.",
 # most »: Seiler & Tønnessen 2009). The lower, the sooner; a tie keeps the week's parity.
 BESIDE_FIXED = {"seuil": 0, "cotes_longues": 0, "rappels": 0, "cotes_courtes": 1, "fartlek": 2, "intervalles": 2}
 
+# ── a run that was not the session planned (docs/coaching.md › « Les séances et les activités ») ──
+# The athlete says what it was. « Une séance dure »: the run is the day's hard session and one of the week's quality
+# sessions — the fixed session's rules for that week only (`after_hard`): the week's count (`week_quality`, TWO_QUALITY
+# at most: Seiler & Tønnessen 2009), its hard budget (HARD_SHARE, the run counted as FIXED_HARD_SHARE of it), the
+# plan's own session kept beside it by BESIDE_FIXED, never two hard days in a row (`move_day`; Stanley 2013).
+DECLARED_KEY = "dure"  # its structure's key
+DECLARED_NAME = "Séance dure"
+
 PHASES = {"base": "Base", "specifique": "Spécifique", "affutage": "Affûtage", "progression": "Progression",
           "entretien": "Entretien", "apres": "Après la course"}
 REASONS = {
@@ -604,8 +612,9 @@ def quality_session(key: str, reps: int) -> tuple[str, int, dict]:
 
 
 def hard_minutes(structure: dict | None) -> float:
-    """Minutes of hard effort (level 3 or more) in a session's structure; the fixed session's: its estimate."""
-    if is_fixed(structure):
+    """Minutes of hard effort (level 3 or more) in a session's structure; the fixed session's and a run declared
+    « une séance dure »: their estimate."""
+    if is_fixed(structure) or is_declared(structure):
         return float((structure or {}).get("hard") or 0)
     total = 0.0
     for step in (structure or {}).get("steps", []):
@@ -617,6 +626,19 @@ def hard_minutes(structure: dict | None) -> float:
 def is_fixed(structure: dict | None) -> bool:
     """The athlete's fixed session (its content is the club's), from a session's structure."""
     return (structure or {}).get("key") == FIXED_KEY
+
+
+def is_declared(structure: dict | None) -> bool:
+    """A run the athlete declared « une séance dure » (a club's, intervals, hills): the day's hard session."""
+    return (structure or {}).get("key") == DECLARED_KEY
+
+
+def declared_structure(minutes: int) -> dict:
+    """A run declared « une séance dure », as its session keeps it: the fixed session's shape (no repetition: its
+    content was the athlete's) and the hard minutes it counts for, a quarter of it (FIXED_HARD_SHARE, as the fixed
+    session: the same estimate for the same kind of evening)."""
+    return {"key": DECLARED_KEY, "name": DECLARED_NAME, "text": "", "hard": fixed_hard(minutes),
+            "steps": [{"t": "club", "min": int(minutes), "level": 4}]}
 
 
 def fixed_hard(minutes: int, half: bool = False) -> int:
@@ -633,7 +655,9 @@ def fixed_structure(fixed: Fixed, note: str | None = None) -> dict:
 
 
 def title(kind: str, structure: dict | None) -> str:
-    """A session's name: the fixed session's own, else its kind's."""
+    """A session's name: the fixed session's own (and a run declared « une séance dure »), else its kind's."""
+    if is_declared(structure):
+        return DECLARED_NAME
     if is_fixed(structure):
         return str((structure or {}).get("name") or FIXED_NAME)
     return KINDS.get(kind, kind)
@@ -701,6 +725,47 @@ def place(days: list[int], long_day: int | None, anchors: set[int], count: int) 
     return out
 
 
+def _wanted(inp: Inputs, info: dict, phase: str, index: int, writable: tuple[int, ...], count: int, volume: int,
+            race_week: bool) -> int:
+    """How many quality sessions the rules give a week (the fixed session counted among them): one from two sessions
+    a week and QUALITY_MIN_WEEK (from 3 days for a plan made before the profiles), two from TWO_QUALITY — never more
+    (Seiler & Tønnessen 2009) —, none in an eased week, a « débutant »'s first weeks easy only."""
+    rules = rule_set(inp)
+    wanted = 0
+    if rules == BEFORE:  # a plan made before the profiles: as it was made
+        allowed = len(writable) >= QUALITY_FROM_DAYS_BEFORE and count >= QUALITY_FROM_DAYS_BEFORE
+    else:  # two sessions are enough, the race counting as one in its week, in a week of QUALITY_MIN_WEEK or more
+        race_minutes = int(round(inp.goal.race_minutes or 0)) if race_week else 0
+        allowed = (len(writable) >= QUALITY_FROM_DAYS and count + (1 if race_week else 0) >= QUALITY_FROM_DAYS
+                   and volume + race_minutes >= QUALITY_MIN_WEEK)
+    if allowed and not info.get("easy"):
+        wanted = 2 if (rules in (BEFORE, TODAY) and len(writable) >= TWO_QUALITY[0] and inp.base >= TWO_QUALITY[1]
+                       and phase in ("base", "specifique", "progression") and not info.get("light")) else 1
+    if novice(inp):  # easy only for the plan's first weeks, then one quality session at its fewest repetitions
+        wanted = 0 if index < NOVICE_EASY_WEEKS else min(wanted, 1)
+    return wanted
+
+
+def week_quality(monday: date, inp: Inputs, info: dict, phase: str, index: int) -> int:
+    """The number of quality sessions the rules give the week of `monday` — what week_sessions writes, the fixed
+    session counted among them (`_wanted`, on the same frame: its days, its sessions, its volume). What a run
+    declared « une séance dure » is held to (docs/coaching.md › « Les séances et les activités »)."""
+    rd = inp.goal.race_day
+    race_in_week = rd if rd is not None and monday_of(rd) == monday else None
+    if phase == "apres":
+        return 0
+    volume = int(info["target"])
+    fixed = inp.fixed if race_in_week is None else None
+    writable = days_used(inp)
+    days = [d for d in writable if (race_in_week is None or d < race_in_week.weekday())
+            and (fixed is None or d != fixed.day)]
+    n = min(len(days), max(0, volume - (fixed.minutes if fixed is not None else 0)) // MIN_SESSION)
+    count = n + (1 if fixed is not None else 0)
+    if count <= 0:
+        return 0
+    return _wanted(inp, info, phase, index, writable, count, volume, race_in_week is not None)
+
+
 def week_sessions(monday: date, inp: Inputs, info: dict, phase: str, index: int, weeks_in_phase: int = 0,
                   limit: int | None = None) -> list:
     """The sessions of one week for its target volume (see the module's rules). `limit`: the longest any of them may
@@ -745,18 +810,7 @@ def week_sessions(monday: date, inp: Inputs, info: dict, phase: str, index: int,
     has_long = (count >= 2 and inp.long_day in days and not race_week
                 and not (rd is not None and 0 < (rd - long_date).days <= NO_LONG_BEFORE_RACE))
     rules, beginner = rule_set(inp), novice(inp)
-    wanted = 0
-    if rules == BEFORE:  # a plan made before the profiles: as it was made
-        allowed = len(writable) >= QUALITY_FROM_DAYS_BEFORE and count >= QUALITY_FROM_DAYS_BEFORE
-    else:  # two sessions are enough, the race counting as one in its week, in a week of QUALITY_MIN_WEEK or more
-        race_minutes = int(round(goal.race_minutes or 0)) if race_week else 0
-        allowed = (len(writable) >= QUALITY_FROM_DAYS and count + (1 if race_week else 0) >= QUALITY_FROM_DAYS
-                   and volume + race_minutes >= QUALITY_MIN_WEEK)
-    if allowed and not info.get("easy"):
-        wanted = 2 if (rules in (BEFORE, TODAY) and len(writable) >= TWO_QUALITY[0] and inp.base >= TWO_QUALITY[1]
-                       and phase in ("base", "specifique", "progression") and not info.get("light")) else 1
-    if beginner:  # easy only for the plan's first weeks, then one quality session at its fewest repetitions
-        wanted = 0 if index < NOVICE_EASY_WEEKS else min(wanted, 1)
+    wanted = _wanted(inp, info, phase, index, writable, count, volume, race_week)
     keys = _quality_keys(phase, index, goal.trail)
     cap = long_cap_of(inp) if limit is None else min(long_cap_of(inp), limit)
     least = bool(info.get("light")) or phase == "affutage" or rules == HOLD or beginner
@@ -978,16 +1032,17 @@ def form_footing(minutes: int, taper: bool = False) -> int:
 
 
 def move_day(today: date, days: tuple[int, ...], slots: list[Slot], kind: str,
-             race_day: date | None = None) -> date | None:
+             race_day: date | None = None, first: date | None = None) -> date | None:
     """Where the hard session of a low morning goes: the next available day of the same week (to Sunday) that holds
     nothing, or one easy session the plan may rewrite (it takes its place), and keeps « never two hard days in a
     row » — today no longer counts, it is a footing now; next Monday's session does. A long run never from J-3.
-    None: no such day, the session is dropped. `slots`: the live sessions from today to next Monday."""
+    None: no such day, the session is dropped. `slots`: the live sessions from today to next Monday. `first`: the
+    earliest day the session may go to (a session of a day behind postponed: from today on), else the day after."""
     hard = {s.day for s in slots if s.kind in HARD and s.day != today}
     by: dict[date, list[Slot]] = {}
     for s in slots:
         by.setdefault(s.day, []).append(s)
-    d, sunday = today + timedelta(days=1), monday_of(today) + timedelta(days=6)
+    d, sunday = max(today + timedelta(days=1), first or today), monday_of(today) + timedelta(days=6)
     while d <= sunday:
         there = by.get(d, [])
         near_race = kind == LONG and race_day is not None and 0 < (race_day - d).days <= NO_LONG_BEFORE_RACE
@@ -1016,3 +1071,124 @@ def with_form(adaptation: dict | None) -> dict:
     if adaptation.get("reason") in ("ressenti", "manquees"):
         return mine if ADAPT_FACTOR < float(adaptation.get("factor") or ADAPT_FACTOR) else adaptation
     return adaptation
+
+
+# ── a run declared « une séance dure » (docs/coaching.md › « Les séances et les activités ») ──
+
+@dataclass(frozen=True)
+class Held:
+    """A session as `after_hard` reads it: its day, kind, minutes (the time run once done), structure, status, and
+    whether the plan may change it (generated, still planned, nobody edited, moved or wrote it; never the fixed
+    session: it is the athlete's)."""
+    id: int
+    day: date
+    kind: str
+    minutes: int
+    structure: dict | None
+    status: str
+    free: bool
+
+
+@dataclass(frozen=True)
+class Change:
+    """One thing `after_hard` changes: « eased » (a quality session becomes a footing of its duration), « recup » (the
+    same, the day after a hard day: a recovery jog, as the generator writes it), « reps » (fewer repetitions, the
+    same duration), « moved » (to `to`; `swap`: the easy session of that day takes its place, None: the day was
+    empty)."""
+    what: str
+    id: int
+    day: date
+    minutes: int
+    structure: dict | None = None
+    to: date | None = None
+    swap: int | None = None
+
+
+def fewer_reps(structure: dict | None, minutes: int, budget: float) -> dict | None:
+    """The same quality session with as many repetitions as `budget` hard minutes hold — at least its fewest —, at
+    its own duration (the cool-down takes what the repetitions left); None when even the fewest do not fit."""
+    key = (structure or {}).get("key")
+    if key not in TEMPLATES:
+        return None
+    _kind, effort, _recov, _level, lo, _hi, _s, _r = TEMPLATES[key]
+    now = next((s.get("reps") for s in (structure or {}).get("steps", []) if s.get("t") == "bloc"), None) or lo
+    reps = min(int(now) - 1, int(budget // effort))
+    if reps < lo:
+        return None
+    _k, total, out = quality_session(key, reps)
+    if total > minutes:
+        return None
+    out["steps"][-1]["min"] += minutes - total
+    climb = (structure or {}).get("climb")
+    if climb:
+        out["climb"] = climb
+    return out
+
+
+def ease(held: Held, hard_days: set[date]) -> Change:
+    """A hard session the rules no longer allow: a footing of the same duration — a « Récup » (level 1) the day after
+    a hard day, as the generator writes it (Stanley 2013)."""
+    if held.day - timedelta(days=1) in hard_days:
+        return Change("recup", held.id, held.day, held.minutes, steady(held.minutes, 1))
+    return Change("eased", held.id, held.day, held.minutes, steady(held.minutes, 2))
+
+
+def after_hard(day: date, minutes: int, held: list[Held], wanted: int | None, today: date, days: tuple[int, ...],
+               race_day: date | None = None) -> list[Change]:
+    """What a run of `minutes` on `day`, declared « une séance dure », changes among the sessions still to do that the
+    plan may change (`held`: the live sessions around it, the declared one left out). The fixed session's rules,
+    for that week only:
+    - it counts as one of the week's quality sessions: of the plan's own ones still to do, as many stay as the week's
+      count (`wanted`, week_quality; None: a week the plan no longer writes, nothing counted) leaves beside it and
+      the sessions done, fixed or touched by a person — the phase's session that is not short intervals first
+      (BESIDE_FIXED), then the earliest —, within the week's hard budget (HARD_SHARE of the week, the run counted as
+      FIXED_HARD_SHARE of its duration: `fixed_hard`); a session over the budget keeps fewer repetitions
+      (`fewer_reps`), else becomes a footing of its duration (`ease`);
+    - never two hard days in a row: a hard session the plan may move, on the day after, goes to the next day of the
+      week the plan may use (`move_day`, Stanley 2013), else becomes a footing.
+    Nothing else: the time run beyond the plan changes no volume (aucune étude)."""
+    monday = monday_of(day)
+    kinds = {h.id: h.kind for h in held}
+
+    def quality(h: Held) -> bool:
+        return kinds[h.id] in (QUALITY, HILLS)
+
+    def hard_set() -> set[date]:
+        return {day} | {h.day for h in held if kinds[h.id] in HARD}
+
+    out: list[Change] = []
+    week = [h for h in held if monday_of(h.day) == monday and h.status != "missed"]
+    if wanted is not None:
+        open_ = [h for h in week if quality(h) and h.free and h.day >= today]
+        taken = [h for h in week if quality(h) and h not in open_]
+        room = wanted - 1 - len(taken)
+        budget = (HARD_SHARE * (minutes + sum(h.minutes for h in week)) - fixed_hard(minutes)
+                  - sum(hard_minutes(h.structure) for h in taken))
+        for h in sorted(open_, key=lambda h: (BESIDE_FIXED.get(str((h.structure or {}).get("key")), 1), h.day)):
+            if room > 0:
+                need = hard_minutes(h.structure)
+                if need <= budget + 1e-9:
+                    room, budget = room - 1, budget - need
+                    continue
+                fewer = fewer_reps(h.structure, h.minutes, budget)
+                if fewer is not None:
+                    room, budget = room - 1, budget - hard_minutes(fewer)
+                    out.append(Change("reps", h.id, h.day, h.minutes, fewer))
+                    continue
+            change = ease(h, hard_set())
+            kinds[h.id] = RECUP if change.what == "recup" else FOOTING
+            out.append(change)
+    after = day + timedelta(days=1)
+    nxt = next((h for h in held if h.day == after and h.day >= today and h.free and kinds[h.id] in HARD - {RACE}),
+               None)
+    if nxt is not None:
+        changed = {c.id for c in out}  # a session just eased is no easy day to swap with
+        slots = [Slot(h.day, kinds[h.id], h.free and h.id not in changed) for h in held
+                 if h.day >= after and h.status != "missed"]
+        target = move_day(after, days, slots + [Slot(day, QUALITY, False)], kinds[nxt.id], race_day, first=today)
+        if target is not None:
+            there = next((h for h in held if h.day == target and h.status != "missed"), None)
+            out.append(Change("moved", nxt.id, nxt.day, nxt.minutes, to=target, swap=there.id if there else None))
+        else:
+            out = [c for c in out if c.id != nxt.id] + [ease(nxt, hard_set() - {nxt.day})]
+    return out
