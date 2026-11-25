@@ -83,7 +83,7 @@ comparaisons doivent se faire sur la même fixture, sans tâches CPU concurrente
 ## Onglet Coaching — 21 novembre 2026
 
 L’application a un quatrième onglet natif, « Coaching », dans l’ordre du site
-(Courses, Activités, Santé, Coaching). Il se charge comme Courses, par un
+(depuis le 25 novembre 2026 : Santé, Coaching, Courses, Activités). Il se charge comme Courses, par un
 document complet : la réutilisation en mémoire décrite ci-dessus reste propre à
 Santé et Activités. Tirer vers le bas y recharge la page, sans synchronisation.
 Le composant natif simulé (`tests/browser/native/check.cjs`) vérifie l’ordre et

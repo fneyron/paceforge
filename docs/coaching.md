@@ -44,10 +44,11 @@ Un seul interrupteur reste, `COACHING_BETA_USERS` :
 - **Un compte qui n’ouvre jamais Coaching ne coûte rien** : aucune ligne n’est créée avant « Créer mon plan », et la
   tâche quotidienne ne parcourt que les plans qui existent.
 
-**Sur le site** : un quatrième onglet « Coaching », après Courses, Activités et Santé (en-tête et barre du bas).
+**Sur le site** : un onglet « Coaching », le deuxième, après Santé et avant Courses et Activités (en-tête et barre
+du bas ; ordre du propriétaire, 25 nov. 2026).
 
-**Dans l’app** (à partir de la version 1.1.0) : un quatrième onglet natif « Coaching », dans le même ordre que le
-site, qui ouvre `/coaching`. `tabForUrl` lui associe `/coaching` et `/coaching/…` ; il garde son dernier écran (la
+**Dans l’app** (à partir de la version 1.1.0) : un onglet natif « Coaching », dans le même ordre que le site (le
+quatrième dans les versions installées avant le 25 novembre 2026), qui ouvre `/coaching`. `tabForUrl` lui associe `/coaching` et `/coaching/…` ; il garde son dernier écran (la
 page d’un athlète suivi, par exemple) comme les autres onglets. Il se charge comme Courses, par un chargement complet
 du document : la navigation « douce » de l’app n’existe qu’entre Santé et Activités, dont les pages se remplacent
 sur place. Tirer vers le bas recharge la page, qui relit le plan (le jour, les nouvelles activités) ; ce geste ne

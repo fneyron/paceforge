@@ -1,7 +1,7 @@
 # PaceForge mobile
 
-Application iOS / Android avec **Santé comme tableau de bord**, puis Activités, Courses et Coaching
-(quatre onglets natifs, dans l’ordre du site : Courses, Activités, Santé, Coaching).
+Application iOS / Android avec **Santé comme tableau de bord**, son premier écran
+(quatre onglets natifs, dans l’ordre du site : Santé, Coaching, Courses, Activités).
 Les connexions restent accessibles par le bouton « Réglages », avec Apple Santé / Health Connect en premier. Les écrans du compte partagent une seule WebView HTTPS ; sa barre
 de navigation web et son bandeau sont masqués dans l’application. Le compte
 PaceForge fonctionne sans Strava. Garmin, COROS et Strava restent des connexions
@@ -31,7 +31,8 @@ les sauvegardes du plan restent attendues avant le départ. Les anciennes versio
 du serveur déclenchent le chargement complet habituel. Voir les mesures et
 limites dans [l’audit de fluidité](../docs/mobile-fluidite.md).
 
-**Coaching** (version 1.1.0, [règles](../docs/coaching.md)) est le quatrième onglet : il ouvre `/coaching`,
+**Coaching** (version 1.1.0, [règles](../docs/coaching.md)) est le deuxième onglet (le quatrième avant le
+25 novembre 2026) : il ouvre `/coaching`,
 garde son dernier écran comme les autres, et se charge comme Courses (un document complet, pas la navigation
 douce de Santé et Activités). L’app annonce cet onglet aux pages (`pf-native-coaching` sur `<html>`,
 `appShellScript`) : elles masquent alors la carte d’entrée d’Activités et le retour « ‹ Activités », que seules
