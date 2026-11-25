@@ -255,7 +255,7 @@ async def test_the_owner_s_club_run_is_read_hard_on_the_page_and_said(client, pe
     assert ' id="debrief" role="group" aria-labelledby="coach-run-h"' in page
     assert (f'<h2 id="coach-run-h" class="pf-coach-debrief-h" tabindex="-1"><b>Aujourd’hui, tu as couru 1h35 '
             f'(16,5{NNBSP}km) au lieu du footing de 55 min{NBSP}: comptée comme une séance dure.</b></h2>') in card
-    assert ('<p class="pf-coach-run-said" id="coach-run-said">Ta séance de mercredi devient une récup de 45 min ; le '
+    assert (f'<p class="pf-coach-run-said" id="coach-run-said">Ta séance de mercredi devient une récup de 45 min{NBSP}; le '
             'reste ne bouge pas.</p>') in card
     # no question: the ressenti (the debrief for that run), one correction link, the quiet way out, « Fermer »
     assert "C’était quoi" not in page and "pf-coach-run-kind" not in card and "Annuler" not in card
@@ -303,7 +303,7 @@ async def test_the_owner_s_club_run_is_read_hard_on_the_page_and_said(client, pe
     assert (tue.kind, tue.minutes, tue.ressenti, cr.answer_of(tue)["what"]) == (cp.FOOTING, 55, 4, cr.EASY)
     card = _card(r.text)
     assert (f'<b>Aujourd’hui, tu as couru 1h35 (16,5{NNBSP}km) au lieu du footing de 55 min{NBSP}: comptée comme une '
-            'sortie tranquille ; rien d’autre ne change.</b>') in card
+            f'sortie tranquille{NBSP}; rien d’autre ne change.</b>') in card
     assert '>C’était une séance dure</button>' in card and 'aria-pressed="true"' in card
     # … and back: the hard reading again, exactly as the first time
     await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
@@ -347,7 +347,7 @@ async def test_a_hard_session_the_day_after_is_moved_and_put_back(client, people
     wed, thu = (next(r for r in rows if r.day == d) for d in (WED, THU))
     # the content moved, each session kept on its day (its calendar event follows its day)
     assert (wed.kind, wed.minutes, thu.kind, thu.minutes) == (cp.RECUP, 50, cp.QUALITY, 45)
-    assert "Ta séance de mercredi passe à jeudi ; le reste ne bouge pas." in _card(page)
+    assert f"Ta séance de mercredi passe à jeudi{NBSP}; le reste ne bouge pas." in _card(page)
     assert f"Mercredi est le lendemain de la séance dure de mardi{NBSP}: sa séance passe à jeudi." in page
     thu_page = (await client.get("/coaching/calendar?d=2026-11-19", headers=HTMX)).text
     assert "Séance reportée de mercredi, lendemain de la séance dure de mardi." in thu_page
@@ -430,7 +430,7 @@ async def test_a_run_on_a_day_with_no_session_stays_outside_the_plan(client, peo
     run_id = (await db_session.execute(select(Activity.id).where(Activity.user_id == athlete.id))).scalar_one()
     card = _card(page)
     assert (f"<b>Aujourd’hui, tu as couru 50 min (7,5{NNBSP}km){NBSP}: rien n’était prévu. Comptée comme une sortie "
-            "tranquille ; rien d’autre ne change.</b>") in card
+            f"tranquille{NBSP}; rien d’autre ne change.</b>") in card
     assert "data-feel" not in card and "Ce n’est pas cette séance" not in card, "no session, no ressenti"
     assert "C’est ma séance de mardi" in card and ">C’était une séance dure</button>" in card
     rows = await _rows(db_session, athlete)
@@ -443,7 +443,7 @@ async def test_a_run_on_a_day_with_no_session_stays_outside_the_plan(client, peo
     thu = next(x for x in rows if x.day == THU)
     assert cp.is_declared(made.structure) and made.auto_day == WED and thu.kind == cp.RECUP
     assert not any(cr.is_note(x) for x in rows)
-    assert "Ta séance de jeudi devient une récup de 45 min ; le reste ne bouge pas." in _card(r.text)
+    assert f"Ta séance de jeudi devient une récup de 45 min{NBSP}; le reste ne bouge pas." in _card(r.text)
     await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
     assert _state_of(await _rows(db_session, athlete), answers=False) == before
     # « C’est ma séance de mardi »: Tuesday's missed session moved to Wednesday, the run linked to it
@@ -493,7 +493,7 @@ async def test_a_session_ticked_not_done_then_a_run_arrives(client, people, db_s
     before = await _before(db_session, athlete)
     page = _main((await client.get("/coaching")).text)
     assert (f"Aujourd’hui, tu as couru 1h35 (16,5{NNBSP}km) au lieu du footing de 55 min{NBSP}: comptée comme une "
-            "sortie tranquille ; rien d’autre ne change.") in _card(page)
+            f"sortie tranquille{NBSP}; rien d’autre ne change.") in _card(page)
     run_id = (await db_session.execute(select(Activity.id).where(Activity.user_id == athlete.id))).scalar_one()
     await db_session.refresh(tue)
     assert (tue.status, tue.activity_id) == (co.MISSED, None), "easy: the session stays « Pas faite »"
@@ -592,7 +592,7 @@ async def test_no_notice_once_nothing_is_left_to_say(client, people, db_session,
     athlete, _p = await _owner(client, db_session, people, clock, laps=None)
     page = _main((await client.get("/coaching")).text)
     tue = next(r for r in await _rows(db_session, athlete) if r.day == TUE)
-    assert (f"au lieu du footing de 55 min{NBSP}: comptée comme une sortie tranquille ; rien d’autre ne change."
+    assert (f"au lieu du footing de 55 min{NBSP}: comptée comme une sortie tranquille{NBSP}; rien d’autre ne change."
             in _card(page))
     r = await client.post(f"/coaching/sessions/{tue.id}/ressenti", data={"value": "2"}, headers=HTMX)
     assert "pf-coach-runcard" not in r.text and "pf-coach-debrief" not in r.text

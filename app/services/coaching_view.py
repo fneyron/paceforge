@@ -429,9 +429,9 @@ def _form(row, state: co.State, coach: bool) -> dict | None:
 RUN_NOT = "Ce n’est pas cette séance"
 RUN_AS = {runs_.HARD: "comptée comme une séance dure", runs_.EASY: "comptée comme une sortie tranquille"}
 RUN_FLIP = {runs_.HARD: "C’était une sortie tranquille", runs_.EASY: "C’était une séance dure"}
-RUN_REST = " ; le reste ne bouge pas."
+RUN_REST = NBSP + "; le reste ne bouge pas."
 RUN_STILL = "Le reste de la semaine ne bouge pas."
-RUN_NOTHING = " ; rien d’autre ne change."
+RUN_NOTHING = NBSP + "; rien d’autre ne change."
 RUN_FIXED = "Ta séance fixe : tous les {days}, {minutes}. Le plan s’écrit autour."
 RUN_SAID = {"eased": "ta séance de {day} devient un footing de {minutes}",
             "recup": "ta séance de {day} devient une récup de {minutes}",
@@ -567,7 +567,7 @@ def run_card(state: co.State, card: "runs_.Card") -> dict:
                 parts = [RUN_SAID[x["what"]].format(day=_wd(x["day"]), to=_wd(x.get("to") or x["day"]),
                                                     minutes=hm(int(x.get("minutes") or 0)))
                          for x in runs_.said_changes(a) if x.get("what") in RUN_SAID]
-                said = _sentence(" ; ".join(parts)) + RUN_REST if parts else RUN_STILL
+                said = _sentence((NBSP + "; ").join(parts)) + RUN_REST if parts else RUN_STILL
         else:
             title = first + RUN_NOTHING
     offer = None
