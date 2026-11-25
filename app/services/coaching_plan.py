@@ -1127,8 +1127,8 @@ def fewer_reps(structure: dict | None, minutes: int, budget: float) -> dict | No
 
 def ease(held: Held, hard_days: set[date]) -> Change:
     """A hard session the rules no longer allow: a footing of the same duration — a « Récup » (level 1) the day after
-    a hard day, as the generator writes it (Stanley 2013)."""
-    if held.day - timedelta(days=1) in hard_days:
+    a hard day, as the generator writes it (Stanley 2013); a long run stays a footing (a récup is short)."""
+    if held.day - timedelta(days=1) in hard_days and held.kind != LONG:
         return Change("recup", held.id, held.day, held.minutes, steady(held.minutes, 1))
     return Change("eased", held.id, held.day, held.minutes, steady(held.minutes, 2))
 

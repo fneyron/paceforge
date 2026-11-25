@@ -447,6 +447,8 @@ WHY_WEEK = {"eased": "{Day} devient un footing : la séance dure de {decl} compt
             "moved": "{Frm} est le lendemain de la séance dure de {decl} : sa séance passe à {day}."}
 OF_KIND = {cp.FOOTING: "du footing", cp.RECUP: "de la récup", cp.LONG: "de la sortie longue",
            cp.QUALITY: "de la séance", cp.HILLS: "de la séance de côtes", cp.RACE: "de la course"}
+OF_KEY = {"fartlek": "du fartlek", "seuil": "de la séance au seuil", "intervalles": "des intervalles",
+          "cotes_courtes": "des côtes courtes", "cotes_longues": "des côtes longues", "rappels": "des rappels"}
 WEEKDAYS_PLURAL = ("lundis", "mardis", "mercredis", "jeudis", "vendredis", "samedis", "dimanches")
 
 
@@ -495,7 +497,8 @@ def _of_session(was: dict) -> str:
         name = cp.title(cp.QUALITY, structure)
         return (f"de ta séance club de {hm(minutes)}" if name == cp.FIXED_NAME
                 else f"de ta séance « {name} » de {hm(minutes)}")
-    return f"{OF_KIND.get(str(was.get('kind')), 'de la séance')} de {hm(minutes)}"
+    named = OF_KEY.get(str((structure or {}).get("key")))
+    return f"{named or OF_KIND.get(str(was.get('kind')), 'de la séance')} de {hm(minutes)}"
 
 
 def run_when(day: date, today: date) -> str:
