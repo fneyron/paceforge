@@ -23,15 +23,18 @@ the visual check adds « 10 km du lac d’Annecy » on 24 April 2027 without a G
 A sixth account (Rémi, POST /__preview/coaching/as/road) runs on the road: a 10 km in 33 days with a time aimed at,
 eight weeks of runs with Strava's best efforts and a confirmed maximum — every « Cible » of a road plan.
 
-Three accounts show the card of a run that is not the planned session (docs/coaching.md › « Une sortie qui n’est pas
-la séance prévue »), each made on this week's Monday, signed in on request (POST /__preview/coaching/as/<who>):
+Three accounts show the notice of a run that is not the planned session, read by the plan itself (docs/coaching.md ›
+« Une sortie qui n’est pas la séance prévue »), each made on this week's Monday, signed in on request (POST
+/__preview/coaching/as/<who>):
 - « club » (Marc, the owner's week: Tuesday, Wednesday, Friday, Saturday, Sunday): yesterday a 1 h 35 club run with
-  laps of repeated efforts instead of the 45-min fartlek, and a club run on six of the eight Wednesdays before — « On
-  dirait des intervalles. », then « Tu cours tous les mercredis avec ton club ? »;
-- « dure » (Inès: Tuesday to Saturday): yesterday 1 h 35 instead of a 55-min récup, today's short hills the day after
-  — « Une séance dure » makes them a récup, said on the card, the ticket and the week;
-- « tranquille » (Jules: Tuesday, Thursday, Friday, Sunday): today 1 h 20 easy instead of the fartlek — « Reporter ta
-  séance à vendredi ? » —, and yesterday a run on a day with no session (« rien n’était prévu »).
+  laps of repeated efforts instead of the 45-min fartlek (read hard by its laps), and a club run on six of the eight
+  Wednesdays before — « Tu cours tous les mercredis avec ton club ? »;
+- « dure » (Inès: Tuesday to Saturday, a confirmed maximum of 190): yesterday 1 h 35 at 165 bpm on average instead of
+  a 55-min récup (read hard by its heart rate), today's short hills the day after — a récup, said on the notice, the
+  ticket and the week;
+- « tranquille » (Jules: Tuesday, Thursday, Friday, Sunday): today 1 h 20 easy instead of the fartlek (no laps, no
+  known maximum, no critical speed: an easy outing) — the fartlek passes to Friday —, and yesterday a run on a day
+  with no session (« rien n’était prévu »: it stays outside the plan).
 
 A fourth account has no plan either but a habit (Hugo: Monday, Wednesday and Saturday for eight weeks, the long run
 on Saturday, a race in 40 days): what the onboarding proposes from a history. A fixture signs it in on request —
@@ -241,12 +244,12 @@ async def card_accounts(db, today, noon) -> dict:
     wed = monday + timedelta(days=2)
     n = [900000]
 
-    def run(user, day, minutes, km, name, laps=None, hour=7):
+    def run(user, day, minutes, km, name, laps=None, hour=7, hr=150):
         n[0] += 1
         return Activity(user_id=user.id, strava_activity_id=n[0], name=name, sport_type="Run",
                         start_date=datetime.combine(day, time(hour), timezone.utc), distance=km * 1000,
                         moving_time=minutes * 60, elapsed_time=minutes * 60 + 60, total_elevation_gain=40,
-                        average_speed=km * 1000 / (minutes * 60), average_heartrate=150, max_heartrate=184,
+                        average_speed=km * 1000 / (minutes * 60), average_heartrate=hr, max_heartrate=184,
                         raw_data={"utc_offset": 0}, laps=laps)
 
     specs = {
@@ -256,7 +259,8 @@ async def card_accounts(db, today, noon) -> dict:
                  + [(monday - timedelta(weeks=w) + timedelta(days=6), 100, 16.0, "Sortie longue", None, 9)
                     for w in range(1, 9)]),
         "dure": ("Inès", [1, 2, 3, 4, 5], 300,
-                 [(monday + timedelta(days=1), 47, 8.4, "Fractionné", None, 7), (wed, 95, 16.5, "Séance au stade", None, 19)]),
+                 [(monday + timedelta(days=1), 47, 8.4, "Fractionné", None, 7, 140),
+                  (wed, 95, 16.5, "Séance au stade", None, 19, 165)]),
         "tranquille": ("Jules", [1, 3, 4, 6], 200,
                        [(monday + timedelta(days=1), 44, 7.6, "Footing", None, 7),
                         (wed, 40, 6.6, "Footing avec Tom", None, 18), (today, 80, 12.4, "Sortie avec Tom", None, 7)]),
@@ -266,8 +270,10 @@ async def card_accounts(db, today, noon) -> dict:
         user = User(firstname=name, email=f"{key}@example.org", email_verified=True, timezone="UTC")
         db.add(user)
         await db.flush()
-        for day, minutes, km, title, laps, hour in runs:
-            db.add(run(user, day, minutes, km, title, laps, hour))
+        if key == "dure":
+            user.max_heart_rate = 190  # confirmed: the « soutenu » zone from 152 bpm
+        for day, minutes, km, title, laps, hour, *hr in runs:
+            db.add(run(user, day, minutes, km, title, laps, hour, *hr))
         plan = await co.save_plan(db, user, co.Clock(noon - timedelta(days=today.weekday()), timezone.utc, monday),
                                   route_id=None, days=days, long_day=max(days) if 6 not in days else 6, base=base)
         for week in cp.build(co.inputs(plan, cp.Goal()), monday):
