@@ -419,13 +419,15 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   await consent.waitForTimeout(100);
   assert.equal(await consent.getByRole('button',{name:/Accepte le suivi/}).count(),0,'cleared once a push is accepted');
   await consent.close();
-  // The native Coaching tab: fourth like on the site, a full load like Courses (never the two reading tabs' soft
+  // The native Coaching tab: second like on the site, after Santé, a full load like Courses (never the two reading tabs' soft
   // navigation), a pull that reloads the page itself, its last screen kept, its calendar link handed to the system.
   // react-native-web renders no aria-selected from accessibilityState: the selected tab is the one in bold
   const selectedTab=async p=>(await p.getByRole('tab').evaluateAll(all=>all.filter(t=>getComputedStyle(t.firstElementChild).fontWeight==='700').map(t=>t.innerText))).join('+');
   const coaching=await page();await coaching.waitForFunction(()=>window.nonce);
   await coaching.evaluate(()=>reply());await coaching.waitForFunction(()=>collects===1&&refreshes.length===1);
-  assert.deepEqual(await coaching.getByRole('tab').allInnerTexts(),['Courses','Activités','Santé','Coaching'],'four tabs, in the site order');
+  assert.deepEqual(await coaching.getByRole('tab').allInnerTexts(),['Santé','Coaching','Courses','Activités'],'four tabs, in the site order');
+  // the first screen at a cold start: Santé, its tab selected
+  assert.equal(await selectedTab(coaching),'Santé');assert.equal(await coaching.evaluate(()=>new URL(actual).pathname),'/sante');
   for(const width of [320,393]){
    await coaching.setViewportSize({width,height:852});
    const labels=await coaching.getByRole('tab').evaluateAll(all=>all.map(tab=>{const text=tab.firstElementChild,box=tab.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(text);const r=range.getBoundingClientRect();return{label:tab.innerText,inside:r.left>=box.left-0.5&&r.right<=box.right+0.5,lines:Math.round(r.height/parseFloat(getComputedStyle(text).lineHeight||'16'))||1,target:box.height>=44};}));
