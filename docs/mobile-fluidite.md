@@ -70,6 +70,12 @@ PF_PREVIEW_URL=http://127.0.0.1:8891 node tests/browser/chart-readouts.cjs
 PF_PREVIEW_URL=http://127.0.0.1:8891 node tests/browser/profile_loading.cjs
 ```
 
+`chart-readouts.cjs` parcourt aussi le graphique « Intervalles » d’une séance
+sur piste de la fixture (sa page `/activity/…`) : chaque tour choisi, la
+hauteur du libellé et la place du graphique ne bougent pas. Le reste de ce
+graphique (toucher, flèches, ligne du tableau, 240 tours, vélo) est vérifié par
+`activities-visual.cjs`.
+
 Les commandes navigateur demandent Playwright installé et accessible par Node.
 Le profil accepte `PF_PREVIEW_OUTPUT` pour enregistrer mesures et captures ; les
 comparaisons doivent se faire sur la même fixture, sans tâches CPU concurrentes.
