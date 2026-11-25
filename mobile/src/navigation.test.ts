@@ -13,10 +13,10 @@ test('internal detail pages keep the right native tab; external URLs cannot chan
   assert.equal(tabForUrl('https://paceforge.fr/auth/login'), null);
 });
 
-test('four native tabs in the site\'s order, each with its destination; Coaching keeps its own pages', () => {
+test('four native tabs in the site\'s order, Santé first, each with its destination; Coaching keeps its own pages', () => {
   assert.deepEqual(tabs.map(([key, label]) => [key, label, destinations[key]]), [
-    ['courses', 'Courses', '/simulator'], ['activities', 'Activités', '/activities'], ['health', 'Santé', '/sante'],
-    ['coaching', 'Coaching', '/coaching']]);
+    ['health', 'Santé', '/sante'], ['coaching', 'Coaching', '/coaching'], ['courses', 'Courses', '/simulator'],
+    ['activities', 'Activités', '/activities']]);
   for (const path of ['/coaching', '/coaching?d=2026-11-21&v=mois', '/coaching?refaire=1', '/coaching/athletes', '/coaching/athletes/12']) {
     assert.equal(tabForUrl('https://paceforge.fr' + path), 'coaching', path);
   }

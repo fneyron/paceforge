@@ -1,8 +1,8 @@
 import { ORIGIN, trusted } from './api';
 
 export type Tab = 'health' | 'activities' | 'courses' | 'coaching' | 'devices';
-// The site's order (its header and its phone bar): Coaching is the 4th entry there too.
-export const tabs = [['courses', 'Courses'], ['activities', 'Activités'], ['health', 'Santé'], ['coaching', 'Coaching']] as const;
+// The site's order (its header and its phone bar): Santé first, the app's first screen, then Coaching, Courses, Activités.
+export const tabs = [['health', 'Santé'], ['coaching', 'Coaching'], ['courses', 'Courses'], ['activities', 'Activités']] as const;
 export const destinations: Record<Exclude<Tab, 'devices'>, string> = { health: '/sante', activities: '/activities', courses: '/simulator', coaching: '/coaching' };
 export function prepareNavigationScript(nonce: string): string {
   return `Promise.resolve().then(() => window.paceforgeBeforeLeave?.()).then(() => window.paceforgeTabs?.beforeLeave?.()).then(() => {
