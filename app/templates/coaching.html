@@ -65,20 +65,19 @@ document.addEventListener("click", function (event) {
         else fallback();
     }
 });
-// A run's card answered (« Une séance dure », « Reporter », « Oui, tous les mercredis »…): the button is gone with the
-// swap, the focus goes to what the plan changed — as « Déplacer » gives its instruction the focus.
+// A run's notice corrected (« C’était une sortie tranquille »), or « Tous les mercredis ? » answered: the notice is
+// said again — the focus goes to its heading, as « Déplacer » gives its instruction the focus (the ressenti keeps its
+// own focus).
 var runAnswered = false;
 document.addEventListener("htmx:beforeRequest", function (event) {
-    runAnswered = !!(event.target.closest && event.target.closest("[data-answer-card]"));
+    var form = event.target.closest && event.target.closest("[data-answer-card] form");
+    runAnswered = !!form && !form.classList.contains("pf-coach-feel");
 });
 document.addEventListener("htmx:afterSettle", function () {
     if (!runAnswered) return;
     runAnswered = false;
-    var said = document.getElementById("coach-run-said") || document.getElementById("coach-run-h");
-    if (said && (!document.activeElement || document.activeElement === document.body)) {
-        if (!said.hasAttribute("tabindex")) said.setAttribute("tabindex", "-1");
-        said.focus({ preventScroll: false });
-    }
+    var said = document.getElementById("coach-run-h");
+    if (said) said.focus({ preventScroll: false });
 });
 // « Déplacer »: the days become the targets — the board comes into view, the instruction takes the focus.
 document.addEventListener("htmx:afterSettle", function () {
