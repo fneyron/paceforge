@@ -135,11 +135,14 @@ NOVICE_MAX_DAYS = 4  # (H) …and at most 4 running days used, a day off between
 
 # ── the fixed session (docs/coaching.md › « La séance fixe ») ──────────────
 # One recurring weekly session the athlete brings — a club's intervals, a track night — on its weekday, at its
-# duration. The plan writes no repetitions for it: its content is the club's. It is the week's quality session.
+# duration, set in « Ma séance fixe » or by the plan itself from a hard-session habit (coaching_runs.habit). The plan
+# writes no repetitions for it: its content is the athlete's. It is the week's quality session. Its words never
+# assume a club (the owner, on the 26th of November: « On ne sait pas si c'est une sortie club »).
 FIXED_KEY = "fixe"  # its structure's key
-FIXED_NAME = "Séance club"  # choix pratique: its name when none is typed
+FIXED_NAME = "Séance fixe"  # choix pratique: its name when none is typed
+FIXED_NAME_BEFORE = "Séance club"  # the name given by default before this one: read as it
 FIXED_NAME_MAX = 40  # choix pratique: what a typed name is held to
-FIXED_TEXT = "Le contenu est celui de ton club."
+FIXED_TEXT = "Son contenu est le tien."
 FIXED_RANGE = (30, 180)  # choix pratique: what a duration is held to (MIN_SESSION to 3 h)
 FIXED_DEFAULT = 75  # (H) 1 h 15 proposed without runs on that weekday to read (aucune étude: a club evening with its warm-up)
 FIXED_HARD_SHARE = 0.25  # (H) the hard minutes it counts for in HARD_SHARE: a quarter of its duration — 16 × 300 m at maximal aerobic speed in a 75-min club session is about 16 to 19 min of effort (aucune étude)
@@ -624,7 +627,7 @@ def hard_minutes(structure: dict | None) -> float:
 
 
 def is_fixed(structure: dict | None) -> bool:
-    """The athlete's fixed session (its content is the club's), from a session's structure."""
+    """The athlete's fixed session (its content is the athlete's), from a session's structure."""
     return (structure or {}).get("key") == FIXED_KEY
 
 
@@ -647,7 +650,7 @@ def fixed_hard(minutes: int, half: bool = False) -> int:
 
 
 def fixed_structure(fixed: Fixed, note: str | None = None) -> dict:
-    """The fixed session as the plan writes it: its name, one line (no repetition: its content is the club's), the
+    """The fixed session as the plan writes it: its name, one line (no repetition: its content is the athlete's), the
     line of a week that asks for half of it, and the hard minutes it counts for."""
     return {"key": FIXED_KEY, "name": fixed.name, "text": FIXED_TEXT + (f" {note}" if note else ""),
             "note": note, "hard": fixed_hard(fixed.minutes, note is not None),
@@ -659,7 +662,8 @@ def title(kind: str, structure: dict | None) -> str:
     if is_declared(structure):
         return DECLARED_NAME
     if is_fixed(structure):
-        return str((structure or {}).get("name") or FIXED_NAME)
+        name = str((structure or {}).get("name") or FIXED_NAME)
+        return FIXED_NAME if name == FIXED_NAME_BEFORE else name
     return KINDS.get(kind, kind)
 
 

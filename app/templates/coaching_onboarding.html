@@ -58,7 +58,7 @@
                 « La séance fixe ») -#}
             <div class="pf-coach-fixed" id="coach-fixed" data-fixed>
                 <input type="hidden" name="fixed_asked" value="1">
-                <label class="pf-coach-fixed-toggle"><input type="checkbox" name="fixed_on" value="1" id="coach-fixed-on" data-fixed-toggle{% if fixed.on %} checked{% endif %}><span>J’ai déjà une séance chaque semaine (club)</span></label>
+                <label class="pf-coach-fixed-toggle"><input type="checkbox" name="fixed_on" value="1" id="coach-fixed-on" data-fixed-toggle{% if fixed.on %} checked{% endif %}><span>J’ai déjà une séance chaque semaine</span></label>
                 {% include "partials/coaching_fixed_fields.html" %}
             </div>
             {#- the week drawn again is said to a screen reader (the drawing itself is replaced: this line stays) -#}
