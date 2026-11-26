@@ -591,15 +591,15 @@ async def coaching_form(value: str = Form(default=""), scope: Scope = Depends(ow
 # The athlete's own: never a follower's route. Nothing here is required: the plan was updated on reading; these are
 # the notice's quiet taps (services/coaching_runs), then the plan is read again and the part swapped in place.
 
-RUN_ACTIONS = ("corriger", "chaque-semaine", "pas-celle", "seance", "fermer")
+RUN_ACTIONS = ("corriger", "pas-chaque-semaine", "pas-celle", "seance", "fermer")
 
 
 @router.post("/coaching/runs/{run_id}/{action}", response_class=HTMLResponse)
 async def coaching_run(run_id: int, action: str, request: Request, scope: Scope = Depends(own_scope),
                        db: AsyncSession = Depends(get_db)):
-    """« C’était une sortie tranquille » / « C’était une séance dure » (`corriger`), « Tu cours tous les mercredis… ? »
-    (`chaque-semaine`: oui, non), « Ce n’est pas cette séance » (`pas-celle`), « C’est ma séance de … » (`seance`:
-    the session's id), « Fermer »."""
+    """« C’était une sortie tranquille » / « C’était une séance dure » (`corriger`), « Pas tous les mercredis »
+    (`pas-chaque-semaine`: the fixed session the plan set by itself taken back for good), « Ce n’est pas cette
+    séance » (`pas-celle`), « C’est ma séance de … » (`seance`: the session's id), « Fermer »."""
     if action not in RUN_ACTIONS:
         raise HTTPException(status_code=404)
     value = str((await request.form()).get("value") or "")
@@ -608,8 +608,8 @@ async def coaching_run(run_id: int, action: str, request: Request, scope: Scope 
     try:
         if action == "corriger":
             await cr.correct(db, state, scope.athlete, run_id)
-        elif action == "chaque-semaine":
-            await cr.recur(db, state, scope.athlete, run_id, value == "oui")
+        elif action == "pas-chaque-semaine":
+            await cr.not_weekly(db, state, scope.athlete, run_id)
         elif action == "pas-celle":
             await cr.not_this(db, state, run_id)
         elif action == "seance":
@@ -643,6 +643,7 @@ async def coaching_fixed(request: Request, scope: Scope = Depends(own_scope), db
                                plan.weekdays, plan.long_day)
     except co.Invalid as e:
         return await _page(request, db, scope, None, None, None, tool="fixed", tool_error=str(e))
+    co.left_by_hand(plan, fixed)  # moved to another day: the plan never sets one on the day it leaves by itself
     await co.set_fixed(db, plan, scope.athlete, fixed)
     await db.commit()
     logger.info("Coaching: fixed session set for user %d", scope.athlete.id)
@@ -651,9 +652,9 @@ async def coaching_fixed(request: Request, scope: Scope = Depends(own_scope), db
 
 @router.post("/coaching/fixe/retirer")
 async def coaching_fixed_remove(scope: Scope = Depends(own_scope), db: AsyncSession = Depends(get_db)):
-    """« Retirer »: no fixed session any more; the plan places its own quality sessions again from today."""
-    plan = await _agenda_plan(db, scope)
-    await co.set_fixed(db, plan, scope.athlete, None)
+    """« Retirer »: no fixed session any more; the plan places its own quality sessions again from today, and never
+    sets one on that weekday by itself again (coaching_runs.drop_fixed)."""
+    await cr.drop_fixed(db, await _state(db, scope), scope.athlete)
     await db.commit()
     logger.info("Coaching: fixed session removed for user %d", scope.athlete.id)
     return RedirectResponse(FIXED, status_code=303)
