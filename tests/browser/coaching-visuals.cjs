@@ -107,6 +107,10 @@ const seen = (page, selector) => page.locator(selector).evaluateAll(all => all.f
   return true;
 }).map(el => el.innerText.replace(/\s+/g, ' ').trim()));
 
+// What a sighted reader sees of an element: its text without what is said to a screen reader only (.sr-only).
+const sighted = loc => loc.evaluate(el => { const c = el.cloneNode(true); c.querySelectorAll('.sr-only').forEach(x => x.remove()); return c.textContent.replace(/\s+/g, ' ').trim(); });
+const sightedAll = loc => loc.evaluateAll(all => all.map(el => { const c = el.cloneNode(true); c.querySelectorAll('.sr-only').forEach(x => x.remove()); return c.textContent.replace(/\s+/g, ' ').trim(); }));
+
 async function noOverflow(page, label) {
   const sizes = await page.evaluate(() => ({ viewport: innerWidth, page: document.documentElement.scrollWidth }));
   assert.ok(sizes.page <= sizes.viewport + 1, label + ': horizontal overflow ' + JSON.stringify(sizes));
@@ -225,9 +229,13 @@ async function sheet(page) {
       const key = `${width}-${dark ? 'dark' : 'light'}${suffix(app)}`;
       const page = await open(browser, { width, dark, app });
       await page.goto(athlete + '/coaching', { waitUntil: 'networkidle' });
-      assert.match(await page.locator('h1').innerText(), /^Coaching\s+bêta$/i, key);
-      // the road's heading: « J‑54 » large, the race, the time the plan runs on — said once, the way to its page
-      assert.match(await page.locator('.pf-coach-goal').innerText(), /^J‑54\s+Trail des Crêtes\s+Objectif\s5h00$/, key);
+      assert.equal(await page.locator('h1').innerText(), 'Coaching', key + ': no « bêta »');
+      // the road's one line: « J‑54 » large, the race, the time the plan runs on — said once, the way to its page;
+      // where the time comes from is said to a screen reader only
+      assert.equal(await sighted(page.locator('.pf-coach-goal')), 'J‑54 · Trail des Crêtes · 5h00', key);
+      assert.equal(await page.locator('a.pf-coach-goal-time .sr-only').textContent(), 'Objectif ', key);
+      assert.equal(await page.locator('.pf-coach-road p:not(.pf-coach-road-tip)').count(), 0, key + ': no line under the bars');
+      assert.equal(await page.locator('#coach-road-tip').innerText(), '', key + ': the week said only while scrubbed');
       assert.ok(await page.locator('.pf-coach-lead').evaluate(b => parseFloat(getComputedStyle(b).fontSize) >= 19), key + ': « J‑54 » large');
       assert.match(await page.locator('a.pf-coach-goal-time').getAttribute('href'), /^\/simulator\/routes\/\d+$/, key);
       assert.ok((await page.locator('a.pf-coach-goal-time').boundingBox()).height >= 40, key + ': a 40 px target');
@@ -242,19 +250,20 @@ async function sheet(page) {
       assert.equal(road.find(b => /is-current/.test(b.cls)).fill, road[road.length - 1].fill, key + ': the current week in the race’s ink');
       assert.ok(new Set(road.filter(b => !/is-current|is-race/.test(b.cls)).map(b => b.fill)).size >= 3, key + ': tinted by phase');
       assert.ok(new Set(road.map(b => Math.round(b.h))).size >= 4, key + ': heights follow the volume');
-      assert.deepEqual(await page.locator('.pf-coach-phases span').allInnerTexts(), ['Base', 'Spécifique', 'Affûtage'], key);
+      assert.equal(await page.locator('.pf-coach-phases, .pf-coach-level').count(), 0, key + ': no phase names, no level line');
       // the form: this morning's index is low — today's quality session is a footing, one short reason, the way to
       // Santé, never the number
       assert.match(await page.locator('.pf-coach-s-title').innerText(), /^Footing(\s+30 min)?$/, key);
-      assert.equal(await page.locator('.pf-coach-formline a[href="/sante"]').innerText(), 'Séance allégée : récupération basse ce matin', key);
-      assert.equal(await page.locator('.pf-coach-formline span').innerText(), 'La séance prévue passe à vendredi.', key);
+      assert.equal(await page.locator('.pf-coach-formline a[href="/sante"]').innerText(), 'Séance allégée : récupération basse ce matin. La séance prévue passe à vendredi.', key);
+      assert.equal(await page.locator('.pf-coach-session .pf-coach-formline').count(), 1, key + ': one line about what changed');
       assert.doesNotMatch(await page.locator('.pf-coach-daycard').innerText(), /\d\s?%/, key + ': the index is Santé’s to print');
       // the agenda: today's session has its time, in a free slot of her work calendar — on the ticket's page only
       assert.match(await page.locator('.pf-coach-slot-time').innerText(), /^12\sh\s00 – 12\sh\s30$/, key + ': the slot');
+      assert.match(await page.locator('.pf-coach-slot-time').getAttribute('aria-label'), /^12\sh\s00 – 12\sh\s30 : demander un autre créneau$/, key + ': a tap asks for another');
       assert.equal(await page.locator('#coach-main .pf-coach-day .pf-coach-when').count(), 0, key + ': the column stays clean');
       assert.doesNotMatch(await page.locator(`#coach-day-${fixture.day}`).innerText(), /\sh\s/, key);
       // the order: the road, the debrief, the board, the day's ticket
-      assert.match(await page.locator('.pf-coach-date').innerText(), /^Aujourd’hui\s+jeudi \d+ \S+$/, key);
+      assert.equal(await page.locator('.pf-coach-date').innerText(), 'Aujourd’hui', key + ': the date once');
       const boxes = {};
       for (const part of ['road', 'debrief', 'cal-main', 'daycard']) boxes[part] = await page.locator('.pf-coach-' + part).boundingBox();
       assert.ok(boxes.road.y + boxes.road.height <= boxes.debrief.y && boxes.debrief.y + boxes.debrief.height <= boxes['cal-main'].y
@@ -274,21 +283,23 @@ async function sheet(page) {
       assert.equal(await page.locator('.pf-coach-session svg.pf-effort').count(), 0, key + ': no profile for a steady session');
       // la cible, inside the ticket: her pace on flat ground (her critical speed) and her heart-rate range; with numbers,
       // no talk-test sentence under it (owner, 24 Nov 2026: « on veut de vrai cible »)
-      assert.deepEqual(await page.locator('.pf-coach-ticket .pf-coach-target-vals b').allInnerTexts(), ['5:40/km', '112–148bpm'], key);
+      assert.deepEqual(await page.locator('.pf-coach-ticket .pf-coach-target b').allInnerTexts(), ['max5:40/km', '112–148bpm'], key);
+      assert.deepEqual(await page.locator('.pf-coach-ticket .pf-coach-target .sr-only').allTextContents(), ['Pas plus vite que, sur le plat : 5 min 40 au km', 'Cardio : 112 à 148 bpm'], key + ': the whole meaning, spoken');
+      assert.equal(await page.locator('.pf-coach-ticket .pf-coach-target').getAttribute('aria-label'), 'Cible', key);
       assert.equal(await page.locator('.pf-coach-s-guide').count(), 0, key + ': numbers, no feel sentence');
       if (width === 393 && !app) {
         await page.locator('.pf-coach-daycard').screenshot({ path: `${out}/cible-393-numbers-no-sentence${dark ? '-dark' : ''}.png` });
         await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));  // the element's screenshot scrolled to it
       }
-      // ONE main action, « Pas faite » quiet beside it; « Déplacer », « Modifier » quiet under them
+      // ONE main action, « C’est fait », and ONE round « ⋯ » beside it; the rest behind it
       assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), ['C’est fait'], key + ': one main action');
       const main = await page.locator('[id^="coach-done-"]').boundingBox();
-      const missed = await page.locator('[id^="coach-missed-"]').boundingBox();
+      const more = await page.locator('[id^="coach-more-"]').boundingBox();
       assert.ok(main.height >= 48 && main.width > boxes.daycard.width * 0.5, key + ': « C’est fait » takes most of the row');
-      assert.ok(missed.height >= 44 && Math.abs((missed.y + missed.height / 2) - (main.y + main.height / 2)) < 2 && missed.x > main.x, key + ': « Pas faite » beside it');
-      assert.ok((await page.locator('[id^="coach-move-"]').boundingBox()).y > main.y + main.height, key + ': « Déplacer » under it');
-      assert.deepEqual(await seen(page, '.pf-coach-daycard .pf-coach-quietbtn'), ['Autre créneau', 'Pas faite', 'Déplacer', 'Modifier'], key + ': the quiet actions');
-      assert.deepEqual(await page.locator('.pf-coach-daycard .pf-coach-quietbtn').evaluateAll(all => [...new Set(all.map(el => getComputedStyle(el).backgroundColor))]), ['rgba(0, 0, 0, 0)'], key + ': no fill');
+      assert.ok(more.height >= 44 && more.width >= 44 && Math.abs((more.y + more.height / 2) - (main.y + main.height / 2)) < 2 && more.x > main.x, key + ': « ⋯ » beside it');
+      assert.equal(await page.locator('[id^="coach-more-"]').getAttribute('aria-label'), 'Autres actions', key);
+      assert.equal(await page.locator('.pf-coach-menu').isVisible(), false, key + ': the menu waits');
+      assert.equal(await seen(page, '.pf-coach-daycard :is(button, a, summary)').then(all => all.length), 4, key + ': the slot, the form’s line, « C’est fait », « ⋯ »: nothing else in sight');
       // the board: seven days, each its sessions as tiles (kind, status, height), a word — no legend; the next week
       // as a row of small tiles
       assert.equal(await page.locator('.pf-coach-day').count(), 14, key + ': the week and the next');
@@ -316,10 +327,11 @@ async function sheet(page) {
       assert.ok(await page.locator('.pf-coach-prog i').evaluate(i => i.getBoundingClientRect().width > 10), key + ': the thin progress bar');
       assert.equal(await page.locator('#coach-today').count(), 0, key + ': this week: no « Aujourd’hui »');
       assert.equal(await page.locator('#coach-next-h').innerText(), 'Semaine prochaine', key);
-      assert.match(await page.locator('.pf-coach-nextlabel > [aria-hidden]').innerText(), /^\d\S* prévues$/, key);
+      assert.match(await sighted(page.locator('.pf-coach-nextlabel')), /^Semaine prochaine · \d\S*$/, key + ': « Semaine prochaine · 3h15 »');
       assert.ok(await page.locator('.pf-coach-day.is-mini').evaluateAll(all => all.every(d => d.getBoundingClientRect().height >= 44)), key + ': 44 px days');
-      // the week's lines keep their place under the rows, in the warning's look
-      assert.deepEqual(await page.locator('.pf-coach-week .pf-coach-reason').allInnerTexts(), ['Semaine plus légère, pour assimiler.', 'Mardi est plein : séance déplacée à vendredi.'], key);
+      // at most one line about an automatic change, under the shown week only; no hint about the gesture
+      assert.ok(await page.locator('.pf-coach-week.is-board .pf-coach-auto').count() <= 1, key);
+      assert.equal(await page.locator('.pf-coach-week.is-next .pf-coach-reason, #coach-drag-hint').count(), 0, key);
       // a run outside the plan: a grey tile on its day, « Sortie »
       const wednesday = week.locator('.pf-coach-day').nth(2);
       assert.match(await wednesday.getAttribute('aria-label'), /^mercredi \d+ \S+ : une sortie hors plan$/, key);
@@ -327,10 +339,15 @@ async function sheet(page) {
       // at the top: yesterday's run outside the plan is the most recent — the plan read it by itself (an easy
       // outing: it stays outside the plan) and its notice says so, in the debrief's place, with the link that
       // corrects it; Tuesday's run waits for its ressenti behind it, a mark on its day
-      assert.equal(await page.locator('#debrief.pf-coach-runcard h2').innerText(), 'Hier, tu as couru 35 min (5,6\u202fkm)\u00a0: rien n’était prévu. Comptée comme une sortie tranquille\u00a0; rien d’autre ne change.', key);
-      assert.equal(await page.locator('#coach-run-flip').innerText(), 'C’était une séance dure', key);
+      assert.equal(await page.locator('#debrief.pf-coach-runcard h2').innerText(), 'Hier, 35 min sans séance prévue\u00a0: comptée comme une sortie tranquille.', key);
+      assert.equal(await page.locator('#coach-run-said').count(), 0, key + ': nothing changed: one sentence');
+      assert.equal(await page.locator('#coach-run-flip').isVisible(), false, key + ': the ways back wait behind « Corriger »');
+      assert.equal(await page.locator('#coach-run-fix-btn').innerText(), 'Corriger', key);
+      assert.equal(await page.locator('#coach-run-close').getAttribute('aria-label'), 'Fermer', key + ': « × », named');
+      const close = await page.locator('#coach-run-close').boundingBox(), cardBox = await page.locator('#debrief').boundingBox();
+      assert.ok(close.width >= 44 && close.height >= 44 && close.x + close.width > cardBox.x + cardBox.width - 12 && close.y < cardBox.y + 12, key + ': in the corner, 44 px ' + JSON.stringify([close, cardBox]));
       assert.equal(await page.locator('#debrief [data-feel]').count(), 0, key + ': one thing at a time, no ressenti for a run outside the plan');
-      assert.match(await page.locator('#coach-run-attach').innerText(), /^C’est ma séance de \S+ · /, key + ': the quiet way out');
+      assert.equal(await page.locator('#coach-run-attach').count(), 1, key + ': the way out, behind « Corriger »');
       const tuesday = week.locator('.pf-coach-day').nth(1);
       assert.equal(await tuesday.locator('.pf-coach-todo').count(), 1, key + ': a mark on Tuesday');
       assert.match(await tuesday.getAttribute('aria-label'), /, faite, à débriefer$/, key);
@@ -396,6 +413,29 @@ async function sheet(page) {
       if (width === 393) await shot(page, `athlete-393-calendar${dark ? '-dark' : ''}${suffix(app)}`);
       if (width === 320 && !app) await shot(page, `athlete-320-calendar${dark ? '-dark' : ''}`);
       if (width === 393 && !app) await page.screenshot({ path: `${out}/athlete-393-first-screen${dark ? '-dark' : ''}.png` });
+      // « ⋯ »: a tap opens the small menu in place — every other action of today's session, 44 px each
+      if (!app) {
+        const moreBtn = page.locator('[id^="coach-more-"]');
+        await moreBtn.click();
+        assert.equal(await moreBtn.getAttribute('aria-expanded'), 'true', key + ': « ⋯ » opens');
+        assert.deepEqual(await seen(page, '.pf-coach-menu .pf-coach-menuitem'), ['Pas faite', 'Déplacer', 'Modifier'], key + ': the rest of the actions');
+        assert.match(await page.evaluate(() => document.activeElement.id), /^coach-missed-\d+$/, key + ': the focus on its first action');
+        await noOverflow(page, key + ' menu');
+        await targets(page, key + ' menu');
+        await shot(page, `athlete-${width}-menu${dark ? '-dark' : ''}`);
+        await page.keyboard.press('Escape');
+        assert.equal(await page.locator('.pf-coach-menu').isVisible(), false, key + ': Escape closes it');
+        if (width === 320 && !dark) {  // 200 % text: nothing leaves its card, the targets stay 44 px
+          await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+          await moreBtn.focus();
+          await page.keyboard.press('Enter');
+          await noOverflow(page, key + ' 200 % text');
+          await targets(page, key + ' 200 % text');
+          await shot(page, 'athlete-320-200pct');
+          await page.keyboard.press('Escape');
+          await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+        }
+      }
       // the options: the round button opens the sheet — the switch, the tiles, « Refaire le plan », « Arrêter »
       await page.locator('#coach-options-btn').click();
       let state = await sheet(page);
@@ -404,11 +444,9 @@ async function sheet(page) {
       const toggle = page.locator('#coach-form-switch');
       assert.equal(await toggle.getAttribute('aria-checked'), 'true', key);
       assert.ok((await toggle.boundingBox()).height >= 44, key + ': the switch is a 44 px target');
-      assert.equal(await page.locator('#coach-form-short').innerText(), 'Récupération basse le matin : ta séance dure devient un footing.', key);
-      assert.equal(await page.locator('#coach-form-note').isVisible(), false, key + ': the long wording waits');
-      await page.locator('.pf-coach-learn > summary').click();
-      assert.match(await page.locator('#coach-form-note').innerText(), /^Activé le \S+ \d+ \S+\. Un matin où ta récupération de Santé est basse \(VFC, sommeil, FC de repos\), ta séance dure devient un footing\. La personne qui suit ton plan ne voit jamais pourquoi\.$/, key);
-      await page.locator('.pf-coach-learn > summary').click();
+      assert.equal(await page.locator('#coach-form-switch').innerText(), 'Adapter à ma forme', key + ': the switch alone');
+      assert.equal(await page.locator('#coach-form .pf-coach-learn, #coach-form-note, #coach-form-short').count(), 0, key + ': its words are in « Comment ça marche »');
+      assert.deepEqual(await page.locator('.pf-coach-opt small').count(), 0, key + ': the tiles by their titles only');
       assert.deepEqual((await page.locator('.pf-coach-opt b').allInnerTexts()).map(t => t.split('\n')[0].trim()), ['Ma séance fixe', 'Dans mon calendrier', 'Mon agenda', 'Partager mon plan', 'Suivre un plan', 'Comment ça marche'], key + ': every tool is still there');
       const tileBoxes = await page.locator('.pf-coach-opt').evaluateAll(all => all.map(el => el.getBoundingClientRect().toJSON()));
       assert.ok(tileBoxes.every(b => b.height >= 44) && Math.abs(tileBoxes[0].y - tileBoxes[1].y) < 1 && tileBoxes[1].x > tileBoxes[0].x, key + ': a grid of two columns');
@@ -427,7 +465,7 @@ async function sheet(page) {
       assert.doesNotMatch(await page.locator('#main-content').innerText(), /\bcoachs?\b/i, key + ': never « coach »');
       await noOverflow(page, key + ' options');
       await targets(page, key + ' options');
-      if (width === 393 && !app) await shot(page, `athlete-393-options${dark ? '-dark' : ''}`);
+      if (!app) await shot(page, `athlete-${width}-options${dark ? '-dark' : ''}`);
       if (width === 393 && !dark && app) await page.screenshot({ path: `${out}/athlete-393-options${suffix(app)}.png` });
       // « Ma séance fixe »: a tile — its tool in the sheet, a way back; its weekday (one choice), duration, name
       await page.locator('#coach-opt-fixed').click();
@@ -538,7 +576,7 @@ async function sheet(page) {
       await shot(page, `athlete-393-agenda${dark ? '-dark' : ''}`);
       await page.keyboard.press('Escape');
       // the board: next week, Tuesday's session sent to Friday, said under it; the time on the ticket
-      assert.equal(await page.locator('.pf-coach-week.is-board .pf-coach-moves').innerText(), 'Mardi est plein : séance déplacée à vendredi.');
+      assert.equal(await page.locator('.pf-coach-week.is-board .pf-coach-auto').innerText(), 'Mardi est plein : séance déplacée à vendredi.', 'the one automatic change of that week');
       assert.equal(await page.locator('.pf-coach-week.is-board .pf-coach-tile').count(), 3, 'Tuesday no longer holds a session');
       assert.equal(await page.locator(`#coach-day-${iso} .pf-coach-tile`).count(), 1, 'Friday does');
       assert.equal(await page.locator('#coach-today').innerText(), 'Aujourd’hui', 'another week has the way back to today');
@@ -583,6 +621,14 @@ async function sheet(page) {
       assert.match(page.url(), /\/coaching\?w=\d{4}-\d\d-\d\d$/, 'a bar is its week’s address');
       assert.equal(await page.locator('.pf-coach-wbar.is-race.is-shown').count(), 1, 'the race’s week shown');
       await page.screenshot({ path: `${out}/athlete-393-nojs-options.png`, fullPage: true });
+      // « ⋯ » without JavaScript: not drawn; the same actions as a plain list under the ticket; « Corriger » a fold
+      await page.goto(athlete + '/coaching', { waitUntil: 'load' });
+      assert.equal(await page.locator('[id^="coach-more-"]').isVisible(), false, 'no JS: no « ⋯ »');
+      assert.deepEqual((await page.locator('.pf-coach-menu .pf-coach-menuitem').allInnerTexts()).map(t => t.trim()), ['Pas faite', 'Déplacer', 'Modifier'], 'no JS: the actions as a list');
+      assert.ok(await page.locator('[id^="coach-missed-"]').isVisible(), 'no JS: « Pas faite » in sight');
+      await page.locator('#coach-run-fix-btn').click();
+      assert.ok(await page.locator('#coach-run-flip').isVisible(), 'no JS: « Corriger » opens');
+      await page.screenshot({ path: `${out}/athlete-393-nojs-menu.png`, fullPage: true });
       await ctx.close();
     }
 
@@ -755,6 +801,9 @@ async function sheet(page) {
       assert.equal(await page.locator('.pf-coach-day').count(), 14);
       await noOverflow(page, 'desktop');
       await shot(page, `athlete-1280${dark ? '-dark' : ''}`);
+      await page.locator('[id^="coach-more-"]').click();
+      await page.locator('#coach-run-fix-btn').click();
+      await shot(page, `athlete-1280-menu${dark ? '-dark' : ''}`);
       assert.deepEqual(page.errors, []);
       await page.close();
     }
@@ -767,14 +816,15 @@ async function sheet(page) {
       // hills, the race
       const days = [['easy', fixture.day], ['hard', at(1)], ['long', at(3)], ['long-done', at(-4)], ['missed', at(-7)], ['race', race.toISOString().slice(0, 10)]];
       const seenKinds = new Set();
-      for (const dark of [false, true]) {
-        const page = await open(browser, { width: 393, dark });
+      for (const width of [320, 393]) for (const dark of [false, true]) {
+        const page = await open(browser, { width, dark });
         for (const [name, day] of days) {
           await page.goto(`${athlete}/coaching?d=${day}`, { waitUntil: 'networkidle' });
           const found = await ticketContrast(page);
           assert.ok(found.length >= 1, name + ': a ticket');
           for (const c of found) { assert.ok(c.ratio >= 4.5, `${name}${dark ? ' dark' : ''}: ${JSON.stringify(c)}`); seenKinds.add(c.kind); }
-          if (name !== 'easy') await shot(page, `ticket-393-${name}${dark ? '-dark' : ''}`);
+          await noOverflow(page, `ticket ${name} ${width}`);
+          if (name !== 'easy') await shot(page, `ticket-${width}-${name}${dark ? '-dark' : ''}`);
         }
         assert.deepEqual(page.errors, [], 'tickets: browser errors');
         await page.close();
@@ -790,14 +840,15 @@ async function sheet(page) {
       const as = who => fetch(`${fresh}/__preview/coaching/as/${who}`, { method: 'POST' }).then(r => r.json());
       assert.deepEqual(await as('road'), { synthetic: true, as: 'road' });
       const raceDay = at(33);
-      // [name, server, day, the ticket's title, its Cible heading, its values]
+      // [name, server, day, the ticket's title, the target's spoken name, its bare values, what each value says to a
+      // screen reader (never shown: no heading, no label)]
       const cases = [
-        ['threshold', fresh, fixture.day, /^Séance/, 'Cible · pendant les efforts', [/^\d:\d\d–\d:\d\d\/km$/, /^\d{3}–\d{3}bpm$/], ['Allure, sur le plat', 'Cardio']],
-        ['intervals', fresh, at(7), /^Séance/, 'Cible · pendant les efforts', [/^\d:\d\d–\d:\d\d\/km$/, /^171–181bpm$/], ['Allure, sur le plat', 'Cardio en fin d’effort']],
-        ['easy', fresh, at(1), /^Récup/, 'Cible', [/^\d:\d\d\/km$/, /^95–132bpm$/], ['Pas plus vite que, sur le plat', 'Cardio']],
-        ['long', fresh, at(3), /^Sortie longue/, 'Cible', [/^\d:\d\d\/km$/, /^114–151bpm$/], ['Pas plus vite que, sur le plat', 'Cardio']],
+        ['threshold', fresh, fixture.day, /^Séance/, 'Cible pendant les efforts', [/^\d:\d\d–\d:\d\d\/km$/, /^\d{3}–\d{3}bpm$/], ['Allure, sur le plat', 'Cardio']],
+        ['intervals', fresh, at(7), /^Séance/, 'Cible pendant les efforts', [/^\d:\d\d–\d:\d\d\/km$/, /^171–181bpm$/], ['Allure, sur le plat', 'Cardio en fin d’effort']],
+        ['easy', fresh, at(1), /^Récup/, 'Cible', [/^max\d:\d\d\/km$/, /^95–132bpm$/], ['Pas plus vite que, sur le plat', 'Cardio']],
+        ['long', fresh, at(3), /^Sortie longue/, 'Cible', [/^max\d:\d\d\/km$/, /^114–151bpm$/], ['Pas plus vite que, sur le plat', 'Cardio']],
         ['race', fresh, raceDay, /^Course/, 'Cible', [/^4:30\/km$/], ['Allure de course']],
-        ['hills', athlete, at(1), /^Côtes/, 'Cible · pendant les efforts', [/^168–177bpm$/], ['Cardio en fin d’effort']],
+        ['hills', athlete, at(1), /^Côtes/, 'Cible pendant les efforts', [/^168–177bpm$/], ['Cardio en fin d’effort']],
         ['long-climb', athlete, at(3), /^Sortie longue/, 'Cible', [/^112–148bpm$/], ['Cardio']],
       ];
       const paces = {};
@@ -809,11 +860,15 @@ async function sheet(page) {
           const ticket = page.locator('.pf-coach-session').first().locator('.pf-coach-ticket');
           assert.match(await ticket.locator('.pf-coach-s-title').innerText(), title, key);
           const target = ticket.locator('.pf-coach-target');
-          assert.equal((await target.locator('.pf-coach-target-h').innerText()).replace(/\s+/g, ' ').toLowerCase(), head.toLowerCase(), key);
-          const shown = await target.locator('.pf-coach-target-vals b').allInnerTexts();
+          assert.equal(await target.getAttribute('aria-label'), head, key);
+          assert.equal(await target.locator('.pf-coach-target-h, .pf-coach-target-how, span[aria-hidden]').count(), 0, key + ': no heading, no label, no « D’où viennent »');
+          assert.doesNotMatch(await sighted(target), /Cible|Allure|Cardio|plat/, key + ': bare values');
+          const shown = await target.locator('b').allInnerTexts();
           assert.equal(shown.length, values.length, key + ' ' + shown);
           shown.forEach((v, i) => assert.match(v, values[i], key + ' ' + v));
-          assert.deepEqual(await target.locator('.pf-coach-target-vals span[aria-hidden]').allInnerTexts(), labels, key);
+          const spoken = await target.locator('.sr-only').allTextContents();
+          assert.deepEqual(spoken.map(t => t.split(' : ')[0]), labels, key + ': the whole meaning, spoken');
+          if (labels[0].endsWith('sur le plat')) assert.match(spoken[0], /sur le plat : \d+ min( \d+)?( à \d+ min( \d+)?)? au km$/, key);
           if (name === 'threshold' || name === 'intervals') paces[name] = shown[0];
           // the values in the large tabular type, in the ticket's own ink (4.5:1 on its colour)
           const looks = await target.evaluate(t => {
@@ -828,43 +883,46 @@ async function sheet(page) {
           });
           for (const l of looks) assert.ok(l.ratio >= 4.5, key + ': contrast ' + JSON.stringify(l));
           for (const l of looks.filter(x => x.el === 'B')) assert.ok(l.size >= 26 && /tabular-nums/.test(l.tabular), key + ': large and tabular ' + JSON.stringify(l));
-          // « D’où viennent ces chiffres ? » under the values, a 44 px target; numbers: no feel sentence under the ticket
-          assert.ok((await target.locator('.pf-coach-target-how').boundingBox()).height >= 44, key);
+          // numbers: no feel sentence under the ticket
           assert.equal(await page.locator('.pf-coach-session').first().locator('.pf-coach-s-guide').count(), 0, key + ': numbers, no feel sentence');
           const said = await page.locator('.pf-coach-daycard').innerText();
           for (const v of shown) assert.equal(said.split(v.replace(/\/km|bpm/, '')).length - 1, 1, key + ': each number once ' + v);
           await noOverflow(page, key);
           await targets(page, key);
           await page.locator('.pf-coach-session').first().locator('.pf-coach-ticket').screenshot({ path: `${out}/cible-${width}-${name}${dark ? '-dark' : ''}.png` });
+          await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
+          if (['threshold', 'intervals', 'easy'].includes(name)) await shot(page, `today-${name}-${width}${dark ? '-dark' : ''}`);
         }
         assert.deepEqual(page.errors, [], 'cible: browser errors');
         await page.close();
       }
       assert.notEqual(paces.threshold, paces.intervals, 'the intervals run faster than the threshold');
-      // short efforts: a line, not a hole (the taper's « rappels » of 2 min, before Rémi's race)
+      // short efforts (the taper's « rappels » of 2 min, before Rémi's race): the pace of their level on flat ground,
+      // no heart rate and no sentence about it (« Comment ça marche » says why)
       {
         const page = await open(browser, { width: 393 });
         let found = null;
         for (let k = 14; k < 33 && !found; k++) {
           await page.goto(`${fresh}/coaching?d=${at(k)}`, { waitUntil: 'networkidle' });
-          if (await page.locator('.pf-coach-target-note').count()) found = at(k);
+          if (/× 2 min soutenu/.test(await page.locator('.pf-coach-s-text').first().innerText().catch(() => ''))) found = at(k);
         }
         assert.ok(found, 'a session of short efforts before the race');
-        assert.match(await page.locator('.pf-coach-s-text').first().innerText(), /× 2 min soutenu/);
-        // no heart rate for efforts that short; on flat ground the pace of their level stays
-        assert.match(await page.locator('.pf-coach-target-note').first().innerText(), /^Cardio\s: à la sensation, l’effort est trop court\.$/);
-        assert.match(await page.locator('.pf-coach-target-vals').first().innerText(), /Allure, sur le plat\s+\d:\d\d–\d:\d\d\s*\/km/);
-        assert.equal(await page.locator('.pf-coach-target-vals').first().innerText().then(t => /bpm/.test(t)), false);
+        assert.deepEqual(await page.locator('.pf-coach-target b').allInnerTexts().then(v => v.map(t => /^\d:\d\d–\d:\d\d\/km$/.test(t))), [true]);
+        assert.doesNotMatch(await page.locator('.pf-coach-daycard').innerText(), /bpm|sensation, l’effort|trop court/, 'no line about the heart rate');
         await page.locator('.pf-coach-session .pf-coach-ticket').first().screenshot({ path: `${out}/cible-393-short.png` });
         // the race's road heading stays as it was: the pace is on the race's ticket only
         await page.goto(`${fresh}/coaching`, { waitUntil: 'networkidle' });
         assert.doesNotMatch(await page.locator('.pf-coach-goal').innerText(), /\/km/, 'the heading has no pace');
-        // « D’où viennent ces chiffres ? »: the sheet opens on « Comment ça marche », which says it
-        await page.locator('.pf-coach-target-how').first().click();
+        // where the numbers come from: « Comment ça marche », one tap from the options (no link on the ticket)
+        assert.equal(await page.locator('.pf-coach-target-how, [data-tool-open]').count(), 0, 'no « D’où viennent ces chiffres ? »');
+        await page.locator('#coach-options-btn').click();
+        await page.locator('#coach-opt-how').click();
         const st = await sheet(page);
         assert.equal(st.open, true, 'the sheet');
         assert.equal(st.tool, 'coach-tool-how', 'on « Comment ça marche »');
-        assert.match(await page.locator('#coach-tool-how').innerText(), /La cible de chaque séance vient de tes données/);
+        const how = await page.locator('#coach-tool-how').innerText();
+        for (const said of [/Les chiffres d’une séance sont sa cible/, /« max » sur un footing : pas plus vite que cette allure/, /cible est celle des\s+efforts/, /fin de l’effort/, /sur le plat/])
+          assert.match(how, said, 'said in « Comment ça marche »: ' + said);
         await page.screenshot({ path: `${out}/cible-393-how.png` });
         await page.keyboard.press('Escape');
         // 200 % text at 320 px: the values wrap, nothing leaves the ticket
@@ -875,6 +933,18 @@ async function sheet(page) {
           await noOverflow(small, '200 % text ' + day);
         }
         await small.locator('.pf-coach-session .pf-coach-ticket').first().screenshot({ path: `${out}/cible-320-long-200pct.png` });
+        await small.goto(`${fresh}/coaching?d=${fixture.day}`, { waitUntil: 'networkidle' });
+        await small.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+        await noOverflow(small, '200 % text, today');
+        await targets(small, '200 % text, today');
+        await shot(small, 'today-threshold-320-200pct');
+        const wide = await open(browser, { width: 1280, height: 900 });
+        for (const [name, day] of [['threshold', fixture.day], ['intervals', at(7)], ['easy', at(1)]]) {
+          await wide.goto(`${fresh}/coaching?d=${day}`, { waitUntil: 'networkidle' });
+          await noOverflow(wide, 'desktop ' + name);
+          await shot(wide, `today-${name}-1280`);
+        }
+        await wide.close();
         assert.deepEqual([...page.errors, ...small.errors], [], 'cible: browser errors');
         await small.close();
         await page.close();
@@ -908,13 +978,25 @@ async function sheet(page) {
       assert.ok(await page.locator('.pf-coach-activity').first().isVisible());
       assert.match(await page.locator('.pf-coach-activity small').first().innerText(), /km · .*(min|h\d\d) · \+/);
       assert.match(await page.locator('.pf-coach-activity').first().getAttribute('href'), /^\/activity\/\d+$/);
-      // the ressenti: five round numbered buttons, each a 44 px target with its word
+      // done, its ressenti said: the status, the run, the note and the comment in sight — nothing else but « ⋯ »
+      assert.deepEqual(await seen(page, '.pf-coach-daycard :is(button, summary)'), [''], 'done: « ⋯ » alone');
+      assert.equal(await page.locator('.pf-coach-daycard [data-feel]').first().isVisible(), false, 'the ressenti once said: behind « ⋯ »');
+      await shot(page, 'athlete-393-done');
+      await theme(page, true); await shot(page, 'athlete-393-done-dark'); await theme(page, false);
+      const moreBtn = page.locator('[id^="coach-more-"]');
+      await moreBtn.click();
+      assert.equal(await moreBtn.getAttribute('aria-expanded'), 'true', '« ⋯ » opens');
+      assert.deepEqual(await seen(page, '.pf-coach-menu .pf-coach-menuitem'), ['Ce n’est pas cette séance', 'Changer mon ressenti', 'Modifier ma note'], 'every action of a done session, one tap further');
+      await shot(page, 'athlete-393-done-menu');
+      // the ressenti: five round numbered buttons, each a 44 px target; words under the two ends only, all five spoken
+      await page.locator('[id^="coach-refeel-"] > summary').click();
       const feel = page.locator('.pf-coach-daycard [data-feel]');
       assert.equal(await feel.count(), 5);
-      assert.deepEqual(await feel.allInnerTexts(), ['1\nTrès facile', '2\nFacile', '3\nBien', '4\nDur', '5\nTrès dur']);
+      assert.deepEqual(await sightedAll(feel), ['1Très facile', '2', '3', '4', '5Très dur']);
+      assert.deepEqual(await feel.evaluateAll(all => all.map(b => b.textContent.trim().replace(/\s+/g, ' '))), ['1Très facile', '2Facile', '3Bien', '4Dur', '5Très dur'], 'each keeps its word for a screen reader');
       const steps = await feel.evaluateAll(all => all.map(b => [b.getBoundingClientRect().height, getComputedStyle(b.querySelector('i')).backgroundColor]));
       assert.ok(steps.every(([h]) => h >= 44) && new Set(steps.map(s => s[1])).size === 5, 'five levels ' + JSON.stringify(steps));
-      assert.doesNotMatch(await page.locator('.pf-coach-feel-block').innerText(), /\p{Extended_Pictographic}/u, 'no emoji');
+      assert.doesNotMatch(await page.locator('.pf-coach-menu').innerText(), /\p{Extended_Pictographic}/u, 'no emoji');
       const before = await feel.evaluateAll(all => all.findIndex(b => b.getAttribute('aria-pressed') === 'true'));
       const pick = before === 3 ? 1 : 3;
       // pressed at once, before the server answers
@@ -927,22 +1009,26 @@ async function sheet(page) {
       await page.unroute('**/ressenti');
       assert.equal(await feel.nth(pick).getAttribute('aria-pressed'), 'true', 'saved on the tap');
       assert.equal(await page.locator('.pf-coach-daycard [data-feel][aria-pressed="true"]').count(), 1);
+      assert.equal(await page.evaluate(() => document.activeElement.id), await moreBtn.getAttribute('id'), 'after the answer, the focus back on « ⋯ »');
+      await moreBtn.click();
+      await page.locator('[id^="coach-refeel-"] > summary').click();
       const rings = await feel.evaluateAll(all => all.map(b => getComputedStyle(b).boxShadow !== 'none'));
       assert.deepEqual(rings, [0, 1, 2, 3, 4].map(i => i === pick), 'the level chosen is ringed');
-      // the note: behind « Ajouter une note » — no field, no « Enregistrer » until asked
+      // the note: behind « Modifier ma note » in the menu — no field, no « Enregistrer » until asked
       assert.equal(await page.locator('.pf-coach-note textarea').isVisible(), false, 'the note’s field waits behind its fold');
-      // done with a run: the scale, and the quiet way to take the run back out of the plan
-      assert.deepEqual(await seen(page, '.pf-coach-daycard button:not([data-feel])'), ['Ce n’est pas cette séance'], 'no button but the scale and the unlink');
       await page.locator('.pf-coach-notefold > summary').click();
       assert.match(await page.locator('.pf-coach-notefold > summary').innerText(), /^(Ajouter une note|Modifier ma note)$/);
       await page.locator('.pf-coach-note textarea').fill('Bonnes sensations en côte.');
       await swap(page, () => page.locator('.pf-coach-note button').click());
       assert.equal(await page.locator('.pf-coach-said.is-note').innerText(), 'Ta note\nBonnes sensations en côte.');
       assert.match(await page.locator('.pf-coach-said:not(.is-note)').innerText(), /^Florent\nBien géré\./, 'the comment is signed with a first name');
-      assert.equal(await page.locator('.pf-coach-notefold > summary').innerText(), 'Modifier ma note');
+      assert.equal(await page.locator('.pf-coach-menu').isVisible(), false, 'the menu closed again once saved');
+      assert.equal(await page.locator('.pf-coach-notefold > summary').textContent(), 'Modifier ma note');
       assert.equal(await page.locator('.pf-coach-note textarea').isVisible(), false, 'closed again once saved');
       await noOverflow(page, 'done session');
       await targets(page, 'done session');
+      await moreBtn.click();
+      await page.locator('[id^="coach-refeel-"] > summary').click();
       await shot(page, 'athlete-393-done-ressenti');
       await theme(page, true); await shot(page, 'athlete-393-done-ressenti-dark'); await theme(page, false);
       // the « Mois » view of before: its address answers with the week board, no button leads to it
@@ -957,10 +1043,12 @@ async function sheet(page) {
       assert.equal(await ask.getAttribute('class').then(c => c.includes('pf-coach-debrief')), true, 'the link lands on the question');
       assert.ok(await ask.evaluate(el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.top < innerHeight; }), 'in view');
       assert.equal((await sheet(page)).open, false, 'the sheet stays closed');
-      assert.match(await ask.locator('h2').innerText(), /^Ta sortie de mardi est arrivée\./);
-      assert.match(await ask.locator('.pf-coach-debrief-line').innerText(), /^Footing \d+ min · [\d,]+\skm · /, 'what it was, the run’s own figures');
-      // five round numbered levels, 44 px targets, from easy to very hard
-      assert.deepEqual(await page.locator('#debrief [data-feel]').allInnerTexts(), ['1\nTrès facile', '2\nFacile', '3\nBien', '4\nDur', '5\nTrès dur']);
+      assert.match(await ask.locator('h2').innerText(), /^Mardi · footing \d+\smin\. C’était comment\s?\?$/, 'one line: the day, what it was, the question');
+      assert.equal(await ask.locator('p').count(), 0, 'nothing else said');
+      // five round numbered levels, 44 px targets, from easy to very hard; words under the ends, all five spoken
+      assert.deepEqual(await sightedAll(page.locator('#debrief [data-feel]')), ['1Très facile', '2', '3', '4', '5Très dur']);
+      for (const [n, word] of [[1, 'Très facile'], [2, 'Facile'], [3, 'Bien'], [4, 'Dur'], [5, 'Très dur']])
+        assert.equal(await page.locator('#debrief').getByRole('button', { name: word, exact: true }).getAttribute('value'), String(n), 'its accessible name: ' + word);
       const levels = await page.locator('#debrief [data-feel]').evaluateAll(all => all.map(b => { const i = b.querySelector('i'), r = i.getBoundingClientRect();
         return [b.getBoundingClientRect().height, Math.round(r.width), Math.round(r.height), getComputedStyle(i).borderRadius, getComputedStyle(i).backgroundColor]; }));
       for (const [h, w, ih, radius] of levels) assert.ok(h >= 44 && w === ih && w >= 34 && radius === '50%', 'round levels, 44 px targets ' + JSON.stringify(levels));
@@ -971,6 +1059,11 @@ async function sheet(page) {
       await targets(page, 'debrief');
       await shot(page, 'athlete-393-debrief');
       await theme(page, true); await shot(page, 'athlete-393-debrief-dark'); await theme(page, false);
+      await page.setViewportSize({ width: 320, height: 852 });
+      await noOverflow(page, 'debrief 320');
+      await shot(page, 'athlete-320-debrief');
+      await theme(page, true); await shot(page, 'athlete-320-debrief-dark'); await theme(page, false);
+      await page.setViewportSize({ width: 393, height: 852 });
       // one tap answers it, in place: the question goes, the mark on its day too, the day shows what was said
       await swap(page, () => page.locator('#coach-ask-3').click());
       assert.equal(await page.locator('.pf-coach-debrief:not(.pf-coach-runcard)').count(), 0, 'answered: the question is gone');
@@ -978,7 +1071,7 @@ async function sheet(page) {
       assert.equal(await page.locator(`#coach-day-${tue} .pf-coach-todo`).count(), 0, 'its mark too');
       assert.doesNotMatch(await page.locator(`#coach-day-${tue}`).getAttribute('aria-label'), /débriefer/);
       assert.equal(await page.locator(`#coach-day-${tue}.is-selected`).count(), 1, 'the board stays on its day');
-      assert.equal(await page.locator('.pf-coach-daycard [data-feel][aria-pressed="true"] span').innerText(), 'Bien', 'the day says what was answered');
+      assert.equal(await page.locator('.pf-coach-daycard [data-feel][aria-pressed="true"] span').textContent(), 'Bien', 'the day keeps what was answered, behind « ⋯ »');
       await shot(page, 'athlete-393-debrief-answered');
       // the same link once answered: the day itself
       await page.goto(`${athlete}/coaching?d=${tue}#debrief`, { waitUntil: 'networkidle' });
@@ -1003,19 +1096,28 @@ async function sheet(page) {
       assert.ok(await page.locator('.pf-coach-ticket svg.pf-effort').isVisible(), 'the intensity profile is drawn in the ticket');
       assert.equal(await page.locator('.pf-coach-gauge').count(), 0, 'no gauge beside a profile');
       assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), [], 'a session to come has no main action');
-      assert.deepEqual(await seen(page, '.pf-coach-quiet > .pf-coach-quietbtn'), ['Déplacer'], '« Déplacer », quiet');
+      await page.locator('[id^="coach-more-"]').click();
+      assert.deepEqual(await seen(page, '.pf-coach-menu .pf-coach-menuitem'), ['Déplacer', 'Modifier'], '« ⋯ » alone, its actions inside');
+      await page.mouse.click(5, 300);
+      assert.equal(await page.locator('.pf-coach-menu').isVisible(), false, 'a tap elsewhere closes it');
       await shot(page, 'athlete-393-structured');
       await swap(page, () => page.locator(`#coach-day-${sat}`).click());
       assert.equal(await page.locator('.pf-coach-rest-word').innerText(), 'Repos');
       const next = page.locator('#coach-next-session');
-      assert.match(await next.innerText(), /^Prochaine séance · dimanche \d+ \S+\nSortie longue (\d+ min|\dh\d\d)$/);
+      assert.match(await sighted(next), /^Dimanche \d+ · Sortie longue (\d+ min|\dh\d\d)$/, 'one row');
+      assert.equal(await next.locator('.sr-only').textContent(), 'Prochaine séance\u00a0: ', 'named for a screen reader');
       assert.ok((await next.boundingBox()).height >= 44);
       await noOverflow(page, 'rest day');
       await shot(page, 'athlete-393-rest');
       await theme(page, true); await shot(page, 'athlete-393-rest-dark'); await theme(page, false);
+      await page.setViewportSize({ width: 320, height: 852 });
+      await noOverflow(page, 'rest day 320');
+      await shot(page, 'athlete-320-rest');
+      await theme(page, true); await shot(page, 'athlete-320-rest-dark'); await theme(page, false);
+      await page.setViewportSize({ width: 393, height: 852 });
       await swap(page, () => next.click());
       assert.match(await page.locator('.pf-coach-s-title').innerText(), /^Sortie longue/);
-      assert.match(await page.locator('.pf-coach-date').innerText(), /^Dimanche\s+\d+ \S+$/);
+      assert.match(await page.locator('.pf-coach-date').innerText(), /^Dimanche \d+$/, 'the date once');
 
       // « Déplacer », by the keyboard: Friday's hill session to Saturday — not one of her days, and next to Sunday's
       // long run: the day says so, and takes it
@@ -1024,8 +1126,19 @@ async function sheet(page) {
       await swap(page, () => page.keyboard.press('Enter'));
       assert.equal(await page.evaluate(() => document.activeElement.id), `coach-day-${fri}`, 'the focus stays on the day chosen');
       // the guidance: numbers when the target has some, else the talk-test sentence (never neither)
-      if (await page.locator('.pf-coach-session').first().locator('.pf-coach-target-vals').count()) assert.equal(await page.locator('.pf-coach-s-guide').count(), 0, 'numbers: no sentence');
+      if (await page.locator('.pf-coach-session').first().locator('.pf-coach-target b').count()) assert.equal(await page.locator('.pf-coach-s-guide').count(), 0, 'numbers: no sentence');
       else assert.ok(await page.locator('.pf-coach-s-guide').isVisible(), 'no numbers: the guidance line');
+      // « ⋯ » by the keyboard: Enter opens it, the focus on its first action; Escape closes it, the focus back
+      const moreKey = page.locator('[id^="coach-more-"]');
+      await moreKey.focus();
+      await page.keyboard.press('Enter');
+      assert.equal(await moreKey.getAttribute('aria-expanded'), 'true', 'Enter opens « ⋯ »');
+      assert.match(await page.evaluate(() => document.activeElement.id), /^coach-move-\d+$/, 'the focus on its first action');
+      await page.keyboard.press('Escape');
+      assert.equal(await moreKey.getAttribute('aria-expanded'), 'false', 'Escape closes it');
+      assert.equal(await page.evaluate(() => document.activeElement.id), await moreKey.getAttribute('id'), 'the focus back on « ⋯ »');
+      await page.keyboard.press(' ');
+      assert.equal(await moreKey.getAttribute('aria-expanded'), 'true', 'Space opens it too');
       await page.locator('[id^="coach-move-"]:not(#coach-move-cancel)').focus();
       await swap(page, () => page.keyboard.press('Enter'));
       assert.match(await page.locator('.pf-coach-moving').innerText(), /^Où placer «\s?Côtes 45 min\s?»\s?\? Touche un jour\.\s+Annuler$/);
@@ -1033,12 +1146,12 @@ async function sheet(page) {
       // the days are the targets now: the board is in view, the day keeps no action
       const [calBox, tabs] = [await page.locator('.pf-coach-cal-main').boundingBox(), await page.locator('.pf-tabbar').boundingBox()];
       assert.ok(calBox.y + calBox.height <= tabs.y + 1 && calBox.y + calBox.height > 0, 'the board came into view, clear of the tab bar ' + JSON.stringify([calBox, tabs]));
-      assert.deepEqual(await seen(page, '.pf-coach-daycard :is(.pf-btn, .pf-coach-quietbtn)'), [], 'while moving: no other action');
+      assert.deepEqual(await seen(page, '.pf-coach-daycard :is(.pf-btn, .pf-coach-quietbtn, .pf-coach-morebtn, .pf-coach-menuitem)'), [], 'while moving: no other action');
       const target = page.locator(`button#coach-day-${sat}`);
       assert.equal(await target.isDisabled(), false, 'any day: Saturday was never one of hers');
       assert.match(await target.getAttribute('class'), /\bis-warn\b/, 'next to another hard day: marked');
       assert.match(await target.getAttribute('aria-label'), /^Déplacer au samedi \d+ \S+ : repos — deux jours durs de suite$/);
-      assert.match(await page.locator('.pf-coach-move-hint').innerText(), /tu peux le choisir quand même\.$/, 'a warning, never a refusal');
+      assert.equal(await page.locator('.pf-coach-move-hint').innerText(), 'Un point marque un jour voisin d’une autre séance dure.', 'a warning, never a refusal');
       assert.equal(await page.locator(`button#coach-day-${fri}`).isDisabled(), true, 'its own day');
       assert.equal(await page.locator(`button#coach-day-${tue}`).isDisabled(), true, 'a day behind');
       assert.equal(await page.locator(`button#coach-day-${wed}`).isDisabled(), false, 'a day behind that holds a run no session took');
@@ -1055,11 +1168,12 @@ async function sheet(page) {
       assert.equal(await page.evaluate(() => document.activeElement.id), `coach-day-${sat}`, 'the focus on its new day');
       assert.equal(await page.locator(`#coach-day-${fri} .pf-coach-tile`).count(), 0, 'its old day is free');
       assert.equal(await page.locator(`#coach-day-${sat}.is-selected .pf-coach-tile.is-hard`).count(), 1, 'it is on the day chosen');
-      assert.match(await page.locator('.pf-coach-hardpair').innerText(), /^Samedi et dimanche\s:\sdeux jours durs de suite\. Tu peux courir la séance en footing\.$/, 'said on its week, with the way out');
+      assert.match(await page.locator('.pf-coach-hardpair').innerText(), /^Samedi et dimanche\s:\sdeux jours durs de suite\.$/, 'said on its week (the way out: « Comment ça marche »)');
       await shot(page, 'athlete-393-moved');
       // pinned: read again, it stays where it was put
       await page.goto(`${athlete}/coaching?d=${sat}`, { waitUntil: 'networkidle' });
       assert.equal(await page.locator(`#coach-day-${sat} .pf-coach-tile.is-hard`).count(), 1, 'a moved session stays');
+      await page.locator('[id^="coach-more-"]').first().click();
       await page.locator('[id^="coach-edit-"] > summary').first().click();
       const duration = page.locator('.pf-coach-form select[name="minutes"]').first();
       const minutes = (await duration.inputValue()) === '40' ? '50' : '40';
@@ -1068,7 +1182,8 @@ async function sheet(page) {
       await swap(page, () => page.locator('[id^="coach-save-"]').first().click());
       assert.equal(await page.locator('.pf-coach-t-dur').first().innerText(), minutes + 'min');
       assert.equal(await page.locator(`#coach-day-${sat} .pf-coach-tile`).innerText(), minutes + '′', 'the tile says it too');
-      assert.match(await page.locator('.pf-coach-edited').innerText(), /Modifiée par toi/);
+      // one line about what changed: the form's move comes first, « Modifiée par toi » waits behind it
+      assert.deepEqual(await page.locator('.pf-coach-session .pf-coach-formline').allInnerTexts(), ['Séance reportée de jeudi'], 'one change line');
       // the calendar feed: a webcal link in the sheet, and the feed itself
       await page.locator('#coach-options-btn').click();
       await page.locator('#coach-opt-feed').click();
@@ -1123,7 +1238,7 @@ async function sheet(page) {
         new MutationObserver(() => { if (document.querySelector('.pf-coach-ghost')) window.__lifted = true; })
           .observe(document.querySelector('.pf-coach'), { childList: true, subtree: true });
       });
-      assert.equal(await page.locator('#coach-drag-hint').innerText(), 'Maintiens une séance pour la déplacer', 'one line says it, the first time');
+      assert.equal(await page.locator('#coach-drag-hint').count(), 0, 'no hint line: the gesture is said in « Comment ça marche »');
       const hills = await page.locator(`#coach-day-${sat} [data-move]`).getAttribute('data-what');
       assert.match(hills, /^Côtes \d+ min$/, 'Saturday holds the hill session moved there');
       // a vertical stroke that starts on a session scrolls the page: nothing is lifted, nothing is sent
@@ -1194,7 +1309,6 @@ async function sheet(page) {
       assert.equal(await page.locator(`#coach-day-${nextTue}.is-selected .pf-coach-tile.is-hard`).count(), 1, 'on the day chosen, opened');
       assert.equal(await page.locator(`#coach-day-${nextTue} .pf-coach-tile.is-pop`).count(), 1, 'a short pop where it landed');
       assert.equal((await page.locator('.pf-coach-s-title').innerText()).replace(/\s+/g, ' '), hills);
-      assert.equal(await page.locator('#coach-drag-hint').isVisible(), false, 'the hint, once it is done');
       await swap(page, () => page.locator('#coach-prev').click());
       assert.equal(await page.locator(`#coach-day-${sat} .pf-coach-tile`).count(), 0, 'its old day is free');
       // the run outside the plan, dropped on Thursday's session: « C’est ma séance de jeudi », by hand
@@ -1300,17 +1414,19 @@ async function sheet(page) {
       const key = `new account ${width}${dark ? ' dark' : ''}${suffix(app)}`;
       const page = await open(browser, { width, dark, app });
       await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
-      assert.match(await page.locator('h1').innerText(), /^Coaching\s+bêta$/i, key);
+      assert.equal(await page.locator('h1').innerText(), 'Coaching', key + ': no « bêta », no lead line');
+      assert.equal(await page.locator('.pf-coach-head .pf-lead').count(), 0, key);
       assert.equal(await page.locator('a.pf-back[href="/activities"]').isVisible(), app === 'old', key + ': « ‹ Activités »');
       // out of the box: every answer is filled in and the plan is drawn — no race: « Progresser » chosen among the
       // three intents, its line under them, the races folded away; no history: five coarse volumes, 2 h chosen; the
       // default week (Tuesday, Thursday, Sunday), the long run on Sunday
       assert.deepEqual((await page.locator('.pf-coach-intent b').allInnerTexts()).map(t => t.trim()), ['Garder la forme', 'Progresser', 'Préparer une course'], key);
       assert.equal(await page.locator('input[name="intent"]:checked').getAttribute('value'), 'progresser', key);
-      assert.match(await page.locator('#coach-intent-line').innerText(), /^Ton volume monte peu à peu/, key);
+      assert.equal(await page.locator('#coach-intent-line').count(), 0, key + ': each intent its word, its rules in « Comment ça marche »');
       assert.equal(await page.locator('#coach-races').isVisible(), false, key + ': no race to choose for « Progresser »');
       assert.equal(await page.locator('input[name="goal"]:checked').count(), 0, key);
-      assert.match(await page.locator('.pf-coach-pv-more .pf-coach-level').innerText(), /^Tu cours régulièrement\s: aucune sortie enregistrée/, key + ': the level, read');
+      assert.equal(await page.locator('.pf-coach-level').count(), 0, key + ': the level is read, not shown');
+      assert.equal(await page.locator('#coach-days-hint').innerText(), '', key + ': the days’ line speaks only when they need it');
       assert.deepEqual((await page.locator('.pf-coach-chip.is-wide').allInnerTexts()).map(t => t.replace(/\s+/g, ' ').trim()),
         ['1 h', '2 h', '3 h', '4 h', '5 h et +'], key);
       assert.equal(await page.locator('input[name="base"]:checked').getAttribute('value'), '120', key);
@@ -1421,7 +1537,7 @@ async function sheet(page) {
       assert.equal(await page.locator('#coach-day-2').isChecked(), true, key + ': ticked among the days');
       assert.ok((await previewBars(page)).some(([day, kind, duration]) => day === 2 && kind === 'hard' && /1h15/.test(duration)), key + ': the club session drawn');
       assert.match(await page.locator('#coach-preview').getAttribute('aria-label'), /mercredi : Séance fixe 1 heure 15/, key);
-      assert.match(await page.locator('.pf-coach-pv-lines').innerText(), /Séance fixe est ta séance de qualité de la semaine/, key);
+      assert.equal(await page.locator('.pf-coach-pv-lines').count(), 0, key + ': the fixed session’s rule is in « Comment ça marche »');
       const fixedChips = await page.locator('[data-fixed-body] .pf-coach-chip').evaluateAll(all => all.map(el => Math.round(el.getBoundingClientRect().top)));
       assert.equal(fixedChips.length, 7, key);
       if (width >= 393) assert.equal(new Set(fixedChips).size, 1, key + ': the weekdays on one line');
@@ -1447,9 +1563,9 @@ async function sheet(page) {
       await page.getByRole('button', { name: 'Créer mon plan' }).click();
       await page.waitForURL('**/coaching');
       assert.equal(await page.locator('.pf-coach-day').count(), 14);
-      assert.match(await page.locator('.pf-coach-goal').innerText(), /^Progresser\s+sans course$/);
+      assert.equal(await sighted(page.locator('.pf-coach-goal')), 'Progresser', 'no race: the intent’s word alone');
       assert.equal(await page.locator('.pf-coach-wbar.is-race').count(), 0, 'no race: no flag on the road');
-      assert.match(await page.locator('.pf-coach-date').innerText(), /^Aujourd’hui\s/);
+      assert.equal(await page.locator('.pf-coach-date').innerText(), 'Aujourd’hui');
       assert.equal((await page.locator('.pf-coach-s-title').innerText()).replace(/\s+/g, ' '), announced, 'the first session announced');
       assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), ['C’est fait']);
       assert.equal(await page.locator('.pf-coach-week.is-board .pf-coach-tile').count(), 2, 'this week: today and Sunday');
@@ -1459,10 +1575,12 @@ async function sheet(page) {
       // « C’est fait »: one tap, in place; the ressenti is asked at once
       await swap(page, () => page.locator('[id^="coach-done-"]').click());
       assert.equal(await page.locator('[data-feel]').count(), 5);
-      assert.match(await page.locator('#debrief.pf-coach-debrief h2').innerText(), /^Ta séance d’aujourd’hui est faite\. C’était comment/, 'asked at the top, once');
+      assert.match(await page.locator('#debrief.pf-coach-debrief h2').innerText(), /^Aujourd’hui · \S.* \d\S*( min)?\. C’était comment/, 'asked at the top, once, in one line');
       assert.equal(await page.locator('.pf-coach-daycard [data-feel]').count(), 0);
       assert.equal(await page.locator('.pf-coach-status').innerText(), 'Fait');
-      assert.deepEqual(await seen(page, '.pf-coach-daycard .pf-coach-quietbtn'), ['Annuler', 'Ajouter une note']);
+      assert.deepEqual(await seen(page, '.pf-coach-daycard :is(button, summary)'), [''], 'only « ⋯ » in sight');
+      await page.locator('[id^="coach-more-"]').click();
+      assert.deepEqual(await seen(page, '.pf-coach-menu .pf-coach-menuitem'), ['Annuler', 'Ajouter une note']);
       assert.equal(await page.locator('[id^="coach-undo-"]').getAttribute('aria-label'), 'Annuler « fait »');
       await targets(page, 'ticked by hand');
       await noOverflow(page, 'ticked by hand');
@@ -1516,10 +1634,8 @@ async function sheet(page) {
         await redrawn(page, () => page.locator('[data-days] input[value="3"]').uncheck({ force: true }));
         assert.deepEqual(await page.locator('[data-days] input:checked').evaluateAll(all => all.map(i => i.value)), ['1', '6'], key);
         assert.deepEqual((await previewBars(page)).map(([day, kind]) => [day, kind]), [[1, 'hard'], [6, 'long']], key + ': a session with rhythm and a long run');
-        const lines = await page.locator('.pf-coach-pv-lines li').allInnerTexts();
-        assert.ok(lines.some(l => /^Sans temps visé, une seule séance de qualité/.test(l)), key + ' ' + lines);
-        assert.ok(lines.some(l => /^Deux séances par semaine suffisent/.test(l)), key + ' ' + lines);
-        assert.ok(lines.some(l => /^Pour aller plus loin, c’est une troisième séance/.test(l)), key + ' ' + lines);
+        assert.equal(await page.locator('.pf-coach-pv-lines').count(), 0, key + ': the rules of two days and « pour finir » are in « Comment ça marche »');
+        assert.equal(await page.locator('#coach-goal-new + span small').count(), 0, key + ': « Ajouter une course » alone');
         assert.equal(await page.getByRole('button', { name: 'Créer mon plan' }).isDisabled(), false, key);
         const chips = await page.locator('.pf-coach-chip, .pf-coach-option, .pf-coach-intent, #coach-newrace .pf-input').evaluateAll(all => all.filter(el => el.getClientRects().length).map(el => {
           const r = el.getBoundingClientRect(); return [el.id || el.className, Math.round(r.width), Math.round(r.height)]; }));
@@ -1530,9 +1646,10 @@ async function sheet(page) {
           await page.getByRole('button', { name: 'Créer mon plan' }).click();
           await page.waitForURL('**/coaching');
           assert.match(await page.locator('.pf-coach-goal').innerText(), /10 km du lac d’Annecy/);
-          assert.match(await page.locator('.pf-coach-goal-time').innerText(), /^Environ\s55 min$/);
+          assert.equal(await sighted(page.locator('.pf-coach-goal-time')), '55 min');
+          assert.equal(await page.locator('.pf-coach-goal-time .sr-only').textContent(), 'Environ ', 'where the time comes from, spoken');
           assert.equal(await page.locator('a.pf-coach-goal-time').count(), 0, 'no race page to link to');
-          assert.match(await page.locator('.pf-coach-road .pf-coach-level').first().innerText(), /^Tu cours régulièrement/);
+          assert.equal(await page.locator('.pf-coach-level').count(), 0, 'no level line');
           await noOverflow(page, 'story plan');
           await shot(page, 'story-393-plan');
           await theme(page, true); await shot(page, 'story-393-plan-dark'); await theme(page, false);
@@ -1541,10 +1658,10 @@ async function sheet(page) {
             const sunday = new Date(fixture.day + 'T00:00:00Z'); sunday.setUTCDate(sunday.getUTCDate() + 3);
             await page.goto(fresh + '/coaching?d=' + sunday.toISOString().slice(0, 10), { waitUntil: 'networkidle' });
             const link = page.locator('.pf-coach-ticket .pf-coach-target-link');
-            assert.equal(await link.innerText(), 'Confirme ta FC max pour voir ta zone');
+            assert.equal(await link.innerText(), 'Confirme ta FC max');
             assert.equal(await link.getAttribute('href'), '/settings#max-heart-rate');
             assert.ok((await link.boundingBox()).height >= 44, 'a 44 px target');
-            assert.equal(await page.locator('.pf-coach-target-vals, .pf-coach-target-how').count(), 0, 'no value, nothing to explain');
+            assert.equal(await page.locator('.pf-coach-target b, .pf-coach-target-how').count(), 0, 'no value, nothing to explain');
             // no number at all: the talk-test sentence stays under the ticket (owner, 24 Nov 2026)
             assert.match(await page.locator('.pf-coach-s-guide').first().innerText(), /^(Très facile|Facile)\s?:/, 'no numbers: the sentence stays');
             for (const c of await ticketContrast(page)) assert.ok(c.ratio >= 4.5, 'no data: ' + JSON.stringify(c));
@@ -1579,7 +1696,7 @@ async function sheet(page) {
     // ── a run that is not the planned session (docs/coaching.md › « Une sortie qui n’est pas la séance prévue »): the
     //    plan read it by itself before the page was drawn — the notice in each state at 320 and 393 px, light and
     //    dark, 200 % text, its contrast, its targets; the correction by touch and by the keyboard, the focus on the
-    //    notice; « Tous les mercredis ? » the only optional tap; « Fermer »; the follower never sees it ──
+    //    notice; the ways back behind « Corriger »; « × »; the follower never sees it ──
     {
       const as = who => fetch(`${fresh}/__preview/coaching/as/${who}`, { method: 'POST' }).then(r => r.json());
       const card = page => page.locator('#debrief.pf-coach-runcard');
@@ -1587,13 +1704,16 @@ async function sheet(page) {
       const title = page => card(page).locator('h2').innerText().then(flat);
       const said = page => card(page).locator('#coach-run-said').innerText().then(flat);
       const focused = page => page.evaluate(() => document.activeElement && document.activeElement.id);
+      // « Corriger »: the ways back, revealed in place (a fold: the same without JavaScript)
+      const fix = async (page, tap = true) => { if (!(await page.locator('#coach-run-fix').evaluate(d => d.open))) await (tap ? page.tap('#coach-run-fix-btn') : page.locator('#coach-run-fix-btn').click()); };
+      const flip = async page => { await fix(page); await swap(page, () => page.tap('#coach-run-flip')); };
       // the contrast of every text of the card on the ground behind it (WCAG), read from the computed colours
       const contrast = page => card(page).evaluate(root => {
         const rgb = c => (c.match(/[\d.]+/g) || []).map(Number);
         const lum = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
           .reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
         const ground = el => { for (let e = el; e; e = e.parentElement) { const c = rgb(getComputedStyle(e).backgroundColor); if (c.length === 3 || c[3] > 0.95) return c.slice(0, 3); } return [255, 255, 255]; };
-        return [...root.querySelectorAll('h2, b, small, p, button, .pf-coach-quietbtn, [data-feel] span')].filter(el => el.getClientRects().length && el.innerText.trim() && !el.closest('.sr-only'))
+        return [...root.querySelectorAll('h2, b, small, p, button, summary, .pf-coach-quietbtn, [data-feel] span')].filter(el => el.getClientRects().length && el.innerText.trim() && !el.closest('.sr-only'))
           .map(el => { const [a, b] = [lum(rgb(getComputedStyle(el).color)), lum(ground(el))]; return [el.innerText.trim().slice(0, 24), Math.round((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) * 100) / 100]; })
           .filter(([, ratio]) => ratio < 4.5);
       });
@@ -1609,9 +1729,9 @@ async function sheet(page) {
         assert.ok(top.y + top.height <= board.y, key + ': at the top, before the board');
         assert.equal(await page.locator('.pf-coach-debrief').count(), 1, key + ': one at a time');
       };
-      const HARD = 'Hier, tu as couru 1h35 (16,5 km) au lieu du fartlek de 45 min : comptée comme une séance dure.';
-      const EASY = 'Hier, tu as couru 1h35 (16,5 km) tranquille au lieu de ton fartlek : aucun autre jour ne peut l’accueillir cette semaine.';  // no day the rules allow
-      const HABIT = 'Tu fais une séance dure presque tous les mercredis : le plan la garde ce jour-là chaque semaine et s’écrit autour.';
+      const HARD = 'Hier, 1h35 au lieu du fartlek de 45 min : comptée comme une séance dure.';
+      const EASY = 'Hier, 1h35 tranquille au lieu de ton fartlek : aucun autre jour ne peut l’accueillir cette semaine.';  // no day the rules allow
+      const HABIT = 'Le plan garde une séance dure chaque mercredi.';
       const nextWed = new Date(fixture.day + 'T00:00:00Z'); nextWed.setUTCDate(nextWed.getUTCDate() + 6);
       const nextWedTitle = async page => {
         await swap(page, () => page.locator(`#coach-day-${nextWed.toISOString().slice(0, 10)}`).click());
@@ -1620,7 +1740,7 @@ async function sheet(page) {
 
       // 1. the owner's club run (laps of repeated efforts) on a Wednesday that shows a hard-session habit: read hard,
       //    nothing to tap — what happened, then that the plan keeps Wednesday every week, the ressenti, the
-      //    correction link, « Pas tous les mercredis », « Fermer », the way out; no question, no club
+      //    « Corriger » (the correction, « Pas tous les mercredis », the way out), « × »; no question, no club
       assert.deepEqual(await as('club'), { synthetic: true, as: 'club' });
       for (const width of [320, 393]) for (const dark of [false, true]) {
         const key = `run notice ${width}${dark ? ' dark' : ''}`;
@@ -1632,9 +1752,14 @@ async function sheet(page) {
         assert.doesNotMatch(await card(page).innerText(), /club/i, key + ': nothing assumes a club');
         assert.equal(await card(page).locator('[data-feel]').count(), 5, key + ': the ressenti, once');
         assert.equal(await card(page).locator('[aria-pressed="true"]').count(), 0, key + ': nothing said yet');
-        assert.deepEqual(await seen(page, '.pf-coach-run-quiet .pf-coach-quietbtn'), ['C’était une sortie tranquille', 'Pas tous les mercredis', 'Fermer', 'Ce n’est pas cette séance'], key);
+        assert.deepEqual(await seen(page, '#debrief :is(button, summary):not([data-feel])'), ['', 'Corriger'], key + ': « × » and « Corriger », nothing else');
+        assert.deepEqual(await sightedAll(card(page).locator('[data-feel]')), ['1Très facile', '2', '3', '4', '5Très dur'], key + ': words under the ends');
         await check(page, key);
         await shot(page, `run-${width}-hard${dark ? '-dark' : ''}`);
+        await fix(page);
+        assert.deepEqual(await seen(page, '.pf-coach-fixlist .pf-coach-menuitem'), ['C’était une sortie tranquille', 'Pas tous les mercredis', 'Ce n’est pas cette séance'], key + ': « Corriger » reveals the ways back in place');
+        await check(page, key + ' corriger');
+        await shot(page, `run-${width}-hard-corriger${dark ? '-dark' : ''}`);
         if (width === 320) {  // 200 % text: nothing leaves the card, every target still 44 px
           await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
           await noOverflow(page, key + ' 200 % text');
@@ -1654,17 +1779,18 @@ async function sheet(page) {
         assert.equal(await card(page).locator('#coach-run-r-3').getAttribute('aria-pressed'), 'true', 'the ressenti saved, the notice stays');
         assert.match(await nextWedTitle(page), /^Séance fixe/, 'next Wednesday: the hard session kept there');
         await shot(page, 'run-393-habit-next-wednesday');
-        await swap(page, () => page.tap('#coach-run-flip'));
+        await flip(page);
         assert.equal(await title(page), EASY, '« C’était une sortie tranquille »: the other reading');
         assert.equal(await focused(page), 'coach-run-h', 'the focus on what it says now');
-        assert.equal(await card(page).locator('#coach-run-flip').innerText(), 'C’était une séance dure');
+        assert.equal(await card(page).locator('#coach-run-flip').textContent(), 'C’était une séance dure');
+        assert.equal(await card(page).locator('#coach-run-flip').isVisible(), false, '« Corriger » folded again');
         assert.equal(await card(page).locator('#coach-run-weekly').count(), 0, 'the habit went with it');
         assert.equal(await card(page).locator('#coach-run-r-3').getAttribute('aria-pressed'), 'true', 'the ressenti kept');
         assert.match(await nextWedTitle(page), /^(?!Séance fixe)/, 'the fixed session went with it');
         await check(page, 'run notice corrected');
         await shot(page, 'run-393-corrected');
         await theme(page, true); await check(page, 'run notice corrected dark'); await shot(page, 'run-393-corrected-dark'); await theme(page, false);
-        await swap(page, () => page.tap('#coach-run-flip'));
+        await flip(page);
         assert.equal(await title(page), HARD, 'and back');
         assert.equal(await said(page), HABIT, 'the habit holds again');
         assert.deepEqual(page.errors, [], 'by touch: browser errors');
@@ -1673,36 +1799,42 @@ async function sheet(page) {
 
       // 3. by the keyboard (393, a desktop browser's keys): after the ressenti, the correction, then « Pas tous les
       //    mercredis » by Enter — the focus on the notice, the week as the one-off reading has it, never set again;
-      //    the correction there and back; « Fermer » by the keyboard
+      //    the correction there and back; « × » by the keyboard
       {
         const page = await open(browser, { width: 393 });
         await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
         await page.locator('#coach-run-r-5').focus();
         await page.keyboard.press('Tab');
-        assert.equal(await focused(page), 'coach-run-flip', 'Tab: after the ressenti, the correction');
+        assert.equal(await focused(page), 'coach-run-fix-btn', 'Tab: after the ressenti, « Corriger »');
+        await page.keyboard.press('Enter');
+        assert.equal(await page.locator('#coach-run-fix').evaluate(d => d.open), true, 'Enter opens it');
+        await page.keyboard.press('Tab');
+        assert.equal(await focused(page), 'coach-run-flip', 'Tab: the correction');
         await page.keyboard.press('Tab');
         assert.equal(await focused(page), 'coach-run-weekly', 'Tab: then « Pas tous les mercredis »');
         await swap(page, () => page.keyboard.press('Enter'));
         assert.equal(await focused(page), 'coach-run-h', 'Enter: the focus on the notice');
         assert.equal(await title(page), HARD);
-        assert.equal(await said(page), 'Le reste de la semaine ne bouge pas.', 'the week as the one-off reading has it');
+        assert.equal(await card(page).locator('#coach-run-said').count(), 0, 'the week as the one-off reading has it: nothing more to say');
         assert.equal(await card(page).locator('#coach-run-weekly').count(), 0, 'its link goes');
         await check(page, 'run notice not every wednesday');
         await shot(page, 'run-393-not-every-wednesday');
         await theme(page, true); await check(page, 'run notice not every wednesday dark'); await shot(page, 'run-393-not-every-wednesday-dark'); await theme(page, false);
         assert.match(await nextWedTitle(page), /^(?!Séance fixe)/, 'next Wednesday: the plan’s own again');
+        await fix(page, false);
         await page.locator('#coach-run-flip').focus();
         await swap(page, () => page.keyboard.press('Enter'));
         assert.equal(await title(page), EASY);
+        await fix(page, false);
         await page.locator('#coach-run-flip').focus();
         await swap(page, () => page.keyboard.press('Enter'));
         assert.equal(await title(page), HARD);
-        assert.equal(await said(page), 'Le reste de la semaine ne bouge pas.', 'read hard again: never set again');
-        await page.locator('#coach-run-flip').focus();
-        await page.keyboard.press('Tab');
-        assert.equal(await focused(page), 'coach-run-close', 'Tab: « Fermer », beside it');
+        assert.equal(await card(page).locator('#coach-run-said').count(), 0, 'read hard again: never set again');
+        await page.locator('#coach-run-r-1').focus();
+        await page.keyboard.press('Shift+Tab');
+        assert.equal(await focused(page), 'coach-run-close', 'Shift+Tab: « × », in the corner, named « Fermer »');
         await swap(page, () => page.keyboard.press('Enter'));
-        assert.equal(await page.locator('.pf-coach-runcard').count(), 0, '« Fermer »: the notice goes');
+        assert.equal(await page.locator('.pf-coach-runcard').count(), 0, '« × »: the notice goes');
         await page.reload({ waitUntil: 'networkidle' });
         assert.equal(await page.locator('.pf-coach-runcard').count(), 0, 'never again; the plan stays as it is');
         assert.deepEqual(page.errors, [], 'keyboard: browser errors');
@@ -1716,11 +1848,11 @@ async function sheet(page) {
         const key = `run notice changed ${width}${dark ? ' dark' : ''}`;
         const page = await open(browser, { width, dark });
         await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
-        assert.equal(await title(page), 'Hier, tu as couru 1h35 (16,5 km) au lieu de la récup de 55 min : comptée comme une séance dure.', key);
-        assert.equal(await said(page), 'Ta séance de jeudi devient une récup de 45 min ; le reste ne bouge pas.', key);
+        assert.equal(await title(page), 'Hier, 1h35 au lieu de la récup de 55 min : comptée comme une séance dure.', key);
+        assert.equal(await said(page), 'Jeudi devient une récup.', key + ': what the plan changed, short');
         assert.match(await page.locator('.pf-coach-s-title').first().innerText(), /^Récup/, key + ': today’s ticket');
         assert.equal(await page.locator('.pf-coach-daycard .pf-coach-formline').first().innerText().then(flat), 'Récup : lendemain de la séance dure de mercredi.', key);
-        assert.ok((await page.locator('.pf-coach-week.is-board .pf-coach-reason').allInnerTexts()).map(flat).includes('Jeudi devient une récup : c’est le lendemain de la séance dure de mercredi.'), key + ': the week says it');
+        assert.deepEqual((await page.locator('.pf-coach-week.is-board .pf-coach-auto').allInnerTexts()).map(flat), ['Jeudi devient une récup : c’est le lendemain de la séance dure de mercredi.'], key + ': the week says it, once');
         assert.doesNotMatch(await card(page).innerText(), /bpm|cardio/i, key + ': no heart rate said');
         await check(page, key);
         await shot(page, `run-${width}-hard-changed${dark ? '-dark' : ''}`);
@@ -1731,11 +1863,11 @@ async function sheet(page) {
           await shot(page, 'run-320-hard-changed-200');
           await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
         }
-        await swap(page, () => page.tap('#coach-run-flip'));
+        await flip(page);
         assert.match(await page.locator('.pf-coach-s-title').first().innerText(), /^Côtes/, key + ': corrected, the hills are back');
         assert.equal(await page.locator('.pf-coach-daycard .pf-coach-formline').count(), 0, key);
-        assert.equal(await title(page), 'Hier, tu as couru 1h35 (16,5 km) au lieu de la récup de 55 min : comptée comme une sortie tranquille ; rien d’autre ne change.', key);
-        await swap(page, () => page.tap('#coach-run-flip'));
+        assert.equal(await title(page), 'Hier, 1h35 au lieu de la récup de 55 min : comptée comme une sortie tranquille.', key);
+        await flip(page);
         assert.match(await page.locator('.pf-coach-s-title').first().innerText(), /^Récup/, key + ': and back');
         assert.deepEqual(page.errors, [], key + ': browser errors');
         await page.close();
@@ -1748,9 +1880,9 @@ async function sheet(page) {
         const key = `run notice easy ${width}${dark ? ' dark' : ''}`;
         const page = await open(browser, { width, dark });
         await page.goto(fresh + '/coaching', { waitUntil: 'networkidle' });
-        assert.equal(await title(page), 'Aujourd’hui, tu as couru 1h20 (12,4 km) tranquille au lieu de ton fartlek : il passe à vendredi.', key);
+        assert.equal(await title(page), 'Aujourd’hui, 1h20 tranquille au lieu de ton fartlek : il passe à vendredi.', key);
         assert.equal(await card(page).locator('#coach-run-said').count(), 0, key + ': one sentence');
-        assert.equal(await card(page).locator('#coach-run-flip').innerText(), 'C’était une séance dure', key);
+        assert.equal(await card(page).locator('#coach-run-flip').textContent(), 'C’était une séance dure', key);
         assert.equal(await card(page).locator('[data-feel]').count(), 5, key);
         await check(page, key);
         await shot(page, `run-${width}-easy-postponed${dark ? '-dark' : ''}`);
@@ -1762,8 +1894,9 @@ async function sheet(page) {
           assert.equal(await page.locator('.pf-coach-runcard').count(), 1, 'the ressenti said, the notice stays: something changed');
           await swap(page, () => page.tap('#coach-run-close'));
           // yesterday's run, on a day with no session: the next notice, no ressenti, the way out
-          assert.equal(await title(page), 'Hier, tu as couru 40 min (6,6 km) : rien n’était prévu. Comptée comme une sortie tranquille ; rien d’autre ne change.');
+          assert.equal(await title(page), 'Hier, 40 min sans séance prévue : comptée comme une sortie tranquille.');
           assert.equal(await card(page).locator('[data-feel]').count(), 0);
+          await fix(page);
           assert.match(await card(page).locator('#coach-run-attach').innerText(), /^C’est ma séance de \S+ · /);
           await check(page, 'run notice free');
           await shot(page, 'run-393-free');
@@ -1782,7 +1915,7 @@ async function sheet(page) {
       const card = page.locator('.pf-coach-athlete');
       assert.equal(await card.count(), 1);
       assert.match(await card.innerText(), /Stella/);
-      assert.match(await page.locator('h1').innerText(), /^Plans suivis\s+bêta$/i);
+      assert.equal(await page.locator('h1').innerText(), 'Plans suivis', 'no « bêta »');
       assert.equal(await page.locator('label[for="coach-code"]').innerText(), 'Suivre le plan de quelqu’un');
       assert.doesNotMatch(await page.locator('#main-content').innerText(), /\bcoachs?\b|athlète/i, 'the follower’s list names people, not roles');
       assert.ok(await card.locator('.pf-coach-bar b').isVisible(), 'her week at a glance');
@@ -1816,7 +1949,7 @@ async function sheet(page) {
       assert.equal(await page.locator('a.pf-back').innerText(), 'Plans suivis');
       assert.doesNotMatch(await page.locator('#main-content').innerText(), /\bcoachs?\b|athlète/i, 'never « coach » on a follower’s page');
       // the same layout, with what a follower may do: the road, the board, the day's ticket, no tick, « Déplacer »
-      assert.match(await page.locator('.pf-coach-goal').innerText(), /^J‑54\s+Trail des Crêtes\s+Objectif\s5h00$/);
+      assert.equal(await sighted(page.locator('.pf-coach-goal')), 'J‑54 · Trail des Crêtes · 5h00');
       assert.equal(await page.locator('a.pf-coach-goal-time').count(), 0, 'the race page is the athlete’s');
       assert.ok(await page.locator('.pf-coach-wbar').count() >= 10, 'the road');
       assert.equal(await page.locator('#coach-options-btn, dialog').count(), 0, 'no options button, no sheet');
@@ -1827,12 +1960,15 @@ async function sheet(page) {
       assert.equal(await page.locator(`#coach-day-${fixture.day}.is-today.is-selected`).count(), 1);
       for (const c of await ticketContrast(page)) assert.ok(c.ratio >= 4.5, 'follower: ' + JSON.stringify(c));
       // la cible: her pace, never a heart rate, never the way to her settings
-      assert.deepEqual(await page.locator('.pf-coach-target-vals b').allInnerTexts(), ['5:40/km'], 'follower: the pace only');
+      assert.deepEqual(await page.locator('.pf-coach-target b').allInnerTexts(), ['max5:40/km'], 'follower: the pace only');
       assert.doesNotMatch(await page.locator('#main-content').innerText(), /bpm|Cardio|FC max|D’où viennent/, 'follower: no heart rate');
       assert.equal(await page.locator('[id^="coach-done-"], [id^="coach-missed-"]').count(), 0, 'a follower never ticks');
       assert.deepEqual(await seen(page, '#coach-main .pf-btn-primary'), []);
-      assert.equal(await page.locator('.pf-coach-do').count(), 0, 'no « C’est fait » row');
-      assert.deepEqual(await seen(page, '.pf-coach-daycard .pf-coach-quietbtn'), ['Déplacer', 'Modifier', 'Commenter', 'Ajouter une séance']);
+      assert.equal(await page.locator('.pf-coach-do .pf-btn').count(), 0, 'no « C’est fait »: « ⋯ » alone');
+      assert.deepEqual(await seen(page, '.pf-coach-daycard :is(.pf-coach-quietbtn, .pf-coach-morebtn, .pf-coach-menuitem)'), ['', 'Ajouter une séance']);
+      await page.locator('[id^="coach-more-"]').click();
+      assert.deepEqual(await seen(page, '.pf-coach-menu .pf-coach-menuitem'), ['Déplacer', 'Modifier', 'Commenter'], 'the follower’s actions, behind « ⋯ »');
+      await shot(page, 'coach-athlete-393-menu');
       assert.equal(await page.locator('.pf-coach-gauge').getAttribute('aria-label'), 'Effort facile : niveau 2 sur 4');
       assert.deepEqual(await page.locator('.pf-coach-week.is-board .pf-coach-tile').evaluateAll(all => all.map(b => b.className.replace('pf-coach-tile ', ''))),
         ['is-easy is-done', 'is-extra is-done', 'is-easy is-planned', 'is-hard is-planned', 'is-long is-planned'], 'her week, the run outside the plan too');
@@ -1841,17 +1977,21 @@ async function sheet(page) {
       assert.doesNotMatch(await page.locator('#coach-main').innerText(), /débriefer|c’était comment/i);
       assert.equal(await page.locator('#debrief').count(), 0);
       await targets(page, 'coach athlete');
-      // a comment on today's session (behind its fold), then a session added two days on
+      // a comment on today's session (behind its fold, in the menu still open), then a session added two days on
       await page.locator('.pf-coach-notefold > summary').click();
       await page.locator('.pf-coach-note textarea').first().fill('Bien géré. Garde cette allure jeudi.');
       await swap(page, () => page.locator('.pf-coach-note button').first().click());
       assert.equal(await page.locator('.pf-coach-said').innerText(), 'Ton commentaire\nBien géré. Garde cette allure jeudi.');
-      assert.equal(await page.locator('.pf-coach-notefold > summary').innerText(), 'Commenter', 'one short word, the comment kept in its field');
-      const row = await page.locator('.pf-coach-quiet > :is(a, details) , .pf-coach-quiet > details > summary').evaluateAll(all => [...new Set(all.map(el => Math.round(el.getBoundingClientRect().top)))]);
-      assert.equal(row.length, 1, 'the session’s quiet actions sit on one line ' + JSON.stringify(row));
+      assert.equal(await page.locator('.pf-coach-notefold > summary').textContent(), 'Commenter', 'one short word, the comment kept in its field');
+      assert.equal(await page.locator('.pf-coach-menu').isVisible(), false, 'the menu closed once saved');
       await noOverflow(page, 'coach athlete');
       await shot(page, 'coach-athlete-393');
       await theme(page, true); await shot(page, 'coach-athlete-393-dark'); await theme(page, false);
+      await page.setViewportSize({ width: 320, height: 852 });
+      await noOverflow(page, 'coach athlete 320');
+      await shot(page, 'coach-athlete-320');
+      await theme(page, true); await shot(page, 'coach-athlete-320-dark'); await theme(page, false);
+      await page.setViewportSize({ width: 393, height: 852 });
       // her run outside the plan: on its day, its summary only — never the activity, nothing to answer or attach
       const wed = new Date(fixture.day + 'T00:00:00Z');
       wed.setUTCDate(wed.getUTCDate() - 1);
@@ -1871,7 +2011,7 @@ async function sheet(page) {
       assert.match(await page.locator('.pf-coach-s-title').innerText(), /^Séance/);
       assert.equal(await page.locator('.pf-coach-t-dur').innerText(), '55min');
       assert.match(await page.locator('.pf-coach-s-text').innerText(), /3 × 8 min soutenu, récup 2 min/);
-      assert.match(await page.locator('.pf-coach-edited').innerText(), /Modifiée par toi/);
+      assert.match(await page.locator('.pf-coach-formline.is-quiet').innerText(), /Modifiée par toi/);
       await noOverflow(page, 'coach added');
       // a done session as a coach reads it: the ressenti on the same scale (read only), her note, his comment
       const sunday = new Date(fixture.day + 'T00:00:00Z');
