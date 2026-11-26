@@ -6,8 +6,9 @@ que ce n'est pas la séance attendu car tu ne peux pas la rapprocher alors tu me
 rate or its pace on flat ground, else an easy outing — and updates the plan: a hard session applies the fixed
 session's rules to that week only on the sessions nobody touched; an easy one rebuilds nothing and postpones a quality
 session not done. One notice says what happened and what the plan did; one link corrects the reading and puts back
-what it changed; « Tous les mercredis ? » stays the only optional tap; a reading is never applied twice; the follower
-sees no notice."""
+what it changed; a hard session the same weekday most weeks is kept there by itself as « Ma séance fixe » (the owner,
+26 Nov 2026: « On ne sait pas si c'est une sortie club du coup je ne comprends pas la question … »: no question is
+left), with one quiet way back; a reading is never applied twice; the follower sees no notice."""
 import re
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -212,7 +213,12 @@ def test_the_notice_names_the_day_and_the_session():
     assert cv._of_session({"kind": cp.HILLS, "minutes": 45, "structure": cp.quality_session("cotes_courtes", 6)[2]}) \
         == "des côtes courtes de 45 min"
     assert cv._of_session({"kind": cp.QUALITY, "minutes": 75, "structure": cp.fixed_structure(cp.Fixed(2, 75))}) \
-        == "de ta séance club de 1h15"
+        == "de ta séance fixe de 1h15"
+    assert cv._of_session({"kind": cp.QUALITY, "minutes": 75, "structure": {"key": cp.FIXED_KEY,
+                                                                              "name": "Séance club"}}) \
+        == "de ta séance fixe de 1h15", "the name given by default before 26 Nov 2026 reads as today's"
+    assert cv._of_session({"kind": cp.QUALITY, "minutes": 60, "structure": cp.fixed_structure(cp.Fixed(2, 60, "Piste"))}) \
+        == "de ta séance « Piste » de 1h00"
     assert cv._your_session({"kind": cp.QUALITY, "structure": cp.quality_session("intervalles", 6)[2]}) == (
         "tes intervalles", "ils passent", "les ")
     assert cv._your_session({"kind": cp.QUALITY, "structure": cp.quality_session("fartlek", 6)[2]})[:2] == (
@@ -540,50 +546,209 @@ async def test_a_run_of_its_duration_on_an_easy_session_reads_by_each_criterion(
     assert "C’était quoi" not in page
 
 
-async def test_every_wednesday_is_the_only_optional_tap(client, people, db_session, clock):
-    """« Tu cours tous les mardis avec ton club ? » after a hard reading on a weekday the athlete ran most of the 8
-    weeks before: shown after the notice, never required; « Oui » sets « Ma séance fixe »; « Non » is kept, never
-    asked again for that weekday; never asked with a fixed session."""
-    athlete, plan = await _owner(client, db_session, people, clock, minutes=93, weeks_before=6)
+# ── the habit: a hard session the same weekday most weeks, kept there by itself ──
+
+async def _tuesdays(client, db, people, clock, *, weeks=5, hard=3, laps=INTERVALS, coach=False):
+    """The owner's week on a Tuesday, with a run on `weeks` of the 8 Tuesdays before — the first `hard` of them read
+    hard by their laps (88, 93, 97 min: a median of 93, 95 to 5 min), the others an easy 50-min jog — and today's
+    1 h 35 run instead of the 55-min footing (`laps`: read hard by its laps)."""
+    athlete = people.athlete
+    _as(client, athlete)
+    plan = await _plan(client, db, athlete, days=("1", "2", "4", "5", "6"), base="300")
+    hard_minutes = (88, 93, 97)
+    for w in range(1, weeks + 1):
+        minutes = hard_minutes[(w - 1) % 3] if w <= hard else 50
+        db.add(_club(athlete, TUE - timedelta(weeks=w), 100 + w, minutes, INTERVALS if w <= hard else None))
+    if coach:
+        db.add(CoachingLink(athlete_id=athlete.id, coach_id=people.coach.id))
+    clock.day = TUE
+    db.add(_club(athlete, TUE, 1, 95, laps))
+    await db.flush()
+    return athlete, plan
+
+
+async def _plan_of(db, athlete) -> CoachingPlan:
+    return (await db.execute(select(CoachingPlan).where(CoachingPlan.user_id == athlete.id)
+                             .execution_options(populate_existing=True))).scalar_one()
+
+
+HABIT = (f"Tu fais une séance dure presque tous les mardis{NBSP}: le plan la garde ce jour-là chaque semaine et "
+         "s’écrit autour.")
+ONE_OFF = f"Ta séance de mercredi devient une récup de 45 min{NBSP}; le reste ne bouge pas."
+
+
+async def test_a_hard_session_most_tuesdays_is_kept_there_by_itself(client, people, db_session, clock):
+    """5 of the 8 Tuesdays before with a run, 3 of them read hard: « Ma séance fixe » on Tuesday by itself, as the
+    option sets it — the median of the hard ones (93 min, not the 70 of all), to 5 min; the option's default name —
+    the notice says so after its first sentence, with one quiet link; no question, no club."""
+    athlete, _p = await _tuesdays(client, db_session, people, clock)
     page = _main((await client.get("/coaching")).text)
+    plan = await _plan_of(db_session, athlete)
+    assert co.fixed_of(plan) == cp.Fixed(1, 95, cp.FIXED_NAME) and cp.FIXED_NAME == "Séance fixe"
     card = _card(page)
-    run_id = next(r for r in await _rows(db_session, athlete) if r.day == TUE).activity_id
-    assert f'<p id="coach-run-offer-q" class="pf-coach-q">Tu cours tous les mardis avec ton club{NBSP}?</p>' in card
-    assert ">Oui, tous les mardis</button>" in card and ">Non, juste cette fois</button>" in card
-    assert card.index("coach-run-offer-q") > card.index("coach-run-h"), "after the notice"
-    r = await client.post(f"/coaching/runs/{run_id}/chaque-semaine", data={"value": "oui"}, headers=HTMX)
-    plan = (await db_session.execute(select(CoachingPlan).where(CoachingPlan.user_id == athlete.id)
-                                     .execution_options(populate_existing=True))).scalar_one()
-    assert co.fixed_of(plan) == cp.Fixed(1, 95, cp.FIXED_NAME), "the run's 93 min, to 5 min as the option rounds"
-    assert "Ta séance fixe : tous les mardis, 1h35. Le plan s’écrit autour." in r.text.replace(NBSP, " ")
+    assert f'<p class="pf-coach-run-said" id="coach-run-said">{HABIT}</p>' in card
+    assert card.index("coach-run-h") < card.index("coach-run-said") < card.index("coach-run-flip")
+    assert '<button type="submit" id="coach-run-weekly" class="pf-coach-quietbtn">Pas tous les mardis</button>' in card
+    assert 'action="/coaching/runs/' in card and '/pas-chaque-semaine"' in card
+    assert "club" not in card.lower().replace("vma club", ""), "no sentence assumes a club"
+    assert "coach-run-yes" not in card and "coach-run-offer" not in card and "Oui, tous les" not in card, "no question"
     rows = await _rows(db_session, athlete)
-    nxt = [x for x in rows if x.day == TUE + timedelta(weeks=1)]
-    assert len(nxt) == 1 and cp.is_fixed(nxt[0].structure) and nxt[0].minutes == 95, "next Tuesday: the club's"
-    # corrected (an easy outing after all): the fixed session goes with the hard reading
-    await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
-    plan = (await db_session.execute(select(CoachingPlan).where(CoachingPlan.user_id == athlete.id)
-                                     .execution_options(populate_existing=True))).scalar_one()
-    assert co.fixed_of(plan) is None
-    # read hard again: offered again; « Non, juste cette fois »: stored, never asked again for that weekday
-    r = await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
-    assert "Tu cours tous les mardis" in r.text
-    r = await client.post(f"/coaching/runs/{run_id}/chaque-semaine", data={"value": "non"}, headers=HTMX)
-    assert "coach-run-yes" not in r.text and "pf-coach-runcard" in r.text
-    plan = (await db_session.execute(select(CoachingPlan).where(CoachingPlan.user_id == athlete.id)
-                                     .execution_options(populate_existing=True))).scalar_one()
-    assert plan.fixed == {"declined": [1]} and co.declined_days(plan) == [1]
-    await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
-    r = await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
-    assert "Tu cours tous les" not in r.text
-    r = await client.post(f"/coaching/runs/{run_id}/chaque-semaine", data={"value": "oui"}, headers=HTMX)
-    assert "Plus de question en attente." in r.text
+    tue = next(r for r in rows if r.day == TUE and r.status != co.CANCELLED)
+    a = cr.answer_of(tue)
+    assert a["recur"]["state"] == cr.YES and a["changes"] == [], "no one-off change: the fixed session's rules"
+    assert len([r for r in rows if r.day == TUE and r.status != co.CANCELLED]) == 1, "today: the run's session alone"
+    nxt = [r for r in rows if r.day == TUE + timedelta(weeks=1) and r.status != co.CANCELLED]
+    assert len(nxt) == 1 and cp.is_fixed(nxt[0].structure) and nxt[0].minutes == 95
+    assert cp.title(nxt[0].kind, nxt[0].structure) == "Séance fixe" and cv.short_title(nxt[0].kind, nxt[0].structure) \
+        == "Séance" and nxt[0].structure["text"] == "Son contenu est le tien."
+    # applied once: the page, the plan read again, the daily round, the follower's page write nothing more
+    first, fixed = _state_of(await _rows(db_session, athlete)), plan.fixed
+    await client.get("/coaching")
+    await co.sync(db_session, await co.get_plan(db_session, athlete.id), athlete)
+    from app.tasks import coaching as task
+    assert await task.run(db_session) == 1
+    assert _state_of(await _rows(db_session, athlete)) == first and (await _plan_of(db_session, athlete)).fixed == fixed
+    # « Ma séance fixe » shows it as any fixed session
+    tools = (await client.get("/coaching?outil=fixe")).text
+    assert "Mardi · 1h35 · Séance fixe" in tools and 'id="coach-fixed-remove"' in tools
 
 
-async def test_no_offer_with_a_fixed_session(client, people, db_session, clock):
-    athlete, plan = await _owner(client, db_session, people, clock, weeks_before=6)
+@pytest.mark.parametrize("weeks,hard,set_", [(4, 3, False), (5, 3, True), (5, 2, False), (8, 0, False)])
+async def test_the_habit_at_its_edges(weeks, hard, set_, client, people, db_session, clock):
+    """Five weeks of eight with a run on that weekday, not four; three of them read hard, not two; a weekly easy
+    jog is no hard-session habit. Without the habit, the one-off reading of before."""
+    athlete, _p = await _tuesdays(client, db_session, people, clock, weeks=weeks, hard=hard)
+    card = _card(_main((await client.get("/coaching")).text))
+    plan = await _plan_of(db_session, athlete)
+    assert (co.fixed_of(plan) is not None) is set_ and (HABIT in card) is set_
+    wed = next(r for r in await _rows(db_session, athlete) if r.day == WED)
+    if not set_:
+        assert plan.fixed is None and ONE_OFF in card and "coach-run-weekly" not in card
+        assert wed.kind == cp.RECUP and co.marked(wed)
+
+
+async def test_no_habit_with_a_fixed_session_or_on_a_declined_weekday(client, people, db_session, clock):
+    athlete, plan = await _tuesdays(client, db_session, people, clock)
     await co.set_fixed(db_session, plan, athlete, cp.Fixed(4, 60))
     page = (await client.get("/coaching")).text
-    assert "comptée comme une séance dure" in page and "Tu cours tous les" not in page
+    assert "comptée comme une séance dure" in page and HABIT not in page
+    assert co.fixed_of(await _plan_of(db_session, athlete)) == cp.Fixed(4, 60, cp.FIXED_NAME)
+
+
+async def test_no_habit_on_a_declined_weekday(client, people, db_session, clock):
+    athlete, plan = await _tuesdays(client, db_session, people, clock)
+    plan.fixed = {"declined": [1]}
+    await db_session.flush()
+    card = _card(_main((await client.get("/coaching")).text))
+    assert ONE_OFF in card and HABIT not in card
+    assert (await _plan_of(db_session, athlete)).fixed == {"declined": [1]}
+
+
+async def test_no_habit_where_the_option_would_refuse_it(client, people, db_session, clock):
+    """Sunday, the long run's day: « Ma séance fixe » refuses it, so does the habit."""
+    athlete = people.athlete
+    _as(client, athlete)
+    await _plan(client, db_session, athlete, days=("1", "2", "4", "5", "6"), base="300")
+    for w in range(1, 6):
+        db_session.add(_club(athlete, SUN - timedelta(weeks=w), 100 + w, 90, INTERVALS))
+    clock.day = SUN
+    db_session.add(_club(athlete, SUN, 1, 200, INTERVALS))
+    await db_session.flush()
+    await client.get("/coaching")
+    assert (await _plan_of(db_session, athlete)).fixed is None
+
+
+async def test_not_every_tuesday_puts_the_week_back_and_never_sets_it_again(client, people, db_session, clock):
+    """« Pas tous les mardis »: the fixed session goes, the week as the one-off reading has it (Wednesday's
+    fartlek a récup), Tuesday declined — a correction back and forth never sets it again."""
+    athlete, _p = await _tuesdays(client, db_session, people, clock)
+    await client.get("/coaching")
+    run_id = next(r for r in await _rows(db_session, athlete) if r.day == TUE).activity_id
+    r = await client.post(f"/coaching/runs/{run_id}/pas-chaque-semaine", data={}, headers=HTMX)
+    plan = await _plan_of(db_session, athlete)
+    assert plan.fixed == {"declined": [1]} and co.fixed_of(plan) is None
+    card = _card(r.text)
+    assert ONE_OFF in card and HABIT not in card and "coach-run-weekly" not in card
+    rows = await _rows(db_session, athlete)
+    wed = next(x for x in rows if x.day == WED)
+    assert wed.kind == cp.RECUP and co.marked(wed)
+    assert not [x for x in rows if cp.is_fixed(x.structure) and x.status != co.CANCELLED], "no fixed session left"
+    after = _state_of(rows)
+    await client.get("/coaching")
+    assert _state_of(await _rows(db_session, athlete)) == after, "read again: nothing more"
+    r = await client.post(f"/coaching/runs/{run_id}/pas-chaque-semaine", data={}, headers=HTMX)
+    assert "Cette séance n’est plus fixée." in r.text
+    await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
+    r = await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
+    assert ONE_OFF in _card(r.text) and (await _plan_of(db_session, athlete)).fixed == {"declined": [1]}
+
+
+async def test_the_correction_takes_the_habit_with_it(client, people, db_session, clock):
+    """« C’était une sortie tranquille »: the reading put back with the fixed session it set (no weekday declined:
+    read hard again, the habit holds again)."""
+    athlete, _p = await _tuesdays(client, db_session, people, clock)
+    before = await _before(db_session, athlete)
+    await client.get("/coaching")
+    run_id = next(r for r in await _rows(db_session, athlete) if r.day == TUE).activity_id
+    r = await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
+    plan = await _plan_of(db_session, athlete)
+    assert plan.fixed is None
+    assert "comptée comme une sortie tranquille" in _card(r.text) and "coach-run-weekly" not in r.text
+    assert sorted(x[1:] for x in _state_of(await _rows(db_session, athlete), answers=False) if x[1] != TUE) == \
+        sorted(x[1:] for x in before if x[1] != TUE), "every other session as it was (a regeneration may renumber)"
+    r = await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
+    assert HABIT in _card(r.text) and co.fixed_of(await _plan_of(db_session, athlete)) is not None
+
+
+async def test_removed_from_ma_seance_fixe_it_never_comes_back(client, people, db_session, clock):
+    """« Retirer » in « Ma séance fixe »: as « Pas tous les mardis » — the week as the one-off reading has it, and
+    the next Tuesday's hard run no longer sets it."""
+    athlete, _p = await _tuesdays(client, db_session, people, clock)
+    await client.get("/coaching")
+    r = await client.post("/coaching/fixe/retirer")
+    assert r.status_code == 303
+    plan = await _plan_of(db_session, athlete)
+    assert plan.fixed == {"declined": [1]}
+    page = _main((await client.get("/coaching")).text)
+    assert ONE_OFF in _card(page) and HABIT not in page
+    assert next(x for x in await _rows(db_session, athlete) if x.day == WED).kind == cp.RECUP
+    clock.day = TUE + timedelta(weeks=1)
+    db_session.add(_club(athlete, clock.day, 2, 95, INTERVALS))
+    await db_session.flush()
+    page = _main((await client.get("/coaching")).text)
+    assert "comptée comme une séance dure" in page and HABIT not in page
+    assert (await _plan_of(db_session, athlete)).fixed == {"declined": [1]}
+
+
+async def test_moved_in_ma_seance_fixe_the_day_it_leaves_is_declined(client, people, db_session, clock):
+    athlete, _p = await _tuesdays(client, db_session, people, clock)
+    await client.get("/coaching")
+    await client.post("/coaching/fixe", data={"fixed_day": "3", "fixed_minutes": "60", "fixed_name": ""})
+    plan = await _plan_of(db_session, athlete)
+    assert co.fixed_of(plan) == cp.Fixed(3, 60, cp.FIXED_NAME) and co.declined_days(plan) == [1]
+    assert HABIT not in _main((await client.get("/coaching")).text), "no longer its Tuesday: not said"
+
+
+async def test_the_follower_sees_the_sessions_never_the_notice(client, people, db_session, clock):
+    """The follower's page reads the plan first: the habit is set there too, once; the follower sees the fixed
+    session, never the notice nor its link."""
+    athlete, _p = await _tuesdays(client, db_session, people, clock, coach=True)
+    _as(client, people.coach)
+    page = (await client.get(f"/coaching/athletes/{athlete.id}?d={(TUE + timedelta(weeks=1)).isoformat()}")).text
+    assert co.fixed_of(await _plan_of(db_session, athlete)) == cp.Fixed(1, 95, cp.FIXED_NAME)
+    assert "pf-coach-runcard" not in page and "Pas tous les" not in page and "presque tous les" not in page
+    assert "Séance fixe" in page
+    first = _state_of(await _rows(db_session, athlete))
+    _as(client, athlete)
+    assert HABIT in _card(_main((await client.get("/coaching")).text))
+    assert _state_of(await _rows(db_session, athlete)) == first
+
+
+def test_a_legacy_question_reads_as_nothing():
+    """An answer left by the question of before 26 Nov 2026 (« ask », « non »): nothing said of a habit."""
+    plan = SimpleNamespace(fixed=None)
+    assert not cr.habit_kept(plan, {"recur": {"day": 1, "minutes": 95, "state": "ask"}})
+    assert not cr.worth_saying({"what": cr.EASY, "case": cr.BRISK, "recur": {"state": "ask"}})
 
 
 async def test_no_notice_once_nothing_is_left_to_say(client, people, db_session, clock):
@@ -665,7 +830,7 @@ async def test_any_weekday_a_misfit_run_read_hard_changes_only_untouched_session
         x for x in before if x[1] != same_today], "everything else as it was"
 
 
-@pytest.mark.parametrize("action", ["reponse", "annuler", "reporter", "autre"])
+@pytest.mark.parametrize("action", ["reponse", "annuler", "reporter", "autre", "chaque-semaine"])
 async def test_the_old_questions_are_gone_and_errors_change_nothing(action, client, people, db_session, clock):
     athlete, _p = await _owner(client, db_session, people, clock)
     await client.get("/coaching")

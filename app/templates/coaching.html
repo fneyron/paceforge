@@ -65,8 +65,8 @@ document.addEventListener("click", function (event) {
         else fallback();
     }
 });
-// A run's notice corrected (« C’était une sortie tranquille »), or « Tous les mercredis ? » answered: the notice is
-// said again — the focus goes to its heading, as « Déplacer » gives its instruction the focus (the ressenti keeps its
+// A run's notice corrected (« C’était une sortie tranquille »), or « Pas tous les mercredis »: the notice is said
+// again — the focus goes to its heading, as « Déplacer » gives its instruction the focus (the ressenti keeps its
 // own focus).
 var runAnswered = false;
 document.addEventListener("htmx:beforeRequest", function (event) {

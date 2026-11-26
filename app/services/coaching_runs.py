@@ -15,8 +15,11 @@ round) reads such a run by itself and updates the plan, then the athlete's page 
   else an easy outing (no data: the easy side, nothing rebuilt);
 - hard: the run becomes the day's hard session (`coaching_plan.declared_structure`) and one of the week's quality
   sessions — the fixed session's rules for that week only (`coaching_plan.after_hard`): the changes are written once,
-  on the sessions the plan may change, each marked with why (`coaching.marked`: no later reading rewrites them), and
-  « Tous les mercredis ? » is offered once when the athlete runs that weekday most weeks;
+  on the sessions the plan may change, each marked with why (`coaching.marked`: no later reading rewrites them) —
+  unless that weekday shows a hard-session habit (`habit`): then the plan keeps a hard session there every week, by
+  itself, as « Ma séance fixe » does (owner, 26 Nov 2026: « On ne sait pas si c'est une sortie club du coup je ne
+  comprends pas la question … on ne peut pas faire mieux ou autrement ? »: the question that asked is gone), and one
+  quiet link, « Pas tous les mercredis », takes it back for good;
 - easy: nothing is rebuilt; a quality session planned that day, not done, goes to the first day the move rules allow
   (`coaching_plan.move_day`), or stays not done when none does; a run with no session that day stays « hors plan »
   (its ways: held onto a session, « C’est ma séance de … »), its reading kept on a note (a cancelled row, `note`);
@@ -25,6 +28,7 @@ round) reads such a run by itself and updates the plan, then the athlete's page 
   tranquille » / « C’était une séance dure ») puts everything back, then applies the other reading.
 The card is the athlete's: the person who follows the plan sees only the sessions and their lines. No AI.
 """
+import statistics
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
@@ -41,7 +45,10 @@ from app.services import sante_training as st
 
 HARD, EASY = "dure", "facile"  # the readings
 MISFIT, MISSED, FREE, BRISK = "autrement", "pas_faite", "hors_plan", "soutenue"  # the cases
-ASK, YES, NO, NONE = "ask", "oui", "non", "aucun"  # an offer's state (NONE: a postponement with no day)
+# a postponement's or a habit's state (NONE: a postponement with no day; a habit: YES set by itself, NO taken back by
+# « Pas tous les mercredis »; "ask", left by the question of before 26 Nov 2026, reads as nothing)
+YES, NO, NONE = "oui", "non", "aucun"
+WRITTEN, AGAIN = 1, 2  # what `settle` did: written; written and a fixed session set (the runs left read once more)
 EASY_KINDS = (cp.FOOTING, cp.RECUP)  # the planned sessions a run may outdo in intensity at the same duration
 
 
@@ -107,10 +114,10 @@ def candidates(state: co.State) -> list[Card]:
 
 def worth_saying(answer: dict) -> bool:
     """A reading with something to say: a hard session (it counts for the week), a session changed or postponed, a
-    postponement with no day, a fixed session set, the one offer still open, a correction — or a run left outside
-    the plan (the notice is where its reading can be corrected: it has no ressenti to ask)."""
+    postponement with no day, a fixed session set by the habit, a correction — or a run left outside the plan (the
+    notice is where its reading can be corrected: it has no ressenti to ask)."""
     return bool(answer.get("what") == HARD or said_changes(answer) or (answer.get("report") or {}).get("state")
-                or (answer.get("recur") or {}).get("state") in (ASK, YES) or answer.get("corrected")
+                or (answer.get("recur") or {}).get("state") == YES or answer.get("corrected")
                 or answer.get("case") in (FREE, MISSED))
 
 
@@ -262,11 +269,12 @@ async def facts(db: AsyncSession, state: co.State, user: User, runs: list) -> di
     return out
 
 
-async def settle(db: AsyncSession, state: co.State, user: User) -> bool:
+async def settle(db: AsyncSession, state: co.State, user: User) -> int:
     """Every run of `candidates` read and applied, the oldest first (each week's rules see what came before): a hard
     session as « Une séance dure » did, an easy one as « Une sortie tranquille » did, the postponement included. Called
-    by every reading of the plan (coaching.sync); idempotent — a run read is never read again. True when something
-    was written."""
+    by every reading of the plan (coaching.sync); idempotent — a run read is never read again. 0: nothing written;
+    WRITTEN; AGAIN: a fixed session was just set by the habit — the reading stops there, the plan is written again
+    around it (coaching.sync, as coaching.set_fixed does) and the runs left are read after."""
     linked = {r.activity_id for r in state.rows if r.activity_id is not None and r.status != co.CANCELLED}
     stale = [r for r in state.rows if is_note(r) and (answer_of(r) or {}).get("run") in linked]
     for r in stale:  # a run outside the plan since linked to a session (held onto it, « C’est ma séance de … »)
@@ -276,7 +284,7 @@ async def settle(db: AsyncSession, state: co.State, user: User) -> bool:
     if not cards:
         if stale:
             await db.flush()
-        return bool(stale)
+        return WRITTEN if stale else 0
     known = await facts(db, state, user, [c.run for c in cards])
     seen: set[int] = set()
     while True:
@@ -286,9 +294,11 @@ async def settle(db: AsyncSession, state: co.State, user: User) -> bool:
         card = min(left, key=lambda c: (c.run.day, c.run.start))
         seen.add(card.run.id)
         value, _why = reading(**known[card.run.id])
-        await apply(db, state, user, card, value)
+        if await apply(db, state, user, card, value):
+            await db.flush()
+            return AGAIN
     await db.flush()
-    return True
+    return WRITTEN
 
 
 # ── the state a change starts from, and back ────────────────────────────────
@@ -452,20 +462,52 @@ def _quality(row: CoachingSession | None) -> bool:
 
 
 async def apply(db: AsyncSession, state: co.State, user: User, card: Card, value: str, *,
-                corrected: bool = False) -> None:
+                corrected: bool = False) -> bool:
     """A run read (`value`: HARD or EASY) and the plan updated as that reading says. An easy run on an easy
-    session whose duration fits (BRISK) changes nothing: it is kept as read, the day's debrief asks its ressenti."""
+    session whose duration fits (BRISK) changes nothing: it is kept as read, the day's debrief asks its ressenti.
+    True when the habit just set a fixed session (the plan is then to be written again around it)."""
+    fixed = False
     if value == HARD:
-        await _hard(db, state, card, corrected)
+        fixed = await _hard(db, state, user, card, corrected)
     elif card.case == BRISK and not corrected and card.row is not None:
         _set_answer(card.row, {"run": card.run.id, "what": EASY, "case": BRISK, "row": card.row.id, "open": False,
                                "was": None, "created": False, "changes": []})
     else:
         await _easy(db, state, card, corrected)
     await db.flush()
+    return fixed
 
 
-async def _hard(db: AsyncSession, state: co.State, card: Card, corrected: bool) -> None:
+# ── the habit: a hard session the same weekday most weeks (docs/coaching.md › « La séance fixe ») ──
+# choix pratique, no study: among the FIXED_WEEKS (8) complete weeks before the run's week, a run on that weekday in
+# at least RECUR_FROM (5) of them — most weeks — AND at least HABIT_HARD of those weeks with a run read as hard by
+# `reading` itself (laps, heart rate, pace). Fewer: no habit (a weekly easy jog on Wednesdays is not a hard session).
+HABIT_HARD = 3
+
+
+async def habit(db: AsyncSession, state: co.State, user: User, day: date) -> cp.Fixed | None:
+    """The fixed session the plan sets by itself after a run read hard on `day`, or None: never with a fixed session
+    already, never on a declined weekday, never where « Ma séance fixe » would refuse it (`clean_fixed`: the long
+    run's day, a seventh day). Its duration: the median of those hard runs, rounded as the option rounds (5 min, 30
+    min to 3 h); its name: the option's default (FIXED_NAME, « Séance fixe »). The past runs are read only here: one
+    query for their laps (`facts`), no stream."""
+    plan = state.plan
+    if co.fixed_of(plan) is not None or day.weekday() in co.declined_days(plan) \
+            or not cst.weekly_habit(state.runs, day):
+        return None
+    past = cst.weekday_runs(state.runs, day)
+    known = await facts(db, state, user, past)
+    hard = [run for run in past if reading(**known[run.id])[0] == HARD]
+    if len({run.day for run in hard}) < HABIT_HARD:
+        return None
+    try:
+        return co.clean_fixed(day.weekday(), statistics.median(run.minutes for run in hard), None, plan.weekdays,
+                              plan.long_day)
+    except co.Invalid:
+        return None
+
+
+async def _hard(db: AsyncSession, state: co.State, user: User, card: Card, corrected: bool) -> bool:
     run, plan, now = card.run, state.plan, state.clock.now
     minutes = int(round(run.minutes))
     structure = cp.declared_structure(minutes)
@@ -478,20 +520,19 @@ async def _hard(db: AsyncSession, state: co.State, card: Card, corrected: bool) 
     else:
         holder, was, created = _run_row(db, plan, state.rows, run, cp.QUALITY, structure, now), None, True
     await db.flush()
-    changes = cp.after_hard(run.day, minutes, _held(state, holder), week_count(state, run.day), state.clock.today,
-                            plan.weekdays, state.goal.race_day)
-    records = await _apply(db, state, changes, run.day)
-    recur = None
-    if co.fixed_of(plan) is None and run.day.weekday() not in co.declined_days(plan) \
-            and cst.weekly_habit(state.runs, run.day):
-        try:
-            fixed = co.clean_fixed(run.day.weekday(), run.minutes, None, plan.weekdays, plan.long_day)
-            recur = {"day": fixed.day, "minutes": fixed.minutes, "state": ASK}
-        except co.Invalid:
-            recur = None  # its long run's day, or a seventh day: not offered (« Ma séance fixe » would refuse it)
+    fixed = await habit(db, state, user, run.day)
+    recur, records = None, []
+    if fixed is not None:  # the fixed session's rules take this week too: no one-off change is written
+        recur = {"day": fixed.day, "minutes": fixed.minutes, "state": YES, "was": plan.fixed}
+        plan.fixed = co.fixed_state(fixed, plan)  # as coaching.set_fixed: the plan is then read again (`settle`)
+    else:
+        changes = cp.after_hard(run.day, minutes, _held(state, holder), week_count(state, run.day),
+                                state.clock.today, plan.weekdays, state.goal.race_day)
+        records = await _apply(db, state, changes, run.day)
     _set_answer(holder, {"run": run.id, "what": HARD, "case": card.case, "row": card.row.id if card.row else None,
                          "open": True, "corrected": corrected, "was": was, "created": created, "changes": records,
                          "recur": recur})
+    return fixed is not None
 
 
 async def _easy(db: AsyncSession, state: co.State, card: Card, corrected: bool) -> None:
@@ -546,13 +587,9 @@ async def _postpone(db: AsyncSession, state: co.State, row: CoachingSession, to:
 
 async def _undo(db: AsyncSession, state: co.State, holder: CoachingSession, a: dict) -> None:
     """A reading taken back: the sessions it changed, the session that holds the run (its kind, its link) and a
-    fixed session set by « Oui, tous les mercredis », back as they were."""
+    fixed session the habit set with it, back as they were."""
     await _revert(db, state, [r for r in a.get("changes") or [] if "id" in r])
-    if (a.get("recur") or {}).get("state") == YES:
-        kept = (a["recur"].get("was") or {})
-        state.plan.fixed = {**({k: v for k, v in kept.items() if k != "declined"}),
-                            **({"declined": co.declined_days(state.plan)} if co.declined_days(state.plan) else {})} \
-            or None
+    _unset(state.plan, a)
     if a.get("created"):
         state.rows.remove(holder)
         await db.delete(holder)
@@ -613,25 +650,55 @@ async def attach(db: AsyncSession, state: co.State, run_id: int, session_id: int
     await db.flush()
 
 
-async def recur(db: AsyncSession, state: co.State, user: User, run_id: int, yes: bool) -> None:
-    """« Tu cours tous les mercredis avec ton club ? »: once, never required. « Oui, tous les mercredis »: « Ma séance
-    fixe » on that weekday at the run's duration (coaching.set_fixed and its checks: the plan written again around
-    it, as the option does — this week's changes are put back first, the fixed session's rules take this week too).
-    « Non, juste cette fois »: never asked again for that weekday."""
-    holder = holder_of(state, run_id)
-    a = answer_of(holder) if holder is not None else None
-    offer = (a or {}).get("recur")
-    if holder is None or a is None or not offer or offer.get("state") != ASK:
-        raise co.Invalid("Plus de question en attente.")
-    plan = state.plan
-    if not yes:
-        plan.fixed = {**(plan.fixed or {}), "declined": sorted(set(co.declined_days(plan)) | {int(offer["day"])})}
-        _set_answer(holder, {**a, "recur": {**offer, "state": NO}})
-        return
-    fixed = co.clean_fixed(offer["day"], offer["minutes"], None, plan.weekdays, plan.long_day)
-    await _revert(db, state, [r for r in a.get("changes") or [] if "id" in r])
-    _set_answer(holder, {**a, "changes": [], "recur": {**offer, "state": YES, "was": plan.fixed}})
-    await co.set_fixed(db, plan, user, fixed)
+def habit_kept(plan: CoachingPlan, a: dict) -> bool:
+    """Whether the fixed session the habit set with this reading is still the plan's (not removed nor moved to
+    another day since)."""
+    offer, kept = a.get("recur") or {}, co.fixed_of(plan)
+    return offer.get("state") == YES and kept is not None and kept.day == offer.get("day")
+
+
+def _unset(plan: CoachingPlan, a: dict) -> None:
+    """The fixed session the habit set with this reading removed, when it is still the plan's (the declined
+    weekdays stay)."""
+    if habit_kept(plan, a):
+        plan.fixed = co.fixed_state(None, plan)
+
+
+async def not_weekly(db: AsyncSession, state: co.State, user: User, run_id: int) -> None:
+    """« Pas tous les mercredis »: the fixed session the habit set goes, that weekday is never set again by itself
+    (coaching.decline), and the run's week is put as the one-off reading had it — the plan written again without
+    the fixed session (as coaching.set_fixed does), then the fixed session's rules for that week only (`after_hard`)."""
+    holder, a, card = _read(state, run_id)
+    if not habit_kept(state.plan, a):
+        raise co.Invalid("Cette séance n’est plus fixée.")
+    plan, offer = state.plan, a["recur"]
+    _unset(plan, a)
+    co.decline(plan, int(offer["day"]))
+    state = await co.sync(db, plan, user, settle=False)
+    holder = holder_of(state, run_id) or holder
+    run = card.run
+    changes = cp.after_hard(run.day, int(round(run.minutes)), _held(state, holder), week_count(state, run.day),
+                            state.clock.today, plan.weekdays, state.goal.race_day)
+    records = await _apply(db, state, changes, run.day)
+    _set_answer(holder, {**(answer_of(holder) or a), "changes": records, "recur": {**offer, "state": NO}})
+    await db.flush()
+
+
+async def drop_fixed(db: AsyncSession, state: co.State, user: User) -> None:
+    """« Ma séance fixe » › « Retirer »: no fixed session any more, and its weekday is never set again by itself
+    (otherwise a habit read there would bring it back the next week). One the habit set goes as « Pas tous les
+    mercredis » does (its week put as the one-off reading had it); any other as coaching.set_fixed(None)."""
+    kept = co.fixed_of(state.plan)
+    by_habit = [r for r in state.rows if habit_kept(state.plan, answer_of(r) or {})]
+    if kept is not None and by_habit:
+        run_id = (answer_of(max(by_habit, key=lambda r: r.day)) or {}).get("run")
+        try:
+            await not_weekly(db, state, user, int(run_id))
+            return
+        except co.Invalid:  # its run no longer read (deleted): removed as any other
+            pass
+    co.left_by_hand(state.plan, None)
+    await co.set_fixed(db, state.plan, user, None)
 
 
 def close(state: co.State, run_id: int) -> None:

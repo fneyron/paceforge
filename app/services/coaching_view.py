@@ -78,18 +78,19 @@ TWO_DAYS = ("Deux séances par semaine suffisent pour préparer un 10 km et prog
             "Pour aller plus loin, c’est une troisième séance, facile, qui aide le plus.")
 SIDE_BY_SIDE = "Deux jours de suite : la séance rythmée devient un footing."
 # the fixed session (docs/coaching.md › « La séance fixe »): what the start screen says once, the race week's line,
-# and the word its day carries in the calendar (« Club » for the name given by default, else its first word)
+# (the word its day carries in the calendar: its name's first word, short_title)
 FIXED_LINE = "{name} est ta séance de qualité de la semaine : le plan écrit le reste autour."
 FIXED_RACE_WEEK = "Semaine de la course : ta séance fixe laisse la place au rappel du plan."
-FIXED_SHORT = "Club"
 QUALITY_PAIR = "Tu peux courir la séance en footing."
 METHOD = (
     "Ton plan est en temps, pas en kilomètres. Il part de ton volume habituel et monte d’environ 10 % par semaine ; "
     "une semaine sur quatre est plus légère.",
-    "Une sortie qui n’est pas la séance prévue (un club, une sortie en plus) : le plan la lit tout seul, séance "
-    "dure ou sortie tranquille, d’après tes tours, ton cardio et ton allure, se met à jour et te dit ce qu’il a fait. "
-    "Une séance dure compte comme une séance de qualité de la semaine : une autre peut devenir un footing ou changer "
-    "de jour. Un lien te permet de le corriger.",
+    "Une sortie qui n’est pas la séance prévue : le plan la lit tout seul, séance dure ou sortie tranquille, "
+    "d’après tes tours, ton cardio et ton allure, se met à jour et te dit ce qu’il a fait. Une séance dure compte "
+    "comme une séance de qualité de la semaine : une autre peut devenir un footing ou changer de jour. Un lien te "
+    "permet de le corriger.",
+    "Une séance dure qui revient le même jour la plupart des semaines : le plan la garde ce jour-là et s’écrit "
+    "autour. Un lien l’annule.",
     "Le plan se recalcule tout seul, à chaque ouverture de la page et chaque nuit : il relie tes sorties aux séances, "
     "allège la semaine suivante quand il le faut et réécrit les séances à venir que personne n’a touchées. Ce que tu "
     "as fait, modifié ou déplacé, il n’y touche jamais.",
@@ -122,11 +123,10 @@ METHOD = (
 
 
 def short_title(kind: str, structure: dict | None) -> str:
-    """The one word a day of the calendar carries: the kind's, or the fixed session's (« Club »; a name typed: its
-    first word)."""
+    """The one word a day of the calendar carries: the kind's, or the fixed session's (its name's first word:
+    « Séance » for the name given by default)."""
     if cp.is_fixed(structure):
-        name = cp.title(kind, structure)
-        return FIXED_SHORT if name == cp.FIXED_NAME else name.split()[0]
+        return cp.title(kind, structure).split()[0]
     return KIND_SHORT.get(kind, kind)
 
 
@@ -382,7 +382,7 @@ def slot_label(row) -> str | None:
 def _other_slot(row, state: co.State) -> bool:
     """Whether « Autre créneau » has another free time to offer for this session."""
     if (state.agenda is None or row.status != co.PLANNED or row.day < state.clock.today or row.kind == cp.RACE
-            or cp.is_fixed(row.structure)):  # the club's hour is the club's
+            or cp.is_fixed(row.structure)):  # the fixed session's hour is the athlete's
         return False
     local = state.clock.now.astimezone(state.clock.zone)
     return ag.next_slot(row, state.agenda, state.plan, state.clock.today, local.hour * 60 + local.minute,
@@ -432,7 +432,10 @@ RUN_FLIP = {runs_.HARD: "C’était une sortie tranquille", runs_.EASY: "C’ét
 RUN_REST = NBSP + "; le reste ne bouge pas."
 RUN_STILL = "Le reste de la semaine ne bouge pas."
 RUN_NOTHING = NBSP + "; rien d’autre ne change."
-RUN_FIXED = "Ta séance fixe : tous les {days}, {minutes}. Le plan s’écrit autour."
+# a hard session the same weekday most weeks (coaching_runs.habit): what the plan did, and its one way back
+RUN_HABIT = ("Tu fais une séance dure presque tous les {days} : le plan la garde ce jour-là chaque semaine et "
+             "s’écrit autour.")
+RUN_HABIT_BACK = "Pas tous les {days}"
 RUN_SAID = {"eased": "ta séance de {day} devient un footing de {minutes}",
             "recup": "ta séance de {day} devient une récup de {minutes}",
             "reps": "ta séance de {day} garde moins de répétitions",
@@ -501,11 +504,11 @@ def week_runs(state: co.State, monday: date) -> str | None:
 
 
 def _of_session(was: dict) -> str:
-    """« du footing de 40 min », « de ta séance club de 1h15 »: the session planned, after « au lieu »."""
+    """« du footing de 40 min », « de ta séance fixe de 1h15 »: the session planned, after « au lieu »."""
     structure, minutes = was.get("structure"), int(was.get("minutes") or 0)
     if cp.is_fixed(structure):
         name = cp.title(cp.QUALITY, structure)
-        return (f"de ta séance club de {hm(minutes)}" if name == cp.FIXED_NAME
+        return (f"de ta {name[:1].lower()}{name[1:]} de {hm(minutes)}" if name.lower().startswith("séance ")
                 else f"de ta séance « {name} » de {hm(minutes)}")
     named = OF_KEY.get(str((structure or {}).get("key")))
     return f"{named or OF_KIND.get(str(was.get('kind')), 'de la séance')} de {hm(minutes)}"
@@ -533,9 +536,10 @@ def _sentence(text: str) -> str:
 
 def run_card(state: co.State, card: "runs_.Card") -> dict:
     """The notice at the top for a run the plan read by itself: what happened and what the plan did, in one or two
-    sentences with the numbers; the ressenti; the one correction link; « Tous les mercredis ? » once after a hard
-    session; « Ce n’est pas cette séance » (a run linked to the day's session) or « C’est ma séance de … » (a run on
-    a day with no session); « Fermer »."""
+    sentences with the numbers — and, when the plan just kept that weekday's hard session as a fixed session
+    (coaching_runs.habit), that sentence and its way back, « Pas tous les mercredis »; the ressenti; the one
+    correction link; « Ce n’est pas cette séance » (a run linked to the day's session) or « C’est ma séance de … »
+    (a run on a day with no session); « Fermer »."""
     run, today, a = card.run, state.clock.today, card.answer or {}
     km = f" ({viz.fr_num(run.km, 1).removesuffix(',0')}{NNBSP}km)" if run.km > 0 else ""
     head = f"{run_when(run.day, today)}, tu as couru {hm(run.minutes)}{km}"
@@ -543,7 +547,7 @@ def run_card(state: co.State, card: "runs_.Card") -> dict:
     planned = (a.get("was") or (runs_.snapshot(card.row) if card.row is not None else None)) \
         if case in (runs_.MISFIT, runs_.MISSED, runs_.BRISK) else None
     report, recur = a.get("report") or {}, a.get("recur") or {}
-    said = None
+    said = back = None
     if what == runs_.EASY and planned and report.get("state") in (runs_.YES, runs_.NONE):
         mine, goes, them = _your_session(planned)
         if report.get("state") == runs_.YES:
@@ -561,8 +565,9 @@ def run_card(state: co.State, card: "runs_.Card") -> dict:
             first = f"{head} : rien n’était prévu. {_sentence(RUN_AS[what])}"
         if what == runs_.HARD:
             title = first + "."
-            if recur.get("state") == runs_.YES:
-                said = RUN_FIXED.format(days=WEEKDAYS_PLURAL[int(recur["day"])], minutes=hm(int(recur["minutes"])))
+            if runs_.habit_kept(state.plan, a):
+                said = RUN_HABIT.format(days=WEEKDAYS_PLURAL[int(recur["day"])])
+                back = RUN_HABIT_BACK.format(days=WEEKDAYS_PLURAL[int(recur["day"])])
             else:
                 parts = [RUN_SAID[x["what"]].format(day=_wd(x["day"]), to=_wd(x.get("to") or x["day"]),
                                                     minutes=hm(int(x.get("minutes") or 0)))
@@ -570,11 +575,6 @@ def run_card(state: co.State, card: "runs_.Card") -> dict:
                 said = _sentence((NBSP + "; ").join(parts)) + RUN_REST if parts else RUN_STILL
         else:
             title = first + RUN_NOTHING
-    offer = None
-    if recur.get("state") == runs_.ASK:
-        plural = WEEKDAYS_PLURAL[int(recur["day"])]
-        offer = {"q": f"Tu cours tous les {plural} avec ton club{NBSP}?", "yes": f"Oui, tous les {plural}",
-                 "no": "Non, juste cette fois"}
     holder = card.holder
     out: dict | None = None
     if case in (runs_.MISFIT, runs_.BRISK) and card.row is not None:
@@ -584,7 +584,7 @@ def run_card(state: co.State, card: "runs_.Card") -> dict:
         attach = _attach(run, live, today)
         out = {"attach": attach} if attach else None
     return {"run": run.id, "day": run.day.isoformat(), "title": _sentence(title),
-            "said": (rp.fr(said) or said) if said else None, "offer": offer,
+            "said": (rp.fr(said) or said) if said else None, "back": back,
             "flip": RUN_FLIP.get(what), "out": out,
             "row": holder.id if holder is not None and holder.status == co.DONE else None,
             "ressenti": holder.ressenti if holder is not None else None}

@@ -402,7 +402,8 @@ def fixed_of(plan: CoachingPlan) -> cp.Fixed | None:
         return None
     if not 0 <= day <= 6 or not cp.FIXED_RANGE[0] <= minutes <= cp.FIXED_RANGE[1]:
         return None
-    return cp.Fixed(day, minutes, str(kept.get("name") or "").strip() or cp.FIXED_NAME)
+    name = str(kept.get("name") or "").strip()
+    return cp.Fixed(day, minutes, cp.FIXED_NAME if name in ("", cp.FIXED_NAME_BEFORE) else name)
 
 
 def clean_fixed(day, minutes, name, days: tuple[int, ...], long_day: int) -> cp.Fixed:
@@ -428,8 +429,8 @@ def clean_fixed(day, minutes, name, days: tuple[int, ...], long_day: int) -> cp.
 
 
 def fixed_state(fixed: cp.Fixed | None, plan: CoachingPlan | None = None) -> dict | None:
-    """What the plan keeps of it (coaching_plans.fixed), with the weekdays the athlete said « Non, juste cette fois »
-    to (`declined`: « Tous les mercredis ? » is never asked again for them, docs/coaching.md › « La séance fixe »)."""
+    """What the plan keeps of it (coaching_plans.fixed), with the weekdays the plan never sets a fixed session on by
+    itself (`declined`, docs/coaching.md › « La séance fixe »)."""
     declined = declined_days(plan) if plan is not None else []
     out = {} if fixed is None else {"day": fixed.day, "minutes": fixed.minutes, "name": fixed.name}
     if declined:
@@ -438,12 +439,27 @@ def fixed_state(fixed: cp.Fixed | None, plan: CoachingPlan | None = None) -> dic
 
 
 def declined_days(plan: CoachingPlan) -> list[int]:
-    """The weekdays « Tous les mercredis ? » was answered « Non » for."""
+    """The weekdays the plan never sets a fixed session on by itself (coaching_runs.habit): « Pas tous les
+    mercredis », a fixed session removed or moved off that day by hand (and, before 26 Nov 2026, « Non, juste cette
+    fois » to the question that asked)."""
     out = set()
     for value in (plan.fixed or {}).get("declined") or []:
         if isinstance(value, int) and 0 <= value <= 6:
             out.add(value)
     return sorted(out)
+
+
+def decline(plan: CoachingPlan, day: int) -> None:
+    """`day` kept among the declined weekdays: the habit never sets a fixed session on it again."""
+    plan.fixed = {**(plan.fixed or {}), "declined": sorted(set(declined_days(plan)) | {int(day)})}
+
+
+def left_by_hand(plan: CoachingPlan, fixed: cp.Fixed | None) -> None:
+    """The fixed session removed or moved to another day by the athlete (« Ma séance fixe », the start screen): the
+    weekday it leaves is declined — a habit read there would otherwise set it again the next week."""
+    kept = fixed_of(plan)
+    if kept is not None and (fixed is None or fixed.day != kept.day):
+        decline(plan, kept.day)
 
 
 FIXED_NEXT = {-1: "la veille", 1: "le lendemain"}
@@ -569,6 +585,7 @@ async def save_plan(db: AsyncSession, user: User, c: Clock, *, route_id: int | N
         ag.set_moments(plan, moments)
     kept = fixed_of(plan)
     if fixed is not KEEP:
+        left_by_hand(plan, fixed)
         plan.fixed = fixed_state(fixed, plan)
     elif kept is not None and (kept.day == long_day or len(set(days) | {kept.day}) > 6):
         plan.fixed = fixed_state(None, plan)  # the days changed under it on a screen that did not ask: it no longer fits
@@ -783,7 +800,7 @@ async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime |
     usual = ag.usual_moment(runs, c.today) if agenda is not None else None
     local = c.now.astimezone(c.zone)
 
-    def movable(row: CoachingSession) -> bool:  # the fixed session keeps its day: the club's is the club's
+    def movable(row: CoachingSession) -> bool:  # the fixed session keeps its day: it is the athlete's
         return replaceable(row, c.today) and not cp.is_fixed(row.structure)
 
     def changed(row: CoachingSession) -> None:
@@ -799,8 +816,9 @@ async def sync(db: AsyncSession, plan: CoachingPlan, user: User, now: datetime |
     if settle:
         from app.services import coaching_runs
 
-        if await coaching_runs.settle(db, state, user):
-            return await sync(db, plan, user, c.now, settle=False)
+        done = await coaching_runs.settle(db, state, user)
+        if done:  # read once more; again with the runs left to read when a fixed session was just set by itself
+            return await sync(db, plan, user, c.now, settle=done == coaching_runs.AGAIN)
     return state
 
 

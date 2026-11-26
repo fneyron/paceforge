@@ -69,7 +69,8 @@
         {% if head.ended %}<p class="pf-coach-reason pf-coach-ended">{{ head.ended }}</p>{% endif %}
     </section>
 
-    {#- ── a run the plan read by itself: what happened, what the plan did, the ressenti, one correction link ── -#}
+    {#- ── a run the plan read by itself: what happened, what the plan did, the ressenti, one correction link; nothing
+        here is required ── -#}
     {% if p.card and not p.moving %}{% set k = p.card %}{% set ra = base ~ "/runs/" ~ k.run %}
     <section class="pf-coach-debrief pf-coach-runcard" id="debrief" role="group" aria-labelledby="coach-run-h" data-answer-card>
         <h2 id="coach-run-h" class="pf-coach-debrief-h" tabindex="-1"><b>{{ k.title }}</b></h2>
@@ -78,19 +79,9 @@
         <p id="coach-run-feel" class="pf-coach-q">C’était comment&nbsp;?</p>
         {% call feel(base ~ "/sessions/" ~ k.row ~ "/ressenti", "coach-run-r-", k.ressenti, "coach-run-feel") %}{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}">{% endcall %}
         {% endif %}
-        {#- the one optional question, after the ressenti and quiet: nothing here is required -#}
-        {% if k.offer %}
-        <form class="pf-coach-run-offer" method="post" action="{{ ra }}/chaque-semaine" hx-post="{{ ra }}/chaque-semaine" {{ swap|safe }} role="group" aria-labelledby="coach-run-offer-q">
-            {{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}">
-            <p id="coach-run-offer-q" class="pf-coach-q">{{ k.offer.q }}</p>
-            <div class="pf-coach-run-yesno">
-                <button type="submit" name="value" value="oui" id="coach-run-yes" class="pf-btn pf-btn-secondary">{{ k.offer.yes }}</button>
-                <button type="submit" name="value" value="non" id="coach-run-no" class="pf-btn pf-btn-secondary">{{ k.offer.no }}</button>
-            </div>
-        </form>
-        {% endif %}
         <div class="pf-coach-run-quiet">
             {% if k.flip %}<form method="post" action="{{ ra }}/corriger" hx-post="{{ ra }}/corriger" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}"><button type="submit" id="coach-run-flip" class="pf-coach-quietbtn">{{ k.flip }}</button></form>{% endif %}
+            {% if k.back %}<form method="post" action="{{ ra }}/pas-chaque-semaine" hx-post="{{ ra }}/pas-chaque-semaine" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}"><button type="submit" id="coach-run-weekly" class="pf-coach-quietbtn">{{ k.back }}</button></form>{% endif %}
             <form method="post" action="{{ ra }}/fermer" hx-post="{{ ra }}/fermer" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}"><button type="submit" id="coach-run-close" class="pf-coach-quietbtn">Fermer</button></form>
             {% if k.out and k.out.not %}<form method="post" action="{{ ra }}/pas-celle" hx-post="{{ ra }}/pas-celle" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}"><button type="submit" id="coach-run-not" class="pf-coach-quietbtn">{{ k.out.not }}</button></form>
             {% elif k.out and k.out.attach %}{% set at = k.out.attach %}<form method="post" action="{{ ra }}/seance" hx-post="{{ ra }}/seance" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="value" value="{{ at.id }}"><button type="submit" id="coach-run-attach" class="pf-coach-quietbtn">{{ at.label }} <span>· {{ at.what }}</span></button></form>{% endif %}
