@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{#- Coaching (beta): the athlete's plan, or the same screens seen by a coach (scope.coach), titled with the athlete's
+{#- Coaching: the athlete's plan, or the same screens seen by a coach (scope.coach), titled with the athlete's
     first name. « ‹ Activités » is the way back of an installed app older than the native Coaching tab only. The part
     swapped in place on every tap is partials/coaching_main.html: the road to the race, the debrief, the week as a
     board, the day as tickets. The round button opens the options (the athlete's only): with JavaScript a bottom
@@ -14,7 +14,7 @@
     {% if scope.coach %}<a href="/coaching/athletes" class="pf-back">{{ icon("chev-l", "w-4 h-4") }}Plans suivis</a>
     {% else %}<a href="/activities" class="pf-back pf-old-shell-only">{{ icon("chev-l", "w-4 h-4") }}Activités</a>{% endif %}
     <div class="pf-head pf-coach-head">
-        <h1 class="pf-h1">{{ athlete_name if scope.coach else "Coaching" }} <span class="pf-tag">bêta</span></h1>
+        <h1 class="pf-h1">{{ athlete_name if scope.coach else "Coaching" }}</h1>
         {% if not scope.coach %}<a class="pf-coach-optbtn" id="coach-options-btn" href="/coaching?outil=options#coach-options" aria-controls="coach-options" aria-haspopup="dialog" aria-label="Options du plan">{{ icon("sliders", "w-6 h-6", "1.8") }}</a>{% endif %}
     </div>
 
@@ -44,6 +44,63 @@
 <script defer src="/static/js/coaching-fixed.js?v={{ request.app.state.build_id }}"></script>{% endif %}
 {% if not scope.coach and tools %}<script defer src="/static/js/coaching-agenda.js?v={{ request.app.state.build_id }}"></script>{% endif %}
 <script>
+// « ⋯ »: the other actions of a session, in a small menu opened in place (coaching_main.html). Without this script
+// they are a plain list under the ticket and « ⋯ » is not drawn (the class below draws it and folds the lists).
+// It opens on a tap or Enter / Space, the focus goes to its first action; Escape closes it and gives the focus back to
+// « ⋯ »; a tap outside closes it. After an action's answer (htmx), the focus comes back to « ⋯ ».
+document.documentElement.classList.add("pf-coach-menus");
+(function () {
+    function menuOf(button) { return document.getElementById(button.getAttribute("aria-controls")); }
+    function shut(button, focus) {
+        var menu = menuOf(button);
+        button.setAttribute("aria-expanded", "false");
+        if (menu) menu.classList.remove("is-open");
+        if (focus) button.focus();
+    }
+    function openOne(button) {
+        document.querySelectorAll('[data-menu-button][aria-expanded="true"]').forEach(function (b) { if (b !== button) shut(b, false); });
+        var menu = menuOf(button);
+        if (!menu) return;
+        button.setAttribute("aria-expanded", "true");
+        menu.classList.add("is-open");
+        var first = menu.querySelector("button, a[href], summary, select, textarea");
+        if (first) first.focus();
+    }
+    document.addEventListener("click", function (event) {
+        var button = event.target.closest && event.target.closest("[data-menu-button]");
+        if (button) {
+            if (button.getAttribute("aria-expanded") === "true") shut(button, false); else openOne(button);
+            return;
+        }
+        document.querySelectorAll('[data-menu-button][aria-expanded="true"]').forEach(function (b) {
+            var menu = menuOf(b);
+            if (!menu || !menu.contains(event.target)) shut(b, false);
+        });
+    });
+    document.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") return;
+        var menu = event.target.closest && event.target.closest("[data-menu].is-open");
+        var button = menu ? document.querySelector('[aria-controls="' + menu.id + '"]')
+            : event.target.closest && event.target.closest('[data-menu-button][aria-expanded="true"]');
+        if (!button) return;
+        event.preventDefault();
+        shut(button, true);
+    });
+    var back = null;
+    document.addEventListener("htmx:beforeRequest", function (event) {
+        var menu = event.target.closest && event.target.closest("[data-menu]");
+        back = menu ? menu.getAttribute("id").replace("coach-menu-", "coach-more-") : null;
+    });
+    document.addEventListener("htmx:afterSettle", function () {
+        var id = back;
+        back = null;
+        var at = document.activeElement;
+        if (!id || document.getElementById("coach-moving")) return;
+        if (at && at !== document.body && !(at.closest && at.closest("[data-menu]:not(.is-open)"))) return;
+        var button = document.getElementById(id);
+        if (button) button.focus({ preventScroll: true });
+    });
+})();
 // Instant feedback before the server answers: the ressenti tapped is shown as chosen at once; « Copier l’adresse »
 // copies the calendar address. The server's answer then replaces the swapped part (htmx).
 document.addEventListener("click", function (event) {

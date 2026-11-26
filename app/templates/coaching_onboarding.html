@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{#- Coaching (beta): the one screen that makes a plan, with a plan already proposed. Every answer arrives filled in
+{#- Coaching: the one screen that makes a plan, with a plan already proposed. Every answer arrives filled in
     (routers.coaching._onboarding: the next race, the days the athlete usually runs, their usual long-run day, the
     computed volume) and the week these answers make is drawn (partials/coaching_preview.html). The days sit under
     their bars: a tap adds or removes one and the week is drawn again by the real generator (htmx, GET
@@ -16,8 +16,8 @@
     {% else %}<a href="/activities" class="pf-back pf-old-shell-only">{{ icon("chev-l", "w-4 h-4") }}Activités</a>{% endif %}
     <div class="pf-head pf-coach-head">
         <div>
-            <h1 class="pf-h1">Coaching <span class="pf-tag">bêta</span></h1>
-            <p class="pf-lead">{{ "Refais ton plan : tes séances faites restent." if redo else "Ton plan est prêt. Ajuste-le si tu veux." }}</p>
+            <h1 class="pf-h1">Coaching</h1>
+            {% if redo %}<p class="pf-lead">Tes séances faites restent.</p>{% endif %}
         </div>
     </div>
     <form method="post" action="/coaching/plan" class="pf-coach-onb-form" id="coach-onb" hx-get="/coaching/apercu" hx-trigger="change" hx-target="#coach-preview" hx-swap="outerHTML" hx-sync="this:replace">
@@ -26,11 +26,10 @@
         <fieldset class="pf-coach-card pf-coach-q-card">
             <legend class="pf-coach-h">Ce que tu veux</legend>
             <div class="pf-coach-intents">
-                {% for key, title, ic, line in intents %}
-                <label class="pf-coach-intent"><input type="radio" name="intent" value="{{ key }}" data-line="{{ line }}"{% if chosen.intent == key %} checked{% endif %}><span>{{ icon(ic, "w-6 h-6") }}<b>{{ title }}</b></span></label>
+                {% for key, title, ic in intents %}
+                <label class="pf-coach-intent"><input type="radio" name="intent" value="{{ key }}"{% if chosen.intent == key %} checked{% endif %}><span>{{ icon(ic, "w-6 h-6") }}<b>{{ title }}</b></span></label>
                 {% endfor %}
             </div>
-            <p class="pf-coach-intent-line" id="coach-intent-line">{% for key, title, ic, line in intents if chosen.intent == key %}{{ line }}{% endfor %}</p>
             {#- « Préparer une course »: which one (open only for it, always shown without JavaScript) -#}
             <div class="pf-coach-options pf-coach-races" id="coach-races" role="radiogroup" aria-label="Ta course">
                 {% for r in races %}
@@ -53,7 +52,8 @@
                     {% for i, (word, long) in weekdays %}<label class="pf-coach-chip"><input type="checkbox" name="days" value="{{ i }}" id="coach-day-{{ i }}" aria-label="{{ long }}"{% if i in chosen.days %} checked{% endif %}><span aria-hidden="true">{{ word }}</span></label>{% endfor %}
                 </div>
             </fieldset>
-            <p class="pf-label pf-coach-days-hint" id="coach-days-hint" role="status">Touche un jour pour l’ajouter ou l’enlever.</p>
+            {#- what the days lack (2 to 6), said only then -#}
+            <p class="pf-label pf-coach-days-hint" id="coach-days-hint" role="status"></p>
             {#- « Ma séance fixe »: one quiet line under the days, that opens its three answers (docs/coaching.md ›
                 « La séance fixe ») -#}
             <div class="pf-coach-fixed" id="coach-fixed" data-fixed>
@@ -69,7 +69,6 @@
                 <label for="coach-base">Volume par semaine</label>
                 <select id="coach-base" name="base" class="pf-coach-select">{% for m, word in volumes %}<option value="{{ m }}"{% if m == chosen.base %} selected{% endif %}>{{ word }}</option>{% endfor %}</select>
             </div>
-            {% if computed %}<p class="pf-label pf-coach-row-note">Calculé sur tes 4 dernières semaines de course.</p>{% endif %}
             {% else %}
             <fieldset class="pf-coach-volume">
                 <legend>Ce que tu cours par semaine</legend>
@@ -100,7 +99,7 @@
     // « Ajouter une course »: its fields open once it is chosen; typing in them chooses it; the button waits for a
     // name, a date and a distance
     var fresh = document.getElementById("coach-goal-new"), block = document.getElementById("coach-newrace");
-    var races = document.getElementById("coach-races"), line = document.getElementById("coach-intent-line");
+    var races = document.getElementById("coach-races");
     function intent() { var i = form.querySelector('input[name="intent"]:checked'); return i ? i : null; }
     function filled() {
         var i = intent();
@@ -114,10 +113,9 @@
         if (block && fresh) block.hidden = !fresh.checked;
         var i = intent();
         if (races) races.hidden = !!i && i.value !== "course";
-        if (line && i && line.textContent !== i.getAttribute("data-line")) line.textContent = i.getAttribute("data-line");
         if (go) go.disabled = n < 2 || n > 6 || !filled();
         if (!hint) return;
-        var text = n > 6 ? "Garde un jour de repos : 6 jours au plus." : n < 2 ? "Choisis au moins 2 jours." : "Touche un jour pour l’ajouter ou l’enlever.";
+        var text = n > 6 ? "Garde un jour de repos : 6 jours au plus." : n < 2 ? "Choisis au moins 2 jours." : "";
         if (hint.textContent !== text) hint.textContent = text;
         hint.classList.toggle("pf-coach-error", n < 2 || n > 6);
     }

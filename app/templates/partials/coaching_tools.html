@@ -1,6 +1,8 @@
 {#- Coaching: the athlete's options, in the sheet the round button opens (coaching-sheet.js; without JavaScript, the
-    section at the end of the page). First « Adapter à ma forme » (a switch), then one tile per tool, then « Refaire le
-    plan » and, small and red, « Arrêter le coaching ». A tile opens its tool in the sheet, a back control returns
+    section at the end of the page). First « Adapter à ma forme » (a switch, alone: what it does is in « Comment ça
+    marche »), then one tile per tool (its title only), then « Refaire le plan » and, small and red, « Arrêter le
+    coaching ». Inside a tool, one short sentence at most above its controls, and every sentence that says what is
+    read or shared. A tile opens its tool in the sheet, a back control returns
     to the tiles; without JavaScript a tile is the link to its tool, which follows the tiles (the pages never say
     « coach »: the plan is automatic, the person who follows it is named by what they do). Swapped in place after a
     new code, a revoked access or a regenerated link (`open` then says which tool stays open). Expects `tools` =
@@ -12,26 +14,22 @@
 <div id="coach-tools" class="pf-coach-tools" data-open="{{ opened or '' }}">
     {#- « Adapter à ma forme »: an explicit, separate choice (health data), off by default; offered only with the
         health consent and an index in Santé. The form posts and the page comes back: today's session may change at
-        once. The long wording waits behind « En savoir plus ». -#}
+        once. What it reads and that nobody else sees why: « Comment ça marche ». -#}
     {% if tools.form %}
     <form id="coach-form" class="pf-coach-formopt pf-coach-home" method="post" action="/coaching/form">
-        <button type="submit" name="value" value="{{ 'off' if tools.form.on else 'on' }}" id="coach-form-switch" class="pf-coach-switch" role="switch" aria-checked="{{ 'true' if tools.form.on else 'false' }}" aria-describedby="coach-form-short">
-            <span><b>Adapter à ma forme</b><small id="coach-form-short">Récupération basse le matin&nbsp;: ta séance dure devient un footing.</small></span>
+        <button type="submit" name="value" value="{{ 'off' if tools.form.on else 'on' }}" id="coach-form-switch" class="pf-coach-switch" role="switch" aria-checked="{{ 'true' if tools.form.on else 'false' }}">
+            <span><b>Adapter à ma forme</b></span>
             <span class="pf-coach-switch-track" aria-hidden="true"><i></i></span>
         </button>
-        <details class="pf-coach-learn">
-            <summary>En savoir plus</summary>
-            <p id="coach-form-note" class="pf-label">{% if tools.form.on %}Activé le {{ tools.form.since }}. {% endif %}Un matin où ta récupération de Santé est basse (VFC, sommeil, FC de repos), ta séance dure devient un footing. La personne qui suit ton plan ne voit jamais pourquoi.</p>
-        </details>
     </form>
     {% endif %}
     <nav class="pf-coach-optgrid pf-coach-home" aria-label="Les outils du plan">
-        {% if fixed %}<a class="pf-coach-opt" id="coach-opt-fixed" href="/coaching?outil=fixe#coach-tool-fixed" data-tool="coach-tool-fixed">{{ icon("repeat", "w-6 h-6", "1.8") }}<b>Ma séance fixe<small>{{ fixed.said or "Une séance qui revient chaque semaine" }}</small></b></a>{% endif %}
-        <a class="pf-coach-opt" id="coach-opt-feed" href="/coaching?outil=calendrier#coach-tool-feed" data-tool="coach-tool-feed">{{ icon("calendar", "w-6 h-6", "1.8") }}<b>Dans mon calendrier<small>iPhone, Google, Outlook</small></b></a>
-        <a class="pf-coach-opt" id="coach-opt-agenda" href="/coaching?outil=agenda#coach-tool-agenda" data-tool="coach-tool-agenda">{{ icon("watch", "w-6 h-6", "1.8") }}<b>Mon agenda<small>Éviter mes réunions</small></b></a>
-        <a class="pf-coach-opt" id="coach-opt-share" href="/coaching?outil=partage#coach-tool-share" data-tool="coach-tool-share">{{ icon("share", "w-6 h-6", "1.8") }}<b>Partager mon plan<small>{{ "Quelqu’un le suit" if tools.coaches else "Avec un code" }}</small></b></a>
-        <a class="pf-coach-opt" id="coach-opt-follow" href="/coaching/athletes">{{ icon("heart", "w-6 h-6", "1.8") }}<b>Suivre un plan<small>Celui d’un proche</small></b></a>
-        <a class="pf-coach-opt" id="coach-opt-how" href="/coaching?outil=methode#coach-tool-how" data-tool="coach-tool-how">{{ icon("info", "w-6 h-6", "1.8") }}<b>Comment ça marche<small>Les règles du plan</small></b></a>
+        {% if fixed %}<a class="pf-coach-opt" id="coach-opt-fixed" href="/coaching?outil=fixe#coach-tool-fixed" data-tool="coach-tool-fixed">{{ icon("repeat", "w-6 h-6", "1.8") }}<b>Ma séance fixe</b></a>{% endif %}
+        <a class="pf-coach-opt" id="coach-opt-feed" href="/coaching?outil=calendrier#coach-tool-feed" data-tool="coach-tool-feed">{{ icon("calendar", "w-6 h-6", "1.8") }}<b>Dans mon calendrier</b></a>
+        <a class="pf-coach-opt" id="coach-opt-agenda" href="/coaching?outil=agenda#coach-tool-agenda" data-tool="coach-tool-agenda">{{ icon("watch", "w-6 h-6", "1.8") }}<b>Mon agenda</b></a>
+        <a class="pf-coach-opt" id="coach-opt-share" href="/coaching?outil=partage#coach-tool-share" data-tool="coach-tool-share">{{ icon("share", "w-6 h-6", "1.8") }}<b>Partager mon plan</b></a>
+        <a class="pf-coach-opt" id="coach-opt-follow" href="/coaching/athletes">{{ icon("heart", "w-6 h-6", "1.8") }}<b>Suivre un plan</b></a>
+        <a class="pf-coach-opt" id="coach-opt-how" href="/coaching?outil=methode#coach-tool-how" data-tool="coach-tool-how">{{ icon("info", "w-6 h-6", "1.8") }}<b>Comment ça marche</b></a>
     </nav>
 
     {#- « Ma séance fixe »: the weekly session the athlete brings (or the plan keeps, from a habit), around which the plan is written. A plain
@@ -44,7 +42,6 @@
             {% if fixed.warning %}<p class="pf-coach-reason pf-coach-hardpair">{{ fixed.warning }}</p>{% endif %}
             <form method="post" action="/coaching/fixe" class="pf-coach-fixed-form">
                 {% include "partials/coaching_fixed_fields.html" %}
-                <p class="pf-label pf-coach-fixed-note">Le plan écrit ses séances autour, sans toucher à son jour ni à sa durée.</p>
                 <button type="submit" id="coach-fixed-save" class="pf-btn pf-btn-primary pf-btn-sm">Enregistrer</button>
             </form>
             {% if fixed.set %}
@@ -56,7 +53,7 @@
     </section>
     {% endif %}
     <section class="pf-coach-panel{% if opened == 'feed' %} is-asked{% endif %}" id="coach-tool-feed" aria-labelledby="coach-tool-feed-h">
-        <h3 class="pf-coach-panel-h" id="coach-tool-feed-h" tabindex="-1">Dans mon calendrier <small>Tes séances dans l’agenda de ton téléphone</small></h3>
+        <h3 class="pf-coach-panel-h" id="coach-tool-feed-h" tabindex="-1">Dans mon calendrier</h3>
         <div class="pf-coach-tool-body">
             {% if tools.feed %}
             {#- one tap each, no address to type (owner, 24 Nov 2026): Apple's Calendar takes the webcal:// link (a

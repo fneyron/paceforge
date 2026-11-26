@@ -2,7 +2,7 @@
     optionally a time aimed at; nothing else. Its fields open under the option once it is chosen (without JavaScript
     they always show); typing in them chooses it. `chosen.race`: what was typed (filled again after a refusal). -#}
 {% set nr = chosen.race or {} %}
-<label class="pf-coach-option"><input type="radio" name="goal" value="new" id="coach-goal-new"{% if chosen.goal == "new" %} checked{% endif %}><span><b>Ajouter une course</b><small>Sans fichier GPX&nbsp;: un nom, une date, une distance</small></span></label>
+<label class="pf-coach-option"><input type="radio" name="goal" value="new" id="coach-goal-new"{% if chosen.goal == "new" %} checked{% endif %}><span><b>Ajouter une course</b></span></label>
 <div class="pf-coach-newrace" id="coach-newrace" data-newrace>
     <div class="pf-coach-field">
         <label for="race-name">Nom de la course</label>

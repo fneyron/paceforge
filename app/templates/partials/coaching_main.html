@@ -1,18 +1,20 @@
 {#- Coaching: the part swapped in place on every tap (htmx; a link or a form without JavaScript).
     Expects `p` = coaching_view.page(...), `scope` (routers.coaching.Scope: who looks at whose plan), `error`.
-    Four zones, as the owner's prototype draws them (docs/coaching.md › « Les écrans »):
-    - the road to the race: « J‑54 », the race and its time, then every week of the plan as a bar as tall as its
-      volume, tinted by its phase, the current week in ink, the race's week flagged; a bar is its week's address
-      (coaching-calendar.js scrubs it: the bar under the finger is highlighted, its week loaded once let go);
-    - the debrief (#debrief): a session done whose ressenti is not said yet, five round numbered levels, one tap — or,
-      in its place, the notice of a run that was not the planned session, read by the plan itself: what happened and
-      what the plan did, « Tous les mercredis ? » once, the ressenti, one correction link, « Fermer » (the athlete's);
-    - the week as a board: seven columns, each session a tile as tall as it is long (kind: its colour; status: an
-      outline while planned, solid with a check once done, dashed when missed; a grey tile for a run outside the
-      plan), the week's lines under it, the next week as a compact row — held and dropped by hand
-      (coaching-calendar.js), or « Déplacer » and a day (every day a button of one form);
-    - the day as tickets: a block in the session's colour — title, status, the duration large, the effort drawn —,
-      then what to feel, the time given, the form's lines, the run, the ressenti, ONE main action, the quiet ones.
+    Four zones (docs/coaching.md › « Les écrans »), each saying as little as it can (owner, 26 Nov 2026: « supprime
+    le max de texte et bouton ») — what leaves a screen is in « Comment ça marche »:
+    - the road: ONE line, « J‑54 · Trail des Crêtes · 5h00 » (the time, the way to the race page), then every week of
+      the plan as a bar as tall as its volume, tinted by its phase (coaching-calendar.js scrubs it: the week under the
+      finger is said over the line, loaded once let go); the lost race's line, the only alert;
+    - one card at the top (#debrief): the notice of a run the plan read by itself — one sentence, a second only when
+      the plan changed something, the ressenti, « Corriger » (the ways back, revealed in place), « × » — else the
+      debrief, « Mardi · footing 42 min. C’était comment ? » and the five round levels;
+    - the week as a board: « 2h27 sur 5h00 · Spécifique », seven columns, each session a tile as tall as it is long,
+      at most one line about an automatic change, the next week as a compact row; a tile held and dropped
+      (coaching-calendar.js), or « ⋯ » › « Déplacer » and a day (every day a button of one form);
+    - the day: « Aujourd’hui » (else « Vendredi 27 »), a ticket per session — the name, the duration large, the
+      effort drawn, the structure, the target as bare values —, the slot's time (a tap asks for another), at most one
+      line about what changed, ONE main action and « ⋯ » (coaching-menu: the other actions; without JavaScript the
+      same actions as a plain list).
     Every interactive element has an id: htmx puts the focus back on it after the swap. -#}
 {% import "partials/_viz.html" as vz %}
 {% from "partials/_icons.html" import icon %}
@@ -34,68 +36,62 @@
 <a href="{{ base }}?d={{ c.iso }}&w={{ wk }}" id="coach-day-{{ c.iso }}" data-day="{{ c.iso }}" hx-get="{{ base }}/calendar?d={{ c.iso }}&w={{ wk }}" {{ swap|safe }} class="{{ cls }}"{% if c.selected %} aria-current="true"{% endif %} aria-label="{{ c.aria }}{% if c.today %} (aujourd’hui){% endif %}">{{ inner }}</a>
 {% endif %}
 {% endmacro %}
-{% macro lines(wk) %}
-{% if wk.reason or wk.light %}<p class="pf-coach-reason">{{ wk.reason or "Semaine plus légère, pour assimiler." }}</p>{% endif %}
-{% if wk.moves %}<p class="pf-coach-reason pf-coach-moves">{{ wk.moves }}</p>{% endif %}
-{% if wk.runs %}<p class="pf-coach-reason pf-coach-moves">{{ wk.runs }}</p>{% endif %}
-{% if wk.hard %}<p class="pf-coach-reason pf-coach-hardpair">{{ wk.hard }}</p>{% endif %}
-{% if wk.fixed %}<p class="pf-coach-reason">{{ wk.fixed }}</p>{% endif %}
-{% endmacro %}
 {% macro durations(first, chosen) %}{% for m in range(first, 365, 5) %}<option value="{{ m }}"{% if m == chosen %} selected{% endif %}>{% if m >= 60 %}{{ "%dh%02d"|format(m // 60, m % 60) }}{% else %}{{ m }} min{% endif %}</option>{% endfor %}{% endmacro %}
+{#- the ressenti: five round numbered levels, the words under the two ends only (every button keeps its word for a
+    screen reader) -#}
 {% macro feel(action, ids, chosen, label_id) %}
 <form class="pf-coach-feel" role="group" aria-labelledby="{{ label_id }}" method="post" action="{{ action }}" hx-post="{{ action }}" {{ swap|safe }}>
     {{ caller() }}
-    {% for n, word in p.ressenti %}<button type="submit" name="value" value="{{ n }}" id="{{ ids }}{{ n }}" data-feel aria-pressed="{{ 'true' if chosen == n else 'false' }}" style="--n: {{ n - 1 }}"><i aria-hidden="true">{{ n }}</i><span>{{ word }}</span></button>{% endfor %}
+    {% for n, word in p.ressenti %}<button type="submit" name="value" value="{{ n }}" id="{{ ids }}{{ n }}" data-feel aria-pressed="{{ 'true' if chosen == n else 'false' }}" style="--n: {{ n - 1 }}"><i aria-hidden="true">{{ n }}</i><span{% if n not in (1, 5) %} class="sr-only"{% endif %}>{{ word }}</span></button>{% endfor %}
 </form>
 {% endmacro %}
 {% set head = p.head %}
 <div id="coach-main" class="pf-coach-main{% if p.moving %} is-moving{% endif %}">
     {% if error %}<p class="pf-coach-error" role="alert">{{ error }}</p>{% endif %}
 
-    {#- ── the road to the race ── -#}
+    {#- ── the road: one line, the bars ── -#}
     <section class="pf-coach-road" aria-labelledby="coach-road-h">
-        <h2 class="pf-coach-goal" id="coach-road-h"><b class="pf-coach-lead">{{ head.lead }}</b>{% if head.race %} <span class="pf-coach-race">{{ head.race }}</span>{% endif %}{% if head.time %} {% if head.time.href %}<a class="pf-coach-goal-time" href="{{ head.time.href }}">{{ head.time.label }}</a>{% else %}<span class="pf-coach-goal-time">{{ head.time.label }}</span>{% endif %}{% endif %}</h2>
-        {% if p.road %}
-        {% set r = p.road %}
-        <p class="pf-coach-road-tip" id="coach-road-tip" aria-live="polite">{{ r.tip }}</p>
-        <nav class="pf-coach-bars" id="coach-road" aria-label="{{ r.aria }} : choisis une semaine" data-tip="{{ r.tip }}">
+        <h2 class="pf-coach-goal" id="coach-road-h"><b class="pf-coach-lead">{{ head.lead }}</b>{% if head.race %} · <span class="pf-coach-race">{{ head.race }}</span>{% endif %}{% if head.time %} · {% if head.time.href %}<a class="pf-coach-goal-time" href="{{ head.time.href }}"><span class="sr-only">{{ head.time.word }} </span>{{ head.time.label }}</a>{% else %}<span class="pf-coach-goal-time"><span class="sr-only">{{ head.time.word }} </span>{{ head.time.label }}</span>{% endif %}{% endif %}</h2>
+        {% if p.road %}{% set r = p.road %}
+        {#- the week under the finger, said over the line while the bars are scrubbed (empty otherwise) -#}
+        <p class="pf-coach-road-tip" id="coach-road-tip" aria-live="polite"></p>
+        <nav class="pf-coach-bars" id="coach-road" aria-label="{{ r.aria }} : choisis une semaine">
             {% for b in r.bars %}<a class="pf-coach-wbar is-{{ b.phase }}{% if b.current %} is-current{% endif %}{% if b.shown %} is-shown{% endif %}{% if b.race %} is-race{% endif %}" style="--h: {{ b.h }}" href="{{ base }}?w={{ b.monday }}" hx-get="{{ base }}/calendar?w={{ b.monday }}" {{ swap|safe }} id="coach-w-{{ b.monday }}" tabindex="{{ '0' if b.shown else '-1' }}" data-label="{{ b.label }}" aria-label="{{ b.aria }}"{% if b.shown %} aria-current="true"{% endif %}><i></i></a>{% endfor %}
         </nav>
-        <p class="pf-coach-phases" aria-hidden="true">{% for ph in r.phases %}<span class="is-{{ ph.key }}" style="flex: {{ ph.weeks }}">{{ ph.label }}</span>{% endfor %}</p>
         {% endif %}
-        {#- the level read from the history, with its reason: the athlete's own, never a follower's -#}
-        {% if head.level %}<p class="pf-coach-level"><b>{{ head.level.lead }}</b>&nbsp;: {{ head.level.text }}{% if head.level.why %} <small>{{ head.level.why }}</small>{% endif %}</p>{% endif %}
-        {% for note in head.notes %}<p class="pf-coach-level">{{ note }}</p>{% endfor %}
         {% if head.ended %}<p class="pf-coach-reason pf-coach-ended">{{ head.ended }}</p>{% endif %}
     </section>
 
-    {#- ── a run the plan read by itself: what happened, what the plan did, the ressenti, one correction link; nothing
-        here is required ── -#}
+    {#- ── a run the plan read by itself: what happened, what the plan changed, the ressenti, « Corriger », « × »;
+        nothing here is required ── -#}
     {% if p.card and not p.moving %}{% set k = p.card %}{% set ra = base ~ "/runs/" ~ k.run %}
     <section class="pf-coach-debrief pf-coach-runcard" id="debrief" role="group" aria-labelledby="coach-run-h" data-answer-card>
-        <h2 id="coach-run-h" class="pf-coach-debrief-h" tabindex="-1"><b>{{ k.title }}</b></h2>
+        <form class="pf-coach-x" method="post" action="{{ ra }}/fermer" hx-post="{{ ra }}/fermer" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}"><button type="submit" id="coach-run-close" class="pf-coach-close" aria-label="Fermer">{{ icon("close", "w-5 h-5", "2.2") }}</button></form>
+        <h2 id="coach-run-h" class="pf-coach-debrief-h" tabindex="-1">{{ k.title }}</h2>
         {% if k.said %}<p class="pf-coach-run-said" id="coach-run-said">{{ k.said }}</p>{% endif %}
         {% if k.row %}
-        <p id="coach-run-feel" class="pf-coach-q">C’était comment&nbsp;?</p>
+        <p id="coach-run-feel" class="sr-only">C’était comment&nbsp;?</p>
         {% call feel(base ~ "/sessions/" ~ k.row ~ "/ressenti", "coach-run-r-", k.ressenti, "coach-run-feel") %}{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}">{% endcall %}
         {% endif %}
-        <div class="pf-coach-run-quiet">
-            {% if k.flip %}<form method="post" action="{{ ra }}/corriger" hx-post="{{ ra }}/corriger" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}"><button type="submit" id="coach-run-flip" class="pf-coach-quietbtn">{{ k.flip }}</button></form>{% endif %}
-            {% if k.back %}<form method="post" action="{{ ra }}/pas-chaque-semaine" hx-post="{{ ra }}/pas-chaque-semaine" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}"><button type="submit" id="coach-run-weekly" class="pf-coach-quietbtn">{{ k.back }}</button></form>{% endif %}
-            <form method="post" action="{{ ra }}/fermer" hx-post="{{ ra }}/fermer" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}"><button type="submit" id="coach-run-close" class="pf-coach-quietbtn">Fermer</button></form>
-            {% if k.out and k.out.not %}<form method="post" action="{{ ra }}/pas-celle" hx-post="{{ ra }}/pas-celle" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}"><button type="submit" id="coach-run-not" class="pf-coach-quietbtn">{{ k.out.not }}</button></form>
-            {% elif k.out and k.out.attach %}{% set at = k.out.attach %}<form method="post" action="{{ ra }}/seance" hx-post="{{ ra }}/seance" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="value" value="{{ at.id }}"><button type="submit" id="coach-run-attach" class="pf-coach-quietbtn">{{ at.label }} <span>· {{ at.what }}</span></button></form>{% endif %}
-        </div>
+        {% if k.flip or k.back or k.out %}
+        <details class="pf-coach-fix" id="coach-run-fix">
+            <summary class="pf-coach-fixlink" id="coach-run-fix-btn">Corriger</summary>
+            <div class="pf-coach-fixlist">
+                {% if k.flip %}<form method="post" action="{{ ra }}/corriger" hx-post="{{ ra }}/corriger" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}"><button type="submit" id="coach-run-flip" class="pf-coach-menuitem">{{ k.flip }}</button></form>{% endif %}
+                {% if k.back %}<form method="post" action="{{ ra }}/pas-chaque-semaine" hx-post="{{ ra }}/pas-chaque-semaine" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}"><button type="submit" id="coach-run-weekly" class="pf-coach-menuitem">{{ k.back }}</button></form>{% endif %}
+                {% if k.out and k.out.not %}<form method="post" action="{{ ra }}/pas-celle" hx-post="{{ ra }}/pas-celle" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}"><button type="submit" id="coach-run-not" class="pf-coach-menuitem">{{ k.out.not }}</button></form>
+                {% elif k.out and k.out.attach %}{% set at = k.out.attach %}<form method="post" action="{{ ra }}/seance" hx-post="{{ ra }}/seance" {{ swap|safe }}>{{ keep() }}<input type="hidden" name="value" value="{{ at.id }}"><button type="submit" id="coach-run-attach" class="pf-coach-menuitem">{{ at.label }} <span>· {{ at.what }}</span></button></form>{% endif %}
+            </div>
+        </details>
+        {% endif %}
     </section>
     {% endif %}
 
     {#- ── the debrief: a session done whose ressenti is not said yet is asked about first, in one tap ── -#}
     {% if p.debrief and not p.moving %}
     <section class="pf-coach-debrief is-{{ p.debrief.cls }}" id="debrief" aria-labelledby="coach-debrief-h">
-        <h2 id="coach-debrief-h" class="pf-coach-debrief-h"><b>{{ p.debrief.title }}.</b> C’était comment&nbsp;?</h2>
-        <p class="pf-coach-debrief-line">{{ p.debrief.line }}</p>
+        <h2 id="coach-debrief-h" class="pf-coach-debrief-h"><b>{{ p.debrief.title }}</b> C’était comment&nbsp;?</h2>
         {% call feel(base ~ "/sessions/" ~ p.debrief.id ~ "/ressenti", "coach-ask-", none, "coach-debrief-h") %}{{ keep() }}<input type="hidden" name="back" value="{{ p.selected }}">{% endcall %}
-        {% if p.debrief.more %}<p class="pf-label pf-coach-debrief-more">Puis {{ p.debrief.more }} autre{{ "s" if p.debrief.more > 1 }} à débriefer.</p>{% endif %}
     </section>
     {% endif %}
 
@@ -127,28 +123,33 @@
         <div class="pf-coach-grid"{% if not p.moving %} data-w="{{ p.cal.anchor }}"{% endif %}>
             <div class="pf-coach-week is-board{% if wk.current %} is-current{% endif %}" role="group" aria-labelledby="coach-cal-h">
                 <div class="pf-coach-board">{% for c in wk.days %}{{ cell(c) }}{% endfor %}</div>
-                {{ lines(wk) }}
+                {#- at most one line about an automatic change (the others are on the sessions' tickets); two hard days in
+                    a row that a move made, the warning's look -#}
+                {% if wk.auto %}<p class="pf-coach-reason pf-coach-auto">{{ wk.auto }}</p>{% endif %}
+                {% if wk.hard %}<p class="pf-coach-reason pf-coach-hardpair">{{ wk.hard }}</p>{% endif %}
             </div>
             {% if nx %}
             <div class="pf-coach-week is-next" role="group" aria-labelledby="coach-next-h">
-                <p class="pf-coach-nextlabel"><span id="coach-next-h">{{ nx.name }}</span>{% if nx.summary.line %}<span aria-hidden="true">{{ nx.summary.line }}</span><span class="sr-only">, {{ nx.summary.aria }}</span>{% endif %}</p>
+                <p class="pf-coach-nextlabel"><span id="coach-next-h">{{ nx.name }}</span>{% if nx.summary.short %}<span aria-hidden="true"> · {{ nx.summary.short }}</span><span class="sr-only">, {{ nx.summary.aria }}</span>{% endif %}</p>
                 <div class="pf-coach-nextrow">{% for c in nx.days %}{{ cell(dict(c, monday=nx.monday), true) }}{% endfor %}</div>
-                {{ lines(nx) }}
             </div>
             {% endif %}
         </div>
-        {% if p.cal.by_hand %}<p class="pf-coach-drag-hint" id="coach-drag-hint" aria-hidden="true" hidden>Maintiens une séance pour la déplacer</p>{% endif %}
         {% if p.moving %}
-        {% if p.moving.hard %}<p class="pf-label pf-coach-move-hint">Un point marque un jour voisin d’une autre séance dure&nbsp;: tu peux le choisir quand même.</p>{% endif %}
+        {% if p.moving.hard %}<p class="pf-label pf-coach-move-hint">Un point marque un jour voisin d’une autre séance dure.</p>{% endif %}
         </form>
         {% endif %}
         </div>
 
-        {#- ── the day opened: a ticket per session, one main action, the quiet ones ── -#}
+        {#- ── the day opened: a ticket per session, one main action, « ⋯ » for the rest ── -#}
         {#- #debrief: where a link to a day's debrief lands — the question at the top while it waits, else the day -#}
         <div class="pf-coach-daycard" id="{{ 'coach-open' if scope.coach or ((p.debrief or p.card) and not p.moving) else 'debrief' }}" role="region" aria-labelledby="coach-day-h">
-            <h3 id="coach-day-h" class="pf-coach-date"><span>{{ p.day_title }}</span> <small>{{ p.day_long }}</small></h3>
+            <h3 id="coach-day-h" class="pf-coach-date">{{ p.day_title }}</h3>
             {% for s in p.sessions %}
+            {% set own_text = s.coach_comment if scope.coach else s.note %}
+            {% set can_write = scope.coach or s.status == "done" %}
+            {% set refeel = not scope.coach and s.status == "done" and s.ressenti and not s.asked %}
+            {% set more = not p.moving and (s.can_missed or s.can_move or s.undo or s.can_unlink or s.can_edit or can_write or refeel) %}
             <article class="pf-coach-session is-{{ s.cls }} is-{{ s.status }}" aria-labelledby="coach-s-{{ s.id }}">
                 <div class="pf-coach-ticket">
                     <div class="pf-coach-t-row">
@@ -160,33 +161,27 @@
                     {#- how hard: a structured session keeps its profile, block by block; a steady one is one of four levels -#}
                     {% if s.profile %}{{ vz.viz_profile(s.profile) }}{% elif s.gauge %}<span class="pf-coach-gauge is-l{{ s.gauge.level }}" role="img" aria-label="{{ s.gauge.aria }}"><i></i><i></i><i></i><i></i></span>{% endif %}
                     {% if s.text and s.big %}<p class="pf-coach-s-text">{{ s.text }}</p>{% endif %}
-                    {#- la cible: the session's pace and/or heart rate, from the athlete's own data, while it is to do -#}
+                    {#- the target: bare values in the large type, their whole meaning said to a screen reader; nothing to show:
+                        the way to the maximum heart rate -#}
                     {% if s.target %}{% set t = s.target %}
-                    <div class="pf-coach-target" role="group" aria-labelledby="coach-target-{{ s.id }}">
-                        <p class="pf-coach-target-h" id="coach-target-{{ s.id }}">Cible{% if t.head %}<span> · {{ t.head }}</span>{% endif %}</p>
-                        {% if t.vals %}<div class="pf-coach-target-vals">{% for v in t.vals %}<p><span aria-hidden="true">{{ v.label }}</span><b aria-hidden="true">{{ v.value }}<small>{{ v.unit }}</small></b><span class="sr-only">{{ v.aria }}</span></p>{% endfor %}</div>{% endif %}
-                        {% if t.note %}<p class="pf-coach-target-note">{{ t.note }}</p>
-                        {% elif not t.vals and t.missing %}<a class="pf-coach-target-link" href="{{ t.href }}">{{ t.missing }}</a>{% endif %}
-                        {% if t.how %}<a class="pf-coach-target-how" href="/coaching?outil=methode#coach-tool-how" data-tool-open="coach-tool-how">D’où viennent ces chiffres&nbsp;?</a>{% endif %}
+                    <div class="pf-coach-target" role="group" aria-label="{{ t.aria }}">
+                        {% for v in t.vals %}<p><b aria-hidden="true">{% if v.pre %}<small class="is-pre">{{ v.pre }}</small>{% endif %}{{ v.value }}<small>{{ v.unit }}</small></b><span class="sr-only">{{ v.aria }}</span></p>{% endfor %}
+                        {% if not t.vals and t.missing %}<a class="pf-coach-target-link" href="{{ t.href }}">{{ t.missing }}</a>{% endif %}
                     </div>
                     {% endif %}
                 </div>
                 {% if s.feel and s.status in ("planned", "missed") %}<p class="pf-coach-s-guide">{{ s.feel }}</p>{% endif %}
-                {#- the agenda: the time the session was given; the athlete may ask for another free one -#}
-                {% if s.slot or s.full %}
-                <div class="pf-coach-slot">
-                    {% if s.slot %}<p class="pf-coach-slot-time">{{ s.slot }}</p>{% else %}<p class="pf-coach-full">Journée chargée</p>{% endif %}
-                    {% if s.can_slot and not p.moving %}
-                    <form method="post" action="{{ base }}/sessions/{{ s.id }}/slot" hx-post="{{ base }}/sessions/{{ s.id }}/slot" {{ swap|safe }}>
-                        {{ keep() }}
-                        <button type="submit" id="coach-slot-{{ s.id }}" class="pf-coach-quietbtn">Autre créneau</button>
-                    </form>
-                    {% endif %}
-                </div>
-                {% endif %}
-                {#- the form: why to the athlete (the way to Santé, never the number); to a coach only « adaptée » -#}
-                {% if s.why %}<p class="pf-coach-formline">{{ s.why }}</p>{% endif %}
-                {% if s.form %}<p class="pf-coach-formline">{% if s.form.href %}<a href="{{ s.form.href }}">{{ s.form.text }}</a>{% else %}{{ s.form.text }}{% endif %}{% if s.form.moved %} <span>{{ s.form.moved }}</span>{% endif %}</p>{% endif %}
+                {#- the agenda: the time the session was given — a tap asks for another free one -#}
+                {% if s.slot and s.can_slot and not p.moving %}
+                <form class="pf-coach-slot" method="post" action="{{ base }}/sessions/{{ s.id }}/slot" hx-post="{{ base }}/sessions/{{ s.id }}/slot" {{ swap|safe }}>
+                    {{ keep() }}
+                    <button type="submit" id="coach-slot-{{ s.id }}" class="pf-coach-slot-time is-button" aria-label="{{ s.slot }} : demander un autre créneau">{{ s.slot }}</button>
+                </form>
+                {% elif s.slot %}<p class="pf-coach-slot"><span class="pf-coach-slot-time">{{ s.slot }}</span></p>
+                {% elif s.full %}<p class="pf-coach-slot"><span class="pf-coach-full">Journée chargée</span></p>{% endif %}
+                {#- at most one line about what changed for this session (the form: why to the athlete, with the way to
+                    Santé; to a follower only « adaptée ») -#}
+                {% if s.change %}<p class="pf-coach-formline{% if s.change.quiet %} is-quiet{% endif %}">{% if s.change.href %}<a href="{{ s.change.href }}">{{ s.change.text }}</a>{% else %}{{ s.change.text }}{% endif %}</p>{% endif %}
                 {% if s.suggest %}
                 <form class="pf-coach-suggest" method="post" action="{{ base }}/sessions/{{ s.id }}/lighten" hx-post="{{ base }}/sessions/{{ s.id }}/lighten" {{ swap|safe }}>
                     {{ keep() }}
@@ -212,46 +207,42 @@
                 {% endif %}
                 {% endif %}
 
-                {#- the ressenti: one tap on five round levels, saved at once (asked at the top while it waits) -#}
-                {% if s.status == "done" and not (s.asked and not p.moving) %}
+                {#- the ressenti while it is not said (asked at the top while it waits); once said, « ⋯ » changes it; a
+                    follower reads it -#}
+                {% if s.status == "done" and not (s.asked and not p.moving) and (scope.coach or not s.ressenti) %}
                 <div class="pf-coach-feel-block">
-                    <p id="coach-feel-{{ s.id }}" class="pf-coach-q">{% if scope.coach %}Ressenti{% elif s.ressenti %}Ton ressenti{% else %}C’était comment&nbsp;?{% endif %}</p>
+                    <p id="coach-feel-{{ s.id }}" class="{{ 'pf-coach-q' if scope.coach else 'sr-only' }}">{% if scope.coach %}Ressenti{% else %}C’était comment&nbsp;?{% endif %}</p>
                     {% if scope.coach %}
-                    <div class="pf-coach-feel is-readonly" role="img" aria-label="Ressenti : {% for n, word in p.ressenti if n == s.ressenti %}{{ word }}{% else %}non renseigné{% endfor %}">{% for n, word in p.ressenti %}<span{% if s.ressenti == n %} aria-current="true"{% endif %} style="--n: {{ n - 1 }}"><i>{{ n }}</i><span>{{ word }}</span></span>{% endfor %}</div>
+                    <div class="pf-coach-feel is-readonly" role="img" aria-label="Ressenti : {% for n, word in p.ressenti if n == s.ressenti %}{{ word }}{% else %}non renseigné{% endfor %}">{% for n, word in p.ressenti %}<span{% if s.ressenti == n %} aria-current="true"{% endif %} style="--n: {{ n - 1 }}"><i>{{ n }}</i><span{% if n not in (1, 5) %} class="sr-only"{% endif %}>{{ word }}</span></span>{% endfor %}</div>
                     {% else %}
                     {% call feel(base ~ "/sessions/" ~ s.id ~ "/ressenti", "coach-r-" ~ s.id ~ "-", s.ressenti, "coach-feel-" ~ s.id) %}{{ keep() }}{% endcall %}
                     {% endif %}
                 </div>
                 {% endif %}
 
-                {#- what was said: the athlete's note, the follower's comment, signed with their first name (each writes their
-                    own, behind a fold) -#}
+                {#- what was said: the athlete's note, the follower's comment, signed with their first name -#}
                 {% if s.note %}<p class="pf-coach-said is-note"><b>{{ "Sa note" if scope.coach else "Ta note" }}</b> {{ s.note }}</p>{% endif %}
                 {% if s.coach_comment %}<p class="pf-coach-said"><b>{{ "Ton commentaire" if scope.coach else s.comment_by }}</b> {{ s.coach_comment }}</p>{% endif %}
 
-                {#- ONE main action, « C’est fait », « Pas faite » quiet beside it; the rest quiet under them -#}
-                {% if not p.moving and s.can_done %}
-                <form class="pf-coach-do" method="post" action="{{ base }}/sessions/{{ s.id }}/status" hx-post="{{ base }}/sessions/{{ s.id }}/status" {{ swap|safe }}>
-                    {{ keep() }}
-                    <button type="submit" name="value" value="done" id="coach-done-{{ s.id }}" class="pf-btn {{ 'pf-btn-primary' if s.status == 'planned' else 'pf-btn-secondary' }}">C’est fait</button>
-                    {% if s.can_missed %}<button type="submit" name="value" value="missed" id="coach-missed-{{ s.id }}" class="pf-coach-quietbtn">Pas faite</button>{% endif %}
-                </form>
-                {% endif %}
-                {% set own_text = s.coach_comment if scope.coach else s.note %}
-                {% set can_write = scope.coach or s.status == "done" %}
-                {% if not p.moving and (s.can_move or s.undo or s.can_unlink or s.can_edit or can_write) %}
-                <div class="pf-coach-quiet">
-                    {% if s.can_move %}<a id="coach-move-{{ s.id }}" class="pf-coach-quietbtn" href="{{ base }}?d={{ p.selected }}{{ wq }}" hx-get="{{ base }}/calendar?d={{ p.selected }}{{ wq }}&move={{ s.id }}" {{ swap|safe }}>{{ s.move_word }}</a>{% endif %}
-                    {% if s.undo or s.can_unlink %}
+                {#- ONE main action, « C’est fait »; « ⋯ » opens the rest (without JavaScript: the rest as a plain list) -#}
+                {% if (not p.moving and s.can_done) or more %}
+                <div class="pf-coach-do">
+                    {% if not p.moving and s.can_done %}
                     <form method="post" action="{{ base }}/sessions/{{ s.id }}/status" hx-post="{{ base }}/sessions/{{ s.id }}/status" {{ swap|safe }}>
                         {{ keep() }}
-                        {% if s.can_unlink %}<button type="submit" name="value" value="missed" id="coach-unlink-{{ s.id }}" class="pf-coach-quietbtn">Ce n’est pas cette séance</button>{% endif %}
-                        {% if s.undo %}<button type="submit" name="value" value="reset" id="coach-undo-{{ s.id }}" class="pf-coach-quietbtn" aria-label="{{ s.undo }}">Annuler</button>{% endif %}
+                        <button type="submit" name="value" value="done" id="coach-done-{{ s.id }}" class="pf-btn {{ 'pf-btn-primary' if s.status == 'planned' else 'pf-btn-secondary' }}">C’est fait</button>
                     </form>
                     {% endif %}
+                    {% if more %}<button type="button" id="coach-more-{{ s.id }}" class="pf-coach-morebtn" aria-label="Autres actions" aria-expanded="false" aria-controls="coach-menu-{{ s.id }}" data-menu-button>{{ icon("more", "w-6 h-6") }}</button>{% endif %}
+                </div>
+                {% endif %}
+                {% if more %}
+                <div class="pf-coach-menu" id="coach-menu-{{ s.id }}" role="group" aria-label="Autres actions · {{ s.title }}" data-menu>
+                    {% if s.can_missed %}<form method="post" action="{{ base }}/sessions/{{ s.id }}/status" hx-post="{{ base }}/sessions/{{ s.id }}/status" {{ swap|safe }}>{{ keep() }}<button type="submit" name="value" value="missed" id="coach-missed-{{ s.id }}" class="pf-coach-menuitem">Pas faite</button></form>{% endif %}
+                    {% if s.can_move %}<a id="coach-move-{{ s.id }}" class="pf-coach-menuitem" href="{{ base }}?d={{ p.selected }}{{ wq }}" hx-get="{{ base }}/calendar?d={{ p.selected }}{{ wq }}&move={{ s.id }}" {{ swap|safe }}>{{ s.move_word }}</a>{% endif %}
                     {% if s.can_edit %}
                     <details class="pf-coach-edit" id="coach-edit-{{ s.id }}">
-                        <summary class="pf-coach-quietbtn">Modifier</summary>
+                        <summary class="pf-coach-menuitem">Modifier</summary>
                         <form method="post" action="{{ base }}/sessions/{{ s.id }}/edit" hx-post="{{ base }}/sessions/{{ s.id }}/edit" {{ swap|safe }} class="pf-coach-form">
                             {{ keep() }}
                             <label for="coach-kind-{{ s.id }}">Type</label>
@@ -268,9 +259,17 @@
                         {% endif %}
                     </details>
                     {% endif %}
+                    {% if s.can_unlink %}<form method="post" action="{{ base }}/sessions/{{ s.id }}/status" hx-post="{{ base }}/sessions/{{ s.id }}/status" {{ swap|safe }}>{{ keep() }}<button type="submit" name="value" value="missed" id="coach-unlink-{{ s.id }}" class="pf-coach-menuitem">Ce n’est pas cette séance</button></form>{% endif %}
+                    {% if s.undo %}<form method="post" action="{{ base }}/sessions/{{ s.id }}/status" hx-post="{{ base }}/sessions/{{ s.id }}/status" {{ swap|safe }}>{{ keep() }}<button type="submit" name="value" value="reset" id="coach-undo-{{ s.id }}" class="pf-coach-menuitem" aria-label="{{ s.undo }}">Annuler</button></form>{% endif %}
+                    {% if refeel %}
+                    <details class="pf-coach-edit" id="coach-refeel-{{ s.id }}">
+                        <summary class="pf-coach-menuitem" id="coach-feel-{{ s.id }}">Changer mon ressenti</summary>
+                        {% call feel(base ~ "/sessions/" ~ s.id ~ "/ressenti", "coach-r-" ~ s.id ~ "-", s.ressenti, "coach-feel-" ~ s.id) %}{{ keep() }}{% endcall %}
+                    </details>
+                    {% endif %}
                     {% if can_write %}
                     <details class="pf-coach-edit pf-coach-notefold" id="coach-notefold-{{ s.id }}">
-                        <summary class="pf-coach-quietbtn">{% if scope.coach %}Commenter{% else %}{{ "Modifier ma note" if own_text else "Ajouter une note" }}{% endif %}</summary>
+                        <summary class="pf-coach-menuitem">{% if scope.coach %}Commenter{% else %}{{ "Modifier ma note" if own_text else "Ajouter une note" }}{% endif %}</summary>
                         <form class="pf-coach-note" method="post" action="{{ base }}/sessions/{{ s.id }}/note" hx-post="{{ base }}/sessions/{{ s.id }}/note" {{ swap|safe }}>
                             {{ keep() }}
                             <label class="sr-only" for="coach-note-{{ s.id }}">{{ "Ton commentaire sur cette séance" if scope.coach else "Ta note sur cette séance" }}</label>
@@ -281,15 +280,14 @@
                     {% endif %}
                 </div>
                 {% endif %}
-                {% if s.edited and s.status == "planned" %}<p class="pf-coach-edited">{{ s.edited }}</p>{% endif %}
             </article>
             {% else %}
-            {#- a day without a session: « Repos », and the next one named, one tap away -#}
+            {#- a day without a session: « Repos », and the next one in one row, one tap away -#}
             <div class="pf-coach-restcard">
                 <p class="pf-coach-rest-word">{{ "Repos" if not p.extras else "Rien de prévu" }}</p>
                 {% if p.next and not p.moving %}
                 <a id="coach-next-session" class="pf-coach-nextup is-{{ p.next.cls }}" href="{{ base }}?d={{ p.next.iso }}{{ wq }}" hx-get="{{ base }}/calendar?d={{ p.next.iso }}{{ wq }}" {{ swap|safe }}>
-                    <span><small>Prochaine séance · {{ p.next.when }}</small><b>{{ p.next.title }}{% if p.next.duration %} {{ p.next.duration }}{% endif %}</b></span>{{ icon("chev-r", "pf-chev") }}
+                    <b><span class="sr-only">Prochaine séance&nbsp;: </span>{{ p.next.when }} · {{ p.next.title }}{% if p.next.duration %} {{ p.next.duration }}{% endif %}</b>{{ icon("chev-r", "pf-chev") }}
                 </a>
                 {% endif %}
             </div>
