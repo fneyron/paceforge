@@ -736,6 +736,7 @@ async def test_the_follower_sees_the_sessions_never_the_notice(client, people, d
     _as(client, people.coach)
     page = (await client.get(f"/coaching/athletes/{athlete.id}?d={(TUE + timedelta(weeks=1)).isoformat()}")).text
     assert co.fixed_of(await _plan_of(db_session, athlete)) == cp.Fixed(1, 95, cp.FIXED_NAME)
+    page = re.sub(r"<script.*?</script>", "", page, flags=re.S)  # the page's own scripts name the notice
     assert "pf-coach-runcard" not in page and "Pas tous les" not in page and "presque tous les" not in page
     assert "Séance fixe" in page
     first = _state_of(await _rows(db_session, athlete))

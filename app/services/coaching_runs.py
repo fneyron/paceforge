@@ -691,9 +691,9 @@ async def drop_fixed(db: AsyncSession, state: co.State, user: User) -> None:
     kept = co.fixed_of(state.plan)
     by_habit = [r for r in state.rows if habit_kept(state.plan, answer_of(r) or {})]
     if kept is not None and by_habit:
-        run_id = (answer_of(max(by_habit, key=lambda r: r.day)) or {}).get("run")
+        run_id = int((answer_of(max(by_habit, key=lambda r: r.day)) or {}).get("run") or 0)
         try:
-            await not_weekly(db, state, user, int(run_id))
+            await not_weekly(db, state, user, run_id)
             return
         except co.Invalid:  # its run no longer read (deleted): removed as any other
             pass
