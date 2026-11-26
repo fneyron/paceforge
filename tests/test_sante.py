@@ -584,7 +584,8 @@ async def test_rich_wearer_a_lowish_hrv_is_orange(db_session: AsyncSession, test
     """A full baseline, HR in it, the 7-night HRV under it: z −1,4 against days −67 → −8 (the week out of its own
     baseline: owner, 2026-10-14: scientific basis — it was the 60 days up to last night, and a weighted score kept
     the day « Bonne récupération »): the VFC, the primary marker, is outside its smallest worthwhile change, an
-    orange reason, « Récupération en cours », the indice held to 69; its card says so in words and in orange; no
+    orange reason, « Récupération en cours », the indice 42 (gradual since 2026-11-26: it was held to 69); its card
+    says so in words and in orange; no
     sub-score shown (v4.4)."""
     today = date(2026, 10, 8)
     await _seed_rows(db_session, test_user, _garmin_rows(today, hrv_last=60.0))
@@ -598,12 +599,12 @@ async def test_rich_wearer_a_lowish_hrv_is_orange(db_session: AsyncSession, test
     z = (math.log(60.0) - math.log(b["center"])) / b["sd"]
     assert not b["provisional"] and -2.5 < z < -0.5 and s["caps"] == []
     assert next(p for p in s["parts"] if p["key"] == "hrv")["z"] == pytest.approx(z)
-    assert s["value"] == 69  # (s_VFC 0,55 + s_FC 1)/2 = 77, held to the orange range
+    assert s["value"] == 42  # z −1,4, T 0,67: 70 × (2,5 − 1,4)/(2,5 − 0,67), the lower signal (was held to 69)
     # the dials, in percent: Sommeil 7h20 of the 8-h need, 92 % « suffisant » (the sleep colour); Récupération the
     # indice, « en cours »; VFC's 7-night mean (60 ms, every night) against its usual value (the baseline's centre),
     # orange; FC de nuit's 44,86 against 45: −0,3 %, to the percent 0 %: « comme d'habitude »
     assert [(d["value"], d["sub"], d["tone"]) for d in page["dials"][:2]] == [("92", "suffisant", "sleep"),
-                                                                             ("69", "à surveiller", "warn")]
+                                                                             ("42", "à surveiller", "warn")]
     vfc = f"{sante.viz.signed(sante.sc.rounded(100 * (60.0 - b['center']) / b['center']))}\u00a0%"
     assert vfc.startswith("\u2212") and "rows" not in page
     # « bien ou pas bien ? »: each card opens on its status line, its row's percentage, word and colour
@@ -620,20 +621,20 @@ async def test_rich_wearer_a_lowish_hrv_is_orange(db_session: AsyncSession, test
 async def test_rich_wearer_a_far_lower_hrv_makes_the_dial_50_to_watch(db_session: AsyncSession, test_user: User):
     """The judges' rich user: the 7-night VFC far under its usual values (z −6,2) with FC de nuit in them: orange
     (an orange reason, never red: only the illness alert and the first days after an ultra are), the indice the
-    mean of s_VFC 0 and s_FC 1: 50 (owner, 2026-10-14: scientific basis — it was 69, a weighted mean with Sommeil's
-    30); the reason is data (no sentence printed); its card says −50 % in orange."""
+    lower of s_VFC 0 and s_FC 1: 0 (owner, 2026-11-26; it was their mean, 50, and before 2026-10-14 69, a weighted
+    mean with Sommeil's 30); the reason is data (no sentence printed); its card says −50 % in orange."""
     today = date(2026, 10, 8)
     await _seed_rows(db_session, test_user, _garmin_rows(today, hrv_last=35.0))
     await _runs(db_session, test_user, today)
     page = await sante.health_page(db_session, test_user.id, today=today)
     st, s = page["state"], page["score"]
     assert (st["key"], st["tone"], st["text"]) == ("hrv", "warn", None)
-    assert s["value"] == 50 and s["caps"] == []
+    assert s["value"] == 0 and s["caps"] == []
     assert next(p for p in s["parts"] if p["key"] == "hrv")["s"] == 0
     assert (page["vfc"]["status"]["value"], page["vfc"]["status"]["word"], page["vfc"]["status"]["tone"]) == (
         "\u221250\u00a0%", "plus basse que d'habitude", "warn")
     d = page["dials"][1]
-    assert (d["key"], d["value"], d["unit"], d["sub"], d["tone"]) == ("recup", "50", "%", "à surveiller", "warn")
+    assert (d["key"], d["value"], d["unit"], d["sub"], d["tone"]) == ("recup", "0", "%", "à surveiller", "warn")
 
 
 async def test_rich_wearer_hypnogram_in_the_hero(db_session: AsyncSession, test_user: User):

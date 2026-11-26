@@ -69,10 +69,13 @@ HEURISTICS = [
     ("app/services/nights.py", "USUAL_BED_NIGHTS", 5),
     ("app/services/nights.py", "USUAL_BED_DAYS", 28),
     # owner, 2026-10-14: scientific basis — the weighted index (WEIGHTS, its anchors, SLEEP_SHARES, its caps) is
-    # replaced by a rule-based state (test_the_replaced_heuristics_are_gone); its « indice nocturne »: 100 from the
-    # smallest worthwhile change, 0 at 2.5 SD, held to the state's range
+    # replaced by a rule-based state (test_the_replaced_heuristics_are_gone); its « indice nocturne » (owner,
+    # 2026-11-26: gradual, « c'est pas progressif et un peu on off »): per heart signal 100 at its usual level, 70
+    # at the day's threshold, 0 at 2.5 SD, linear; the lower signal (choix pratique); held only where the formula
+    # cannot see the reason (red ≤ 39, short night or breathing ≤ 69)
     ("app/services/sante_score.py", "Z_FLOOR", 2.5),
-    ("app/services/sante_score.py", "Z_SPAN", 2.0),
+    ("app/services/sante_score.py", "S_USUAL", 1.0),
+    ("app/services/sante_score.py", "S_AT_T", 0.70),
     ("app/services/sante_score.py", "HOLD", {"ok": (70, 100), "warn": (0, 69), "danger": (0, 39)}),
     # the baseline series: the device with the most nights in 28 days among those worn in the last 7; ties by the
     # larger baseline, the day before's series, then this order
@@ -152,7 +155,7 @@ GONE = [("app/services/sante_training.py", "EFFORT_RULES")] + [
     ("app/services/sante_score.py", name) for name in (
         "WEIGHTS", "HRV_FULL_Z", "HRV_ZERO_Z", "HR_FULL_BPM", "HR_MID_BPM", "HR_MID_SUB", "HR_ZERO_BPM",
         "SLEEP_SHARES", "CAP_JOINT", "JOINT_HR_BPM", "BANDS", "CAP_ILL", "CAP_RED", "RED_SUB", "CAP_SHORT",
-        "CAP_NO_HEART", "CAP_RESP")] + [
+        "CAP_NO_HEART", "CAP_RESP", "Z_SPAN")] + [
     ("app/services/sante_sleep.py", name) for name in ("NEED_EFFORT", "NEED_DEBT_DAYS", "NEED_DEBT_MAX",
                                                        "NEED_STEP")] + [
     ("app/services/sante.py", name) for name in ("SUFFICIENT_SHARE", "USUAL_WEEKS", "USUAL_MIN_WEEKS",

@@ -26,7 +26,7 @@ def test_six_recent_nights_wait_for_an_independent_reference():
 
 def test_high_nightly_hr_cannot_be_hidden_by_usual_hrv():
     day = _example(z_hrv=0, z_hr=2)
-    assert day["score"]["tone"] == "warn" and day["score"]["value"] == 63
+    assert day["score"]["tone"] == "warn" and day["score"]["value"] == 19
     assert [r["key"] for r in day["score"]["reasons"]] == ["hr"]
     assert day["state"]["word"] == "Signaux à surveiller"
 

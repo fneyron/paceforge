@@ -71,7 +71,7 @@ async def test_a_stored_feel_changes_no_score_reason_chart_or_tag(db_session: As
         return page, {d: sorted(n.tags) for d, n in nights.items()}
 
     before, tags = await shown()
-    assert before["today"] == D and before["state"]["key"] == "hrv" and before["score"]["value"] == 69
+    assert before["today"] == D and before["state"]["key"] == "hrv" and before["score"]["value"] == 42
     db_session.add_all(_feels(test_user, D))
     await db_session.flush()
     after, after_tags = await shown()

@@ -9,8 +9,12 @@ means low RMSSD, high night HR, the breathing flag or less than six hours of sle
 The existing personal thresholds and acute-alert rules are unchanged. No reason means usual signals.
 Recorded efforts and training load remain contextual: their windows neither add reasons nor cap this index.
 
-The displayed index (printed « 65 % » like the two other rings: owner, 2026-10-31) is 100 × the mean of s_VFC = clip((z + 2.5)/2, 0, 1) and s_FC = clip((2.5 − z)/2, 0, 1),
-held to ≤ 69 when orange, ≤ 39 when red, ≥ 70 when green (H). This descriptive scale is not clinically
+The displayed index (printed « 65 % » like the two other rings: owner, 2026-10-31) is 100 × the lower of the
+usable heart signals (choix pratique: the weakest signal sets the day), each s = 1 at or past its usual level,
+falling linearly to 0.70 at the day's own threshold T and to 0 at 2.5 SD: the 1/0.70/0 anchors and the lines are
+(H) chiffres, T keeps its sources (owner, 2026-11-26: « c'est pas progressif et un peu on off »). So it is under 70 exactly when a heart
+signal makes the day orange; red stays ≤ 39, and the two orange reasons outside the formula (< 6 h of sleep, the
+breathing flag) hold it to ≤ 69 (the number never contradicts the state). This descriptive scale is not clinically
 validated. Missing data give a reason rather than a number. History is computed using events up to each day.
 Details: docs/sante-estimates.md and docs/recovery-cumulative.md; the dated decisions behind the rules:
 docs/decisions.md.
@@ -26,9 +30,13 @@ from app.services.nights import SHORT_DAY_MIN
 HEART = ("hrv", "hr")
 ORDER = ("hrv", "hr", "sleep")
 BAD = {"hrv": "below", "hr": "above"}  # the side that matters: VFC under its usual values, FC de nuit over them
-# the indice nocturne: s = clip((2.5 ± z)/2, 0, 1) (H: 100 from the smallest worthwhile change, 0 at 2.5 SD)
-Z_FLOOR, Z_SPAN = 2.5, 2.0  # (H)
-HOLD = {"ok": (70, 100), "warn": (0, 69), "danger": (0, 39)}  # (H) the number never contradicts the state
+# the indice nocturne, per heart signal: 100 at or past its usual level (never praised above it: Plews 2013), 70 at
+# the day's threshold T (nights.threshold, its sources), 0 at 2.5 SD, linear in between (owner, 2026-11-26)
+Z_FLOOR = 2.5  # (H) the distance, in SD on the side that matters, where a signal's score reaches 0
+S_USUAL, S_AT_T = 1.0, 0.70  # (H) a signal's score at its usual level and at its threshold
+# the number never contradicts the state: red ≤ 39; orange ≤ 69 (for the heart signals it only rounds the
+# threshold's own 70 down; it holds a short night or the breathing flag); green ≥ 70 (true by construction)
+HOLD = {"ok": (70, 100), "warn": (0, 69), "danger": (0, 39)}  # (H)
 HISTORY_DAYS = 14  # the Signaux nocturnes card
 HISTORY_NIGHTS = 160  # days of nights a past day reads: its baseline (days −67 → −8), its alert's, with room
 
@@ -130,9 +138,17 @@ def usable(metric: str, trend: dict | None) -> bool:
                 and not (metric == "hrv" and is_sdnn(trend)))
 
 
-def sub(metric: str, z: float) -> float:
-    """s_VFC = clip((z + 2.5)/2, 0, 1), s_FC = clip((2.5 − z)/2, 0, 1)."""
-    return min(1.0, max(0.0, (Z_FLOOR + (z if metric == "hrv" else -z)) / Z_SPAN))
+def sub(metric: str, z: float, t: float) -> float:
+    """A heart signal's score from its 7-night z and the day's threshold t (nights.threshold): with d the distance
+    on the side that matters (−z for the VFC, z for the FC de nuit), 1 for d ≤ 0, 1 → 0.70 linearly up to d = t,
+    0.70 → 0 linearly up to d = 2.5, 0 beyond: continuous, falling with d, 0.70 exactly at the colour's line."""
+    d = -z if metric == "hrv" else z
+    if d <= 0:
+        return S_USUAL
+    if d < t:
+        return S_USUAL - (S_USUAL - S_AT_T) * d / t
+    span = Z_FLOOR - t
+    return max(0.0, S_AT_T * (Z_FLOOR - d) / span) if span > 0 else 0.0
 
 
 # the reasons, as data (their wording on the page is a GUI proposal): key → label, and the sentence of each
@@ -199,7 +215,7 @@ def score_of(day: dict) -> dict:
     parts = []
     for m in used:
         t = trends[m]
-        parts.append({"key": m, "z": t["z"], "T": t["T"], "s": sub(m, t["z"]), "status": t["status"], "n": t["n"],
+        parts.append({"key": m, "z": t["z"], "T": t["T"], "s": sub(m, t["z"], t["T"]), "status": t["status"], "n": t["n"],
                       "value": t["value"], "centre": t["baseline"]["center"]})
     primary = used[0]  # the VFC, else the FC de nuit
     reasons = []
@@ -214,8 +230,10 @@ def score_of(day: dict) -> dict:
     if tst is not None and tst < SHORT_DAY_MIN:
         reasons.append(_reason("short", "warn"))
     tone = "danger" if any(r["tone"] == "danger" for r in reasons) else "warn" if reasons else "ok"
+    # the lower signal (choix pratique): under 70 exactly when a heart signal crossed its threshold; HOLD only
+    # rounds that threshold's 70 down to 69, and holds the reasons outside the formula (red, short, breathing)
     lo, hi = HOLD[tone]
-    value = min(hi, max(lo, rounded(100 * statistics.fmean(p["s"] for p in parts))))
+    value = min(hi, max(lo, rounded(100 * min(p["s"] for p in parts))))
     out.update(value=value, tone=tone, primary=primary, parts=parts, reasons=reasons,
                reason=reasons[0]["key"] if reasons else None, measured=True)
     return out

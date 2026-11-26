@@ -184,14 +184,14 @@ def test_a_sport_without_hr_borrows_its_own_familys_rate_not_another_sports():
 
 def test_reasons_are_listed_never_an_added_second_penalty():
     """Was: the precautions combined by their minimum cap. Now each reason is listed and the number is the
-    night's, held in the state's range: a second reason never lowers it further."""
+    night's (held to 69 only for an orange reason outside its formula): a second reason never lowers it further."""
     w = {"tone": "warn", "text": "fenêtre indicative jusqu'à J+1"}
     one, both = _example(z_hrv=0.0, window=w), _example(z_hrv=0.0, window=w, tst=300)
     assert one["score"]["value"] == 100 and one["score"]["reasons"] == []  # effort window is context only
     assert both["score"]["value"] == 69
     assert [r["key"] for r in both["score"]["reasons"]] == ["short"]
     low, low_both = _example(z_hrv=-1.5, window=w), _example(z_hrv=-1.5, window=w, tst=300)
-    assert low["score"]["value"] == low_both["score"]["value"] == 50
+    assert low["score"]["value"] == low_both["score"]["value"] == 39  # VFC z −1,5 alone
     assert [r["key"] for r in low_both["score"]["reasons"]] == ["hrv", "short"]
 
 

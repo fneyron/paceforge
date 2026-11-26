@@ -224,12 +224,31 @@ l’alerte FC, dont l’exclusion des nuits avec contexte connu, sont conservée
   visibles au plus et les autres dans le détail. La fraîcheur est datée ; une nuit absente n’est
   jamais affichée comme une mesure du jour. Avant midi, le cycle précédent peut rester visible,
   explicitement daté. Les sources et calculs de VFC et de FC sont précisés à la demande.
-- **Indice nocturne**, le nombre du cadran : 100 × la moyenne, sur les séries utilisées, de
-  s_VFC = clip((z + 2,5)/2) et s_FC = clip((2,5 − z)/2) **(H)**. Il vaut 100 jusqu’au plus petit
-  changement utile et 0 à 2,5 σ. Il est ramené à 69 au plus en orange, 39 au plus en rouge, 70 au
-  moins en vert **(H)**. La formule et ces seuils restent inchangés. Le cadran dit **/100**, pas
-  « % de récupération » : cet indice descriptif n’est ni une validation clinique, ni une consigne
-  d’entraînement, ni une mesure de la récupération musculaire ou tendineuse.
+- **Indice nocturne**, le nombre du cadran (progressif depuis le 26 nov. 2026). Pour chaque série
+  cardiaque utilisée, d est l’écart de sa moyenne sur 7 nuits du côté qui compte, en σ (d = −z pour
+  la VFC, d = z pour la FC de nuit), et T le seuil du jour (celui qui donne la couleur, ses sources
+  plus haut : il dépend des nuits mesurées et de la référence, ≈ 0,67 pour 7 nuits, ≈ 0,92 pour 3) :
+  - s = 100 pour d ≤ 0 : jamais plus haut que l’habitude (Plews 2013) ;
+  - s descend en ligne droite de 100 à 70 entre d = 0 et d = T ;
+  - puis de 70 à 0 entre d = T et d = 2,5 ; 0 au-delà.
+
+  Les points 100 / 70 / 0, la borne 2,5 σ et les droites sont des **(H) chiffres** ; T garde ses
+  sources. Le nombre du jour est le **plus bas** des s utilisables (**choix pratique** : le signal le
+  plus faible fixe le jour), arrondi. Il passe donc sous 70 exactement quand une série cardiaque a
+  franchi son seuil, c’est-à-dire quand elle met le jour en orange : le nombre ne contredit jamais
+  l’état sans plafond. Sur la ligne même (d = T, déjà orange), 70 est ramené à 69. Une seule série
+  utilisable suffit ; sans série utilisable, pas de nombre mais sa raison, sans repli ni report.
+- **Ce que la formule ne voit pas.** L’alerte FC de nuit (rouge) tient le nombre à 39 au plus ;
+  moins de 6 h de sommeil sur 24 h et la respiration plus rapide (orange) le tiennent à 69 au plus,
+  ces jours-là seulement, leur raison affichée **(H)**. Un vert vaut 70 au moins par construction
+  (aucune série n’a franchi T, chaque s dépasse 70).
+- **Où le nombre reste plat.** 100 tant que les deux séries sont à leur habitude ou du bon côté ;
+  0 au-delà de 2,5 σ ; 69 un jour de nuit courte ou de respiration rapide dont les séries
+  cardiaques sont au-dessus de 69 ; 39 au plus sous l’alerte. Il ne suit que la série la plus basse :
+  la plus haute peut bouger sans le changer.
+- Le cadran dit **/100**, pas « % de récupération » : cet indice descriptif n’est ni une validation
+  clinique, ni une consigne d’entraînement, ni une mesure de la récupération musculaire ou
+  tendineuse.
 - L’historique de 14 jours recalcule chaque jour avec ce qu’il savait alors, sans donnée datée
   après lui, ses 24 h de sommeil comprises : une sieste de l’après-midi sans nuit suivante ne
   rejoint plus son jour après coup.

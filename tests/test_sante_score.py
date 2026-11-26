@@ -3,7 +3,7 @@ effort classes from the activities alone and their windows (a reason: red on D+0
 D+1 / D+2 raced / D+3 / D+5 / D+7 ≥ 24 h), the nights after a ≥ 6 h effort tagged (they never fire the illness
 alert, and count in the usual values like every measured night: owner, 2026-10-08), the state from its reasons
 (the alert; the primary marker's trend outside its smallest worthwhile change; the breathing flag; under 6 h of
-sleep; an effort window) and its « indice nocturne » held to the state's range, the 14-day history as each day
+sleep; an effort window) and its « indice nocturne » that never contradicts the state (gradual since 2026-11-26), the 14-day history as each day
 computed it, and the (H) heuristics pinned."""
 import json
 import math
@@ -220,24 +220,25 @@ def test_rung_1_the_alert_comes_first_even_in_a_window():
 
 
 def test_the_indice_never_contradicts_the_state():
-    """The indice nocturne: 100 × the mean of s_VFC = clip((z + 2.5)/2, 0, 1) and s_FC = clip((2.5 − z)/2, 0, 1),
-    held to ≤ 69 when orange, ≤ 39 when red, ≥ 70 when green (owner, 2026-10-14: scientific basis — it replaced a
-    weighted mean of sub-scores and a « red component » cap of 69). A week at 35 ms (z −6,2 against days −67 → −8):
-    the VFC primary marker below, orange, s_VFC 0 and s_FC 1: 50. VFC 54 ms with FC + 2,5 bpm: z −2,3 and + 2,5
-    (the FC de nuit's spread is its SD around its mean, 1,0 bpm here: owner, 2026-10-14: scientific basis — it was
-    the robust 1,5 around the median, z + 1,6, 26), both cardiac series give independent orange reasons: 4. A VFC at 60 ms (z −1,4): orange, its mean 77 held to 69."""
+    """The indice nocturne: 100 × the lower of the heart signals, each 100 at its usual level, 70 at its threshold,
+    0 at 2,5 SD (owner, 2026-11-26: « c'est pas progressif et un peu on off »; it was the mean of two signals
+    saturated at 100 and held to ≤ 69 in orange, 2026-10-14). A week at 35 ms (z −6,2 against days −67 → −8): the
+    VFC below, orange, s_VFC 0 and s_FC 1: 0 (the lower one; it was 50). VFC 54 ms with FC + 2,5 bpm: z −2,3 and
+    + 2,5 (the FC de nuit's spread is its SD around its mean, 1,0 bpm here: owner, 2026-10-14), both cardiac series
+    give independent orange reasons: 0. A VFC at 60 ms (z −1,4, T 0,67): orange, 70 × (2,5 − 1,4)/(2,5 − 0,67) = 42
+    (it was held to 69 whatever the depth)."""
     far = _day(_rich(hrv_last=35.0), _runs())
     parts = {p["key"]: p for p in far["score"]["parts"]}
-    assert parts["hrv"]["s"] == 0 and parts["hr"]["s"] == 1 and far["score"]["value"] == 50
+    assert parts["hrv"]["s"] == 0 and parts["hr"]["s"] == 1 and far["score"]["value"] == 0
     assert (far["state"]["key"], far["state"]["tone"], far["state"]["text"]) == ("hrv", "warn", None)
     up = _day(_rich(hrv_last=54.0, hr_last=47.5), _runs())
     parts = {p["key"]: p for p in up["score"]["parts"]}
     assert (parts["hrv"]["status"], parts["hr"]["status"]) == ("below", "above")
     assert [r["key"] for r in up["score"]["reasons"]] == ["hrv", "hr"]
-    assert up["score"]["value"] == sc.rounded(100 * (parts["hrv"]["s"] + parts["hr"]["s"]) / 2) == 4
+    assert up["score"]["value"] == sc.rounded(100 * min(parts["hrv"]["s"], parts["hr"]["s"])) == 0
     near = _day(_rich(hrv_last=60.0), _runs())
     s_hrv = next(p for p in near["score"]["parts"] if p["key"] == "hrv")["s"]
-    assert sc.rounded(100 * (s_hrv + 1) / 2) == 77 and near["score"]["value"] == 69  # held to the orange range
+    assert sc.rounded(100 * s_hrv) == 42 == near["score"]["value"]  # no hold: the formula is under 70 already
     assert (near["state"]["key"], near["state"]["tone"]) == ("hrv", "warn")
 
 
@@ -264,7 +265,7 @@ def test_rung_4_a_short_24_hour_total():
     rows["sleep"].update(night_rows([0], asleep=330, start=(23, 30), end=(6, 30))["sleep"])  # 5h30, no nap
     day = _day(rows, _runs())
     assert (day["state"]["key"], day["state"]["text"]) == ("short", None)  # the reason, never printed (v4.3)
-    assert day["score"]["tone"] == "warn" and day["score"]["value"] == 69  # its heart 100, held to orange (was 65)
+    assert day["score"]["tone"] == "warn" and day["score"]["value"] == 69  # outside the formula: held to orange
     # a nap in the 24 h before the wake (yesterday 13:00) lifts the total over 6 h: no short night (Craven 2022)
     y = D - timedelta(days=1)
     rows["nap"][y] = (60, {"windows": [[f"{y}T13:00", f"{y}T14:05"]]}, "Garmin")
@@ -277,7 +278,8 @@ def test_rung_4_a_short_24_hour_total():
 def test_rung_5_well_recovered_needs_a_nightly_signal():
     day = _day(_rich(), _runs())
     assert (day["state"]["key"], day["state"]["word"], day["state"]["text"]) == ("ok", "Signaux habituels", None)
-    assert day["score"]["value"] == 100 and day["score"]["measured"] and day["state"]["reasons"] == []
+    # its VFC week a little under its usual values (z −0,34, T 0,67): 100 − 30 × 0,34/0,67 = 85, still green
+    assert day["score"]["value"] == 85 and day["score"]["measured"] and day["state"]["reasons"] == []
     strava = _day({}, _runs())  # activities only: nothing measured
     assert strava["state"] is None and strava["score"]["value"] is None
     assert td.no_state_line(False) == "Connecte ta montre pour voir tes signaux nocturnes."
@@ -294,41 +296,52 @@ def test_rung_5_well_recovered_needs_a_nightly_signal():
 # ── the indice nocturne ─────────────────────────────────────────────────────
 
 def test_components():
-    """s_VFC = clip((z + 2.5)/2, 0, 1): 100 from z −0.5, 0 at −2.5; s_FC = clip((2.5 − z)/2, 0, 1): 100 up to + 0.5,
-    0 at + 2.5 (owner, 2026-10-14: scientific basis — the same construction as the VFC, it was 100 / 40 / 0 at + 2 /
-    + 5 / + 8 bpm); never praised above (100 at most). No sleep component: under 6 h is a reason."""
-    assert sc.sub("hrv", -0.5) == 1 and sc.sub("hrv", -2.5) == 0 and sc.sub("hrv", 2) == 1
-    assert sc.sub("hrv", -1.5) == pytest.approx(0.5) and sc.sub("hrv", -3) == 0
-    assert sc.sub("hr", 0.5) == 1 and sc.sub("hr", 2.5) == 0 and sc.sub("hr", 1.5) == pytest.approx(0.5)
-    assert sc.sub("hr", -3) == 1
+    """A heart signal's score (owner, 2026-11-26): 1 at or past its usual level (z ≥ 0 for the VFC, ≤ 0 for the FC
+    de nuit: never praised above it), 0,70 at the day's threshold T, 0 at 2,5 SD, linear in between (H); the VFC
+    and the FC de nuit mirror each other. No sleep component: under 6 h is a reason."""
+    t = 0.67
+    assert sc.sub("hrv", 0, t) == 1 and sc.sub("hrv", 2, t) == 1 and sc.sub("hr", 0, t) == 1 and sc.sub("hr", -3, t) == 1
+    assert sc.sub("hrv", -t, t) == pytest.approx(0.70) == sc.sub("hr", t, t)
+    assert sc.sub("hrv", -t / 2, t) == pytest.approx(0.85) and sc.sub("hr", 1.585, t) == pytest.approx(0.35)
+    assert sc.sub("hrv", -2.5, t) == 0 and sc.sub("hrv", -3, t) == 0 and sc.sub("hr", 2.5, t) == 0
+    for z in (0.3, 0.67, 1.2, 2.4, 3.0):
+        assert sc.sub("hrv", -z, t) == pytest.approx(sc.sub("hr", z, t))
+    # the threshold is the day's own: 3 nights give a wider one, so the same z scores higher
+    assert sc.sub("hrv", -0.8, 0.92) > sc.sub("hrv", -0.8, 0.67)
     for name in ("hrv_sub", "hr_sub", "sleep_sub", "WEIGHTS", "caps", "sleep_limit", "load_sub", "SLEEP_DEBT"):
         assert not hasattr(sc, name), name
 
 
-def test_two_heart_series_average_and_a_window_stays_context():
-    """The two cardiac series average into the index; a recorded effort cannot rewrite the measured signals."""
+def test_the_lower_heart_series_sets_the_index_and_a_window_stays_context():
+    """The lower of the two cardiac series sets the index (choix pratique, 2026-11-26: they averaged); a recorded
+    effort cannot rewrite the measured signals."""
     day = _day(_rich(hrv_last=60.0), _runs(n=20))  # plenty of activities, no window
     assert [p["key"] for p in day["score"]["parts"]] == ["hrv", "hr"] and day["score"]["absent"] == []
     assert day["score"]["primary"] == "hrv"
+    assert day["score"]["value"] == sc.rounded(100 * min(p["s"] for p in day["score"]["parts"])) == 42
     window = _day(_rich(), [_session(D - timedelta(days=1), 200, sid=9)])  # a long effort, D+1
-    assert window["score"]["value"] == 100 and window["score"]["caps"] == []
+    assert window["score"]["value"] == 85 and window["score"]["caps"] == []  # _rich's own VFC week, z −0,34
     assert window["score"]["reasons"] == [] and window["state"]["key"] == "ok"
 
 
 @pytest.mark.parametrize("z_hrv,z_hr,reasons,value,tone", [
-    (0.0, 0.0, {}, 100, "ok"), (-0.4, 0.0, {}, 100, "ok"),
-    (-0.4, 2.0, {}, 63, "warn"),  # the high FC is visible even when HRV is usual
-    (-0.6, 0.0, {}, 98, "ok"),  # inside T = 0,70 (7 nights against 30, 2026-10-14; was orange under 0,5): 97,5
-    (-0.75, 0.0, {}, 69, "warn"),  # orange: (0,875 + 1)/2 = 94 held down to 69
-    (-2.0, 0.0, {}, 63, "warn"),  # (0,25 + 1)/2 = 62,5, half up
-    (0.0, 1.0, {}, 69, "warn"),  # the high FC holds the index in the existing warning range
-    (0.0, 0.0, {"tst": 330}, 69, "warn"), (0.0, 0.0, {"alert": {"values": [55, 56], "resp_up": None}}, 39, "danger"),
+    (0.0, 0.0, {}, 100, "ok"), (0.5, -0.5, {}, 100, "ok"),  # at or past the usual level: 100, never more
+    (-0.4, 0.0, {}, 83, "ok"),  # T = 0,70 (7 nights against 30): 100 − 30 × 0,4/0,70 = 82,9 (was 100)
+    (-0.4, 2.0, {}, 19, "warn"),  # the high FC is the lower signal: 70 × (2,5 − 2)/(2,5 − 0,70) = 19,5
+    (-0.6, 0.0, {}, 74, "ok"),  # inside T: 74,4 (was 98)
+    (-0.75, 0.0, {}, 68, "warn"),  # just past T: 68,2 (was 94 held down to 69)
+    (-2.0, 0.0, {}, 19, "warn"),  # 19,5 (was 63: the mean with the FC's 100)
+    (0.0, 1.0, {}, 58, "warn"),  # the high FC alone: 58,5 (was held to 69)
+    (0.0, 0.0, {"tst": 330}, 69, "warn"), (0.0, 0.0, {"resp": {"mean": 17}}, 69, "warn"),  # outside: held to 69
+    (-1.0, 0.0, {"tst": 330}, 58, "warn"),  # a short night under a lower formula: the formula
+    (0.0, 0.0, {"alert": {"values": [55, 56], "resp_up": None}}, 39, "danger"),
     (0.0, 0.0, {"window": {"tone": "danger", "text": "fenêtre indicative jusqu'à J+5"}}, 100, "ok"),  # context only
     (-2.6, 2.6, {"alert": {"values": [55, 56], "resp_up": None}}, 0, "danger")])
 def test_the_state_comes_from_its_reasons(z_hrv, z_hr, reasons, value, tone):
     """The state from its reasons (owner, 2026-10-14: scientific basis — it was the band of a weighted score, ≥ 70,
     40–69, < 40): none green, an orange one « Signaux à surveiller », a red one « Signaux inhabituels »; the indice
-    held to the state's range; rounded half up on the exact value."""
+    gradual (2026-11-26), held only where the formula cannot see the reason (red ≤ 39, short or breathing ≤ 69);
+    rounded half up on the exact value."""
     x = _example(z_hrv=z_hrv, z_hr=z_hr, **reasons)
     assert (x["score"]["value"], x["score"]["tone"]) == (value, tone)
     assert x["state"]["word"] == td.WORDS[tone]
@@ -338,16 +351,105 @@ def test_the_state_comes_from_its_reasons(z_hrv, z_hr, reasons, value, tone):
     assert td.WORDS == {"ok": "Signaux habituels", "warn": "Signaux à surveiller", "danger": "Signaux inhabituels"}
 
 
+# ── the gradual indice (owner, 2026-11-26: « c'est pas progressif et un peu on off la récupération non ? ») ──
+
+def _graded(z_hrv=None, z_hr=None, n7=7, nb=30, **kw) -> dict:
+    """sante_score.score_of on one synthetic day whose trends carry the threshold of n7 nights in a row against nb."""
+    t = nt.threshold(range(1 - n7, 1), nb)
+
+    def trend(z):
+        if z is None:
+            return None
+        return {"source": "Garmin", "n": n7, "last": True, "z": z, "T": t, "value": 1.0, "baseline_n": nb,
+                "baseline": {"n": nb, "provisional": nb < nt.MIN_BAND_NIGHTS, "center": 1.0, "sd": 0.1},
+                "status": "below" if z <= -t else "above" if z >= t else "in"}
+    day = {"day": D, "night_measured": True, "trends": {"hrv": trend(z_hrv), "hr": trend(z_hr)}, "tst24": 450,
+           "window": None, "alert": None, "resp": None, **kw}
+    return {**sc.score_of(day), "T": t}
+
+
+WEEKS = [(n7, nb) for n7 in (3, 4, 5, 7) for nb in (7, 10, 14, 30, 52)]  # full and provisional references
+
+
+@pytest.mark.parametrize("n7,nb", WEEKS)
+def test_no_jump_at_the_threshold(n7, nb):
+    """Either side of the day's own threshold T (it depends on the nights measured and the reference), the number
+    moves by one point at most (it jumped from 96 to 69); orange from T on, as the colour (nights.trend: z ≤ −T)."""
+    t = _graded(0, n7=n7, nb=nb)["T"]
+    for metric, sign in (("hrv", -1), ("hr", 1)):
+        def at(z):
+            return _graded(**{f"z_{metric}": z, "z_" + ("hr" if metric == "hrv" else "hrv"): 0.0}, n7=n7, nb=nb)
+        inside, past = at(sign * (t - 1e-6)), at(sign * (t + 1e-6))
+        assert (inside["tone"], past["tone"]) == ("ok", "warn")
+        assert (inside["value"], past["value"]) == (70, 69)
+        assert at(sign * t)["value"] == 69 and at(sign * t)["tone"] == "warn"  # on the line: orange, 70 rounds to 69
+
+
+@pytest.mark.parametrize("n7,nb", WEEKS)
+def test_the_indice_falls_with_z_and_is_100_only_from_the_usual_level(n7, nb):
+    """Monotonic: the further on the side that matters, the lower, step by step (no plateau between the usual
+    level and 2,5 SD but the rounding); 100 at or past the usual level only; 0 from 2,5 SD."""
+    t = _graded(0, n7=n7, nb=nb)["T"]
+    zs = [round(1.0 - k / 100, 2) for k in range(0, 361)]  # +1 → −2,6
+    vfc = [_graded(z, 0.0, n7=n7, nb=nb)["value"] for z in zs]
+    fc = [_graded(0.0, -z, n7=n7, nb=nb)["value"] for z in zs]
+    assert vfc == fc and all(a >= b for a, b in zip(vfc, vfc[1:]))
+    assert all(v == 100 for z, v in zip(zs, vfc) if z >= 0) and vfc[zs.index(-2.5)] == 0 == vfc[-1]
+    assert all(sc.sub("hrv", z, t) < 1 for z in zs if z < 0) and all(sc.sub("hr", -z, t) < 1 for z in zs if z < 0)
+    assert all(v < 100 for z, v in zip(zs, vfc) if z < -t / 60)  # under 100 once half a point is lost
+    assert len(set(vfc)) > 80  # gradual: was 100 down to −0,5, then 69 down to about −1,74
+
+
+@pytest.mark.parametrize("n7,nb", WEEKS)
+def test_under_70_exactly_when_a_heart_signal_makes_the_day_orange(n7, nb):
+    """Without the reasons outside the formula, the number is under 70 if and only if a heart signal crossed its
+    threshold: green days are ≥ 70 by construction (no hold needed; also on a provisional reference or 3 nights),
+    orange ones under 70; and it is the lower signal's (choix pratique)."""
+    grid = [round(k / 20, 2) for k in range(-56, 57)]  # −2,8 → +2,8
+    for zv in grid[::3]:
+        for zh in grid[::3]:
+            x = _graded(zv, zh, n7=n7, nb=nb)
+            assert (x["value"] < 70) == (x["tone"] == "warn"), (zv, zh, x["value"], x["tone"])
+            assert x["value"] == min({"ok": 100, "warn": 69}[x["tone"]],
+                                     sc.rounded(100 * min(p["s"] for p in x["parts"])))
+    # the higher signal does not move the number; the lower one does
+    assert _graded(-1.0, 0.0)["value"] == _graded(-1.0, -1.5)["value"] == _graded(-1.0, 0.5)["value"]
+    assert _graded(-1.0, 1.2)["value"] < _graded(-1.0, 0.0)["value"]
+
+
+def test_the_reasons_outside_the_formula_hold_it_and_red_stays_under_40():
+    """Under 6 h of sleep or the breathing flag: orange whatever the heart, so the number is held to 69 (never a
+    green 100 on an orange day), its reason said on the page; a lower formula stays lower. The illness alert: 39 at
+    most. Missing inputs: no number, a reason, never a fallback."""
+    for kw in ({"tst24": 330}, {"resp": {"mean": 17}}, {"tst24": 330, "resp": {"mean": 17}}):
+        for zv, expected in ((0.5, 69), (0.0, 69), (-0.3, 69), (-1.0, 58), (-2.6, 0)):
+            x = _graded(zv, 0.0, **kw)
+            assert (x["value"], x["tone"]) == (expected, "warn"), (kw, zv)
+            assert {r["key"] for r in x["reasons"]} & {"short", "resp"}
+    assert [r["label"] for r in _graded(0.0, 0.0, tst24=330)["reasons"]] == ["Sommeil court"]
+    assert [r["label"] for r in _graded(0.0, 0.0, resp={"mean": 17})["reasons"]] == [sc.LABELS["resp"]]
+    alert = {"values": [55, 56], "resp_up": None}
+    for zv, zh in ((1, -1), (0, 0), (-0.5, 0.5), (-2, 2)):
+        x = _graded(zv, zh, alert=alert)
+        assert x["tone"] == "danger" and 0 <= x["value"] <= 39
+    # missing inputs: no number, its reason
+    assert _graded(0.0, 0.0, night_measured=False)["value"] is None
+    assert _graded()["value"] is None and _graded()["missing"]["key"] == "no_heart"
+    # one usable signal alone still scores
+    assert _graded(-0.35)["value"] == _graded(None, 0.35)["value"] == 85
+    assert [p["key"] for p in _graded(None, 0.35)["parts"]] == ["hr"]
+
+
 def test_ultra_windows_do_not_rewrite_the_nightly_index():
     """Legacy windows remain available for context; their tones never set the nightly index."""
     big = _session(D - timedelta(days=1), 935, elapsed=1013, sid=42)  # D+1 after an ultra (it ended on D-1)
     early = _day(_rich(), _runs() + [big])
-    assert (early["window"]["tone"], early["score"]["value"], early["score"]["tone"]) == ("danger", 100, "ok")
+    assert (early["window"]["tone"], early["score"]["value"], early["score"]["tone"]) == ("danger", 85, "ok")
     assert early["state"]["key"] == "ok" and early["state"]["word"] == "Signaux habituels"
     assert early["score"]["measured"]  # nights measured
     four, five = timedelta(days=4), timedelta(days=5)
     later = _day(_rich(), _runs() + [replace(big, start=big.start - four, day=big.day - four)])
-    assert (later["window"]["days"], later["window"]["tone"], later["score"]["value"]) == (5, "warn", 100)
+    assert (later["window"]["days"], later["window"]["tone"], later["score"]["value"]) == (5, "warn", 85)
     done = _day(_rich(), _runs() + [replace(big, start=big.start - five, day=big.day - five)])
     assert done["window"] is None and done["state"]["key"] == "ok"
 
@@ -366,13 +468,13 @@ def test_owner_like_day_no_state_without_a_heart_baseline():
 
 def test_no_state_from_sleep_alone():
     """Neither VFC nor FC de nuit with a full baseline (the watch worn some nights only): no state, never a number
-    from sleep alone (it was capped at 80); with them, a 100 stays possible."""
+    from sleep alone (it was capped at 80); with them, a number (85: _rich's VFC week at z −0,34)."""
     rows = night_rows([0], asleep=588, start=(23, 52), end=(9, 54), source="COROS", hr_method="coros_sleep_summary")
     day = _day(rows, _runs())  # 9h48
     assert day["state"] is None and day["score"]["value"] is None and day["score"]["parts"] == []
     sleep_only = {**night_rows(range(0, 40)), "hrv": {}, "hr_night": {}}
     assert _day(sleep_only, _runs())["score"]["missing"] == {"key": "no_heart", "label": "pas de bilan"}
-    assert _day(_rich(), _runs())["score"]["value"] == 100
+    assert _day(_rich(), _runs())["score"]["value"] == 85
 
 
 # ── the 14-day history: what each day knew ──────────────────────────────────
@@ -426,13 +528,14 @@ def test_a_low_week_is_read_against_the_weeks_before_it():
     """The usual values stop a week before the day (owner, 2026-10-14: scientific basis — they held the week they
     judge, owner, 2026-10-08: its own 7 nights at 50 ms lowered the centre to 67,6 ms and widened the SD to 0,15,
     so a −26 % week read z −2,0 and « Signaux habituels »): against days −67 → −8 (52 nights, centre 70,3 ms, σ̂
-    0,113) the same week reads z −3,0, the VFC below its usual values: orange, s_VFC 0, the indice 50."""
+    0,113) the same week reads z −3,0, the VFC below its usual values: orange, s_VFC 0, the indice 0 (the lower
+    signal, 2026-11-26; it was 50, the mean with the FC's 100)."""
     day = _day(_rich(hrv_last=50.0), _runs())
     b = day["stats"]["hrv"]["normal"]
     assert b["n"] == 52 and round(b["center"], 1) == 70.3 and round(b["sd"], 3) == 0.113
     vfc = next(p for p in day["score"]["parts"] if p["key"] == "hrv")
     assert round(vfc["z"], 1) == -3.0 and vfc["s"] == 0 and vfc["status"] == "below"
-    assert (day["score"]["value"], day["state"]["word"]) == (50, "Signaux à surveiller")
+    assert (day["score"]["value"], day["state"]["word"]) == (0, "Signaux à surveiller")
     assert next(p for p in _day(_rich(hrv_last=35.0), _runs())["score"]["parts"] if p["key"] == "hrv")["s"] == 0
 
 
@@ -474,10 +577,12 @@ def test_the_history_card_rests_on_its_title_and_shows_the_bands():
         hist = sante._history(nights, _runs(), [], D) + [(D, day["state"], day["score"])]
     c = sc.history_card(hist, D)
     d = json.loads(c["data"])
-    assert c["read"] == d["rest"] == ["100\u00a0%", "en moyenne", ""] and d["sel"] == 14 and d["back"] == 13
+    # gradual (2026-11-26): _rich's weeks wobble around their usual values, 84 to 100, every day green (≥ 70)
+    assert [s["value"] for _, _, s in hist] == [100, 100, 94, 84, 98, 95, 100, 94, 85, 98, 100, 95, 94, 85]
+    assert c["read"] == d["rest"] == ["94\u00a0%", "en moyenne", ""] and d["sel"] == 14 and d["back"] == 13
     assert c["title"] == "Signaux nocturnes · 14 jours" and "en moyenne" in c["data"]
-    assert d["r"][-1] == ["100\u00a0%", "● Signaux habituels", "jeu. 8 oct."] and d["t"][-1] == "ok"
-    assert d["a"][-1] == "jeudi 8 octobre : indice 100\u00a0%, signaux habituels."
+    assert d["r"][-1] == ["85\u00a0%", "● Signaux habituels", "jeu. 8 oct."] and d["t"][-1] == "ok"
+    assert d["a"][-1] == "jeudi 8 octobre : indice 85\u00a0%, signaux habituels."
     assert all(b["cls"] == "ok" and not b["est"] for b in c["bars"]) and c["bars"][-1]["today"]
     assert c["hatched"] == []  # every day measured: no hatched bar, no legend for it
     assert [ln["label"] for ln in c["lines"]] == ["100", "70", "40", "0"] and c["lines"][0]["y"] < c["lines"][1]["y"]
@@ -487,15 +592,15 @@ def test_the_history_card_rests_on_its_title_and_shows_the_bands():
 # ── the method and the heuristics ───────────────────────────────────────────
 
 def test_an_alert_episode_is_read_by_the_score():
-    """Seven nights at 56 bpm over a median of 45: the alert is red (its indice 39); the FC de nuit trend is far
-    above (s_FC 0); the baseline (days −59 → −8) does not hold the episode: its median (the alert's) stays 45, its
+    """Seven nights at 56 bpm over a median of 45: the alert is red (its indice ≤ 39: here 0, the FC de nuit trend
+    far above, s_FC 0); the baseline (days −59 → −8) does not hold the episode: its median (the alert's) stays 45, its
     mean (the trend's, owner, 2026-10-14: scientific basis) 45,02."""
     rows = night_rows(range(0, 60), hr=lambda k: 56.0 if k < 7 else 44.0 + k % 3)
     day = _day(rows, _runs())
     normal = day["stats"]["hr"]["normal"]
     assert day["state"]["key"] == "ill" and normal["median"] == 45 and round(normal["center"], 2) == 45.02
     hr = next(p for p in day["score"]["parts"] if p["key"] == "hr")
-    assert hr["s"] == 0 and day["score"]["value"] == 39 and day["score"]["tone"] == "danger"
+    assert hr["s"] == 0 and day["score"]["value"] == 0 and day["score"]["tone"] == "danger"
 
 
 # ── v4.1: the review's findings ─────────────────────────────────────────────
@@ -507,7 +612,7 @@ def test_dawn_finish_the_first_morning_after_is_in_its_window():
     race = _session(D - timedelta(days=1), 1320, hour=5, sid=50, name="100 miles des Crêtes")  # → D 03:00
     day = _day(rows, _runs() + [race])
     assert st.effort_of(race).day == D - timedelta(days=1)
-    assert (day["window"]["days"], day["window"]["tone"], day["score"]["value"]) == (1, "danger", 100)
+    assert (day["window"]["days"], day["window"]["tone"], day["score"]["value"]) == (1, "danger", 85)
     assert day["state"]["key"] == "ok" and day["state"]["text"] is None
     nights = _nights(rows, _runs() + [race])
     assert "ultra" in nights[D].tags and "ultra" not in nights[D - timedelta(days=1)].tags  # 22 h: an ultra
@@ -618,14 +723,14 @@ def test_the_day_after_an_alert_stops_firing_the_episode_is_still_read():
     mean still reads the episode's nights (48,57 against a median of 45, its baseline without them): the FC de nuit
     card is above its usual values in orange, never « dans tes valeurs habituelles »; the VFC (the primary marker)
     is in them, so the state is green and the FC shows on its card only (owner, 2026-10-14: scientific basis — the
-    score was 90 with an orange FC row), its indice held to 70."""
+    score was 90 with an orange FC row); the FC de nuit far above (z + 3,6) is the lower signal: 0."""
     rows = night_rows(range(0, 60), hr=lambda k: 56.0 if k in (1, 2) else 49.0 if k == 0 else 44.0 + k % 3)
     assert _day(rows, _runs(), D - timedelta(days=1))["state"]["key"] == "ill"
     day = _day(rows, _runs())
     assert day["alert"] is None and day["stats"]["hr"]["normal"]["median"] == 45
     hr = next(p for p in day["score"]["parts"] if p["key"] == "hr")
     assert round(day["stats"]["hr"]["value"], 2) == 48.57 and hr["status"] == "above"
-    assert day["state"]["key"] == "hr" and day["score"]["value"] == 50
+    assert day["state"]["key"] == "hr" and day["score"]["value"] == 0
     assert [r["key"] for r in day["score"]["reasons"]] == ["hr"]
     nights = _nights(rows, _runs())
     with nt.memo():
@@ -669,7 +774,7 @@ def test_a_nap_yesterday_afternoon_counts_in_the_24_hours_before_the_wake():
     rows["nap"][y] = (100, {"windows": [[f"{y}T16:00", f"{y}T17:45"]]}, "Garmin")
     day = _day(rows, _runs())
     assert day["tst24"] == 400 and "need" not in day  # 6h40: over 6 h, no short-sleep reason
-    assert (day["state"]["key"], day["score"]["value"]) == ("ok", 100)  # was 92: a sleep precaution under 7h20
+    assert (day["state"]["key"], day["score"]["value"]) == ("ok", 85)  # no sleep precaution: _rich's own 85
     dial = sante.sleep_dial(day["tst24"], 480, "#sommeil")
     assert (dial["value"], dial["sub"], dial["tone"]) == ("83", "un peu court", "sleep")  # 6h40 of 8 h: its own hue
     nights = nt.build_nights(rows, D)
@@ -705,10 +810,10 @@ def test_the_day_a_big_outing_ends_it_already_counts():
     """A completed ultra is recorded on its finish day without rewriting that morning’s signals."""
     ultra = _session(D, 660, hour=5, sid=70, name="Grand Raid")
     day = _day(_rich(), _runs() + [ultra])
-    assert (day["window"]["days"], day["window"]["tone"], day["score"]["value"]) == (0, "danger", 100)
+    assert (day["window"]["days"], day["window"]["tone"], day["score"]["value"]) == (0, "danger", 85)
     assert day["state"]["key"] == "ok" and day["state"]["text"] is None
     long = _session(D, 210, dplus=1600, hour=7, sid=71, name="Grand tour")  # a 3h30 outing this morning: long
-    assert _day(_rich(), _runs() + [long])["score"]["value"] == 100
+    assert _day(_rich(), _runs() + [long])["score"]["value"] == 85
     rows = night_rows(range(0, 40), hr=lambda k: 58.0 if k < 2 else 44.0 + k % 3)  # an alert: the window too
     ill = _day(rows, _runs() + [ultra])
     assert ill["state"]["key"] == "ill" and ill["window"]["tone"] == "danger" and ill["score"]["value"] <= 39
@@ -782,7 +887,7 @@ def test_a_card_wears_its_place_against_the_usual_values():
     assert {k: owed[k] for k in ("minutes", "n", "raced", "days", "text")} == {  # 7 × 1h30
         "minutes": 630, "n": 7, "raced": 0, "days": 7, "text": "écart estimé au repère sur 7 jours\u00a0: 10h30"}
     assert owed["raw"] > owed["floor"]  # over its noise floor (1,28·σ_T·7/√7, σ_T 15 min here: 52 min)
-    assert day["score"]["value"] == 50 and [r["key"] for r in day["state"]["reasons"]] == ["hrv"]  # 6h30: no reason
+    assert day["score"]["value"] == 0 and [r["key"] for r in day["state"]["reasons"]] == ["hrv"]  # 6h30: no reason
 
 
 def test_provisional_bands_say_so_on_the_cards():

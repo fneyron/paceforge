@@ -249,12 +249,13 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
     await test_coros._link(db_session, test_user)
     await _seed(db_session, test_user, coros_rows(D, range(0, 40), hrv=lambda k: 60.0 + (k % 3) - 1))
     page = await sante.health_page(db_session, test_user.id, today=D)
-    assert page["state"]["word"] == "Signaux habituels" and page["score"]["value"] == 100
+    # its VFC week a hair under its usual values (« comme d'habitude » to the percent): 98, gradual (2026-11-26)
+    assert page["state"]["word"] == "Signaux habituels" and page["score"]["value"] == 98
     assert [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr"] and page["score"]["absent"] == []
     # its 7-night means at their usual values to the percent: « comme d'habitude » (« 0 % » said in words)
     assert page["vfc"]["status"]["text"] == page["fc"]["status"]["text"] == "comme d'habitude"
     assert [(d["key"], d["value"], d["unit"], d["sub"], d["tone"]) for d in page["dials"]] == [
-        ("sommeil", "92", "%", "suffisant", "sleep"), ("recup", "100", "%", "habituelle", "ok"),
+        ("sommeil", "92", "%", "suffisant", "sleep"), ("recup", "98", "%", "habituelle", "ok"),
         ("entrainement", "0 min", None, "7 derniers jours", "accent")]
     assert [(k, page[k]["status"]["word"], page[k]["status"]["tone"]) for k in ("vfc", "fc")] == [
         ("vfc", "comme d'habitude", "ok"), ("fc", "comme d'habitude", "ok")]

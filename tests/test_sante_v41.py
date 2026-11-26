@@ -206,8 +206,9 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     # 7h20 every night against the 8-h need: 92 % (owner, 2026-10-14: scientific basis — 94 % against a learnt
     # need); the night missing 4 days ago held the cycle's highest VFC, so the 7-night mean is 0.61 SD under the
     # baseline: inside T (0.74 for these 6 nights, 1.28 standard errors of a week's mean: it was orange under the
-    # 0.5 of max(0.5, 1.28/√n7)), green; (0.95 + 1)/2 → 97
-    assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "97 % Récupération habituelle", dials
+    # 0.5 of max(0.5, 1.28/√n7)), green; gradual (2026-11-26): 100 − 30 × 0.61/0.74 → 74 (it was 97, the VFC's 95
+    # averaged with the FC's 100)
+    assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "74 % Récupération habituelle", dials
     # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 4 active weeks,
     # under the 8 the word needs, so the dial says the 7 days' time, as without a usual week (it read « 100 % comme
     # d'habitude »: at 4 active weeks the word came with 40 % of ordinary weeks; the second statistics review)
@@ -302,7 +303,7 @@ async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSess
                             total_elevation_gain=9000, raw_data={"utc_offset": 7200}))
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["state"]["key"] == "ok" and page["state"]["text"] is None and page["score"]["value"] == 100
+    assert page["state"]["key"] == "ok" and page["state"]["text"] is None and page["score"]["value"] == 85
     assert page["state"]["tone"] == "ok" and [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr"]
     assert page["state"]["reasons"] == []
     assert page["synthesis"]["context"][0]["label"] == "Après 100 miles · J+0"
