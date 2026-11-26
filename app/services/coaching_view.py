@@ -398,7 +398,7 @@ def week_moves(state: co.State, monday: date, coach: bool = False) -> list[str]:
     day (still to do); a coach reads only that it moved."""
     out = []
     for r in state.rows:
-        if cp.monday_of(r.day) == monday and _moved(r):
+        if cp.monday_of(r.day) == monday and _moved(r) and r.auto_day is not None:
             home, day = JOURS_L[r.auto_day.weekday()], JOURS_L[r.day.weekday()]
             text = (MOVED_COACH if coach else MOVED).format(home=home, day=day)
             out.append(rp.fr(text[:1].upper() + text[1:]) or text)
@@ -1037,7 +1037,8 @@ def page(state: co.State, *, d: date | None = None, w: date | None = None, move:
         # under the board, at most one line about an automatic change: a run's answer (the most recent), else the
         # agenda's, else the week's adaptation, else the fixed session's race week — the others are said on the
         # sessions' own tickets
-        auto = next((x for x in ((week_runs(state, m) or [None])[-1], (week_moves(state, m, coach) or [None])[-1],
+        runs_said, moves_said = week_runs(state, m), week_moves(state, m, coach)
+        auto = next((x for x in (runs_said[-1] if runs_said else None, moves_said[-1] if moves_said else None,
                                  note["reason"], note["fixed"]) if x), None)
         weeks.append({"monday": m.isoformat(), "name": week_name(m, today), "current": m == cp.monday_of(today),
                       "summary": week_summary(state, m, done), "phase": note["phase"], "auto": auto,
