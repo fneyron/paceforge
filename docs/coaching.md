@@ -86,8 +86,8 @@ suite ; l’athlète ajuste si elle veut.
 | **Jour de la sortie longue** | Le jour qui porte le plus souvent sa plus longue sortie de la semaine, s’il est parmi les jours proposés ; sinon dimanche, sinon le dernier jour proposé. | Une liste, qui ne propose que les jours choisis. |
 | **Volume de départ** | La médiane des minutes de course des 4 dernières semaines complètes (famille « course » de `sante_training.load_family` : route, trail, tapis ; semaines du lundi au dimanche à l’horloge de l’athlète), arrondie à 5 min. Sans historique : 2 h (H). | Une liste (de 1 h à 15 h) ; sans historique, cinq choix : 1 h, 2 h, 3 h, 4 h, 5 h et plus (H). |
 
-**Le niveau n’est pas une réponse** : il est lu dans l’historique et dit en une ligne sous la semaine dessinée
-(« Tu débutes : … », voir « Les profils »).
+**Le niveau n’est pas une réponse** : il est lu dans l’historique, jamais affiché (depuis le 26 novembre 2026) ;
+sa règle est dite dans « Comment ça marche » (voir « Les profils »).
 
 **De 2 à 6 jours**, donc un jour de repos au moins. (H) chiffre. Le principe : chez 446 athlètes d’endurance de haut niveau, moins de 2 jours de repos par semaine allait avec 5,2 fois plus de blessures de surmenage (Ristolainen 2014 — une seule étude, rétrospective, par questionnaire). Son seuil est deux jours ; PaceForge en impose un et laisse le sixième jour au choix de l’athlète : c’est moins strict que l’étude, et dit ici. Le minimum de 2 jours est un choix pratique (une sortie longue et une autre séance) ; l’ACSM recommande 3 jours ou plus à intensité soutenue (Garber 2011).
 
@@ -303,8 +303,10 @@ critères n’ont pas pu être lus (texte intégral inaccessible) : il n’est p
 | Régulier | Rien de plus que l’intention. | — |
 | Entraîné | « Progresser » suit les règles complètes (deux séances de qualité à partir de 5 jours et 4 h) ; le reste comme l’intention. | Aucune étude ne distingue régulier et entraîné sur une décision d’entraînement : à tous les niveaux, le temps dur est le même et les plus rapides ajoutent du facile (Muniz-Pumares 2025). Le seuil de 5 jours et 4 h fait déjà ce travail. |
 
-**Ce que voit l’athlète.** Une ligne sous l’objectif, sur l’écran de départ (elle suit les réponses, comme la
-semaine dessinée) et en haut de sa page : « **Tu débutes** : huit semaines en aisance d’abord, quatre jours de course
+**Ce que voit l’athlète.** Depuis le 26 novembre 2026 (« supprime le max de texte »), **plus rien à l’écran** : le
+niveau est lu et appliqué, sa règle est dite dans « Comment ça marche » (« Ton niveau est lu sur tes 12 dernières
+semaines, jamais demandé. Si tu débutes : … »). Avant, une ligne sous l’objectif et en haut de la page disait :
+« **Tu débutes** : huit semaines en aisance d’abord, quatre jours de course
 au plus. » et dessous ce qui a été lu (« Lu sur tes 12 dernières semaines : 5 avec une sortie, 40 min par
 semaine. » ; « Aucune sortie enregistrée ; lu sur ton volume, 1h00 par semaine. ») ; après les 8 semaines : « une
 séance de qualité par semaine au plus, courte, et quatre jours de course au plus. ». « **Tu cours régulièrement** : lu
@@ -348,8 +350,8 @@ rythme : deux footings la semaine, et une ligne le dit, sur l’écran de dépar
 **Quand elle déplace une séance à côté de l’autre** (« Déplacer » prend n’importe quel jour) : **rien n’est refusé
 ni réécrit** — ce qu’une personne décide reste. Comme pour tout jour dur : pendant le choix, un point marque les jours
 voisins d’une autre séance dure ; puis la semaine le dit, et quand l’une des deux est la séance avec du rythme, elle
-propose la sortie : « Mardi et mercredi : deux jours durs de suite. Tu peux courir la séance en footing. » (le
-second mot n’est pas montré à la personne qui suit le plan). Le générateur, lui, n’en fait jamais.
+dit : « Mardi et mercredi : deux jours durs de suite. » (que la séance avec du rythme peut se courir en footing est
+dans « Comment ça marche » depuis le 26 novembre 2026). Le générateur, lui, n’en fait jamais.
 
 **Le volume.** À deux séances, c’est la **règle « une séance »** qui commande (Frandsen 2025) : la sortie longue
 grandit d’un pas de 5 min par semaine de charge (de 30 à 65 min : 7 semaines de charge, 9 à 10 semaines avec la
@@ -372,8 +374,8 @@ la seconde : c’est ainsi que la fréquence est gardée. Elle demande alors moi
 longueur). À moins de 2 h par semaine, **aucune étude ne mesure un affûtage** : on arrive frais, sans promettre de
 gain. (H).
 
-**Ce que le plan dit honnêtement**, une fois à la création (quand deux jours sont choisis) et dans « Comment ça
-marche » :
+**Ce que le plan dit honnêtement**, dans « Comment ça marche » (l’écran de départ le disait aussi jusqu’au
+26 novembre 2026) :
 
 - « Deux séances par semaine suffisent pour préparer un 10 km et progresser quand on court depuis peu. » (Wenger &
   Bell 1986 ; Lenk 2025 ; Gliemann 2015 — (H))
@@ -522,10 +524,13 @@ intervalles courts en vitesse (`BESIDE_FIXED`, (H)).
 Demande du propriétaire, 23 novembre 2026, devant le ticket : « Tu ne met pas les zones cibles ? HR vitesse ou
 autre ? ». Chaque séance a **une cible** lue dans les données de l’athlète : une allure (depuis sa vitesse critique),
 une plage de fréquence cardiaque (depuis sa FC maximale), ou les deux. **Une cible chiffrée remplace la phrase de
-sensation** : dès que la ligne « Cible » porte un nombre (une allure ou une FC), la phrase du test de la parole
+sensation** : dès que la cible porte un nombre (une allure ou une FC), la phrase du test de la parole
 (Persinger 2004 ; Foster 2008 ; « Efforts vifs : parler devient impossible. ») n’est plus dite, ni sous le ticket ni
 dans le flux calendrier. Elle reste seulement quand la séance n’a aucun nombre (ni allure ni FC connue, la séance
-fixe du club, les côtes courtes « À la sensation… ») : personne ne reste sans consigne. **Changé le 24 novembre
+fixe du club, les côtes courtes) : personne ne reste sans consigne. **Sur le ticket, depuis le 26 novembre 2026**,
+les valeurs sont nues (« 3:50–4:00 /km », « max 5:15 /km », « 171–181 bpm »), sans titre ni étiquette, leur sens
+entier dit au lecteur d’écran ; les lignes « À la sensation… » ne sont plus que dans le flux calendrier ; sans
+aucune donnée, le lien « Confirme ta FC max ». **Changé le 24 novembre
 2026** (propriétaire : « Retire effort vif parler devient impossible on veut de vrai cible ») : la phrase était dite
 d’abord, la cible la précisait. **Quand les données ne suffisent pas, aucun chiffre n’est affiché** : jamais
 d’allure ni de FC par défaut.
@@ -617,9 +622,9 @@ le calendrier dit pourquoi une semaine est allégée, même après coup.
 Demande du propriétaire, 21 novembre 2026 : « Prendre en compte aussi la VFC, le repos, ajuster en fonction de la
 forme ».
 
-**Une option, explicite et séparée.** Dans les options de Coaching, un interrupteur « Adapter à ma forme » (une
-ligne courte ; derrière « En savoir plus », le texte entier : VFC, sommeil, FC de repos, et que la personne qui suit
-le plan ne voit jamais pourquoi), **éteint par défaut**. Il n’est proposé que si l’accord sur les données de santé est donné
+**Une option, explicite et séparée.** Dans les options de Coaching, un interrupteur « Adapter à ma forme », seul
+(depuis le 26 novembre 2026, ce qu’il lit — VFC, sommeil, FC de repos — et que la personne qui suit le plan ne voit
+jamais pourquoi sont dits dans « Comment ça marche »), **éteint par défaut**. Il n’est proposé que si l’accord sur les données de santé est donné
 (`health_consent.given`) et que Santé a un indice (un sur les 7 derniers jours : `sante.has_index`, une réponse oui
 ou non, aucune valeur lue). L’allumer enregistre quand (`coaching_plans.form_on_at`). **Éteint, rien dans Coaching
 ne lit de donnée de santé** : ni la page, ni un toucher, ni la page du coach, ni les tâches planifiées.
@@ -949,26 +954,29 @@ posait la question (il n’y en a pas en production) se lit comme une lecture.
 la sortie y est demandé, une fois : le ticket du jour ne le redemande pas). Une sortie à la fois, la plus récente
 d’abord (devant un débrief plus ancien ; un lien `?d=…#debrief` vers le jour d’un débrief garde ce débrief). Pour
 l’athlète seulement : la personne qui suit le plan ne voit jamais la carte, seulement les séances qui en résultent,
-avec leur ligne. Ce qu’elle dit, en une ou deux phrases avec les chiffres :
+avec leur ligne. Ce qu’elle dit (26 novembre 2026 : « supprime le max de texte ») : **une phrase**, ce qui s’est
+passé et comment c’est lu, et **une seconde, courte, seulement quand le plan a changé quelque chose** :
 
 | Cas | La carte |
 |---|---|
-| Séance dure, une séance changée | « Mercredi, tu as couru 1h35 (16,5 km) au lieu du fartlek de 45 min : comptée comme une séance dure. » puis « Ta séance de jeudi devient une récup de 45 min ; le reste ne bouge pas. » (« … passe à vendredi », « … devient un footing de 45 min », « … garde moins de répétitions ») |
-| Séance dure, rien d’autre | « … : comptée comme une séance dure. » puis « Le reste de la semaine ne bouge pas. » |
-| Séance dure, une habitude | « … : comptée comme une séance dure. » puis « Tu fais une séance dure presque tous les mercredis : le plan la garde ce jour-là chaque semaine et s’écrit autour. » |
-| Séance dure, cas (b) | « Mardi, tu as couru 55 min (8,2 km), plus soutenu que le footing prévu : comptée comme une séance dure. » |
-| Séance dure, cas (d) | « Mercredi, tu as couru 50 min (7,5 km) : rien n’était prévu. Comptée comme une séance dure. » |
-| Tranquille, séance reportée | « Mardi, tu as couru 1h10 (11 km) tranquille au lieu de tes intervalles : ils passent à jeudi. » (« ton fartlek : il passe », « tes côtes courtes : elles passent », « ta séance au seuil : elle passe ») |
+| Séance dure, une séance changée | « Mercredi, 1h35 au lieu du fartlek de 45 min : comptée comme une séance dure. » puis « Jeudi devient une récup. » (« La séance de jeudi passe à vendredi. », « Jeudi devient un footing. », « Jeudi garde moins de répétitions. ») |
+| Séance dure, rien d’autre | « … : comptée comme une séance dure. », seule |
+| Séance dure, une habitude | « … : comptée comme une séance dure. » puis « Le plan garde une séance dure chaque mercredi. » |
+| Séance dure, cas (b) | « Mardi, 55 min, plus soutenu que le footing prévu : comptée comme une séance dure. » |
+| Séance dure, cas (d) | « Mercredi, 50 min sans séance prévue : comptée comme une séance dure. » |
+| Tranquille, séance reportée | « Mardi, 1h10 tranquille au lieu de tes intervalles : ils passent à jeudi. » (« ton fartlek : il passe », « tes côtes courtes : elles passent », « ta séance au seuil : elle passe ») |
 | Tranquille, sans jour possible | « … tranquille au lieu de tes intervalles : aucun autre jour ne peut les accueillir cette semaine. » |
-| Tranquille, rien d’autre | « Mercredi, tu as couru 1h35 (16,5 km) au lieu du footing de 55 min : comptée comme une sortie tranquille ; rien d’autre ne change. » ; un jour sans séance : « Mercredi, tu as couru 40 min (6,6 km) : rien n’était prévu. Comptée comme une sortie tranquille ; rien d’autre ne change. » |
+| Tranquille, rien d’autre | « Mercredi, 1h35 au lieu du footing de 55 min : comptée comme une sortie tranquille. » ; un jour sans séance : « Mercredi, 40 min sans séance prévue : comptée comme une sortie tranquille. » |
 
 Le jour se dit « Aujourd’hui », « Hier », le jour de la semaine, « Jeudi dernier » il y a sept jours ; la séance se
 nomme par son format (« du fartlek », « des intervalles », « des côtes courtes », « de la séance au seuil », « du
-footing », « de la sortie longue », « de ta séance fixe »). Puis, dans la même carte :
+footing », « de la sortie longue », « de ta séance fixe »). Les kilomètres ne sont plus dits (le ticket et
+l’activité les portent). Puis, dans la même carte :
 
 - **le ressenti** habituel en cinq niveaux, quand la sortie est portée par une séance faite (c’est le débrief de
   cette sortie : demandé une fois, jamais deux) — une sortie restée hors plan n’en a pas, comme avant ;
-- **un lien discret qui dit ce qu’il fait** : « C’était une sortie tranquille » (après une séance dure) ou « C’était
+- **un seul lien discret, « Corriger »**, qui déplie sur place les retours ci-dessous ;
+- **le retour qui dit ce qu’il fait** : « C’était une sortie tranquille » (après une séance dure) ou « C’était
   une séance dure » (après une sortie tranquille). Il remet exactement ce que la première lecture avait changé (les
   séances changées, la séance qui porte la sortie — son type, sa durée, son lien —, une séance fixe posée par
   l’habitude, le report) puis applique l’autre lecture, avec ses règles ; le ressenti déjà dit reste. Une
@@ -977,12 +985,12 @@ footing », « de la sortie longue », « de ta séance fixe »). Puis, dans la 
 - **la sortie discrète**, où elle existait : « Ce n’est pas cette séance » (cas a et b : la lecture est reprise, la
   sortie redevient hors plan, la séance « Pas faite », et rien n’est relu pour elle) ; « C’est ma séance de … » (cas
   d : la lecture est reprise, cette séance de la semaine va au jour de la sortie, la lecture suivante les lie) ;
-- **« Pas tous les mercredis »**, après la phrase de l’habitude seulement, dans la même rangée : la séance fixe
+- **« Pas tous les mercredis »**, après la phrase de l’habitude seulement, sous « Corriger » aussi : la séance fixe
   qu’elle a posée part, la semaine redevient ce que la lecture ponctuelle en faisait, et ce jour de la semaine n’est
   plus jamais posé tout seul (voir « La séance fixe ») ;
-- **« Fermer »**.
+- **« × »** dans le coin de la carte (nommé « Fermer »).
 
-**Quand il n’y a pas de carte.** Elle reste jusqu’à « Fermer » (ou la sortie plus vieille que 7 jours) tant qu’elle a
+**Quand il n’y a pas de carte.** Elle reste jusqu’à « × » (ou la sortie plus vieille que 7 jours) tant qu’elle a
 quelque chose à dire : une séance dure, une séance changée ou reportée, un report sans jour, une séance fixe posée
 par l’habitude, une lecture corrigée, une sortie restée hors plan (la carte est le seul endroit où sa
 lecture se corrige). Sinon — rien n’a changé — elle ne reste que tant que le ressenti manque ; une fois dit, plus de
@@ -993,7 +1001,8 @@ lendemain de la séance dure de mardi. », « Footing : la séance dure de mardi
 répétitions : la séance dure de mardi compte pour la semaine. », « Séance reportée de mercredi, lendemain de la
 séance dure de mardi. », « Séance déplacée de jeudi. » (la séance facile qui a pris l’autre jour), « Séance
 reportée de jeudi. » (une séance de qualité reportée après une sortie tranquille). Et la semaine qu’ils concernent,
-en cartouche sous sa rangée, comme « Mardi est plein : séance déplacée à vendredi. » : « Mercredi devient une
+en cartouche sous sa rangée (la plus récente seule : au plus une ligne de changement automatique par semaine),
+comme « Mardi est plein : séance déplacée à vendredi. » : « Mercredi devient une
 récup : c’est le lendemain de la séance dure de mardi. », « Mercredi est le lendemain de la séance dure de mardi :
 sa séance passe à jeudi. ». Les mêmes mots pour la personne qui suit le plan (« la séance dure », jamais « ta »).
 
@@ -1001,158 +1010,152 @@ sa séance passe à jeudi. ». Les mêmes mots pour la personne qui suit le plan
 mercredi, les côtes courtes du vendredi) : mardi, 1h35 de VMA en club au lieu du footing de 55 min, des tours pressés
 à chaque effort. À la lecture suivante, sans un toucher : la sortie est la séance dure du mardi ; les côtes du
 vendredi restent (ce ne sont pas des intervalles courts en vitesse, et le budget tient) ; le fartlek du mercredi, le
-lendemain, ne peut pas rester ni aller samedi (veille de la sortie longue) : une récup. La carte : « Aujourd’hui, tu
-as couru 1h35 (16,5 km) au lieu du footing de 55 min : comptée comme une séance dure. Ta séance de mercredi devient
-une récup de 45 min ; le reste ne bouge pas. », le ressenti, « C’était une sortie tranquille », « Ce n’est pas cette
-séance », « Fermer ». S’il fait une séance dure presque tous les mardis (3 des 8 semaines d’avant au moins, avec une
-sortie le mardi dans 5), le plan garde le mardi chaque semaine à la place de la récup du mercredi : « Tu fais une
-séance dure presque tous les mardis : le plan la garde ce jour-là chaque semaine et s’écrit autour. », et
-« Pas tous les mardis » dans la rangée.
+lendemain, ne peut pas rester ni aller samedi (veille de la sortie longue) : une récup. La carte : « Aujourd’hui,
+1h35 au lieu du footing de 55 min : comptée comme une séance dure. Mercredi devient une récup. », le ressenti,
+« Corriger » (« C’était une sortie tranquille », « Ce n’est pas cette séance »), « × ». S’il fait une séance dure
+presque tous les mardis (3 des 8 semaines d’avant au moins, avec une sortie le mardi dans 5), le plan garde le mardi
+chaque semaine à la place de la récup du mercredi : « Le plan garde une séance dure chaque mardi. », et « Pas tous
+les mardis » sous « Corriger ».
 
 ## Les écrans
 
 Demandes du propriétaire, 22 novembre 2026 : d’abord « qu’est-ce que je fais aujourd’hui », une action principale par
 séance, le reste discret, les outils repliés ; puis « le centre de l’application doit être un calendrier ». Le
-23 novembre, la page en grille avec une liste de réglages dessous était « pas dingue » ; une maquette touchable lui a
-été montrée : « La maquette est top ». **La page suit la maquette** : la route vers la course, la semaine en
-tableau, le jour en ticket, les options dans une feuille.
+23 novembre, une maquette touchable : « La maquette est top » — la route vers la course, la semaine en tableau, le
+jour en ticket, les options dans une feuille. Le 26 novembre, après plusieurs tours (« pas user friendly, on ne sait
+pas où cliquer et quoi faire ») : **« Repars de 0 supprime le max de texte et bouton pour la gui si pas utile »**.
+La règle depuis : **un mot reste seulement si l’enlever empêcherait d’agir ou de comprendre ce que le plan a fait** ;
+une commande reste seulement si son action n’existe nulle part ailleurs, et alors un toucher plus loin (« ⋯ ») plutôt
+qu’en vue. Ce qui quitte un écran est dit dans « Comment ça marche », en une phrase. Aucune règle du plan n’a changé.
+Tout ce qui porte un nom accessible le garde : une commande sans texte a son `aria-label`, une valeur nue garde en
+`sr-only` son sens entier.
 
 **`/coaching`, de haut en bas** (`partials/coaching_main.html`, la partie remplacée à chaque toucher, puis
 `coaching.html` autour).
 
-1. **L’en-tête** : « Coaching » (« bêta », petit) et **un bouton rond** à droite qui ouvre les options (l’athlète
-   seul).
-2. **La route vers la course** (`coaching_view.road`) :
-   - son titre : « J‑54 » en grand, la course et son temps à côté (« Objectif 5h00 » ou « Estimation 7h10 », une
-     fois, lié à la page de la course ; « Environ 55 min » sans page). Sans course, l’intention à la place du compte
-     à rebours : « Progresser » « sans course », « Garder la forme » ; une course passée : « Course passée » ;
-   - **chaque semaine du plan est une barre**, haute comme le temps qu’elle prévoit (contre la plus grosse semaine du
-     plan), teintée par sa phase (base : la couleur du footing, spécifique : celle des séances dures, affûtage : celle
-     de la sortie longue), la semaine en cours à l’encre, la semaine de la course pleine, à l’encre, un point dessus ;
-     les phases nommées dessous, chacune une fois. Les semaines passées du plan sont des barres aussi ; 30 barres au
-     plus (`ROAD_WEEKS`), les premières semaines cèdent la place, jamais la semaine en cours ;
-   - **chaque barre est l’adresse de sa semaine** (`?w=<lundi>`, `…/calendar?w=…` par htmx). Un doigt ou une souris
-     **la balaie** : la barre sous le doigt s’allume et la route dit sa semaine (ses dates, son temps prévu, sa phase,
-     les mots du serveur) ; **la semaine se charge une seule fois, au lâcher** (`coaching-calendar.js`). Au clavier :
-     une seule barre dans l’ordre de tabulation (celle affichée), les flèches, Début et Fin la parcourent, Entrée
-     ouvre la semaine. Sans JavaScript ce sont des liens ;
-   - « Semaine 4 sur 12 » : la semaine affichée dans le plan ;
-   - pour l’athlète seulement, la ligne de son niveau et sa raison (« Tu débutes : … »), la ligne de deux jours
-     voisins, et la ligne d’une course perdue.
-3. **Le débrief** (`#debrief`), seulement quand une séance faite attend son ressenti, dans une carte teintée :
-   « **Ta sortie de mardi est arrivée.** C’était comment ? » (« Ta séance d’aujourd’hui est faite. … » pour une
-   coche à la main), ce qu’elle était et les chiffres de l’activité, puis **cinq boutons ronds numérotés** et leurs
-   mots (de la couleur du facile à celle du dur), **un toucher**, enregistré sur place (la page reste sur la même
-   semaine et le même jour). Une seule question à la fois : celle du jour demandé, sinon la plus récente ; « Puis 2
-   autres à débriefer. » quand il y en a d’autres. Une séance faite est demandée pendant `DEBRIEF_DAYS` = 7 jours
-   (H). Le jour garde une **pastille** près de son numéro tant que la réponse manque. Une sortie qui ne correspond à
-   aucune séance n’est rien à débriefer.
-   - **Le lien** `/coaching?d=2026-11-24#debrief` ouvre la page sur ce jour, la question en haut ; une fois répondue,
-     le même lien arrive sur le jour.
-   - **Pas de notification envoyée d’ici** (c’est un autre chantier) : `coaching_view.page` donne `waiting`, le
-     nombre de séances qui attendent leur débrief, et `services/coaching.awaiting_debrief` la liste, la plus récente
-     d’abord.
-   - **À sa place, l’avis d’une sortie qui n’est pas la séance prévue** (voir « Une sortie qui n’est pas la séance
-     prévue ») : la même carte teintée, un groupe titré (`role="group"`, son titre est la première phrase, en
-     gras : ce qui s’est passé et la lecture ; la seconde, dessous, ce que le plan a changé). Aucune question,
-     aucun bouton à toucher pour que le plan se mette à jour ; quand le plan vient de garder le jour d’une habitude,
-     la seconde phrase le dit (« Tu fais une séance dure presque tous les mercredis : … »). Puis le ressenti et une
-     rangée de liens discrets de 44 px : la correction (soulignée, ses mots disent ce qu’elle fait), « Pas tous les
-     mercredis » après la phrase de l’habitude, « Fermer », « Ce n’est pas cette séance » ou « C’est ma séance
-     de … ». Après la correction ou « Pas tous les mercredis », le focus va au titre de l’avis, qui dit la nouvelle lecture
-     (comme la consigne de « Déplacer ») ; le ressenti garde son propre focus. Sans JavaScript, chaque lien est un
-     formulaire qui revient à la page.
-4. **La semaine en tableau** — la semaine affichée, ses sept jours en colonnes :
-   - son titre (« Cette semaine », « Semaine prochaine », « Semaine dernière » ou ses dates), « 1h17 sur 2h55 » fait
-     sur prévu et la phase, une fine barre de progression ; ‹ › font glisser d’une semaine, « Aujourd’hui » ramène
-     quand on est ailleurs ;
-   - **chaque colonne se lit sans légende** : le jour, son numéro (aujourd’hui sur un disque de l’accent), une
-     grande case où **chaque séance est une tuile haute comme sa durée** (`tile_height` : la même échelle pour toutes
-     les semaines du plan, 30 min et moins au plus bas, la plus longue séance du plan au plus haut — 1 h 30 au
-     moins, `tile_top` ; la course remplit sa case) et **de la
-     couleur de son type** ; **teintée avec un contour** tant qu’elle est prévue, **pleine avec une coche** une fois
-     faite, **en pointillés** quand elle est manquée ; une sortie hors plan est une tuile grise ; la tuile porte sa
-     durée courte (« 40′ », « 1h05 »), un mot dessous (« Footing », « Longue », « Côtes », « Club »…). L’heure du
-     créneau et « Journée chargée » sont sur le ticket, plus dans la case ; le lecteur d’écran a le nom complet du
-     jour (« mardi 17 novembre : Footing 35 minutes, faite, à débriefer ») ;
-   - **la semaine suivante en rangée compacte** dessous : sept petites cases, ses petites tuiles (des cibles où
-     poser une séance, et une séance s’en soulève aussi) ; un toucher ouvre ce jour, dans sa semaine. La dernière
-     semaine du plan n’a pas de rangée ;
-   - **les lignes de chaque semaine gardent leur place** sous sa rangée, en cartouches : « Semaine plus légère, pour
-     assimiler. », une semaine allégée et sa raison, « Mardi est plein : séance déplacée à vendredi. », ce qu’une
-     séance déclarée dure a changé (« Mercredi devient une récup : c’est le lendemain de la séance dure de
-     mardi. »), deux jours durs de suite (en couleur d’avertissement), la ligne de la séance fixe la semaine de la
-     course ;
-   - **le tableau se manipule à la main** (voir « Déplacer » ci-dessous) ; une ligne le dit tant qu’on ne l’a pas
-     fait une fois : « Maintiens une séance pour la déplacer ».
-   - **« Mois »** a disparu : la route dit ce que le mois montrait. L’adresse `?v=mois` répond toujours, par la
-     semaine du jour demandé.
-5. **Le jour en ticket** — aujourd’hui à l’ouverture, même un jour sans séance ; son titre (« Aujourd’hui »,
-   « Hier », « Demain », sinon le jour) et sa date :
-   - **un ticket par séance**, un bloc arrondi de sa couleur : le titre, le statut (« Fait », « Fait autrement »,
-     « Pas faite »), **la durée en très grand** (le temps couru une fois faite, « prévu 45 min » à côté s’il
-     diffère), **l’effort dessiné** (le profil de la séance structurée en silhouette, `viz_profile`, une jauge de
-     quatre marches pour une séance continue), la structure en mots ; le texte du ticket se lit à 4,5:1 au moins sur
-     sa couleur dans les deux thèmes (les séances dures prennent `--pf-warn` en fond, `--pf-warn-mark` ne portant le
-     blanc qu’à 3,7:1) ; une séance manquée est un bloc pâle en pointillés ;
-   - **la cible**, dans le bloc, sous l’effort dessiné et la structure (`coaching_view.target`, voir
-     « L’intensité ») : « Cible » (« Cible · pendant les efforts » pour une séance structurée), puis une ou deux
-     valeurs dans le grand type tabulaire, chacune avec son petit mot au-dessus — « Allure, sur le plat » 4:40–4:50
-     /km, « Pas plus vite que, sur le plat » 5:30 /km, « Cardio » 149–167 bpm, « Cardio en fin d’effort » 168–177
-     bpm, « Allure de course » 5:00 /km ; pour les efforts de moins de 3 min, pas de cardio mais une ligne — « Cardio :
-     à la sensation, l’effort est trop court. » sous l’allure sur le plat, « À la sensation : l’effort est trop court
-     pour le cardio. » seule en côte ou sans allure connue ; sans FC maximale ni allure, une ligne discrète, liée à Réglages : « Confirme
-     ta FC max pour voir ta zone » ; enfin, discret, « D’où viennent ces chiffres ? », qui ouvre « Comment ça
-     marche » dans la feuille. Seulement tant que la séance est à faire (et pour une séance manquée) : une fois
-     faite, le ticket dit ce qui a été couru. Texte à l’encre du ticket (4,5:1 sur chaque couleur), cibles de
-     44 px ; les valeurs passent à la ligne plutôt que de déborder à 320 px et à 200 % de texte ;
-   - sous lui, pour une séance qu’une réponse a changée, pourquoi (« Récup : lendemain de la séance dure de
-     mardi. »), lu aussi par la personne qui suit le plan ;
-   - sous lui : la consigne (le test de la parole) **seulement quand la cible n’a aucun chiffre** (avec une allure ou
-     une FC, la cible suffit ; la personne qui suit le plan suit la même règle, son allure compte), le créneau et « Autre créneau » (ou « Journée chargée »), les lignes
-     de la forme (« Séance allégée… », « Alléger aujourd’hui »), l’activité liée et son lien, « 3h17 au lieu de
-     45 min », la durée réelle d’une coche à la main, le ressenti (les mêmes boutons ronds ; demandé en haut tant
-     qu’il manque), la note et le commentaire, signés ;
-   - **une action principale, « C’est fait »**, « Pas faite » discret à côté ; sous eux, discrets : « Déplacer »
-     (« Reporter »), « Modifier », « Annuler », « Ce n’est pas cette séance », la note. Une séance à venir n’a pas
-     d’action principale ;
-   - la course : son ticket à l’encre, son nom en grand, le lien « Voir le plan de course » ; la séance fixe : son
-     nom et « Son contenu est le tien. » ;
-   - une sortie hors plan : « Hors plan · Footing avec Léa » et ses chiffres, rien à répondre ; cette semaine, un
-     bouton discret propose la séance qu’elle a pu être (« C’est ma séance de jeudi ») ;
-   - **un jour sans séance** : un bloc pâle « Repos » (« Rien de prévu » quand une sortie hors plan est là) et la
-     prochaine séance en ligne touchable.
-6. **Les options** : le bouton rond ouvre **une feuille** venue du bas (`coaching-sheet.js`, un `<dialog>`
-   modal) : **« Adapter à ma forme »** en interrupteur avec une ligne courte (le texte d’accord derrière « En savoir
-   plus »), puis une grille de tuiles — **« Ma séance fixe »** (« Une séance qui revient chaque semaine », ou la
-   séance réglée : « Mercredi · 1h35 · Séance fixe »), **« Dans mon calendrier »**, **« Mon agenda »**,
-   **« Partager mon plan »**, **« Suivre un plan »** (la liste des plans suivis), **« Comment ça marche »** (les
-   règles ; ses deuxième et troisième phrases répondent à « C’est recalculé automatiquement ? » : une sortie qui
-   n’est pas la séance prévue, le plan la lit tout seul et se met à jour, et un lien permet de le corriger ; la
-   quatrième : une séance dure qui revient le même jour la plupart des semaines, le plan la garde ce jour-là et
-   s’écrit autour, un lien l’annule ; puis ce que le plan recalcule seul — à chaque ouverture de la page
-   et chaque nuit, les séances à venir que personne n’a touchées — et ce qu’il ne touche jamais) — et en bas « Refaire le plan » et, petit et rouge, « Arrêter le coaching ». Une tuile ouvre son outil
-   dans la feuille, « ‹ Options » revient aux tuiles. Le focus reste dans la feuille (Tab tourne), Échap et un
-   toucher sur le fond la ferment et rendent le focus au bouton rond ; la page derrière ne défile pas ; la feuille
-   défile en elle-même quand un outil est long ; une marge pour la barre du bas de l’iPhone.
-   - **« Dans mon calendrier »** : trois boutons d’un toucher — « Calendrier Apple », « Google Agenda », « Outlook »
-     (« Le calendrier synchronisé ») —, puis « Copier l’adresse » et « Régénérer le lien », discrets ; aucune
-     adresse affichée. **« Mon agenda »** : « Connecter Google Agenda », « Connecter Outlook » (quand configurés) et,
-     dans l’app iPhone qui le sait, « Calendrier de l’iPhone » ; ailleurs une ligne, « iCloud se relie depuis l’app
-     iPhone. » ; la phrase « PaceForge lit seulement quand tu es occupé. Jamais les titres. » ; les sources (les
-     adresses collées avant le 24 novembre 2026 comprises) avec leur état, « Reconnecter » ou « Ouvrir les
-     réglages », « Retirer » ; « Actualiser » ; « Quand peux-tu courir ? ». Plus aucun champ d’adresse. Boutons de
-     44 px, rien ne déborde à 320 px ni à 200 % de texte, 4,5:1 dans les deux thèmes
-     (`tests/browser/coaching-visuals.cjs`, site, app à jour, app plus ancienne).
-   - **Un formulaire d’un outil revient dans la feuille**, ouverte sur cet outil, avec son message :
-     `/coaching?outil=agenda#coach-tool-agenda`, `?outil=fixe#coach-tool-fixed`, `?outil=forme#coach-form`,
-     `?outil=calendrier#coach-tool-feed`, `?outil=partage#coach-tool-share`, `?outil=methode#coach-tool-how` ; une
-     réponse htmx d’un outil (un code, un accès retiré, un nouveau lien) le garde ouvert.
-   - **Sans JavaScript**, les options sont une section à la fin de la page : l’interrupteur, les tuiles (chacune le
-     lien de son outil), chaque outil à la suite, « Refaire le plan », « Arrêter le coaching » ; le bouton rond et
-     chaque adresse `?outil=…#…` y mènent.
+1. **L’en-tête** : « Coaching » et **un bouton rond** à droite (« Options du plan ») qui ouvre les options (l’athlète
+   seul). Plus de badge « bêta ».
+2. **La route** (`coaching_view.road`, `header`) :
+   - **une ligne** : « J‑54 » en grand, puis « · Trail des Crêtes · 5h00 ». Le temps est celui sur lequel le plan
+     tourne, dit une fois, lien de la page de la course ; d’où il vient (« Objectif », « Estimation », « Environ »)
+     reste dit au lecteur d’écran. Sans course, le mot de l’intention seul : « Progresser », « Garder la forme » ;
+     une course passée : « Course passée » ;
+   - **chaque semaine du plan est une barre**, haute comme le temps qu’elle prévoit, teintée par sa phase, la semaine
+     en cours à l’encre, celle de la course pleine avec un point ; 30 barres au plus (`ROAD_WEEKS`), les premières
+     semaines cèdent la place, jamais la semaine en cours ;
+   - **chaque barre est l’adresse de sa semaine**. Un doigt ou une souris **la balaie** : la barre sous le doigt
+     s’allume et sa semaine (ses dates, son temps prévu, sa phase) s’écrit par-dessus la fin de la ligne, le temps du
+     geste seulement ; **la semaine se charge une fois, au lâcher** (`coaching-calendar.js`). Au clavier : une barre
+     dans l’ordre de tabulation, les flèches, Début et Fin, Entrée. Sans JavaScript ce sont des liens ;
+   - **retirés** : « Semaine 4 sur 12 », les noms des phases sous les barres, la ligne du niveau, la ligne de deux
+     jours voisins. **Reste une seule alerte** : la course perdue (« Trail des Crêtes est derrière toi : dès lundi,
+     le plan continue sans course. »).
+3. **Une carte en haut** (`#debrief`), une à la fois — l’avis d’une sortie, sinon le débrief :
+   - **l’avis d’une sortie qui n’est pas la séance prévue** (voir « Une sortie qui n’est pas la séance prévue »),
+     un groupe titré par **une phrase** — ce qui s’est passé et comment c’est lu : « Hier, 1h35 au lieu du fartlek
+     de 45 min : comptée comme une séance dure. » — et **une seconde, courte, seulement quand le plan a changé
+     quelque chose** : « Jeudi devient une récup. », « La séance de mercredi passe à jeudi. », « Le plan garde une
+     séance dure chaque mercredi. » ; puis les cinq boutons du ressenti (une séance la porte), **un seul lien
+     discret, « Corriger »**, qui déplie sur place les retours qui existent (« C’était une sortie tranquille » ou
+     « C’était une séance dure », « Pas tous les mercredis », « Ce n’est pas cette séance » ou « C’est ma séance
+     de … ») — un `<details>`, sans JavaScript aussi —, et **« × » dans le coin** (44 px, nommé « Fermer »). Après
+     une correction, le focus va au titre de l’avis, qui dit la nouvelle lecture ;
+   - **le débrief** : une ligne, « **Mardi · footing 42 min.** C’était comment ? » (le temps couru), et **cinq
+     boutons ronds numérotés**, un toucher, enregistré sur place. Des mots sous 1 et 5 seulement (« Très facile »,
+     « Très dur ») ; chaque bouton garde son mot pour le lecteur d’écran. Une question à la fois : celle du jour
+     demandé, sinon la plus récente ; les autres gardent leur pastille sur leur jour (« Puis 2 autres à débriefer. »
+     est retiré). Une séance faite est demandée pendant `DEBRIEF_DAYS` = 7 jours (H). Le lien
+     `/coaching?d=2026-11-24#debrief` ouvre la page sur ce jour, la question en haut. `coaching_view.page` donne
+     `waiting` (aucune notification n’est envoyée d’ici).
+4. **La semaine en tableau** :
+   - « Cette semaine » (« Semaine prochaine », « Semaine dernière » ou ses dates) avec ‹ ›, « Aujourd’hui » seulement
+     quand on est ailleurs ; **une ligne**, « 2h27 sur 5h00 · Spécifique », et sa fine barre ;
+   - **le tableau, inchangé** : sept colonnes, chaque séance une tuile haute comme sa durée, de la couleur de son
+     type, teintée et cernée tant qu’elle est prévue, pleine avec une coche une fois faite, en pointillés manquée,
+     grise hors plan, sa durée courte dessus, un mot dessous ; le lecteur d’écran a le nom complet de chaque jour ;
+   - dessous, **au plus une ligne sur un changement automatique** : la plus récente qui concerne la semaine montrée —
+     ce qu’une sortie déclarée dure a changé, sinon un jour plein de l’agenda (« Mardi est plein : séance déplacée à
+     vendredi. »), sinon la semaine allégée et sa raison, sinon la séance fixe la semaine de la course. Les autres
+     restent dites sur le ticket de leur séance. Deux jours durs de suite qu’un déplacement a faits restent dits, en
+     couleur d’avertissement (« Samedi et dimanche : deux jours durs de suite. ») ; « Tu peux courir la séance en
+     footing » est dans « Comment ça marche » ;
+   - « Semaine prochaine · 5h30 » et sa rangée compacte (chaque case un lien, une cible où poser une séance) ;
+   - **retirés** : « Maintiens une séance pour la déplacer » (le geste reste, dit dans « Comment ça marche » ;
+     « Déplacer » reste dans « ⋯ »), « Semaine plus légère, pour assimiler. » (une semaine sur quatre : « Comment ça
+     marche »), les lignes de la semaine suivante.
+5. **Le jour** — aujourd’hui à l’ouverture, même un jour sans séance ; son titre, « Aujourd’hui », sinon
+   « Vendredi 27 » (« Vendredi 27 décembre » au-delà de trois semaines), la date une fois :
+   - **un ticket par séance**, un bloc de sa couleur : le nom, le statut une fois faite ou manquée (« Fait »,
+     « Fait autrement », « Pas faite »), **la durée en très grand** (le temps couru une fois faite, « prévu 45 min »
+     à côté s’il diffère), **l’effort dessiné**, la phrase de structure d’une séance structurée ; texte à 4,5:1 au
+     moins sur sa couleur dans les deux thèmes ;
+   - **la cible en valeurs nues**, dans le grand type tabulaire : « 3:50–4:00 /km », « 171–181 bpm », le plafond du
+     facile « max 5:15 /km », l’allure de course « 4:30 /km ». **Plus de titre « Cible », plus d’étiquettes**
+     (« Allure, sur le plat », « Cardio en fin d’effort », « pendant les efforts »), plus de « D’où viennent ces
+     chiffres ? » : le groupe s’appelle « Cible » (« Cible pendant les efforts ») pour le lecteur d’écran, et chaque
+     valeur garde son sens entier en `sr-only` (« Pas plus vite que, sur le plat : 5 min 15 au km », « Cardio en fin
+     d’effort : 171 à 181 bpm ») ; l’explication est dans « Comment ça marche ». Les efforts courts sans chiffre :
+     rien (la phrase « À la sensation… » reste celle du calendrier synchronisé). Sans aucune donnée : le seul lien
+     « Confirme ta FC max ». La phrase du test de la parole sous le ticket garde sa règle : seulement quand la cible
+     n’a aucun chiffre. Seulement tant que la séance est à faire (ou manquée) ;
+   - sous lui, **l’heure du créneau seule** (« 12 h 00 – 12 h 30 ») : la toucher demande un autre créneau libre
+     (son nom accessible : « 12 h 00 – 12 h 30 : demander un autre créneau ») ; « Journée chargée » quand l’agenda
+     n’a rien trouvé ;
+   - **au plus une ligne sur ce qui a changé pour cette séance** : la forme (« Séance allégée : récupération basse
+     ce matin. La séance prévue passe à vendredi. », lien de Santé ; à la personne qui suit le plan « Séance adaptée
+     ce matin »), sinon une réponse à une sortie (« Récup : lendemain de la séance dure de mardi. »), sinon l’agenda
+     (« Séance déplacée de mardi : journée pleine. » ; à la personne qui suit le plan « Séance déplacée de mardi. »),
+     sinon qui l’a modifiée (« Modifiée par Florent », discret) ; « Alléger aujourd’hui » reste une action, un matin
+     bas, quand le plan ne change pas la séance seul ;
+   - **une action principale, « C’est fait », et un bouton rond « ⋯ »** (nommé « Autres actions ») qui ouvre un petit
+     menu sous eux, sur place, avec tout ce qui existe pour cette séance et cet état : « Pas faite », « Déplacer » ou
+     « Reporter », « Modifier » (et, pour la personne qui suit le plan, « Supprimer la séance » dedans), « Ce n’est
+     pas cette séance », « Annuler », « Changer mon ressenti » (une fois dit), « Ajouter une note » ou « Modifier ma
+     note », « Commenter ». Rien n’est perdu, c’est un toucher plus loin. **Au toucher et au clavier** : il s’ouvre
+     sur Entrée ou Espace, le focus va à sa première action ; Échap le ferme et rend le focus à « ⋯ » ; un toucher
+     ailleurs le ferme ; après une action, le focus revient à « ⋯ ». **Sans JavaScript**, « ⋯ » n’est pas dessiné et
+     les mêmes actions sont une liste sous le ticket (le script de la page ajoute la classe qui les replie). Une
+     séance à venir n’a pas « C’est fait » : « ⋯ » seul ;
+   - **une séance faite** : le statut, ce qui a été couru (l’activité liée et son lien, « 3h17 au lieu de 45 min »,
+     la durée réelle d’une coche à la main), le ressenti tant qu’il n’est pas dit, la note et le commentaire s’il y
+     en a ; le reste dans « ⋯ » ;
+   - la course : son ticket à l’encre, son nom en grand, « Voir le plan de course » ;
+   - une sortie hors plan : « Hors plan · Footing avec Léa » et ses chiffres ; cette semaine, « C’est ma séance de
+     jeudi » ;
+   - **un jour sans séance** : « Repos » (« Rien de prévu » quand une sortie hors plan est là) et **une rangée**,
+     « Demain · Côtes 45 min » (sinon « Samedi 28 · … »), qui ouvre ce jour ; « Prochaine séance » reste dit au
+     lecteur d’écran.
+6. **Les options** : le bouton rond ouvre **une feuille** venue du bas (`coaching-sheet.js`, un `<dialog>` modal) :
+   le titre, **« Adapter à ma forme »** en interrupteur seul (sa phrase, ce qu’il lit — VFC, sommeil, FC de repos — et
+   que la personne qui suit le plan ne voit jamais pourquoi sont dans « Comment ça marche »), **six tuiles à leur
+   seul titre** — « Ma séance fixe », « Dans mon calendrier », « Mon agenda », « Partager mon plan », « Suivre un
+   plan », « Comment ça marche » —, « Refaire le plan » et, petit et rouge, « Arrêter le coaching ». Une tuile ouvre
+   son outil dans la feuille, « ‹ Options » revient aux tuiles. Le focus reste dans la feuille (Tab tourne), Échap et
+   un toucher sur le fond la ferment et rendent le focus au bouton rond ; la page derrière ne défile pas.
+   - **Dans chaque outil, une phrase courte au plus au-dessus des commandes**, et toutes les phrases qui disent ce
+     qui est lu ou partagé : « Ma séance fixe » (« Une séance qui revient chaque semaine », ou la séance réglée ;
+     l’alerte quand elle touche la sortie longue ; « Lu sur tes mercredis. » sous la durée proposée) ; « Dans mon
+     calendrier » (trois boutons d’un toucher, « Copier l’adresse », « Régénérer le lien » ; aucune adresse
+     affichée) ; « Mon agenda » (« Des séances hors réunions et rendez-vous », les boutons de connexion, **« PaceForge
+     lit seulement quand tu es occupé. Jamais les titres. »**, la ligne iCloud, les sources, « Actualiser », « Quand
+     peux-tu courir ? ») ; « Partager mon plan » (**« La personne à qui tu donnes le code voit ton plan et peut
+     l’ajuster ; jamais tes données de santé. »**, le code, « Valable 7 jours, une seule fois. ») ; « Comment ça
+     marche » complet.
+   - **Un formulaire d’un outil revient dans la feuille**, ouverte sur cet outil (`/coaching?outil=agenda#…`, etc.).
+   - **Sans JavaScript**, les options sont une section à la fin de la page ; le bouton rond et chaque adresse
+     `?outil=…#…` y mènent.
+7. **L’écran de départ** (`coaching_onboarding.html`) : « Coaching », les trois intentions à leur seul mot et leur
+   icône (ce que chacune fait est dans « Comment ça marche »), la course, la première semaine dessinée, les jours
+   (la ligne sous eux ne parle que quand il en manque ou en trop), « J’ai déjà une séance chaque semaine », ne restent
+   que les lignes sur ce que les réponses entraînent et qu’on peut vouloir changer (la séance fixe contre la sortie
+   longue, deux jours voisins, une course trop proche pour la sortie longue), la note d’un jour resté libre, la
+   légende, la sortie longue, le volume, « Créer mon plan », la première séance. **Retirés** : « Ton plan est prêt.
+   Ajuste-le si tu veux. », la phrase de chaque intention, la ligne du niveau, « pour finir » / « pour performer »,
+   les deux phrases de deux jours par semaine, « … est ta séance de qualité de la semaine », « Calculé sur tes 4
+   dernières semaines de course. », « Touche un jour pour l’ajouter ou l’enlever. », « Sans fichier GPX : un nom, une
+   date, une distance ». « Refaire le plan » garde « Tes séances faites restent. ».
 
-Sur un écran large (900 px et plus), la route et le débrief en travers, puis le tableau et le ticket côte à côte ; la
+Sur un écran large (900 px et plus), la route et la carte en travers, puis le tableau et le ticket côte à côte ; la
 feuille est un panneau centré.
 
 **Les mots.** La fonction et son onglet s’appellent « Coaching » ; l’onglet « Courses » garde son nom. **À
@@ -1168,14 +1171,14 @@ les routes et les tables gardent « coach » pour le rôle : la personne qui sui
 | « La personne qui suit ton plan ne voit jamais pourquoi. » (l’option « forme ») | L’athlète |
 | « la personne avec qui tu partages ton plan » : le rôle, dit en toutes lettres | La politique de confidentialité |
 
-- **« Déplacer »**, la chose la plus simple de la page : on ouvre le jour, on touche « Déplacer », puis le jour voulu.
+- **« Déplacer »**, la chose la plus simple de la page : on ouvre le jour, « ⋯ » › « Déplacer », puis le jour voulu.
   Une séance encore à faire va sur **n’importe quel jour à partir d’aujourd’hui** — pas seulement les jours donnés à
   la création du plan, cette semaine, la suivante ou plus loin (les flèches restent actives pendant qu’on choisit) —
   et y reste **épinglée** : une régénération ne la réécrit plus. Une séance manquée plus tôt cette semaine se
   « Reporte » de même (elle redevient prévue). Un jour passé de cette semaine qui porte une sortie hors plan est
   accepté aussi : la lecture suivante lie la sortie à la séance. Un jour qui porte déjà une séance prévue l’échange.
   **Deux jours durs de suite ne sont jamais refusés** : pendant le choix, un point marque les jours voisins d’une
-  autre séance dure (« tu peux le choisir quand même »), puis la semaine le dit (« Samedi et dimanche : deux jours
+  autre séance dure (« Un point marque un jour voisin d’une autre séance dure. »), puis la semaine le dit (« Samedi et dimanche : deux jours
   durs de suite. »). Le générateur, lui, n’en fait toujours jamais (« Jours durs » ci-dessus). Tout se fait au
   clavier : les jours du tableau et de la rangée suivante deviennent des boutons, la consigne prend le focus. La
   course ne se déplace pas.
@@ -1212,7 +1215,7 @@ les routes et les tables gardent « coach » pour le rôle : la personne qui sui
   l’élément touché. Sans JavaScript, les mêmes liens et formulaires renvoient à la page.
 - `/coaching/athletes` (« Plans suivis ») : la liste du coach (la barre de la semaine, les dernières séances avec statut et ressenti) et
   le champ du code. `/coaching/athletes/<id>` : **la même mise en page**, au prénom de l’athlète — la route (le
-  temps visé sans le lien de la page de course, ni la ligne du niveau), le tableau, le ticket — sans débrief ni
+  temps visé sans le lien de la page de course), le tableau, le ticket et son « ⋯ » — sans débrief ni
   pastille (le ressenti est à l’athlète), sans bouton rond ni feuille, avec ce qu’un coach peut faire : il ajoute, déplace, modifie, supprime des séances
   (épinglées, origine « coach ») et écrit un commentaire (« Commenter »). Il ne coche jamais une séance et n’a pas
   les options. Il voit le plan, les statuts, le ressenti (la même échelle, en lecture), les notes et le résumé de
