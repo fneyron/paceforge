@@ -801,8 +801,9 @@ async function sheet(page) {
       assert.equal(await page.locator('.pf-coach-day').count(), 14);
       await noOverflow(page, 'desktop');
       await shot(page, `athlete-1280${dark ? '-dark' : ''}`);
-      await page.locator('[id^="coach-more-"]').click();
       await page.locator('#coach-run-fix-btn').click();
+      await page.locator('[id^="coach-more-"]').click();
+      assert.equal(await page.locator('.pf-coach-menu').isVisible(), true, 'desktop: « ⋯ » opens');
       await shot(page, `athlete-1280-menu${dark ? '-dark' : ''}`);
       assert.deepEqual(page.errors, []);
       await page.close();
