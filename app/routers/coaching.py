@@ -35,7 +35,7 @@ from app.services import coaching_slots as cs
 from app.services import coaching_start as cst
 from app.services import coaching_view as cv
 from app.services import race_prep as rp
-from app.services.viz import d_long, d_short, fr_int, fr_num, hm
+from app.services.viz import d_short, fr_int, fr_num, hm
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -313,7 +313,7 @@ async def _preview(db: AsyncSession, user: User, c: co.Clock, *, goal: str | Non
         # days out of range are said by the line under the days (`silent`: not twice)
         return {"error": str(e), "silent": not 2 <= len(picked) <= 6, "label": "", "aria": str(e), "empty": None,
                 "cols": [{"wd": w, "bars": []} for w in WEEKDAYS], "legend": [], "first": None, "note": None,
-                "lines": [], "level": None, "long_day": _int(long_day), "long_days": [(d, WEEKDAYS_L[d]) for d in picked]}
+                "lines": [], "long_day": _int(long_day), "long_days": [(d, WEEKDAYS_L[d]) for d in picked]}
     level = None
     if intent is not None:  # the level the plan would read, from the same history (never asked)
         rows = await co.sessions_of(db, plan) if plan is not None else []
@@ -420,12 +420,9 @@ async def _fixed_tool(db: AsyncSession, plan: CoachingPlan, c: co.Clock, runs: l
 
 async def _tools(db: AsyncSession, scope: Scope, plan: CoachingPlan, code: str | None = None,
                  runs: list | None = None) -> dict:
-    # the form option: offered only with the health consent and an index in Santé; said « activé le … » once on
+    # the form option: offered only with the health consent and an index in Santé (a switch, nothing else)
     c = await co.clock(db, scope.athlete)
     offer = await co.form_offer(db, plan, scope.athlete, c)
-    if offer is not None and offer["since"] is not None:
-        since = offer["since"] if offer["since"].tzinfo else offer["since"].replace(tzinfo=timezone.utc)
-        offer = {**offer, "since": d_long(since.astimezone(c.zone).date())}
     return {"feed": feed_urls(plan), "coaches": [{"id": u.id, "name": u.firstname or "Quelqu’un"}
                                                  for u in await co.coaches_of(db, scope.athlete.id)], "code": code,
             "form": offer, "agenda": await _agenda(db, plan, c), "fixed": await _fixed_tool(db, plan, c, runs),
