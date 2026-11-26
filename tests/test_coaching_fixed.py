@@ -6,6 +6,8 @@ import itertools
 import json
 import re
 from datetime import date, timedelta
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
@@ -57,8 +59,8 @@ def test_the_owners_club_wednesday_week_by_week():
     for w in weeks[:-1]:
         club = _fixed(w)
         assert [(s.day.weekday(), s.minutes, s.kind) for s in club] == [(2, 75, cp.QUALITY)], w.monday
-        assert club[0].structure["name"] == "Séance club" and club[0].structure["text"].startswith(cp.FIXED_TEXT)
-        assert "bloc" not in json.dumps(club[0].structure), "no repetition written: its content is the club's"
+        assert club[0].structure["name"] == "Séance fixe" and club[0].structure["text"].startswith(cp.FIXED_TEXT)
+        assert "bloc" not in json.dumps(club[0].structure), "no repetition written: its content is the athlete's"
         # no hard session of the plan's on Tuesday or Thursday, beside the club's
         assert not [s for s in w.sessions if s.kind in cp.HARD and s.day.weekday() in (1, 3)], w.monday
         hard = sum(cp.hard_minutes(s.structure) for s in w.sessions)
@@ -143,7 +145,7 @@ def test_an_eased_week_keeps_the_club_session_with_its_line():
     eased = {(M0 + timedelta(weeks=1)).isoformat(): {"reason": "ressenti", "factor": cp.ADAPT_FACTOR}}
     w = cp.build(_owner(adaptations=eased), M0)[1]
     assert [s.structure["note"] for s in _fixed(w)] == [cp.FIXED_NOTE["light"]] and _own_quality(w) == []
-    assert cv.short_title(cp.QUALITY, _fixed(w)[0].structure) == "Club"
+    assert cv.short_title(cp.QUALITY, _fixed(w)[0].structure) == "Séance"
 
 
 # ── a plan without a fixed session: unchanged ───────────────────────────────
@@ -228,7 +230,8 @@ async def test_the_option_is_set_changed_and_removed_through_its_row(client, peo
     plan = await _plan(client, db_session, athlete)  # Tuesday, Thursday, Saturday, Sunday; a plan made before
     before = [(r.day, r.kind, r.minutes, r.structure) for r in await _rows(db_session, athlete)]
     page = (await client.get("/coaching")).text
-    assert 'id="coach-tool-fixed"' in page and "Ma séance fixe" in page and "Une séance de ton club" in page
+    assert 'id="coach-tool-fixed"' in page and "Ma séance fixe" in page and "Une séance qui revient chaque semaine" in page
+    assert "club" not in page.split('id="coach-tool-fixed"')[1].split("</section>")[0]
     assert [(r.day, r.kind, r.minutes, r.structure) for r in await _rows(db_session, athlete)] == before, \
         "a plan without a fixed session: nothing moves at its next reading"
     # a Tuesday to come that the athlete edited stays as it is
@@ -238,7 +241,7 @@ async def test_the_option_is_set_changed_and_removed_through_its_row(client, peo
     r = await client.post("/coaching/fixe", data={"fixed_day": "1", "fixed_minutes": "75", "fixed_name": ""})
     assert r.status_code == 303 and r.headers["location"] == "/coaching?outil=fixe#coach-tool-fixed"
     await db_session.refresh(plan)
-    assert plan.fixed == {"day": 1, "minutes": 75, "name": "Séance club"}
+    assert plan.fixed == {"day": 1, "minutes": 75, "name": "Séance fixe"}
     rows = await _rows(db_session, athlete)
     tuesdays = _on(rows, same_today, 1)
     club = [r for r in tuesdays if cp.is_fixed(r.structure)]
@@ -247,10 +250,10 @@ async def test_the_option_is_set_changed_and_removed_through_its_row(client, peo
     assert {r.day for r in tuesdays if not cp.is_fixed(r.structure)} == {edited.day}, "every other Tuesday to come"
     assert all(r.day >= same_today for r in rows if cp.is_fixed(r.structure)), "written from today on"
     page = (await client.get("/coaching?outil=fixe")).text
-    assert "Mardi · 1h15 · Séance club" in page and 'id="coach-fixed-remove"' in page
+    assert "Mardi · 1h15 · Séance fixe" in page and 'id="coach-fixed-remove"' in page
     assert '<section class="pf-coach-panel is-asked" id="coach-tool-fixed"' in page and 'data-open="fixed"' in page
     card = (await client.get(f"/coaching?d={club[0].day.isoformat()}")).text
-    assert ">Séance club<span class=\"sr-only\"> 1h15</span></h4>" in card and "Le contenu est celui de ton club." in card
+    assert ">Séance fixe<span class=\"sr-only\"> 1h15</span></h4>" in card and "Son contenu est le tien." in card
 
     # changed: a new duration and a name
     await client.post("/coaching/fixe", data={"fixed_day": "1", "fixed_minutes": "65", "fixed_name": "Piste"})
@@ -269,7 +272,8 @@ async def test_the_option_is_set_changed_and_removed_through_its_row(client, peo
     r = await client.post("/coaching/fixe/retirer")
     assert r.status_code == 303
     await db_session.refresh(plan)
-    assert plan.fixed is None
+    assert plan.fixed == {"declined": [1, 5]}, "moved off Tuesday, removed from Saturday: never set again by itself"
+    assert co.fixed_of(plan) is None
     assert not [r for r in await _rows(db_session, athlete) if cp.is_fixed(r.structure) and r.day >= same_today]
 
 
@@ -281,7 +285,7 @@ async def test_the_start_screen_line_previews_and_saves_the_fixed_session(client
     db_session.add_all([_run(athlete, m0 - timedelta(weeks=w) + timedelta(days=2), 70 + w, w) for w in range(1, 9)])
     await db_session.flush()
     page = (await client.get("/coaching")).text
-    assert "J’ai déjà une séance chaque semaine (club)" in page and 'name="fixed_asked"' in page
+    assert "J’ai déjà une séance chaque semaine</span>" in page and 'name="fixed_asked"' in page
     assert re.search(r'name="fixed_on" value="1" id="coach-fixed-on" data-fixed-toggle>', page), "closed, unticked"
     assert not re.search(r'name="fixed_day" value="\d"[^>]*checked', page), "no weekday guessed"
     assert 'value="2" id="coach-fixed-day-2" aria-label="mercredi" data-minutes="75" data-why="Lu sur tes ' \
@@ -291,27 +295,28 @@ async def test_the_start_screen_line_previews_and_saves_the_fixed_session(client
     r = await client.get("/coaching/apercu", params={**query, **fixed}, headers=HTMX)
     pv = cv.first_week((1, 3, 5, 6), 6, 240, cp.Goal(), same_today, intent=cp.PROGRESSER,
                        level=cp.read_level([], same_today, 240), fixed=cp.Fixed(2, 75))
-    assert r.status_code == 200 and "Séance club est ta séance de qualité de la semaine" in r.text
-    assert "mercredi : Séance club 1 heure 15" in pv["aria"]
+    assert r.status_code == 200 and "Séance fixe est ta séance de qualité de la semaine" in r.text
+    assert "mercredi : Séance fixe 1 heure 15" in pv["aria"]
     r = await client.get("/coaching/apercu", params={**query, **fixed, "fixed_day": "6"}, headers=HTMX)
     assert "Ta sortie longue est ce jour-là" in r.text
     r = await client.get("/coaching/apercu", params={**query, "fixed_day": "2"}, headers=HTMX)
-    assert "Séance club" not in r.text, "the box unticked: no fixed session"
+    assert "Séance fixe est" not in r.text, "the box unticked: no fixed session"
     r = await client.post("/coaching/plan", data={**query, **fixed, "fixed_asked": "1"})
     assert r.status_code == 303
     plan = (await db_session.execute(select(CoachingPlan))).scalar_one()
-    assert plan.fixed == {"day": 2, "minutes": 75, "name": "Séance club"}
+    assert plan.fixed == {"day": 2, "minutes": 75, "name": "Séance fixe"}
     redo = (await client.get("/coaching?refaire=1")).text
     assert re.search(r'name="fixed_on" value="1" id="coach-fixed-on" data-fixed-toggle checked>', redo)
     assert re.search(r'name="fixed_day" value="2"[^>]*checked', redo)
     # a screen opened before it does not ask: the fixed session stays as it was
     await client.post("/coaching/plan", data=query)
     await db_session.refresh(plan)
-    assert plan.fixed == {"day": 2, "minutes": 75, "name": "Séance club"}
+    assert plan.fixed == {"day": 2, "minutes": 75, "name": "Séance fixe"}
     # unticked on a screen that asks: removed
     await client.post("/coaching/plan", data={**query, "fixed_asked": "1", "fixed_day": "2"})
     await db_session.refresh(plan)
-    assert plan.fixed is None
+    assert plan.fixed == {"declined": [2]}, "removed by hand: never set again by itself on that day"
+    assert co.fixed_of(plan) is None
 
 
 async def test_a_follower_the_feed_and_the_export_see_it_like_any_session(client, people, beta, db_session,
@@ -378,3 +383,21 @@ def test_the_agenda_gives_the_club_session_no_time_and_offers_no_other():
     ag.place([club, footing], cs.Agenda(), plan, today, 0, None, lambda r: True, lambda r: None)
     assert footing.slot_min is not None, "a session of the plan gets its time"
     assert (club.slot_min, club.slot_flag, club.day) == (None, None, today + timedelta(days=2))
+
+
+def test_its_words_assume_no_club():
+    """The owner, 26 Nov 2026: « On ne sait pas si c'est une sortie club ». The name given by default, its line,
+    its board word say nothing of a club; a plan kept with the name of before (« Séance club ») reads as today's."""
+    assert (cp.FIXED_NAME, cp.FIXED_TEXT) == ("Séance fixe", "Son contenu est le tien.")
+    s = cp.fixed_structure(cp.Fixed(2, 75))
+    assert cp.title(cp.QUALITY, s) == "Séance fixe" and cv.short_title(cp.QUALITY, s) == "Séance"
+    assert cp.title(cp.QUALITY, {**s, "name": "Séance club"}) == "Séance fixe"
+    plan = SimpleNamespace(fixed={"day": 2, "minutes": 75, "name": "Séance club"})
+    assert co.fixed_of(plan) == cp.Fixed(2, 75, cp.FIXED_NAME)
+    plan.fixed["name"] = "Piste du mercredi"
+    assert co.fixed_of(plan).name == "Piste du mercredi" and cv.short_title(
+        cp.QUALITY, cp.fixed_structure(co.fixed_of(plan))) == "Piste"
+    for path in ("app/templates/partials/coaching_tools.html", "app/templates/coaching_onboarding.html",
+                 "app/templates/partials/coaching_fixed_fields.html"):
+        text = (Path(__file__).resolve().parents[1] / path).read_text(encoding="utf-8")
+        assert "ton club" not in text and "(club)" not in text, path

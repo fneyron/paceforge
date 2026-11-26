@@ -26,7 +26,7 @@
     </form>
     {% endif %}
     <nav class="pf-coach-optgrid pf-coach-home" aria-label="Les outils du plan">
-        {% if fixed %}<a class="pf-coach-opt" id="coach-opt-fixed" href="/coaching?outil=fixe#coach-tool-fixed" data-tool="coach-tool-fixed">{{ icon("repeat", "w-6 h-6", "1.8") }}<b>Ma séance fixe<small>{{ fixed.said or "Une séance de ton club" }}</small></b></a>{% endif %}
+        {% if fixed %}<a class="pf-coach-opt" id="coach-opt-fixed" href="/coaching?outil=fixe#coach-tool-fixed" data-tool="coach-tool-fixed">{{ icon("repeat", "w-6 h-6", "1.8") }}<b>Ma séance fixe<small>{{ fixed.said or "Une séance qui revient chaque semaine" }}</small></b></a>{% endif %}
         <a class="pf-coach-opt" id="coach-opt-feed" href="/coaching?outil=calendrier#coach-tool-feed" data-tool="coach-tool-feed">{{ icon("calendar", "w-6 h-6", "1.8") }}<b>Dans mon calendrier<small>iPhone, Google, Outlook</small></b></a>
         <a class="pf-coach-opt" id="coach-opt-agenda" href="/coaching?outil=agenda#coach-tool-agenda" data-tool="coach-tool-agenda">{{ icon("watch", "w-6 h-6", "1.8") }}<b>Mon agenda<small>Éviter mes réunions</small></b></a>
         <a class="pf-coach-opt" id="coach-opt-share" href="/coaching?outil=partage#coach-tool-share" data-tool="coach-tool-share">{{ icon("share", "w-6 h-6", "1.8") }}<b>Partager mon plan<small>{{ "Quelqu’un le suit" if tools.coaches else "Avec un code" }}</small></b></a>
@@ -34,11 +34,11 @@
         <a class="pf-coach-opt" id="coach-opt-how" href="/coaching?outil=methode#coach-tool-how" data-tool="coach-tool-how">{{ icon("info", "w-6 h-6", "1.8") }}<b>Comment ça marche<small>Les règles du plan</small></b></a>
     </nav>
 
-    {#- « Ma séance fixe »: the weekly session the athlete brings (a club's), around which the plan is written. A plain
+    {#- « Ma séance fixe »: the weekly session the athlete brings (or the plan keeps, from a habit), around which the plan is written. A plain
         form: the page comes back with the plan written again from today. -#}
     {% if fixed %}
     <section class="pf-coach-panel{% if opened == 'fixed' %} is-asked{% endif %}" id="coach-tool-fixed" aria-labelledby="coach-tool-fixed-h">
-        <h3 class="pf-coach-panel-h" id="coach-tool-fixed-h" tabindex="-1">Ma séance fixe <small>{{ fixed.said or "Une séance de ton club, chaque semaine" }}</small></h3>
+        <h3 class="pf-coach-panel-h" id="coach-tool-fixed-h" tabindex="-1">Ma séance fixe <small>{{ fixed.said or "Une séance qui revient chaque semaine" }}</small></h3>
         <div class="pf-coach-tool-body pf-coach-fixed" data-fixed>
             {% if fixed_error %}<p class="pf-coach-error" role="alert">{{ fixed_error }}</p>{% endif %}
             {% if fixed.warning %}<p class="pf-coach-reason pf-coach-hardpair">{{ fixed.warning }}</p>{% endif %}
