@@ -1,7 +1,7 @@
 # Connecteurs officiels COROS, Garmin, Wahoo et Polar
 
 Statut au 20 novembre 2026 : **code prêt, désactivé**. Les demandes d’accès sont envoyées : COROS Partner API
-(courriel à api@coros.com, 15 nov.) ; Garmin Connect Developer Program, accès Business « Starter » (formulaire
+(courriel à api@coros.com, 15 nov. ; **incomplète** : COROS demande aussi le formulaire « COROS API Application », lien dans son article « Submit an API Application », relu le 26 nov. ; formulaire non envoyé à ce jour) ; Garmin Connect Developer Program, accès Business « Starter » (formulaire
 envoyé au nom de Hello Stay le 20 nov., réponse de Garmin : « Thank you for your interest, we'll be reaching out
 to you soon »). Autres demandes du 20 nov., sans code de connecteur à ce jour : Suunto Partner Program avec accès
 Cloud API (contrat signé au nom de Hello Stay, réponse sous deux semaines). Wahoo Cloud API, app de production
