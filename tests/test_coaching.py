@@ -265,7 +265,7 @@ async def test_the_onboarding_computes_the_starting_volume_from_four_complete_we
                                                                                    same_today):
     athlete, m0 = people.athlete, cp.monday_of(same_today)
     page = (await _as(client, athlete).get("/coaching")).text
-    assert 'value="progresser" data-line' in page and 'name="days"' in page and 'name="long_day"' in page
+    assert 'value="progresser" checked' in page and 'data-line' not in page and 'name="days"' in page and 'name="long_day"' in page
     assert page.count('type="radio" name="base"') == 5, "no history: five coarse choices"
     # 4 complete weeks of 100, 200, 140, 160 min; this week's runs and a ride never count
     n = 0
@@ -281,7 +281,7 @@ async def test_the_onboarding_computes_the_starting_volume_from_four_complete_we
     assert co.weekly_minutes(await co.runs_of(db_session, athlete.id, c), c.today) == [100, 200, 140, 160]
     assert await co.starting_volume(db_session, athlete, c) == 150
     page = (await client.get("/coaching")).text
-    assert '<option value="150" selected>2h30</option>' in page and "4 dernières semaines" in page
+    assert '<option value="150" selected>2h30</option>' in page and "Calculé sur" not in page  # « Comment ça marche »
     # made again: the volume is computed again, never the old plan's
     await _plan(client, db_session, athlete, base="300")
     page = (await client.get("/coaching?refaire=1")).text
@@ -317,7 +317,8 @@ async def test_a_plan_needs_two_to_six_days_and_a_race_of_the_athlete(client, pe
     race = [r for r in rows if r.kind == cp.RACE]
     assert [(r.day, r.minutes) for r in race] == [(same_today + timedelta(days=75), 360)]
     page = (await client.get("/coaching")).text
-    assert '<b class="pf-coach-lead">J‑75</b> <span class="pf-coach-race">Trail des Crêtes</span>' in page
+    assert '<b class="pf-coach-lead">J‑75</b> · <span class="pf-coach-race">Trail des Crêtes</span>' in page
+    assert "Semaine 1 sur" not in page and "pf-coach-phases" not in page and "bêta" not in page
     assert 'id="coach-main"' in page and "Comment ça marche" in page
 
 
@@ -390,7 +391,8 @@ async def test_an_activity_marks_its_session_done_and_another_is_out_of_the_plan
     assert "Hors plan · Retour à pied" in page
     # the run arrived and its ressenti is not said yet: the calendar asks first (a second, short run the same day is
     # not asked about: the day had its session)
-    assert "<b>Ta sortie d’aujourd’hui est arrivée.</b> C’était comment" in page and page.count('id="coach-ask-') == 5
+    assert f"<b>Aujourd’hui · footing {viz.hm(today_row.minutes + 4)}.</b> C’était comment" in page, "the time run"
+    assert page.count('id="coach-ask-') == 5
     state = await co.sync(db_session, plan, athlete)
     done = co.done_by_week(state.runs, state.rows)
     assert sum(done.values()) == today_row.minutes + 4 + 15 + 33, "every run counts in the week's done time"

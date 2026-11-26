@@ -105,7 +105,11 @@ async def test_the_option_is_offered_only_with_the_consent_and_an_index_and_is_o
     assert at >= before, "turning it on records when"
     page = (await client.get("/coaching")).text
     switch = re.search(r'<button[^>]*id="coach-form-switch"[^>]*>', page).group(0)
-    assert 'aria-checked="true"' in switch and 'value="off"' in switch and "Activé le " in page
+    assert 'aria-checked="true"' in switch and 'value="off"' in switch
+    # the switch alone: what it reads and that the follower never sees why are said in « Comment ça marche »
+    how = page.split('id="coach-tool-how"')[1]
+    assert "En savoir plus" not in page and "VFC, sommeil, FC de repos" in how
+    assert "La personne qui suit ton plan ne voit jamais pourquoi." in how
     # the privacy policy says it, while Coaching exists
     policy = (await client.get("/privacy")).text
     assert "Coaching (bêta) · ta forme" in policy and "jamais l’indice ni une mesure" in policy
@@ -200,7 +204,7 @@ async def test_a_low_morning_turns_the_hard_session_into_a_footing_and_moves_it(
     assert _snap(await _rows(db_session, athlete)) == snapshot
     # the athlete: one short reason on the day's card, the way to Santé, never the number
     index = await sante.morning_index(db_session, athlete.id, wed)
-    assert f'<p class="pf-coach-formline"><a href="/sante">{ATHLETE_LINE}</a> <span>La séance prévue passe à vendredi.</span></p>' in page
+    assert f'<p class="pf-coach-formline"><a href="/sante">{ATHLETE_LINE}. La séance prévue passe à vendredi.</a></p>' in page
     assert page.count("récupération basse") == 1 and f"{index['value']} %" not in page
     assert "Séance reportée de mercredi" in (await client.get(f"/coaching?d={fri}")).text
     # the coach: the session was adapted, never why
@@ -369,7 +373,7 @@ async def test_three_low_mornings_in_five_days_lighten_the_next_week_once(client
     db_session.add(CoachingLink(athlete_id=athlete.id, coach_id=coach.id))
     await db_session.flush()
     theirs = (await _as(client, coach).get(f"/coaching/athletes/{athlete.id}/calendar?w={nxt}", headers=HTMX)).text
-    assert '<p class="pf-coach-reason">Semaine allégée.</p>' in theirs and "récupération" not in theirs
+    assert '<p class="pf-coach-reason pf-coach-auto">Semaine allégée.</p>' in theirs and "récupération" not in theirs
     # the ressenti asks for a lighter week too: one reduction, never both (0.8, not 0.64)
     # (a run long enough to leave next week's sessions their length: none runs more than 10 % past the longest run
     # of the last 30 days)

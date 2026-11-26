@@ -255,20 +255,25 @@ async def test_the_ticket_shows_the_target_large_and_no_feel_beside_numbers(clie
     ticket = _ticket(page, easy.id)
     block = ticket[ticket.index('class="pf-coach-ticket"'):]
     assert 'class="pf-coach-target"' in block, "inside the coloured block"
-    assert re.search(r">Cible</p>", block) and "pendant les efforts" not in block, "a steady run: no efforts"
-    assert ">Pas plus vite que, sur le plat<" in block and ">5:30<small>/km</small>" in block
-    assert ">112–148<small>bpm</small>" in block and "Cardio : 112 à 148 bpm" in block
+    # bare values, large: no « Cible » heading, no label; a screen reader hears the whole meaning
+    assert 'role="group" aria-label="Cible"' in block and "pendant les efforts" not in block, "a steady run"
+    assert ">Cible<" not in block and ">Pas plus vite que, sur le plat<" not in block and ">Cardio<" not in block
+    assert '<b aria-hidden="true"><small class="is-pre">max</small>5:30<small>/km</small></b>' in block
+    assert '<span class="sr-only">Pas plus vite que, sur le plat : 5 min 30 au km</span>' in block
+    assert ">112–148<small>bpm</small>" in block and '<span class="sr-only">Cardio : 112 à 148 bpm</span>' in block
     assert page.count("112–148") == 1, "the old line under the ticket is gone: once"
     assert "pf-coach-s-guide" not in ticket and "conversation" not in ticket, "numbers: no talk test under it"
-    assert 'href="/coaching?outil=methode#coach-tool-how" data-tool-open="coach-tool-how"' in block
-    assert "Les allures valent sur le plat" in page.split('id="coach-tool-how"')[1], "« Comment ça marche » says it"
+    assert "D’où viennent" not in page and "data-tool-open" not in page, "the explanation lives in the tool"
+    how = page.split('id="coach-tool-how"')[1]
+    assert "Les allures valent sur le plat" in how and "« max » sur un footing" in how, "« Comment ça marche » says it"
     assert not re.search(r"Hunter|Nixon|Billat|Smyth|\(H\)", page), "sources stay in the docs"
     # a threshold session: the efforts' target
     q = next(r for r in await _rows(db_session, athlete) if r.day > easy.day and r.status == co.PLANNED
              and r.kind == cp.FOOTING)
     await client.post(f"/coaching/sessions/{q.id}/edit", data={"kind": cp.QUALITY, "minutes": "50"}, headers=HTMX)
     ticket = _ticket((await client.get(f"/coaching?d={q.day}")).text, q.id)
-    assert "Cible<span> · pendant les efforts</span>" in ticket and ">4:40–4:50<small>/km</small>" in ticket
+    assert 'aria-label="Cible pendant les efforts"' in ticket and ">4:40–4:50<small>/km</small>" in ticket
+    assert ">Allure, sur le plat<" not in ticket and "Allure, sur le plat : 4 min 40 à 4 min 50 au km" in ticket
     assert ">149–167<small>bpm</small>" in ticket and "pf-coach-s-guide" not in ticket
     # done: the ticket says what was run, no target
     done = await _past_session(db_session, plan, same_today - timedelta(days=1), status=co.DONE, done_minutes=45,
@@ -308,8 +313,7 @@ async def test_without_data_one_quiet_line_leads_to_the_maximum(client, people, 
     rows = await _rows(db_session, athlete)
     easy = next(r for r in rows if r.day > same_today and r.kind == cp.FOOTING)
     ticket = _ticket((await _as(client, athlete).get(f"/coaching?d={easy.day}")).text, easy.id)
-    assert '<a class="pf-coach-target-link" href="/settings#max-heart-rate">Confirme ta FC max pour voir ta zone</a>' \
-        in ticket
+    assert '<a class="pf-coach-target-link" href="/settings#max-heart-rate">Confirme ta FC max</a>' in ticket
     assert "/km" not in ticket and "bpm" not in ticket and "D’où viennent" not in ticket
     # no number at all: the talk test stays, so nobody is left without guidance
     assert re.search(r'class="pf-coach-s-guide">Facile\s: tu peux tenir une conversation\.</p>', ticket)
