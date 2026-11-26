@@ -1,8 +1,9 @@
 /* Coaching › the board by hand, and the road scrubbed.
    - A session's tile is held, then dropped on another day (of the board, or of the next week's row): the move the
      « Déplacer » forms post, to the same address, with the same fields. A horizontal swipe on the weeks is ‹ or ›.
-   - The road: a finger (or a mouse) scrubs the bars — the bar under it is highlighted and the road says its week
-     (dates, time, phase: data-label, the server's words) —, the week is loaded once, when it is let go. The arrow
+   - The road: a finger (or a mouse) scrubs the bars — the bar under it is highlighted and its week is said over the
+     road's line (dates, time, phase: data-label, the server's words; nothing once let go) —, the week is loaded once,
+     when it is let go. The arrow
      keys move along the bars (one of them in the tab order), Enter opens the week: the bars are its links.
    Nothing else: the keyboard, a screen reader and a browser without JavaScript keep « Déplacer » and the links.
    - The server says everything: which days take a session and which would put two hard days side by side
@@ -17,7 +18,6 @@
   root.dataset.byHand = '1';
   var HOLD = 250, SLOP = 8, MOUSE = 5, SWIPE = 48, EDGE = 24;
   var press = null, drag = null, pending = null, swipe = null, quietUntil = 0, slide = null, scrub = null, roadQuiet = 0, popped = null;
-  var HINTED = 'pf-coach-by-hand';
 
   function words(s) { return s ? s.split(' ') : []; }
   function dayOf(el) { return el && el.closest ? el.closest('.pf-coach-grid[data-w] a.pf-coach-day[data-day]') : null; }
@@ -113,7 +113,6 @@
     t.into.querySelector('.pf-coach-blocks').appendChild(t.block);
     t.block.classList.add('is-pending');
     popped = t.url;
-    try { localStorage.setItem(HINTED, '1'); } catch (_) { /* private mode: the hint comes back, nothing else */ }
     window.htmx.ajax('POST', t.url, { source: grid, target: '#coach-main', swap: 'outerHTML',
       values: { to: t.to, w: grid.dataset.w } });
   }
@@ -136,7 +135,7 @@
     bars.querySelectorAll('.pf-coach-wbar.is-scrub').forEach(function (b) { if (b !== bar) b.classList.remove('is-scrub'); });
     if (bar) bar.classList.add('is-scrub');
     var tip = tipLine();
-    if (tip) tip.textContent = bar ? bar.dataset.label : bars.dataset.tip;
+    if (tip) tip.textContent = bar ? bar.dataset.label : '';
   }
   function load(bar) {
     var shown = barsOf().querySelector('.pf-coach-wbar.is-shown'), list = Array.prototype.slice.call(barsOf().children);
@@ -251,13 +250,6 @@
   }, { passive: true });
   root.addEventListener('touchcancel', function () { swipe = null; }, { passive: true });
 
-  function hint() {
-    var line = document.getElementById('coach-drag-hint');
-    if (!line) return;
-    var seen = false;
-    try { seen = localStorage.getItem(HINTED) === '1'; } catch (_) { /* shown */ }
-    line.hidden = seen;
-  }
   document.addEventListener('htmx:afterSwap', function () {
     pending = null;
     var grid = document.querySelector('#coach-main .pf-coach-grid');
@@ -270,7 +262,6 @@
     var moved = popped && document.querySelector('#coach-main .pf-coach-tile[data-move="' + popped + '"]');
     if (moved) moved.classList.add('is-pop');
     popped = null;
-    hint();
   });
   document.addEventListener('htmx:afterRequest', function (e) {
     if (e.detail.successful) return;
@@ -286,5 +277,4 @@
     p.block.classList.remove('is-pending');
     p.home.insertBefore(p.block, p.next && p.next.parentNode === p.home ? p.next : null);
   });
-  hint();
 })();

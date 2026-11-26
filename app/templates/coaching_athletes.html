@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{#- Coaching (beta), the follower's list (« Plans suivis »: the pages never say « coach »): each athlete followed at a glance — this week's bar « fait / prévu », the last
+{#- Coaching, the follower's list (« Plans suivis »: the pages never say « coach »): each athlete followed at a glance — this week's bar « fait / prévu », the last
     sessions with their status and ressenti — and the field where an athlete's code is typed. Never Santé data. -#}
 {% from "partials/_icons.html" import icon %}
 
@@ -9,7 +9,7 @@
 <div class="pf-coach">
     <a href="{{ '/coaching' if has_plan else '/activities' }}" class="pf-back{% if not has_plan %} pf-old-shell-only{% endif %}">{{ icon("chev-l", "w-4 h-4") }}{{ "Coaching" if has_plan else "Activités" }}</a>
     <div class="pf-head pf-coach-head">
-        <div><h1 class="pf-h1">Plans suivis <span class="pf-tag">bêta</span></h1></div>
+        <div><h1 class="pf-h1">Plans suivis</h1></div>
     </div>
     <div class="pf-coach-main">
     {% for a in athletes %}
