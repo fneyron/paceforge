@@ -27,8 +27,9 @@ Three accounts show the notice of a run that is not the planned session, read by
 « Une sortie qui n’est pas la séance prévue »), each made on this week's Monday, signed in on request (POST
 /__preview/coaching/as/<who>):
 - « club » (Marc, the owner's week: Tuesday, Wednesday, Friday, Saturday, Sunday): yesterday a 1 h 35 club run with
-  laps of repeated efforts instead of the 45-min fartlek (read hard by its laps), and a club run on six of the eight
-  Wednesdays before — « Tu cours tous les mercredis avec ton club ? »;
+  laps of repeated efforts instead of the 45-min fartlek (read hard by its laps), and a run read hard on six of the
+  eight Wednesdays before — a habit: the plan keeps Wednesday's hard session every week by itself (« Ma séance
+  fixe », 1 h 35), said on the notice with « Pas tous les mercredis »;
 - « dure » (Inès: Tuesday to Saturday, a confirmed maximum of 190): yesterday 1 h 35 at 165 bpm on average instead of
   a 55-min récup (read hard by its heart rate), today's short hills the day after — a récup, said on the notice, the
   ticket and the week;
