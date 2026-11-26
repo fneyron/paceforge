@@ -191,7 +191,7 @@ async def test_the_onboarding_ticks_the_days_the_athlete_runs_and_their_next_rac
     assert _checked(page, "days") == ["0", "2", "5"]
     assert '<option value="5" selected>samedi</option>' in page
     assert _checked(page, "goal") == [str(soon.id)], "the next race"
-    assert '<option value="180" selected>3h00</option>' in page and "4 dernières semaines" in page
+    assert '<option value="180" selected>3h00</option>' in page and "Calculé sur" not in page  # « Comment ça marche »
     # opened from a race's page: that race
     assert _checked((await client.get(f"/coaching?course={later.id}")).text, "goal") == [str(later.id)]
     # « Refaire le plan » keeps the plan's own answers, never the habit's
@@ -328,11 +328,12 @@ async def test_a_day_without_a_session_names_the_next_one(client, people, db_ses
     await _plan(client, db_session, athlete, days=("3", "6"), long_day="6", base="120")
     nxt = next(r for r in await _rows(db_session, athlete))
     page = _main((await client.get("/coaching?d=2026-11-16")).text)  # today, a Monday without a session
-    assert '<div class="pf-coach-restcard">\n                <p class="pf-coach-rest-word">Repos</p>' in page and "Prochaine séance · jeudi 19 novembre" in page
+    assert '<div class="pf-coach-restcard">\n                <p class="pf-coach-rest-word">Repos</p>' in page
+    assert '<b><span class="sr-only">Prochaine séance&nbsp;: </span>Jeudi 19 · ' in page, "one row, the date once"
     assert f'href="/coaching?d={nxt.day}&amp;w=2026-11-16"' in page and f'hx-get="/coaching/calendar?d={nxt.day}&amp;w=2026-11-16"' in page
     assert f"{cp.KINDS[nxt.kind]} " in page.split('id="coach-next-session"')[1]
     clock.day = MONDAY + timedelta(days=2)
-    assert "Prochaine séance · demain" in _main((await client.get("/coaching")).text)
+    assert '<span class="sr-only">Prochaine séance&nbsp;: </span>Demain · ' in _main((await client.get("/coaching")).text)
     # a rest day already behind says nothing of what comes next; another day than today has the way back
     page = _main((await client.get("/coaching?d=2026-11-16")).text)
     assert "Repos" in page and "Prochaine séance" not in page
@@ -417,14 +418,14 @@ async def test_the_pages_never_say_coach(client, people, db_session, clock):
     assert "<b>Florent</b> suit ton plan" in page
     # one person follows the plan: a comment and a change are signed with that first name
     assert '<p class="pf-coach-said"><b>Florent</b> Bien joué</p>' in page
-    assert '<p class="pf-coach-edited">Modifiée par Florent</p>' in page
+    assert '<p class="pf-coach-formline is-quiet">Modifiée par Florent</p>' in page
     pages += [page, 'id="main-content"' + (await client.post("/coaching/share", headers=HTMX)).text]  # the code's fold
     # two people follow it: the author of a comment is not kept, no name is guessed
     db_session.add(co.CoachingLink(athlete_id=athlete.id, coach_id=people.outsider.id))
     await db_session.flush()
     page = (await client.get("/coaching")).text
     assert '<p class="pf-coach-said"><b>Commentaire</b> Bien joué</p>' in page
-    assert '<p class="pf-coach-edited">Modifiée par la personne qui suit ton plan</p>' in page
+    assert '<p class="pf-coach-formline is-quiet">Modifiée par la personne qui suit ton plan</p>' in page
     pages.append(page)
     # the follower's side: « Plans suivis », the athlete by her first name
     _as(client, follower)
@@ -436,7 +437,7 @@ async def test_the_pages_never_say_coach(client, people, db_session, clock):
     await _as(client, athlete).post(f"/coaching/sessions/{today.id}/edit", data={"kind": "footing", "minutes": "45"},
                                     headers=HTMX)
     theirs = (await _as(client, follower).get(f"/coaching/athletes/{athlete.id}")).text
-    assert '<p class="pf-coach-edited">Modifiée par Stella</p>' in theirs and "Plans suivis" in theirs
+    assert '<p class="pf-coach-formline is-quiet">Modifiée par Stella</p>' in theirs and "Plans suivis" in theirs
     assert "Ton commentaire" in theirs
     pages += [listing, theirs, (await client.post("/coaching/athletes/join", data={"code": "ZZZZ-ZZZZ"})).text]
     for html in pages:

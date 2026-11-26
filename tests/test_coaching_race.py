@@ -74,8 +74,8 @@ def test_the_plan_runs_on_the_time_aimed_at_else_on_the_rough_guess_of_the_race_
     assert rough.race_minutes == rp.expected_s(stub) / 60 == pytest.approx(54.5, abs=0.1), "race_prep's 11 km/h"
     aimed = co.custom_goal(NAME, ANNECY, 10.0, 52 * 60)
     assert (aimed.race_minutes, aimed.time_kind) == (52, co.OBJECTIVE)
-    assert cv.goal_time(rough) == {"label": f"Environ{NBSP}55 min", "href": None}, "no race page to link to"
-    assert cv.goal_time(aimed) == {"label": f"Objectif{NBSP}52 min", "href": None}
+    assert cv.goal_time(rough) == {"label": "55 min", "word": "Environ", "href": None}, "no race page to link to"
+    assert cv.goal_time(aimed) == {"label": "52 min", "word": "Objectif", "href": None}
     assert co.custom_goal(NAME, None, 10.0, None) == cp.Goal() == co.custom_goal(NAME, ANNECY, 0, None)
 
 
@@ -108,7 +108,7 @@ async def test_a_new_account_adds_its_race_without_a_file_and_gets_a_plan_to_it(
     page = (await client.get("/coaching")).text
     goal = re.search(r'<h2 class="pf-coach-goal" id="coach-road-h">(.*?)</h2>', page, re.S).group(1)
     assert NAME.replace("’", "&#39;") in goal or NAME in goal
-    assert f"Environ{NBSP}55 min" in goal and "/simulator/routes/" not in page
+    assert '<span class="sr-only">Environ </span>55 min' in goal and "/simulator/routes/" not in page
     day = (await client.get(f"/coaching?d={ANNECY.isoformat()}")).text
     assert "Course" in day and "Voir le plan de course" not in day
 
@@ -127,7 +127,7 @@ async def test_the_race_day_shows_in_the_feed_and_on_the_followers_page(client, 
     await db_session.flush()
     _as(client, coach)
     page = (await client.get(f"/coaching/athletes/{athlete.id}")).text
-    assert "10 km du lac d" in page and f"Objectif{NBSP}52 min" in page and "/simulator/routes/" not in page
+    assert "10 km du lac d" in page and '<span class="sr-only">Objectif </span>52 min' in page and "/simulator/routes/" not in page
     listing = (await client.get("/coaching/athletes")).text
     assert "10 km du lac d" in listing
 

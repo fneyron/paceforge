@@ -283,10 +283,13 @@ async def test_sessions_land_in_free_slots_and_a_full_day_sends_its_session_else
     assert all(r.slot_min is None for r in rows.values() if r.day >= mon + timedelta(days=21)), "none further ahead"
     assert all(rows[i].day == d for i, (d, *_x) in before.items()), "no day changed"
     page = (await client.get(f"/coaching?d={thu.day}")).text
-    assert f'<p class="pf-coach-slot-time">19{NNBSP}h{NNBSP}00 – {cv_time(19 * 60 + thu.minutes)}</p>' in page
-    assert ">Autre créneau</button>" in page
+    slot = f"19{NNBSP}h{NNBSP}00 – {cv_time(19 * 60 + thu.minutes)}"
+    # the time alone; a tap on it asks for another free time (its accessible name says so)
+    assert (f'class="pf-coach-slot-time is-button" aria-label="{slot} : demander un autre créneau">{slot}</button>'
+            in page)
+    assert f'id="coach-slot-{thu.id}"' in page and "Autre créneau" not in page
     flagged = (await client.get(f"/coaching?d={tue.day}")).text
-    assert '<p class="pf-coach-full">Journée chargée</p>' in flagged and "pf-coach-slot-time" not in flagged
+    assert '<span class="pf-coach-full">Journée chargée</span>' in flagged and "pf-coach-slot-time" not in flagged
     # Friday becomes an available day without a session (its own was removed by the coach): Tuesday's session
     # moves there, with its reason on the week
     db_session.add(CoachingLink(athlete_id=athlete.id, coach_id=coach.id))
@@ -301,7 +304,9 @@ async def test_sessions_land_in_free_slots_and_a_full_day_sends_its_session_else
         mon + timedelta(days=4), mon + timedelta(days=1), None, False)
     assert moved.slot_min == 6 * 60, "Friday: nothing in the calendar, the first moment"
     page = (await client.get("/coaching")).text
-    assert '<p class="pf-coach-reason pf-coach-moves">Mardi est plein : séance déplacée à vendredi.</p>' in page
+    assert '<p class="pf-coach-reason pf-coach-auto">Mardi est plein : séance déplacée à vendredi.</p>' in page
+    ticket = (await client.get(f"/coaching?d={moved.day}")).text
+    assert '<p class="pf-coach-formline">Séance déplacée de mardi : journée pleine.</p>' in ticket
     hard = sorted(r.day for r in state.rows if r.kind in cp.HARD)
     assert all((b - a).days >= 2 for a, b in zip(hard, hard[1:]))
     # stable: reading the plan or the same calendar again changes nothing (no flapping, no new SEQUENCE)
@@ -312,9 +317,12 @@ async def test_sessions_land_in_free_slots_and_a_full_day_sends_its_session_else
     # the coach reads the times, never the calendar
     _as(client, coach)
     theirs = (await client.get(f"/coaching/athletes/{athlete.id}?d={thu.day}")).text
-    assert f"19{NNBSP}h{NNBSP}00 – " in theirs and "Autre créneau" not in theirs and "coach-tool-agenda" not in theirs
+    assert f"19{NNBSP}h{NNBSP}00 – " in theirs and "autre créneau" not in theirs and "coach-tool-agenda" not in theirs
+    assert f'id="coach-slot-{thu.id}"' not in theirs
     week = (await client.get(f"/coaching/athletes/{athlete.id}")).text
     assert "Séance déplacée de mardi à vendredi." in week and "est plein" not in week and "Journée chargée" not in week
+    friday = (await client.get(f"/coaching/athletes/{athlete.id}?d={moved.day}")).text
+    assert "Séance déplacée de mardi." in friday and "journée pleine" not in friday
     assert "calendar.google.com" not in week and "Mon agenda" not in week
     assert (await client.post(f"/coaching/athletes/{athlete.id}/sessions/{thu.id}/slot")).status_code == 404
     for path in ("/coaching/agenda/refresh", "/coaching/agenda/moments"):
@@ -474,7 +482,7 @@ async def test_removing_the_last_address_undoes_the_times_and_the_moves(client, 
     assert [(r.id, r.day) for r in sorted(rows, key=lambda r: r.id)] == sorted(plain), "every session back on its day"
     assert (await db_session.execute(select(func.count()).select_from(CoachingBusy))).scalar() == 0
     page = (await client.get("/coaching")).text
-    assert "pf-coach-slot" not in page and "pf-coach-moves" not in page
+    assert "pf-coach-slot" not in page and "pf-coach-auto" not in page
     assert plan.id
 
 

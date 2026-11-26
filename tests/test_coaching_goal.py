@@ -55,7 +55,7 @@ async def _race(db, user, day: date, *, course: bool = True, target: int | None 
     return route
 
 
-PROGRESS = '<b class="pf-coach-lead">Progresser</b> <span class="pf-coach-race">sans course</span>'
+PROGRESS = '<b class="pf-coach-lead">Progresser</b>'  # the intent's word alone
 
 
 def _goal_line(page: str) -> str:
@@ -85,7 +85,7 @@ async def test_the_plan_runs_on_the_race_pages_estimate_then_on_its_objective(cl
     plan = await _plan(client, db_session, athlete, goal=str(route.id))
     page = (await client.get("/coaching")).text
     line = _goal_line(page)
-    assert f'<a class="pf-coach-goal-time" href="/simulator/routes/{route.id}">Estimation{NBSP}{hm(estimate / 60)}</a>' in line
+    assert f'<a class="pf-coach-goal-time" href="/simulator/routes/{route.id}"><span class="sr-only">Estimation </span>{hm(estimate / 60)}</a>' in line
     assert page.count("Estimation") == 1 and "Objectif" not in line, "said once, in the header"
     race = next(r for r in await _rows(db_session, athlete) if r.kind == cp.RACE)
     assert race.minutes == round(estimate / 60)
@@ -96,13 +96,13 @@ async def test_the_plan_runs_on_the_race_pages_estimate_then_on_its_objective(cl
     route.target_time_s, route.params_json = target, {"target_v": simulator.TARGET_VERSION}
     await db_session.flush()
     page = (await client.get("/coaching")).text
-    assert f">Objectif{NBSP}{hm(target / 60)}</a>" in _goal_line(page) and "Estimation" not in _goal_line(page)
+    assert f'><span class="sr-only">Objectif </span>{hm(target / 60)}</a>' in _goal_line(page) and "Estimation" not in _goal_line(page)
     await db_session.refresh(race)
     assert race.minutes == target // 60, "the race's own session follows"
     state = await co.sync(db_session, plan, athlete)
     assert state.goal.time_kind == co.OBJECTIVE and cp.ceiling(state.goal, 100) == cp.round5(150 + 0.7 * cp.rule_minutes(state.goal))
     # a coach reads the same words, without the link to a page that is not theirs
-    assert cv.header(state, coach=True)["time"] == {"label": f"Objectif{NBSP}{hm(target / 60)}", "href": None}
+    assert cv.header(state, coach=True)["time"] == {"label": hm(target / 60), "word": "Objectif", "href": None}
 
 
 async def test_without_a_prediction_the_plan_falls_back_to_the_saved_time_or_the_rough_guess(client, people,
@@ -114,10 +114,10 @@ async def test_without_a_prediction_the_plan_falls_back_to_the_saved_time_or_the
     await _plan(client, db_session, athlete, goal=str(bare.id))
     rough = round(3600 * (bare.total_distance_km + bare.total_elevation_gain / 100) / 7 / 60)
     line = _goal_line((await client.get("/coaching")).text)
-    assert f"Environ{NBSP}{hm(rough)}" in line and "Estimation" not in line and "Objectif" not in line
+    assert f'<span class="sr-only">Environ </span>{hm(rough)}' in line and "Estimation" not in line and "Objectif" not in line
     bare.target_time_s = 5 * 3600
     await db_session.flush()
-    assert f"Objectif{NBSP}5h00" in _goal_line((await client.get("/coaching")).text)
+    assert '<span class="sr-only">Objectif </span>5h00' in _goal_line((await client.get("/coaching")).text)
     # the simulator fails: the page still answers, on the fallback
     full = await _race(db_session, athlete, clock.day + timedelta(days=90), name="Autre")
 
@@ -130,7 +130,7 @@ async def test_without_a_prediction_the_plan_falls_back_to_the_saved_time_or_the
     with pytest.MonkeyPatch.context() as m:
         m.setattr(simulator, "race_times", broken)
         r = await client.get("/coaching")
-    assert r.status_code == 200 and f"Environ{NBSP}" in _goal_line(r.text)
+    assert r.status_code == 200 and '<span class="sr-only">Environ </span>' in _goal_line(r.text)
     assert await simulator.race_times(db_session, people.coach.id, full.id) is None, "never another account's race"
 
 
@@ -327,7 +327,7 @@ async def test_a_race_behind_leaves_a_plan_without_a_race_from_the_next_week(cli
     race_day = monday + timedelta(days=5)  # this Saturday
     route = await _race(db_session, athlete, race_day, target=3 * 3600)
     plan = await _plan(client, db_session, athlete, goal=str(route.id), days=("1", "3", "5", "6"), base="200")
-    assert "J‑3</b> <span class=\"pf-coach-race\">Trail des Crêtes</span>" in _goal_line((await client.get("/coaching")).text)
+    assert "J‑3</b> · <span class=\"pf-coach-race\">Trail des Crêtes</span>" in _goal_line((await client.get("/coaching")).text)
     race = next(r for r in await _rows(db_session, athlete) if r.kind == cp.RACE)
     clock.day = race_day + timedelta(days=1)  # the Sunday after
     page = (await client.get("/coaching")).text

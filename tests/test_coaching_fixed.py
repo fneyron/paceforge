@@ -295,7 +295,8 @@ async def test_the_start_screen_line_previews_and_saves_the_fixed_session(client
     r = await client.get("/coaching/apercu", params={**query, **fixed}, headers=HTMX)
     pv = cv.first_week((1, 3, 5, 6), 6, 240, cp.Goal(), same_today, intent=cp.PROGRESSER,
                        level=cp.read_level([], same_today, 240), fixed=cp.Fixed(2, 75))
-    assert r.status_code == 200 and "Séance fixe est ta séance de qualité de la semaine" in r.text
+    assert r.status_code == 200 and "est ta séance de qualité de la semaine" not in r.text, "the rule: « Comment ça marche »"
+    assert any(line.startswith("Ta séance fixe") for line in cv.METHOD)
     assert "mercredi : Séance fixe 1 heure 15" in pv["aria"]
     r = await client.get("/coaching/apercu", params={**query, **fixed, "fixed_day": "6"}, headers=HTMX)
     assert "Ta sortie longue est ce jour-là" in r.text

@@ -259,19 +259,26 @@ async def test_the_owner_s_club_run_is_read_hard_on_the_page_and_said(client, pe
     card = _card(page)
     assert page.index("pf-coach-runcard") < page.index("pf-coach-calendar") and page.count("pf-coach-debrief ") == 1
     assert ' id="debrief" role="group" aria-labelledby="coach-run-h"' in page
-    assert (f'<h2 id="coach-run-h" class="pf-coach-debrief-h" tabindex="-1"><b>Aujourd’hui, tu as couru 1h35 '
-            f'(16,5{NNBSP}km) au lieu du footing de 55 min{NBSP}: comptée comme une séance dure.</b></h2>') in card
-    assert (f'<p class="pf-coach-run-said" id="coach-run-said">Ta séance de mercredi devient une récup de 45 min{NBSP}; le '
-            'reste ne bouge pas.</p>') in card
+    assert (f'<h2 id="coach-run-h" class="pf-coach-debrief-h" tabindex="-1">Aujourd’hui, 1h35 au lieu du footing de '
+            f'55 min{NBSP}: comptée comme une séance dure.</h2>') in card, "one sentence: what happened, how it was read"
+    assert '<p class="pf-coach-run-said" id="coach-run-said">Mercredi devient une récup.</p>' in card, "what changed"
     # no question: the ressenti (the debrief for that run), one correction link, the quiet way out, « Fermer »
     assert "C’était quoi" not in page and "pf-coach-run-kind" not in card and "Annuler" not in card
     assert f'action="/coaching/sessions/{tue.id}/ressenti"' in card and card.count("data-feel") == 5
     assert f'action="/coaching/runs/{run_id}/corriger"' in card
     assert '>C’était une sortie tranquille</button>' in card and '>Ce n’est pas cette séance</button>' in card
     assert 'id="coach-run-close"' in card and "coach-run-yes" not in card and "Reporter" not in card
+    # the ways back behind one quiet « Corriger » (revealed in place, without JavaScript too); « × » in the corner,
+    # named « Fermer » for a screen reader
+    fix = card[card.index('<details class="pf-coach-fix" id="coach-run-fix">'):]
+    assert fix.index('<summary class="pf-coach-fixlink" id="coach-run-fix-btn">Corriger</summary>') \
+        < fix.index('id="coach-run-flip"') < fix.index('id="coach-run-not"')
+    assert re.search(r'<button type="submit" id="coach-run-close" class="pf-coach-close" aria-label="Fermer"><svg', card)
+    assert ">Fermer<" not in card and "C’était comment" not in re.sub(r'<p id="coach-run-feel" class="sr-only">.*?</p>',
+                                                                      "", card)
     assert "coach" not in re.sub(r"<[^>]+>", " ", card.split(">", 1)[1]).lower(), "never « coach » in the words"
     # the week says it, and Wednesday's ticket too
-    assert (f'<p class="pf-coach-reason pf-coach-moves">Mercredi devient une récup{NBSP}: c’est le lendemain de la '
+    assert (f'<p class="pf-coach-reason pf-coach-auto">Mercredi devient une récup{NBSP}: c’est le lendemain de la '
             'séance dure de mardi.</p>') in page
     wed_page = (await client.get("/coaching/calendar?d=2026-11-18", headers=HTMX)).text
     assert f'<p class="pf-coach-formline">Récup{NBSP}: lendemain de la séance dure de mardi.</p>' in wed_page
@@ -308,8 +315,8 @@ async def test_the_owner_s_club_run_is_read_hard_on_the_page_and_said(client, pe
     tue = next(x for x in rows if x.id == tue.id)
     assert (tue.kind, tue.minutes, tue.ressenti, cr.answer_of(tue)["what"]) == (cp.FOOTING, 55, 4, cr.EASY)
     card = _card(r.text)
-    assert (f'<b>Aujourd’hui, tu as couru 1h35 (16,5{NNBSP}km) au lieu du footing de 55 min{NBSP}: comptée comme une '
-            f'sortie tranquille{NBSP}; rien d’autre ne change.</b>') in card
+    assert (f'tabindex="-1">Aujourd’hui, 1h35 au lieu du footing de 55 min{NBSP}: comptée comme une '
+            'sortie tranquille.</h2>') in card and "pf-coach-run-said" not in card, "nothing changed: one sentence"
     assert '>C’était une séance dure</button>' in card and 'aria-pressed="true"' in card
     # … and back: the hard reading again, exactly as the first time
     await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
@@ -353,7 +360,7 @@ async def test_a_hard_session_the_day_after_is_moved_and_put_back(client, people
     wed, thu = (next(r for r in rows if r.day == d) for d in (WED, THU))
     # the content moved, each session kept on its day (its calendar event follows its day)
     assert (wed.kind, wed.minutes, thu.kind, thu.minutes) == (cp.RECUP, 50, cp.QUALITY, 45)
-    assert f"Ta séance de mercredi passe à jeudi{NBSP}; le reste ne bouge pas." in _card(page)
+    assert "La séance de mercredi passe à jeudi." in _card(page)
     assert f"Mercredi est le lendemain de la séance dure de mardi{NBSP}: sa séance passe à jeudi." in page
     thu_page = (await client.get("/coaching/calendar?d=2026-11-19", headers=HTMX)).text
     assert "Séance reportée de mercredi, lendemain de la séance dure de mardi." in thu_page
@@ -385,8 +392,7 @@ async def test_an_easy_run_instead_of_a_quality_session_postpones_it(client, peo
     assert moved.kind == cp.QUALITY and co.marked(moved)
     to = cv.JOURS_L[moved.day.weekday()]
     card = _card(page)
-    assert (f"<b>Aujourd’hui, tu as couru 1h20 (12{NNBSP}km) tranquille au lieu de ton fartlek{NBSP}: il passe à "
-            f"{to}.</b>") in card
+    assert f'tabindex="-1">Aujourd’hui, 1h20 tranquille au lieu de ton fartlek{NBSP}: il passe à {to}.</h2>' in card
     assert "pf-coach-run-said" not in card and ">C’était une séance dure</button>" in card and "Reporter" not in card
     assert card.count("data-feel") == 5
     page = (await client.get(f"/coaching/calendar?d={moved.day.isoformat()}", headers=HTMX)).text
@@ -415,7 +421,7 @@ async def test_with_no_day_the_quality_session_stays_not_done_and_it_is_said(cli
     await db_session.flush()
     before = await _before(db_session, athlete)
     page = _main((await client.get("/coaching")).text)
-    assert (f"tu as couru 1h20 (12{NNBSP}km) tranquille au lieu de ton fartlek{NBSP}: aucun autre jour ne peut "
+    assert (f"Aujourd’hui, 1h20 tranquille au lieu de ton fartlek{NBSP}: aucun autre jour ne peut "
             "l’accueillir cette semaine.") in _card(page)
     rows = await _rows(db_session, athlete)
     assert _state_of(rows, answers=False) == before, "nothing moved"
@@ -435,8 +441,8 @@ async def test_a_run_on_a_day_with_no_session_stays_outside_the_plan(client, peo
     page = _main((await client.get("/coaching")).text)
     run_id = (await db_session.execute(select(Activity.id).where(Activity.user_id == athlete.id))).scalar_one()
     card = _card(page)
-    assert (f"<b>Aujourd’hui, tu as couru 50 min (7,5{NNBSP}km){NBSP}: rien n’était prévu. Comptée comme une sortie "
-            f"tranquille{NBSP}; rien d’autre ne change.</b>") in card
+    assert (f'tabindex="-1">Aujourd’hui, 50 min sans séance prévue{NBSP}: comptée comme une sortie tranquille.</h2>'
+            in card)
     assert "data-feel" not in card and "Ce n’est pas cette séance" not in card, "no session, no ressenti"
     assert "C’est ma séance de mardi" in card and ">C’était une séance dure</button>" in card
     rows = await _rows(db_session, athlete)
@@ -449,7 +455,7 @@ async def test_a_run_on_a_day_with_no_session_stays_outside_the_plan(client, peo
     thu = next(x for x in rows if x.day == THU)
     assert cp.is_declared(made.structure) and made.auto_day == WED and thu.kind == cp.RECUP
     assert not any(cr.is_note(x) for x in rows)
-    assert f"Ta séance de jeudi devient une récup de 45 min{NBSP}; le reste ne bouge pas." in _card(r.text)
+    assert "Jeudi devient une récup." in _card(r.text)
     await client.post(f"/coaching/runs/{run_id}/corriger", data={}, headers=HTMX)
     assert _state_of(await _rows(db_session, athlete), answers=False) == before
     # « C’est ma séance de mardi »: Tuesday's missed session moved to Wednesday, the run linked to it
@@ -498,8 +504,8 @@ async def test_a_session_ticked_not_done_then_a_run_arrives(client, people, db_s
     await db_session.flush()
     before = await _before(db_session, athlete)
     page = _main((await client.get("/coaching")).text)
-    assert (f"Aujourd’hui, tu as couru 1h35 (16,5{NNBSP}km) au lieu du footing de 55 min{NBSP}: comptée comme une "
-            f"sortie tranquille{NBSP}; rien d’autre ne change.") in _card(page)
+    assert (f"Aujourd’hui, 1h35 au lieu du footing de 55 min{NBSP}: comptée comme une "
+            "sortie tranquille.") in _card(page)
     run_id = (await db_session.execute(select(Activity.id).where(Activity.user_id == athlete.id))).scalar_one()
     await db_session.refresh(tue)
     assert (tue.status, tue.activity_id) == (co.MISSED, None), "easy: the session stays « Pas faite »"
@@ -537,11 +543,11 @@ async def test_a_run_of_its_duration_on_an_easy_session_reads_by_each_criterion(
     tue = next(r for r in await _rows(db_session, athlete) if r.day == TUE)
     assert cp.is_declared(tue.structure) is hard and (tue.kind == cp.QUALITY) is hard
     if hard:
-        assert (f"<b>Aujourd’hui, tu as couru 55 min (8,2{NNBSP}km), plus soutenu que le footing prévu{NBSP}: comptée "
-                "comme une séance dure.</b>") in _card(page)
+        assert (f'tabindex="-1">Aujourd’hui, 55 min, plus soutenu que le footing prévu{NBSP}: comptée '
+                "comme une séance dure.</h2>") in _card(page)
         assert next(r for r in await _rows(db_session, athlete) if r.day == WED).kind == cp.RECUP
     else:
-        assert "pf-coach-runcard" not in page and "Ta sortie d’aujourd’hui est arrivée" in page
+        assert "pf-coach-runcard" not in page and "<b>Aujourd’hui · " in page
         assert cr.answer_of(tue)["open"] is False, "read once, never again"
     assert "C’était quoi" not in page
 
@@ -572,9 +578,8 @@ async def _plan_of(db, athlete) -> CoachingPlan:
                              .execution_options(populate_existing=True))).scalar_one()
 
 
-HABIT = (f"Tu fais une séance dure presque tous les mardis{NBSP}: le plan la garde ce jour-là chaque semaine et "
-         "s’écrit autour.")
-ONE_OFF = f"Ta séance de mercredi devient une récup de 45 min{NBSP}; le reste ne bouge pas."
+HABIT = "Le plan garde une séance dure chaque mardi."
+ONE_OFF = "Mercredi devient une récup."
 
 
 async def test_a_hard_session_most_tuesdays_is_kept_there_by_itself(client, people, db_session, clock):
@@ -588,7 +593,7 @@ async def test_a_hard_session_most_tuesdays_is_kept_there_by_itself(client, peop
     card = _card(page)
     assert f'<p class="pf-coach-run-said" id="coach-run-said">{HABIT}</p>' in card
     assert card.index("coach-run-h") < card.index("coach-run-said") < card.index("coach-run-flip")
-    assert '<button type="submit" id="coach-run-weekly" class="pf-coach-quietbtn">Pas tous les mardis</button>' in card
+    assert '<button type="submit" id="coach-run-weekly" class="pf-coach-menuitem">Pas tous les mardis</button>' in card
     assert 'action="/coaching/runs/' in card and '/pas-chaque-semaine"' in card
     assert "club" not in card.lower().replace("vma club", ""), "no sentence assumes a club"
     assert "coach-run-yes" not in card and "coach-run-offer" not in card and "Oui, tous les" not in card, "no question"
@@ -758,8 +763,7 @@ async def test_no_notice_once_nothing_is_left_to_say(client, people, db_session,
     athlete, _p = await _owner(client, db_session, people, clock, laps=None)
     page = _main((await client.get("/coaching")).text)
     tue = next(r for r in await _rows(db_session, athlete) if r.day == TUE)
-    assert (f"au lieu du footing de 55 min{NBSP}: comptée comme une sortie tranquille{NBSP}; rien d’autre ne change."
-            in _card(page))
+    assert f"au lieu du footing de 55 min{NBSP}: comptée comme une sortie tranquille.</h2>" in _card(page)
     r = await client.post(f"/coaching/sessions/{tue.id}/ressenti", data={"value": "2"}, headers=HTMX)
     assert "pf-coach-runcard" not in r.text and "pf-coach-debrief" not in r.text
     assert (await db_session.get(CoachingSession, tue.id)).ressenti == 2
@@ -778,10 +782,10 @@ async def test_the_notice_waits_its_turn_with_the_debrief_and_never_for_a_follow
                         _run(athlete, MONDAY - timedelta(days=1), 40, 3, name="Avant le plan")])
     await db_session.flush()
     page = _main((await client.get("/coaching")).text)
-    assert "Ta sortie d’aujourd’hui est arrivée" in page and "pf-coach-runcard" not in page
+    assert "<b>Aujourd’hui · " in page and "pf-coach-runcard" not in page
     await client.post(f"/coaching/sessions/{thu.id}/ressenti", data={"value": "3"}, headers=HTMX)
     page = _main((await client.get("/coaching")).text)
-    assert "Hier, tu as couru 50 min" in page and "Avant le plan" not in page.split("pf-coach-calendar")[0]
+    assert "Hier, 50 min" in page and "Avant le plan" not in page.split("pf-coach-calendar")[0]
     state = await co.sync(db_session, await co.get_plan(db_session, athlete.id), athlete)
     assert [c.run.name for c in cr.notices(state)] == ["Footing avec Léa"] and not cr.candidates(state)
     assert cv.page(state, coach=True)["card"] is None and cv.page(state)["card"]["flip"] == "C’était une séance dure"

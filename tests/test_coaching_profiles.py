@@ -95,15 +95,19 @@ def test_a_second_quality_session_is_kept_for_a_time_aimed_at(intent, race, obje
 
 # ── what the screens say ────────────────────────────────────────────────────
 
-def test_each_intent_has_its_line_and_the_race_says_finir_or_performer():
-    assert [k for k, *_ in cv.INTENT_CARDS] == list(cp.INTENTS)
-    assert all(line.endswith(".") and len(line) < 120 for *_, line in cv.INTENT_CARDS)
+def test_each_intent_is_a_word_and_the_rules_are_said_in_comment_ca_marche():
+    """Owner, 26 Nov 2026 (« supprime le max de texte »): the start screen names the three intents and says only
+    what the answers lead to that the athlete may want to change; the rules (each intent, « pour finir » or « pour
+    performer », two days) are in « Comment ça marche »."""
+    assert [k for k, *_ in cv.INTENT_CARDS] == list(cp.INTENTS) and all(len(c) == 3 for c in cv.INTENT_CARDS)
     finish = cv.first_week((1, 3, 6), 6, 120, cp.Goal(RACE, 55, False, None, "10 km", "approx"), TODAY,
                            intent=cp.COURSE)
-    assert cv.AIM_LINE[cp.FINIR] in finish["lines"]
     perform = cv.first_week((1, 3, 6), 6, 120, cp.Goal(RACE, 52, False, None, "10 km", "objectif"), TODAY,
                             intent=cp.COURSE)
-    assert cv.AIM_LINE[cp.PERFORMER] in perform["lines"]
+    assert finish["lines"] == perform["lines"] == [] and "level" not in finish
+    how = " ".join(cv.METHOD)
+    assert "Trois choix au départ" in how and "une seule séance de qualité par semaine ; deux, au plus, avec un temps " \
+        "visé" in how and "Si tu débutes : huit semaines en aisance" in how
 
 
 # ── the screens ─────────────────────────────────────────────────────────────
@@ -129,10 +133,11 @@ async def test_the_start_screen_offers_three_intents_in_one_tap_and_the_preview_
     athlete = people.athlete
     _as(client, athlete)
     page = (await client.get("/coaching")).text
-    for key, title, _icon, line in cv.INTENT_CARDS:
+    for key, title, _icon in cv.INTENT_CARDS:
         assert f'name="intent" value="{key}"' in page and title in page
     assert re.findall(r'name="intent" value="(\w+)"[^>]*? checked', page) == [cp.PROGRESSER]
-    assert cv.INTENT_CARDS[1][3] in page.split('id="coach-intent-line"')[1].split("</p>")[0]
+    assert 'id="coach-intent-line"' not in page and "data-line" not in page, "a word each: no line under them"
+    assert "Ton plan est prêt" not in page and "bêta" not in page
     query = {"days": ["1", "3", "5", "6"], "long_day": "6", "base": "300", "goal": "none"}
     for intent in cp.INTENTS[:2]:
         r = await client.get("/coaching/apercu", params={**query, "intent": intent}, headers=HTMX)
@@ -272,21 +277,6 @@ def test_a_debutant_runs_on_four_of_the_days_spread_around_the_week_the_long_run
                                   level=cp.REGULIER)) == (0, 1, 2, 4, 6)
 
 
-def test_the_level_line_says_the_level_and_why():
-    line = cv.level_line(cp.Level(cp.DEBUTANT, 5, 0, 40, 50, True, 120))
-    assert line["lead"] == "Tu débutes" and line["text"].startswith("huit semaines en aisance d")
-    assert "12 dernières semaines" in line["why"] and "5 avec une sortie" in line["why"]
-    later = cv.level_line(cp.Level(cp.DEBUTANT, 5, 0, 40, 50, True, 120), week=cp.NOVICE_EASY_WEEKS)
-    assert "huit semaines" not in later["text"] and "une séance de qualité" in later["text"]
-    none = cv.level_line(cp.Level(cp.DEBUTANT, history=False, base=60))
-    assert "Aucune sortie enregistrée" in none["why"] and "1h00" in none["why"].replace(" ", "")
-    usual = cv.level_line(cp.Level(cp.REGULIER, 11, 2, 130, 70, True, 120))
-    assert usual["lead"] == "Tu cours régulièrement" and "11 avec une sortie" in usual["text"] and not usual["why"]
-    trained = cv.level_line(cp.Level(cp.ENTRAINE, 12, 11, 300, 120, True, 300))
-    assert trained["lead"] == "Tu t’entraînes beaucoup" and "11 avec 3 sorties ou plus" in trained["text"]
-    assert cv.level_line(None) is None
-
-
 async def test_the_level_is_read_when_the_plan_is_made_shown_to_the_athlete_never_to_a_follower(
         client, people, beta, db_session, clock):
     from app.models.coaching import CoachingLink
@@ -296,7 +286,7 @@ async def test_the_level_is_read_when_the_plan_is_made_shown_to_the_athlete_neve
     _as(client, athlete)
     data = {"intent": cp.PROGRESSER, "goal": "none", "days": ["0", "1", "3", "4", "6"], "long_day": "6", "base": "60"}
     pv = await client.get("/coaching/apercu", params=data, headers=HTMX)
-    assert "<b>Tu débutes</b>" in pv.text and "Aucune sortie enregistrée" in pv.text
+    assert "Tu débutes" not in pv.text and "Aucune sortie enregistrée" not in pv.text, "« Comment ça marche »"
     assert (await client.post("/coaching/plan", data=data)).status_code == 303
     plan = (await db_session.execute(select(CoachingPlan))).scalar_one()
     assert (plan.level, plan.level_read["history"], plan.level_read["base"]) == (cp.DEBUTANT, False, 60)
@@ -305,7 +295,7 @@ async def test_the_level_is_read_when_the_plan_is_made_shown_to_the_athlete_neve
     early = [r for r in rows if r.day < plan.start_monday + timedelta(weeks=cp.NOVICE_EASY_WEEKS)]
     assert early and not [r for r in early if r.kind in (cp.QUALITY, cp.HILLS)], "easy only, eight weeks"
     page = (await client.get("/coaching")).text
-    assert '<p class="pf-coach-level"><b>Tu débutes</b>' in page
+    assert "Tu débutes" not in page and "pf-coach-level" not in page, "read, never shown: the rule is in the method"
     db_session.add(CoachingLink(athlete_id=athlete.id, coach_id=coach.id))
     await db_session.flush()
     _as(client, coach)
@@ -320,7 +310,7 @@ async def test_the_level_is_read_when_the_plan_is_made_shown_to_the_athlete_neve
     await db_session.flush()
     _as(client, athlete)
     redo = (await client.get("/coaching?refaire=1")).text
-    assert "<b>Tu cours régulièrement</b>" in redo
+    assert "Tu cours régulièrement" not in redo and "Tes séances faites restent." in redo
     assert (await client.post("/coaching/plan", data={**data, "base": "135"})).status_code == 303
     await db_session.refresh(plan)
     assert (plan.level, plan.level_read["weeks"], plan.level_read["median"]) == (cp.REGULIER, 12, 135)
@@ -465,12 +455,12 @@ def test_every_profile_plan_keeps_the_rules(intent, level):
 def test_two_days_say_what_they_give_and_what_a_third_would_add():
     pv = cv.first_week((1, 6), 6, 120, co.custom_goal("10 km", ANNECY, 10.0, None), STORY_TODAY, intent=cp.COURSE,
                        level=cp.Level(cp.REGULIER, history=False, base=120))
-    assert pv["lines"][:3] == [cv.AIM_LINE[cp.FINIR], *cv.TWO_DAYS]
+    assert not set(cv.TWO_DAYS) & set(pv["lines"]), "the rule is in « Comment ça marche »"
     side = cv.first_week((5, 6), 6, 120, cp.Goal(), STORY_TODAY, intent=cp.PROGRESSER,
                          level=cp.Level(cp.REGULIER, history=False, base=120))
     assert rp_fr(cv.SIDE_BY_SIDE) in side["lines"]
     three = cv.first_week((1, 3, 6), 6, 120, cp.Goal(), STORY_TODAY, intent=cp.PROGRESSER)
-    assert not set(cv.TWO_DAYS) & set(three["lines"])
+    assert three["lines"] == []
     assert all(line in " ".join(cv.METHOD) for line in cv.TWO_DAYS)
     close = cv.first_week((1, 6), 6, 60, co.custom_goal("10 km", STORY_TODAY + timedelta(days=24), 10.0, None),
                           STORY_TODAY, intent=cp.COURSE, level=cp.Level(cp.DEBUTANT, history=False, base=60))
@@ -480,7 +470,7 @@ def test_two_days_say_what_they_give_and_what_a_third_would_add():
 async def test_a_session_moved_next_to_the_long_run_is_kept_and_the_week_says_so(client, people, beta, db_session,
                                                                                clock):
     """« Déplacer » takes any day: next to the long run, nothing is refused or rewritten — the week says « deux jours
-    durs de suite » and offers to run the session as a footing (the athlete's page only)."""
+    durs de suite » (that it may be run as a footing is said in « Comment ça marche »)."""
     from app.models.coaching import CoachingLink
 
     athlete, coach = people.athlete, people.coach
@@ -488,7 +478,7 @@ async def test_a_session_moved_next_to_the_long_run_is_kept_and_the_week_says_so
     data = {"intent": cp.COURSE, "goal": "new", "race_name": "10 km du lac d’Annecy", "race_date": ANNECY.isoformat(),
             "race_km": "10", "days": ["1", "6"], "long_day": "6", "base": "120"}
     pv = await client.get("/coaching/apercu", params=data, headers=HTMX)
-    assert all(line.replace("’", "&#39;") in pv.text or line in pv.text for line in cv.TWO_DAYS)
+    assert not any(line.replace("’", "&#39;") in pv.text or line in pv.text for line in cv.TWO_DAYS)
     assert (await client.post("/coaching/plan", data=data)).status_code == 303
     rows = await _rows(db_session, athlete)
     quality = next(r for r in rows if r.kind in (cp.QUALITY, cp.HILLS) and r.day > clock.day)
@@ -498,7 +488,7 @@ async def test_a_session_moved_next_to_the_long_run_is_kept_and_the_week_says_so
                                                                        "w": cp.monday_of(saturday).isoformat()},
                           headers=HTMX)
     assert r.status_code == 200
-    assert "Samedi et dimanche\u00a0: deux jours durs de suite. Tu peux courir la séance en footing." in r.text
+    assert "Samedi et dimanche\u00a0: deux jours durs de suite.</p>" in r.text and "Tu peux courir" not in r.text
     moved = next(x for x in await _rows(db_session, athlete) if x.id == quality.id)
     assert (moved.day, moved.kind, moved.pinned) == (saturday, quality.kind, True), "kept as she put it"
     db_session.add(CoachingLink(athlete_id=athlete.id, coach_id=coach.id))
@@ -516,7 +506,10 @@ async def test_two_days_side_by_side_say_why_there_is_no_session_with_rhythm(cli
     assert (await client.post("/coaching/plan", data=data)).status_code == 303
     rows = await _rows(db_session, people.athlete)
     assert rows and not [r for r in rows if r.kind in (cp.QUALITY, cp.HILLS)]
-    assert rp_fr(cv.SIDE_BY_SIDE) in (await client.get("/coaching")).text
+    page = (await client.get("/coaching")).text
+    main = page[page.index('id="coach-main"'):page.index('id="coach-options"')]
+    assert rp_fr(cv.SIDE_BY_SIDE) not in main, "the road carries no note: the start screen said it"
+    assert cv.SIDE_BY_SIDE in page.split('id="coach-tool-how"')[1]
 
 
 def test_the_short_race_cap_is_for_plans_made_with_the_profiles_and_leaves_long_races_alone():
